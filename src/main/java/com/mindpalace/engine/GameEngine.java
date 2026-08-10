@@ -2,15 +2,22 @@ package com.mindpalace.engine;
 
 import com.mindpalace.render.Renderer;
 import com.mindpalace.world.WorldBuilder;
+import com.mindpalace.world.Book;
+import com.mindpalace.world.Room;
 import com.mindpalace.entity.Player;
 import com.mindpalace.ui.HUD;
+import com.mindpalace.ui.BookEditor;
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.audio.AudioEngine;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.system.MemoryUtil;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 public class GameEngine {
     private long window;
@@ -24,6 +31,7 @@ public class GameEngine {
     private Player player;
     private Input input;
     private HUD hud;
+    private BookEditor bookEditor;
     private GitHubClient github;
     private AudioEngine audio;
     private GameState state;
@@ -35,13 +43,17 @@ public class GameEngine {
     private int fps;
     private double fpsTimer;
 
-    // Loading screen
     private String loadingText = "";
     private double loadingProgress;
     private boolean loading;
 
+    // Console input reader for book editor
+    private BufferedReader consoleReader;
+    private String pendingCommand;
+
     public void run() {
         init();
+        startConsoleReader();
         loop();
         cleanup();
     }
@@ -82,7 +94,6 @@ public class GameEngine {
         System.out.println("GPU: " + GL11.glGetString(GL11.GL_RENDERER));
         System.out.println("OpenGL: " + GL11.glGetString(GL11.GL_VERSION));
 
-        // Show loading screen
         state = GameState.LOADING;
         loading = true;
         loadingText = "Initializing engine...";
@@ -107,18 +118,34 @@ public class GameEngine {
         renderLoadingFrame();
 
         github = new GitHubClient();
+        bookEditor = new BookEditor(github);
 
         loadingText = "Ready.";
         loadingProgress = 1.0f;
         renderLoadingFrame();
 
-        // Start playing
         state = GameState.PLAYING;
         loading = false;
         input.setCursorCaptured(true);
 
         lastFrameTime = GLFW.glfwGetTime();
         accumulator = 0.0;
+    }
+
+    private void startConsoleReader() {
+        consoleReader = new BufferedReader(new InputStreamReader(System.in));
+        Thread t = new Thread(() -> {
+            try {
+                while (running) {
+                    String line = consoleReader.readLine();
+                    if (line != null) {
+                        synchronized (this) { pendingCommand = line; }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }, "console-reader");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void renderLoadingFrame() {
@@ -150,6 +177,8 @@ public class GameEngine {
                 String title = "MindPalace — " + fps + " FPS";
                 if (player.getCurrentRoom() != null)
                     title += " | " + player.getCurrentRoom().getRepoName();
+                if (bookEditor.isOpen())
+                    title += " | [EDITOR] " + bookEditor.getMode();
                 GLFW.glfwSetWindowTitle(window, title);
                 fps = 0;
                 fpsTimer = 0.0;
@@ -162,8 +191,25 @@ public class GameEngine {
     private void update(double dt) {
         input.update(dt);
 
+        // Process console commands for editor
+        String cmd = null;
+        synchronized (this) {
+            if (pendingCommand != null) {
+                cmd = pendingCommand;
+                pendingCommand = null;
+            }
+        }
+        if (cmd != null && bookEditor.isOpen()) {
+            bookEditor.handleCommand(cmd);
+        }
+
+        // ESC toggles
         if (input.isKeyJustPressed(GLFW.GLFW_KEY_ESCAPE)) {
-            if (state == GameState.PLAYING) {
+            if (bookEditor.isOpen()) {
+                bookEditor.close();
+                input.setCursorCaptured(true);
+                state = GameState.PLAYING;
+            } else if (state == GameState.PLAYING) {
                 state = GameState.MENU;
                 input.setCursorCaptured(false);
             } else {
@@ -172,11 +218,120 @@ public class GameEngine {
             }
         }
 
-        if (state == GameState.PLAYING)
+        if (state == GameState.PLAYING) {
             player.update(dt, input, world);
+
+            // Book click detection — left click in a room
+            if (input.isLeftClick() && player.getCurrentRoom() != null) {
+                Book clicked = findBookInSights(player.getCurrentRoom());
+                if (clicked != null) {
+                    bookEditor.open(clicked, player.getCurrentRoom(),
+                        player.getPosition(), player.getLookDirection());
+                    state = GameState.BOOK_VIEW;
+                    input.setCursorCaptured(false);
+                }
+            }
+        }
 
         if (input.isKeyJustPressed(GLFW.GLFW_KEY_F11))
             toggleFullscreen();
+    }
+
+    private Book findBookInSights(Room room) {
+        Vector3f origin = player.getPosition();
+        Vector3f dir = player.getLookDirection();
+        Vector3f c = room.getRoomCenter();
+        float w = Room.ROOM_WIDTH, d = Room.ROOM_DEPTH, h = Room.ROOM_HEIGHT;
+        int side = room.getHallwaySide();
+
+        // Check back wall bookcase
+        float bz = side == 0 ? c.z + d / 2f - 0.25f : c.z - d / 2f + 0.25f;
+        Book hit = raycastBooks(origin, dir, c.x, c.y, bz, w - 0.6f, true);
+        if (hit != null) return hit;
+
+        // Check left wall bookcase
+        float lx = c.x - w / 2f + 0.25f;
+        hit = raycastBooks(origin, dir, lx, c.y, c.z, d - 0.6f, false);
+        if (hit != null) return hit;
+
+        // Check right wall bookcase
+        float rx = c.x + w / 2f - 0.25f;
+        hit = raycastBooks(origin, dir, rx, c.y, c.z, d - 0.6f, false);
+        return hit;
+    }
+
+    private Book raycastBooks(Vector3f origin, Vector3f dir, float caseX, float caseY, float caseZ, float caseWidth, boolean facingZ) {
+        float caseDepth = 0.5f;
+        float caseBottom = caseY - Room.ROOM_HEIGHT / 2f + 0.1f;
+        float caseTop = caseY + Room.ROOM_HEIGHT / 2f - 0.1f;
+        float caseHeight = caseTop - caseBottom;
+        float shelfSpacing = caseHeight / 3f;
+        float shelfY0 = caseBottom + 0.06f + shelfSpacing / 2f;
+        float bookH = shelfSpacing * 0.75f;
+        float bookW = 0.10f;
+        float bookGap = 0.02f;
+        float usableWidth = caseWidth - 0.12f - 0.2f;
+        int maxBooks = (int) (usableWidth / (bookW + bookGap));
+
+        for (int row = 0; row < 3; row++) {
+            float sy = shelfY0 + row * shelfSpacing;
+            for (int b = 0; b < maxBooks; b++) {
+                float offset = -usableWidth / 2f + b * (bookW + bookGap) + bookW / 2f;
+                float bx, bz, bw, bd;
+                if (facingZ) {
+                    bx = caseX + offset;
+                    bz = caseZ;
+                    bw = bookW;
+                    bd = caseDepth * 0.6f;
+                } else {
+                    bx = caseX;
+                    bz = caseZ + offset;
+                    bw = caseDepth * 0.6f;
+                    bd = bookW;
+                }
+
+                // Ray-AABB intersection
+                Vector3f hit = rayAABB(origin, dir,
+                    bx - bw / 2f, sy - bookH / 2f, bz - bd / 2f,
+                    bx + bw / 2f, sy + bookH / 2f, bz + bd / 2f);
+                if (hit != null) {
+                    // Find which book this is
+                    Room room = player.getCurrentRoom();
+                    if (room != null) {
+                        int wallIdx = facingZ ? 0 : (caseX < room.getRoomCenter().x ? 1 : 2);
+                        int perWall = Math.min(40, room.getBooks().size() / 3);
+                        int startIdx = wallIdx * perWall;
+                        int bookIdx = startIdx + row * (perWall / 3) + b;
+                        if (bookIdx < room.getBooks().size()) {
+                            return room.getBooks().get(bookIdx);
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private Vector3f rayAABB(Vector3f origin, Vector3f dir, float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+        float tMin = 0f, tMax = 10f;
+        float[] bounds = {minX, maxX, minY, maxY, minZ, maxZ};
+        float[] origins = {origin.x, origin.y, origin.z};
+        float[] dirs = {dir.x, dir.y, dir.z};
+
+        for (int i = 0; i < 3; i++) {
+            if (Math.abs(dirs[i]) < 0.0001f) {
+                if (origins[i] < bounds[i * 2] || origins[i] > bounds[i * 2 + 1]) return null;
+            } else {
+                float invD = 1f / dirs[i];
+                float t0 = (bounds[i * 2] - origins[i]) * invD;
+                float t1 = (bounds[i * 2 + 1] - origins[i]) * invD;
+                if (t0 > t1) { float tmp = t0; t0 = t1; t1 = tmp; }
+                tMin = Math.max(tMin, t0);
+                tMax = Math.min(tMax, t1);
+                if (tMin > tMax) return null;
+            }
+        }
+        return new Vector3f(origin).add(dir.x * tMin, dir.y * tMin, dir.z * tMin);
     }
 
     private void render(double alpha) {
@@ -186,6 +341,10 @@ public class GameEngine {
 
         if (state == GameState.PLAYING) {
             hud.render(renderer, player, world);
+        }
+
+        if (bookEditor.isOpen()) {
+            bookEditor.render(renderer);
         }
 
         GLFW.glfwSwapBuffers(window);
