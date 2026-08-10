@@ -15,8 +15,8 @@ public class Shader {
     private final int programId;
 
     public Shader(String vertPath, String fragPath) {
-        int vertShader = compileShader(GL20.GL_VERTEX_SHADER, loadSource(vertPath));
-        int fragShader = compileShader(GL20.GL_FRAGMENT_SHADER, loadSource(fragPath));
+        int vertShader = compileShader(GL20.GL_VERTEX_SHADER, loadSourceStatic(vertPath));
+        int fragShader = compileShader(GL20.GL_FRAGMENT_SHADER, loadSourceStatic(fragPath));
 
         programId = GL20.glCreateProgram();
         GL20.glAttachShader(programId, vertShader);
@@ -28,14 +28,32 @@ public class Shader {
             throw new RuntimeException("Shader link failed: " + log);
         }
 
-        // Clean up shaders after linking
         GL20.glDeleteShader(vertShader);
         GL20.glDeleteShader(fragShader);
     }
 
-    private String loadSource(String path) {
+    /** Construct from raw source strings (for inline shaders). */
+    public Shader(String vertSrc, String fragSrc, boolean raw) {
+        int vertShader = compileShader(GL20.GL_VERTEX_SHADER, vertSrc);
+        int fragShader = compileShader(GL20.GL_FRAGMENT_SHADER, fragSrc);
+
+        programId = GL20.glCreateProgram();
+        GL20.glAttachShader(programId, vertShader);
+        GL20.glAttachShader(programId, fragShader);
+        GL20.glLinkProgram(programId);
+
+        if (GL20.glGetProgrami(programId, GL20.GL_LINK_STATUS) == GL20.GL_FALSE) {
+            String log = GL20.glGetProgramInfoLog(programId);
+            throw new RuntimeException("Shader link failed: " + log);
+        }
+
+        GL20.glDeleteShader(vertShader);
+        GL20.glDeleteShader(fragShader);
+    }
+
+    private static String loadSourceStatic(String path) {
         // Try classpath (works in JAR and filesystem)
-        try (var in = getClass().getClassLoader().getResourceAsStream(path)) {
+        try (var in = Shader.class.getClassLoader().getResourceAsStream(path)) {
             if (in != null) {
                 return new String(in.readAllBytes());
             }
@@ -84,12 +102,17 @@ public class Shader {
         GL20.glUniform3f(loc, vec.x, vec.y, vec.z);
     }
 
-    public void setUniform(String name, float f) {
-        GL20.glUniform1f(getUniformLocation(name), f);
+    public void setUniform(String name, org.joml.Vector4f vec) {
+        int loc = getUniformLocation(name);
+        GL20.glUniform4f(loc, vec.x, vec.y, vec.z, vec.w);
     }
 
     public void setUniform(String name, int i) {
         GL20.glUniform1i(getUniformLocation(name), i);
+    }
+
+    public void setUniform(String name, float f) {
+        GL20.glUniform1f(getUniformLocation(name), f);
     }
 
     public void cleanup() {

@@ -1,6 +1,8 @@
 package com.mindpalace.engine;
 
 import com.mindpalace.render.Renderer;
+import com.mindpalace.render.FontRenderer;
+import com.mindpalace.render.Camera;
 import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
@@ -10,6 +12,7 @@ import com.mindpalace.ui.BookEditor;
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.audio.AudioEngine;
 import org.joml.Vector3f;
+import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
@@ -27,6 +30,7 @@ public class GameEngine {
     private boolean running = true;
 
     private Renderer renderer;
+    private FontRenderer fontRenderer;
     private WorldBuilder world;
     private Player player;
     private Input input;
@@ -102,6 +106,7 @@ public class GameEngine {
 
         input = new Input(window);
         renderer = new Renderer(width, height);
+        fontRenderer = new FontRenderer();
         player = new Player();
         hud = new HUD();
         audio = new AudioEngine();
@@ -339,6 +344,11 @@ public class GameEngine {
         renderer.beginFrame(player.getCamera());
         world.render(renderer, player.getCamera());
 
+        // Render neon sign text
+        if (fontRenderer != null && fontRenderer.isReady()) {
+            renderNeonSignText();
+        }
+
         if (state == GameState.PLAYING) {
             hud.render(renderer, player, world);
         }
@@ -348,6 +358,44 @@ public class GameEngine {
         }
 
         GLFW.glfwSwapBuffers(window);
+    }
+
+    private void renderNeonSignText() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+
+        for (Room room : world.getRooms()) {
+            Vector3f dp = room.getDoorPosition();
+            if (dp == null) continue;
+            float dist = camPos.distance(dp);
+            if (dist > 25f) continue;
+
+            // Sign position — same as renderNeonSign in WorldBuilder
+            float signY = (room.getFloor() == 0 ? 0 : WorldBuilder.HALLWAY_HEIGHT + 1.0f)
+                + WorldBuilder.HALLWAY_HEIGHT - 0.3f;
+            float wallX = room.getHallwaySide() == 0
+                ? -WorldBuilder.HALLWAY_WIDTH / 2f
+                : WorldBuilder.HALLWAY_WIDTH / 2f;
+            float offsetX = wallX > 0 ? -0.20f : 0.20f;
+            Vector3f signPos = new Vector3f(wallX + offsetX, signY, dp.z);
+
+            // Facing direction (into hallway)
+            Vector3f facing = new Vector3f(wallX > 0 ? -1 : 1, 0, 0);
+
+            // Color: cyan for public, pink for private
+            Vector3f color = room.isPrivate()
+                ? new Vector3f(1.0f, 0.2f, 0.6f)
+                : new Vector3f(0.0f, 0.9f, 1.0f);
+
+            // Truncate long names
+            String name = room.getRepoName();
+            if (name.length() > 18) name = name.substring(0, 16) + "..";
+
+            float charSize = 0.07f;
+            fontRenderer.renderText(name, signPos, charSize, color, proj, view, facing);
+        }
     }
 
     private void toggleFullscreen() {
