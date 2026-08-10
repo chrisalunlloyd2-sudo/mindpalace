@@ -34,12 +34,14 @@ public class Shader {
     }
 
     private String loadSource(String path) {
-        try {
-            var url = getClass().getClassLoader().getResource(path);
-            if (url != null) {
-                return Files.readString(Path.of(url.toURI()));
+        // Try classpath (works in JAR and filesystem)
+        try (var in = getClass().getClassLoader().getResourceAsStream(path)) {
+            if (in != null) {
+                return new String(in.readAllBytes());
             }
-            // Fallback: try filesystem
+        } catch (Exception ignored) {}
+        // Fallback: direct filesystem
+        try {
             return Files.readString(Path.of("src/main/resources/" + path));
         } catch (Exception e) {
             throw new RuntimeException("Failed to load shader: " + path, e);
