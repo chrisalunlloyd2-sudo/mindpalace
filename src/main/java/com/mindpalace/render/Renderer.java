@@ -83,6 +83,13 @@ public class Renderer {
         drawMesh(getCubeMesh(), model, texId);
     }
 
+    /** Laser aim dot — small bright cube at fixed distance in front of camera. */
+    public void drawLaserDot(Camera camera) {
+        Vector3f pos = new Vector3f(camera.getPosition())
+            .add(new Vector3f(camera.getFront()).mul(2.0f));
+        drawCube(pos, new Vector3f(0.03f, 0.03f, 0.03f), TEX_WHITE);
+    }
+
     private Mesh cubeMesh;
     private Mesh getCubeMesh() {
         if (cubeMesh == null) cubeMesh = createCubeMesh();

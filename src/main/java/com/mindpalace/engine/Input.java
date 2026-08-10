@@ -3,20 +3,18 @@ package com.mindpalace.engine;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * Input system — keyboard + mouse for FPS controls.
- * Uses GLFW_CURSOR_DISABLED for raw mouse input (no drift).
- * Falls back to cursor-hide+recenter if raw input unavailable.
+ * Input — keyboard + raw mouse delta (Quake-style).
+ * Tracks previous cursor position, computes delta between callbacks.
+ * No recenter, no virtual drift.
  */
 public class Input {
     private final long window;
     private final boolean[] keys = new boolean[GLFW.GLFW_KEY_LAST + 1];
     private final boolean[] keysPrev = new boolean[GLFW.GLFW_KEY_LAST + 1];
 
-    private double deltaX, deltaY;
-    private double centerX, centerY;
+    private double mouseDX, mouseDY;
+    private double prevX = -1, prevY = -1;
     private boolean cursorCaptured = true;
-    private boolean useRawInput = true;
-    private boolean ignoreNextPos;
 
     private boolean leftClick, rightClick;
     private boolean leftClickPrev, rightClickPrev;
@@ -24,21 +22,12 @@ public class Input {
     public Input(long window) {
         this.window = window;
 
-        int[] w = new int[1], h = new int[1];
-        GLFW.glfwGetWindowSize(window, w, h);
-        centerX = w[0] / 2.0;
-        centerY = h[0] / 2.0;
-
-        // Raw mouse motion callback (GLFW_CURSOR_DISABLED)
         GLFW.glfwSetCursorPosCallback(window, (win, x, y) -> {
-            if (useRawInput) {
-                deltaX += x - centerX;
-                deltaY += y - centerY;
-            } else if (!ignoreNextPos) {
-                deltaX += x - centerX;
-                deltaY += y - centerY;
-            }
-            ignoreNextPos = false;
+            if (prevX < 0) { prevX = x; prevY = y; return; }
+            mouseDX += x - prevX;
+            mouseDY += y - prevY;
+            prevX = x;
+            prevY = y;
         });
 
         GLFW.glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
@@ -56,20 +45,13 @@ public class Input {
 
         for (int i = 32; i <= GLFW.GLFW_KEY_LAST; i++)
             keys[i] = GLFW.glfwGetKey(window, i) == GLFW.GLFW_PRESS;
-
-        // Recenter cursor if not using raw input
-        if (cursorCaptured && !useRawInput) {
-            ignoreNextPos = true;
-            GLFW.glfwSetCursorPos(window, centerX, centerY);
-        }
     }
 
     public void setCursorCaptured(boolean captured) {
-        this.cursorCaptured = captured;
+        cursorCaptured = captured;
         if (captured) {
             GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
-            // If raw input produces no deltas after 1s, fall back
-            deltaX = 0; deltaY = 0;
+            prevX = -1; prevY = -1; // reset on capture
         } else {
             GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
         }
@@ -79,8 +61,8 @@ public class Input {
     public boolean isKeyJustPressed(int key) { return keys[key] && !keysPrev[key]; }
     public boolean isKeyJustReleased(int key) { return !keys[key] && keysPrev[key]; }
 
-    public double getMouseDX() { double d = deltaX; deltaX = 0; return d; }
-    public double getMouseDY() { double d = deltaY; deltaY = 0; return d; }
+    public double getMouseDX() { double d = mouseDX; mouseDX = 0; return d; }
+    public double getMouseDY() { double d = mouseDY; mouseDY = 0; return d; }
     public boolean isLeftClick() { return leftClick && !leftClickPrev; }
     public boolean isRightClick() { return rightClick && !rightClickPrev; }
 }

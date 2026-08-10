@@ -184,8 +184,11 @@ public class GameEngine {
         renderer.beginFrame(player.getCamera());
         world.render(renderer);
 
-        if (state == GameState.PLAYING)
+        if (state == GameState.PLAYING) {
             hud.render(renderer, player, world);
+            // Laser aim dot
+            renderer.drawLaserDot(player.getCamera());
+        }
 
         GLFW.glfwSwapBuffers(window);
     }
