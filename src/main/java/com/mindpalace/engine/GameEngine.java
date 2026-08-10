@@ -182,12 +182,10 @@ public class GameEngine {
     private void render(double alpha) {
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
         renderer.beginFrame(player.getCamera());
-        world.render(renderer);
+        world.render(renderer, player.getCamera());
 
         if (state == GameState.PLAYING) {
             hud.render(renderer, player, world);
-            // Laser aim dot
-            renderer.drawLaserDot(player.getCamera());
         }
 
         GLFW.glfwSwapBuffers(window);
