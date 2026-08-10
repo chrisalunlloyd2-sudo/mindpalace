@@ -3,13 +3,11 @@ package com.mindpalace.world;
 import com.mindpalace.render.Camera;
 import com.mindpalace.render.Renderer;
 import org.joml.Vector3f;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 
 /**
- * Procedural world builder — hallways with door cutouts, rooms with 3-wall bookshelves.
- * Frustum + distance culling. Books organized by language.
+ * Procedural world builder — hallways with door cutouts, rooms with wooden bookcases.
+ * Books grouped by file type, color-coded, protruding from walls.
  */
 public class WorldBuilder {
     private List<Room> rooms = new ArrayList<>();
@@ -24,7 +22,7 @@ public class WorldBuilder {
     private RoomPopulator populator;
 
     private static final float ROOM_CULL_DISTANCE = 30.0f;
-    private static final int MAX_BOOKS_PER_WALL = 30;
+    private static final int MAX_BOOKS_PER_WALL = 40;
 
     public WorldBuilder() {
         repoMapper = new RepoMapper();
@@ -183,11 +181,11 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x, c.y - h / 2f, c.z), new Vector3f(w, 0.1f, d), Renderer.TEX_FLOOR);
         r.drawCube(new Vector3f(c.x, c.y + h / 2f, c.z), new Vector3f(w, 0.1f, d), Renderer.TEX_CEILING);
 
-        // Back wall (solid — shelves go here)
+        // Back wall
         float bz = side == 0 ? c.z + d / 2f : c.z - d / 2f;
         r.drawCube(new Vector3f(c.x, c.y, bz), new Vector3f(w, h, t), Renderer.TEX_WALL);
 
-        // Side walls (solid — shelves go here)
+        // Side walls
         r.drawCube(new Vector3f(c.x - w / 2f, c.y, c.z), new Vector3f(t, h, d), Renderer.TEX_WALL);
         r.drawCube(new Vector3f(c.x + w / 2f, c.y, c.z), new Vector3f(t, h, d), Renderer.TEX_WALL);
 
@@ -208,89 +206,173 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw, fz), new Vector3f(Room.DOOR_WIDTH, frameT, frameT), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw + 0.15f, fz), new Vector3f(Room.DOOR_WIDTH * 0.8f, 0.15f, 0.05f), Renderer.TEX_PLAQUE);
 
-        // Bookshelves on 3 walls
-        renderShelvesOnWall(r, room, 0); // back wall
-        renderShelvesOnWall(r, room, -1); // left wall
-        renderShelvesOnWall(r, room, 1);  // right wall
+        // Wooden bookcases on 3 walls
+        renderBookcase(r, room, 0);  // back
+        renderBookcase(r, room, -1); // left
+        renderBookcase(r, room, 1);  // right
     }
 
-    /** wallDir: 0=back, -1=left, 1=right */
-    private void renderShelvesOnWall(Renderer r, Room room, int wallDir) {
+    /** Render a full wooden bookcase on one wall, books grouped by language. */
+    private void renderBookcase(Renderer r, Room room, int wallDir) {
         Vector3f c = room.getRoomCenter();
         float w = Room.ROOM_WIDTH, d = Room.ROOM_DEPTH, h = Room.ROOM_HEIGHT;
         int side = room.getHallwaySide();
-        float shelfY = c.y - h / 2f + 0.6f;
-        float shelfSpacing = 0.42f;
-        int rows = 3;
-        float shelfDepth = 0.35f;
-        float shelfThick = 0.04f;
 
-        // Wall position and shelf width
-        float wallX, wallZ, shelfWidth;
+        // Bookcase dimensions — protrudes 0.5m into room
+        float caseDepth = 0.5f;
+        float caseWidth, caseX, caseZ;
+        float inset = 0.3f; // gap from wall edges
+
         if (wallDir == 0) {
-            // Back wall
-            wallZ = side == 0 ? c.z + d / 2f - 0.25f : c.z - d / 2f + 0.25f;
-            wallX = c.x;
-            shelfWidth = w - 0.6f;
+            caseWidth = w - inset * 2;
+            caseX = c.x;
+            caseZ = side == 0 ? c.z + d / 2f - caseDepth / 2f - 0.1f
+                              : c.z - d / 2f + caseDepth / 2f + 0.1f;
         } else if (wallDir == -1) {
-            // Left wall
-            wallX = c.x - w / 2f + 0.25f;
-            wallZ = c.z;
-            shelfWidth = d - 0.6f;
+            caseWidth = d - inset * 2;
+            caseX = c.x - w / 2f + caseDepth / 2f + 0.1f;
+            caseZ = c.z;
         } else {
-            // Right wall
-            wallX = c.x + w / 2f - 0.25f;
-            wallZ = c.z;
-            shelfWidth = d - 0.6f;
+            caseWidth = d - inset * 2;
+            caseX = c.x + w / 2f - caseDepth / 2f - 0.1f;
+            caseZ = c.z;
         }
 
-        // Get books for this wall (partition by index)
-        List<Book> allBooks = room.getBooks();
-        int wallIndex = wallDir == 0 ? 0 : (wallDir == -1 ? 1 : 2);
-        int totalWalls = 3;
-        int perWall = Math.min(MAX_BOOKS_PER_WALL, allBooks.size() / totalWalls);
-        int startIdx = wallIndex * perWall;
-        int endIdx = Math.min(startIdx + perWall, allBooks.size());
-        if (startIdx >= allBooks.size()) return;
+        float caseBottom = c.y - h / 2f + 0.1f;
+        float caseTop = c.y + h / 2f - 0.1f;
+        float caseHeight = caseTop - caseBottom;
+        float caseMidY = (caseBottom + caseTop) / 2f;
 
-        int perShelf = Math.max(1, (endIdx - startIdx) / rows);
+        // Bookcase back panel (thin)
+        float backX = caseX, backZ = caseZ;
+        if (wallDir == 0) {
+            backZ = side == 0 ? caseZ + caseDepth / 2f - 0.05f : caseZ - caseDepth / 2f + 0.05f;
+        } else if (wallDir == -1) {
+            backX = caseX - caseDepth / 2f + 0.05f;
+        } else {
+            backX = caseX + caseDepth / 2f - 0.05f;
+        }
+        if (wallDir == 0) {
+            r.drawCube(new Vector3f(backX, caseMidY, backZ),
+                new Vector3f(caseWidth, caseHeight, 0.05f), Renderer.TEX_SHELF);
+        } else {
+            r.drawCube(new Vector3f(backX, caseMidY, backZ),
+                new Vector3f(0.05f, caseHeight, caseWidth), Renderer.TEX_SHELF);
+        }
+
+        // Side panels
+        float panelT = 0.06f;
+        if (wallDir == 0) {
+            r.drawCube(new Vector3f(caseX - caseWidth / 2f, caseMidY, caseZ),
+                new Vector3f(panelT, caseHeight, caseDepth), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX + caseWidth / 2f, caseMidY, caseZ),
+                new Vector3f(panelT, caseHeight, caseDepth), Renderer.TEX_DOOR);
+        } else {
+            r.drawCube(new Vector3f(caseX, caseMidY, caseZ - caseWidth / 2f),
+                new Vector3f(caseDepth, caseHeight, panelT), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX, caseMidY, caseZ + caseWidth / 2f),
+                new Vector3f(caseDepth, caseHeight, panelT), Renderer.TEX_DOOR);
+        }
+
+        // Top + bottom panels
+        if (wallDir == 0) {
+            r.drawCube(new Vector3f(caseX, caseBottom, caseZ),
+                new Vector3f(caseWidth, panelT, caseDepth), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX, caseTop, caseZ),
+                new Vector3f(caseWidth, panelT, caseDepth), Renderer.TEX_DOOR);
+        } else {
+            r.drawCube(new Vector3f(caseX, caseBottom, caseZ),
+                new Vector3f(caseDepth, panelT, caseWidth), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX, caseTop, caseZ),
+                new Vector3f(caseDepth, panelT, caseWidth), Renderer.TEX_DOOR);
+        }
+
+        // Group books by language
+        List<Book> allBooks = room.getBooks();
+        Map<String, List<Book>> byLang = new LinkedHashMap<>();
+        for (Book bk : allBooks) {
+            String lang = bk.getLanguage() != null ? bk.getLanguage() : "Other";
+            byLang.computeIfAbsent(lang, k -> new ArrayList<>()).add(bk);
+        }
+
+        // Flatten groups into shelf layout
+        List<List<Book>> groups = new ArrayList<>(byLang.values());
+        int totalBooks = 0;
+        for (List<Book> g : groups) totalBooks += Math.min(g.size(), 15);
+        if (totalBooks == 0) return;
+
+        int rows = 3;
+        float shelfSpacing = (caseHeight - panelT * 2) / rows;
+        float shelfY0 = caseBottom + panelT + shelfSpacing / 2f;
+        float bookH = shelfSpacing * 0.75f;
+        float bookD = caseDepth * 0.6f;
+
+        // Distribute groups across shelves
+        int groupIdx = 0;
+        int bookInGroup = 0;
+        List<Book> currentGroup = groups.isEmpty() ? new ArrayList<>() : groups.get(0);
 
         for (int row = 0; row < rows; row++) {
-            float y = shelfY + row * shelfSpacing;
+            float sy = shelfY0 + row * shelfSpacing;
 
             // Shelf board
             if (wallDir == 0) {
-                r.drawCube(new Vector3f(wallX, y, wallZ),
-                    new Vector3f(shelfWidth, shelfThick, shelfDepth), Renderer.TEX_SHELF);
+                r.drawCube(new Vector3f(caseX, sy - bookH / 2f - 0.02f, caseZ),
+                    new Vector3f(caseWidth - panelT, 0.03f, caseDepth - 0.05f), Renderer.TEX_SHELF);
             } else {
-                r.drawCube(new Vector3f(wallX, y, wallZ),
-                    new Vector3f(shelfDepth, shelfThick, shelfWidth), Renderer.TEX_SHELF);
+                r.drawCube(new Vector3f(caseX, sy - bookH / 2f - 0.02f, caseZ),
+                    new Vector3f(caseDepth - 0.05f, 0.03f, caseWidth - panelT), Renderer.TEX_SHELF);
             }
 
-            // Books on this shelf row
-            for (int b = 0; b < perShelf; b++) {
-                int bi = startIdx + row * perShelf + b;
-                if (bi >= endIdx) break;
-                Book book = allBooks.get(bi);
+            // Books on this shelf
+            float usableWidth = caseWidth - panelT * 2 - 0.2f;
+            float bookW = 0.10f;
+            float bookGap = 0.02f;
+            int maxBooks = (int) (usableWidth / (bookW + bookGap));
+            int booksPlaced = 0;
 
-                float offset = b * 0.14f - (perShelf - 1) * 0.07f;
-                float bx, bz;
-                if (wallDir == 0) {
-                    bx = wallX - shelfWidth / 2f + 0.1f + b * 0.14f;
-                    bz = wallZ;
-                    r.drawCube(new Vector3f(bx, y + 0.14f, bz),
-                        new Vector3f(book.getThickness(), 0.26f, 0.20f), book.getTextureId());
-                } else if (wallDir == -1) {
-                    bx = wallX;
-                    bz = wallZ - shelfWidth / 2f + 0.1f + b * 0.14f;
-                    r.drawCube(new Vector3f(bx, y + 0.14f, bz),
-                        new Vector3f(0.20f, 0.26f, book.getThickness()), book.getTextureId());
-                } else {
-                    bx = wallX;
-                    bz = wallZ - shelfWidth / 2f + 0.1f + b * 0.14f;
-                    r.drawCube(new Vector3f(bx, y + 0.14f, bz),
-                        new Vector3f(0.20f, 0.26f, book.getThickness()), book.getTextureId());
+            while (booksPlaced < maxBooks && groupIdx < groups.size()) {
+                if (bookInGroup >= currentGroup.size() || bookInGroup >= 15) {
+                    groupIdx++;
+                    bookInGroup = 0;
+                    if (groupIdx >= groups.size()) break;
+                    currentGroup = groups.get(groupIdx);
+                    // Divider between groups
+                    float divX, divZ;
+                    float divOffset = -usableWidth / 2f + booksPlaced * (bookW + bookGap);
+                    if (wallDir == 0) {
+                        divX = caseX + divOffset;
+                        divZ = caseZ;
+                        r.drawCube(new Vector3f(divX, sy, divZ),
+                            new Vector3f(0.02f, bookH, bookD), Renderer.TEX_DOOR);
+                    } else {
+                        divX = caseX;
+                        divZ = caseZ + divOffset;
+                        r.drawCube(new Vector3f(divX, sy, divZ),
+                            new Vector3f(bookD, bookH, 0.02f), Renderer.TEX_DOOR);
+                    }
+                    booksPlaced++;
+                    continue;
                 }
+
+                Book book = currentGroup.get(bookInGroup);
+                float offset = -usableWidth / 2f + booksPlaced * (bookW + bookGap) + bookW / 2f;
+                float bx, bz;
+
+                if (wallDir == 0) {
+                    bx = caseX + offset;
+                    bz = caseZ;
+                    r.drawCube(new Vector3f(bx, sy, bz),
+                        new Vector3f(bookW, bookH, bookD), book.getTextureId());
+                } else {
+                    bx = caseX;
+                    bz = caseZ + offset;
+                    r.drawCube(new Vector3f(bx, sy, bz),
+                        new Vector3f(bookD, bookH, bookW), book.getTextureId());
+                }
+
+                bookInGroup++;
+                booksPlaced++;
             }
         }
     }
