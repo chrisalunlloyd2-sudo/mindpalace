@@ -30,7 +30,11 @@ public class Renderer {
     public static final int TEX_BOOK_RED    = 12;
     public static final int TEX_BOOK_GREY   = 13;
     public static final int TEX_BOOK_WHITE  = 14;
-    private static final int TEX_COUNT = 15;
+    public static final int TEX_NEON_CYAN  = 15;
+    public static final int TEX_NEON_PINK  = 16;
+    public static final int TEX_NEON_GREEN = 17;
+    public static final int TEX_NEON_AMBER = 18;
+    private static final int TEX_COUNT = 19;
 
     private Texture[] textures = new Texture[TEX_COUNT];
 
@@ -62,6 +66,10 @@ public class Renderer {
         textures[TEX_BOOK_RED]    = new Texture(0.55f, 0.15f, 0.15f);
         textures[TEX_BOOK_GREY]   = new Texture(0.35f, 0.35f, 0.35f);
         textures[TEX_BOOK_WHITE]  = new Texture(0.85f, 0.82f, 0.75f);
+        textures[TEX_NEON_CYAN]  = new Texture(0.0f, 0.9f, 1.0f);
+        textures[TEX_NEON_PINK]  = new Texture(1.0f, 0.2f, 0.6f);
+        textures[TEX_NEON_GREEN] = new Texture(0.1f, 1.0f, 0.3f);
+        textures[TEX_NEON_AMBER] = new Texture(1.0f, 0.7f, 0.1f);
 
         projectionMatrix = new Matrix4f();
     }

@@ -57,6 +57,20 @@ public class RepoMapper {
             // No remote — local only
         }
 
+        // Get last commit
+        try {
+            ProcessBuilder pb = new ProcessBuilder("git", "-C", repoDir.getAbsolutePath(),
+                "log", "-1", "--format=%s (%ar)");
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            String msg = new String(p.getInputStream().readAllBytes()).trim();
+            if (!msg.isEmpty() && p.waitFor() == 0) {
+                room.setLastCommit(msg);
+            }
+        } catch (Exception e) {
+            // No commits yet
+        }
+
         // Detect primary language by file extensions
         File[] files = repoDir.listFiles();
         if (files != null) {

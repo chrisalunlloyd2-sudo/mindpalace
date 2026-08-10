@@ -169,6 +169,38 @@ public class WorldBuilder {
             r.drawCube(new Vector3f(wallX, s.y + h / 2f, segCz),
                 new Vector3f(wallT, h, segLen), Renderer.TEX_WALL);
         }
+
+        // Neon signs above each door
+        for (Room room : rooms) {
+            if (room.getHallwaySide() == (side == -1 ? 0 : 1) && room.getFloor() == hw.getFloor()) {
+                Vector3f dp = room.getDoorPosition();
+                if (dp == null) continue;
+                renderNeonSign(r, wallX, s.y + h - 0.3f, dp.z, room);
+            }
+        }
+    }
+
+    private void renderNeonSign(Renderer r, float wallX, float signY, float signZ, Room room) {
+        float signW = 1.4f, signH = 0.25f, signD = 0.06f;
+        float glowW = signW + 0.12f, glowH = signH + 0.12f, glowD = 0.03f;
+        float offsetX = wallX > 0 ? -0.15f : 0.15f; // protrude into hallway
+
+        int neonColor = room.isPrivate() ? Renderer.TEX_NEON_PINK : Renderer.TEX_NEON_CYAN;
+
+        // Glow halo (back layer, slightly larger)
+        r.drawCube(new Vector3f(wallX + offsetX, signY, signZ),
+            new Vector3f(glowD, glowH, glowW), Renderer.TEX_NEON_AMBER);
+
+        // Sign panel
+        r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.02f : 0.02f), signY, signZ),
+            new Vector3f(signD, signH, signW), neonColor);
+
+        // Mounting brackets
+        float bracketW = 0.04f;
+        r.drawCube(new Vector3f(wallX + offsetX, signY + signH / 2f + 0.06f, signZ),
+            new Vector3f(glowD + 0.02f, 0.06f, bracketW), Renderer.TEX_DOOR);
+        r.drawCube(new Vector3f(wallX + offsetX, signY - signH / 2f - 0.06f, signZ),
+            new Vector3f(glowD + 0.02f, 0.06f, bracketW), Renderer.TEX_DOOR);
     }
 
     private void renderRoom(Renderer r, Room room) {

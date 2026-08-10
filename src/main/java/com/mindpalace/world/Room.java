@@ -16,6 +16,7 @@ public class Room {
     private int starCount;
     private String localPath;
     private String remoteUrl;
+    private String lastCommit;  // most recent commit message + date
 
     // Position in world
     private Vector3f doorPosition;  // center of doorway
@@ -55,6 +56,8 @@ public class Room {
     public void setLocalPath(String path) { this.localPath = path; }
     public String getRemoteUrl() { return remoteUrl; }
     public void setRemoteUrl(String url) { this.remoteUrl = url; }
+    public String getLastCommit() { return lastCommit; }
+    public void setLastCommit(String c) { this.lastCommit = c; }
 
     public Vector3f getDoorPosition() { return doorPosition; }
     public void setDoorPosition(Vector3f pos) { this.doorPosition = pos; }
