@@ -104,8 +104,8 @@ public class Player {
 
         camera.setPosition(newPos);
 
-        // Door interaction
-        if (input.isKeyJustPressed(GLFW.GLFW_KEY_E) && interactCooldown <= 0) {
+        // Door interaction — Enter key
+        if (input.isKeyJustPressed(GLFW.GLFW_KEY_ENTER) && interactCooldown <= 0) {
             if (currentRoom == null) {
                 Room target = findDoor(world);
                 if (target != null) { enterRoom(target); interactCooldown = 0.5; }

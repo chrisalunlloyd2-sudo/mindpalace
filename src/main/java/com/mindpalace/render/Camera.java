@@ -58,8 +58,8 @@ public class Camera {
 
     /** Raw mouse input — dx/dy are pixel deltas. Sensitivity applied here. */
     public void rotate(float dx, float dy) {
-        float sens = 0.08f; // single source of truth
-        yaw += dx * sens;
+        float sens = 0.08f;
+        yaw -= dx * sens;  // negate: mouse right = look right
         pitch -= dy * sens;
         if (pitch > 89) pitch = 89;
         if (pitch < -89) pitch = -89;

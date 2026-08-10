@@ -24,7 +24,7 @@ public class HUD {
             if (origin.distance(dp) < INTERACT_RANGE) {
                 Vector3f to = new Vector3f(dp).sub(origin).normalize();
                 if (front.dot(to) > 0.85f) {
-                    prompt = "[E] " + room.getDisplayLabel();
+                    prompt = "[ENTER] " + room.getDisplayLabel();
                     break;
                 }
             }
