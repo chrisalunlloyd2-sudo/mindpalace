@@ -96,7 +96,7 @@ public class GameEngine {
         world = new WorldBuilder();
         hud = new HUD();
         audio = new AudioEngine();
-        state = GameState.MENU;
+        state = GameState.PLAYING;
 
         // Build the world
         world.build();
