@@ -7,8 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Procedural world builder — hallways, rooms with doors, shelves.
- * Frustum + distance culling for performance.
+ * Procedural world builder — hallways with door cutouts, rooms with doors, shelves.
+ * Frustum + distance culling.
  */
 public class WorldBuilder {
     private List<Room> rooms = new ArrayList<>();
@@ -22,9 +22,7 @@ public class WorldBuilder {
     private RepoMapper repoMapper;
     private RoomPopulator populator;
 
-    // Culling
-    private static final float CULL_DISTANCE = 40.0f;
-    private static final float ROOM_CULL_DISTANCE = 25.0f;
+    private static final float ROOM_CULL_DISTANCE = 30.0f;
     private static final int MAX_VISIBLE_BOOKS = 20;
 
     public WorldBuilder() {
@@ -88,9 +86,9 @@ public class WorldBuilder {
         Vector3f camPos = camera.getPosition();
         Vector3f camFront = camera.getFront();
 
-        // Render hallways (always visible — cheap, 6 cubes each)
+        // Render hallways with door cutouts
         for (Hallway hw : hallways) {
-            if (isHallwayVisible(hw, camPos)) renderHallway(r, hw);
+            if (isHallwayNear(hw, camPos)) renderHallway(r, hw);
         }
 
         // Render only nearby rooms
@@ -98,29 +96,25 @@ public class WorldBuilder {
             Vector3f c = room.getRoomCenter();
             float dist = camPos.distance(c);
             if (dist > ROOM_CULL_DISTANCE) continue;
-            // Frustum check: is room roughly in front of camera?
             if (!isInFront(camPos, camFront, c, dist)) continue;
             renderRoom(r, room);
         }
     }
 
-    private boolean isHallwayVisible(Hallway hw, Vector3f camPos) {
+    private boolean isHallwayNear(Hallway hw, Vector3f camPos) {
         float hz = hw.getStart().z;
         float len = hw.getEnd().z - hz;
         float midZ = hz + len / 2f;
-        float dx = camPos.x;
-        float dz = camPos.z - midZ;
-        return Math.abs(dx) < HALLWAY_WIDTH + 5 && Math.abs(dz) < len / 2f + CULL_DISTANCE;
+        return Math.abs(camPos.x) < HALLWAY_WIDTH + 5 && Math.abs(camPos.z - midZ) < len / 2f + 40;
     }
 
     private boolean isInFront(Vector3f camPos, Vector3f camFront, Vector3f target, float dist) {
-        // Simple dot-product check: is target within ~120° FOV?
         float dx = target.x - camPos.x;
         float dz = target.z - camPos.z;
         float len = (float) Math.sqrt(dx * dx + dz * dz);
         if (len < 0.01f) return true;
         float dot = (dx / len) * camFront.x + (dz / len) * camFront.z;
-        return dot > -0.3f || dist < 8.0f; // behind but close = still render
+        return dot > -0.3f || dist < 8.0f;
     }
 
     private void renderHallway(Renderer r, Hallway hw) {
@@ -128,13 +122,67 @@ public class WorldBuilder {
         float w = hw.getWidth(), h = hw.getHeight();
         float len = hw.getEnd().z - s.z;
         float cx = 0, cz = s.z + len / 2f;
+        float wallT = 0.25f;
 
+        // Floor + Ceiling
         r.drawCube(new Vector3f(cx, s.y, cz), new Vector3f(w, 0.15f, len), Renderer.TEX_FLOOR);
         r.drawCube(new Vector3f(cx, s.y + h, cz), new Vector3f(w, 0.15f, len), Renderer.TEX_CEILING);
-        r.drawCube(new Vector3f(-w / 2f, s.y + h / 2f, cz), new Vector3f(0.25f, h, len), Renderer.TEX_WALL);
-        r.drawCube(new Vector3f(w / 2f, s.y + h / 2f, cz), new Vector3f(0.25f, h, len), Renderer.TEX_WALL);
-        r.drawCube(new Vector3f(cx, s.y + h / 2f, hw.getEnd().z), new Vector3f(w, h, 0.25f), Renderer.TEX_WALL);
-        r.drawCube(new Vector3f(cx, s.y + h / 2f, s.z), new Vector3f(w, h, 0.25f), Renderer.TEX_WALL);
+
+        // End walls
+        r.drawCube(new Vector3f(cx, s.y + h / 2f, hw.getEnd().z), new Vector3f(w, h, wallT), Renderer.TEX_WALL);
+        r.drawCube(new Vector3f(cx, s.y + h / 2f, s.z), new Vector3f(w, h, wallT), Renderer.TEX_WALL);
+
+        // Left and right walls WITH DOOR CUTOUTS
+        renderWallWithDoors(r, s, hw, -1); // left side
+        renderWallWithDoors(r, s, hw, 1);  // right side
+    }
+
+    private void renderWallWithDoors(Renderer r, Vector3f s, Hallway hw, int side) {
+        float h = hw.getHeight();
+        float len = hw.getEnd().z - s.z;
+        float wallX = side * hw.getWidth() / 2f;
+        float wallT = 0.25f;
+        float dw = Room.DOOR_WIDTH;
+        float dh = Room.DOOR_HEIGHT;
+        float doorBottom = s.y; // door starts at floor
+
+        // Find all doors on this side of this hallway
+        List<Float> doorZs = new ArrayList<>();
+        for (Room room : rooms) {
+            if (room.getHallwaySide() == (side == -1 ? 0 : 1) && room.getFloor() == hw.getFloor()) {
+                Vector3f dp = room.getDoorPosition();
+                if (dp != null) doorZs.add(dp.z);
+            }
+        }
+        doorZs.sort(Float::compare);
+
+        // Build wall segments between doors
+        float prevZ = s.z;
+        for (float dz : doorZs) {
+            float segStart = prevZ;
+            float segEnd = dz - dw / 2f;
+            if (segEnd > segStart) {
+                float segCz = (segStart + segEnd) / 2f;
+                float segLen = segEnd - segStart;
+                r.drawCube(new Vector3f(wallX, s.y + h / 2f, segCz),
+                    new Vector3f(wallT, h, segLen), Renderer.TEX_WALL);
+            }
+            // Wall above door
+            float aboveBottom = doorBottom + dh;
+            float aboveH = h - dh;
+            if (aboveH > 0) {
+                r.drawCube(new Vector3f(wallX, aboveBottom + aboveH / 2f, dz),
+                    new Vector3f(wallT, aboveH, dw), Renderer.TEX_WALL);
+            }
+            prevZ = dz + dw / 2f;
+        }
+        // Final segment after last door
+        if (prevZ < s.z + len) {
+            float segCz = (prevZ + s.z + len) / 2f;
+            float segLen = s.z + len - prevZ;
+            r.drawCube(new Vector3f(wallX, s.y + h / 2f, segCz),
+                new Vector3f(wallT, h, segLen), Renderer.TEX_WALL);
+        }
     }
 
     private void renderRoom(Renderer r, Room room) {
@@ -151,6 +199,7 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x - w / 2f, c.y, c.z), new Vector3f(t, h, d), Renderer.TEX_WALL);
         r.drawCube(new Vector3f(c.x + w / 2f, c.y, c.z), new Vector3f(t, h, d), Renderer.TEX_WALL);
 
+        // Front wall with door gap
         float fz = side == 0 ? c.z - d / 2f : c.z + d / 2f;
         float dh = Room.DOOR_WIDTH / 2f;
         float dw = Room.DOOR_HEIGHT;
@@ -160,6 +209,7 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x + w / 2f - leftW / 2f, c.y, fz), new Vector3f(leftW, h, t), Renderer.TEX_WALL);
         r.drawCube(new Vector3f(c.x, c.y + h / 2f - (h - dw) / 2f, fz), new Vector3f(Room.DOOR_WIDTH, h - dw, t), Renderer.TEX_WALL);
 
+        // Door frame
         float frameT = 0.08f;
         r.drawCube(new Vector3f(c.x - dh, c.y - h / 2f + dw / 2f, fz), new Vector3f(frameT, dw, frameT), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(c.x + dh, c.y - h / 2f + dw / 2f, fz), new Vector3f(frameT, dw, frameT), Renderer.TEX_DOOR);

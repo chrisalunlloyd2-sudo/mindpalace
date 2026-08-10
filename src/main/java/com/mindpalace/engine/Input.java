@@ -3,19 +3,18 @@ package com.mindpalace.engine;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * Input — keyboard + mouse. Cursor-hide+recenter method (Intel HD compatible).
- * Ignores the synthetic cursor-pos callback from recenter to prevent drift.
+ * Input — keyboard + raw mouse via GLFW_CURSOR_DISABLED.
+ * Standard FPS approach: cursor locked, raw deltas from callback.
  */
 public class Input {
     private final long window;
     private final boolean[] keys = new boolean[GLFW.GLFW_KEY_LAST + 1];
     private final boolean[] keysPrev = new boolean[GLFW.GLFW_KEY_LAST + 1];
 
-    private double mouseX, mouseY;
-    private double centerX, centerY;
+    private double lastX, lastY;
     private double accumDX, accumDY;
     private boolean captured;
-    private boolean skipNext;
+    private boolean firstMouse = true;
 
     private boolean leftClick, rightClick;
     private boolean leftClickPrev, rightClickPrev;
@@ -23,17 +22,12 @@ public class Input {
     public Input(long window) {
         this.window = window;
 
-        int[] w = new int[1], h = new int[1];
-        GLFW.glfwGetWindowSize(window, w, h);
-        centerX = w[0] / 2.0;
-        centerY = h[0] / 2.0;
-
         GLFW.glfwSetCursorPosCallback(window, (win, x, y) -> {
-            if (skipNext) { skipNext = false; return; }
-            accumDX += x - mouseX;
-            accumDY += y - mouseY;
-            mouseX = x;
-            mouseY = y;
+            if (firstMouse) { lastX = x; lastY = y; firstMouse = false; return; }
+            accumDX += x - lastX;
+            accumDY += y - lastY;
+            lastX = x;
+            lastY = y;
         });
 
         GLFW.glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
@@ -51,24 +45,13 @@ public class Input {
 
         for (int i = 32; i <= GLFW.GLFW_KEY_LAST; i++)
             keys[i] = GLFW.glfwGetKey(window, i) == GLFW.GLFW_PRESS;
-
-        // Recenter cursor each frame (skip the synthetic event)
-        if (captured) {
-            skipNext = true;
-            GLFW.glfwSetCursorPos(window, centerX, centerY);
-            mouseX = centerX;
-            mouseY = centerY;
-        }
     }
 
     public void setCursorCaptured(boolean cap) {
         captured = cap;
         if (cap) {
-            GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_HIDDEN);
-            skipNext = true;
-            GLFW.glfwSetCursorPos(window, centerX, centerY);
-            mouseX = centerX;
-            mouseY = centerY;
+            GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+            firstMouse = true;
             accumDX = 0; accumDY = 0;
         } else {
             GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
