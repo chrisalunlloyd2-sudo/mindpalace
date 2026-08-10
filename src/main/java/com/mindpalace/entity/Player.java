@@ -32,8 +32,8 @@ public class Player {
     public Player() {
         camera = new Camera();
         camera.setPosition(0, playerHeight, 3);
-        // Look down the hallway (+Z)
-        camera.rotate(180, 0); // yaw 90 = looking +Z
+        // Look down the hallway (+Z): yaw=90 means front=(0,0,1)
+        camera.setYaw(90);
         velocity = new Vector3f(0, 0, 0);
     }
 

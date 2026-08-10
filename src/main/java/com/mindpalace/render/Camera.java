@@ -96,6 +96,7 @@ public class Camera {
     public Vector3f getRight() { return right; }
     public Vector3f getUp() { return up; }
     public float getYaw() { return yaw; }
+    public void setYaw(float yaw) { this.yaw = yaw; updateVectors(); }
     public float getPitch() { return pitch; }
     public float getFov() { return fov; }
     public void setFov(float fov) { this.fov = fov; }
