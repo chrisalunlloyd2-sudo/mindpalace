@@ -24,7 +24,13 @@ public class Renderer {
     public static final int TEX_PLAQUE = 6;
     public static final int TEX_WHITE  = 7;
     public static final int TEX_CROSSHAIR = 8;
-    private static final int TEX_COUNT = 9;
+    public static final int TEX_BOOK_BLUE   = 9;
+    public static final int TEX_BOOK_YELLOW = 10;
+    public static final int TEX_BOOK_ORANGE = 11;
+    public static final int TEX_BOOK_RED    = 12;
+    public static final int TEX_BOOK_GREY   = 13;
+    public static final int TEX_BOOK_WHITE  = 14;
+    private static final int TEX_COUNT = 15;
 
     private Texture[] textures = new Texture[TEX_COUNT];
 
@@ -49,7 +55,13 @@ public class Renderer {
         textures[TEX_BOOK]   = new Texture(0.15f, 0.40f, 0.25f);  // green (default)
         textures[TEX_PLAQUE] = new Texture(0.70f, 0.60f, 0.30f);  // brass/gold
         textures[TEX_WHITE]  = new Texture(1.0f, 1.0f, 1.0f);
-        textures[TEX_CROSSHAIR] = new Texture(0.0f, 1.0f, 0.0f); // bright green laser dot
+        textures[TEX_CROSSHAIR] = new Texture(0.0f, 1.0f, 0.0f);
+        textures[TEX_BOOK_BLUE]   = new Texture(0.15f, 0.25f, 0.55f);
+        textures[TEX_BOOK_YELLOW] = new Texture(0.65f, 0.55f, 0.10f);
+        textures[TEX_BOOK_ORANGE] = new Texture(0.70f, 0.35f, 0.10f);
+        textures[TEX_BOOK_RED]    = new Texture(0.55f, 0.15f, 0.15f);
+        textures[TEX_BOOK_GREY]   = new Texture(0.35f, 0.35f, 0.35f);
+        textures[TEX_BOOK_WHITE]  = new Texture(0.85f, 0.82f, 0.75f);
 
         projectionMatrix = new Matrix4f();
     }

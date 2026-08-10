@@ -43,6 +43,29 @@ public class Book {
     public float getSpineColor() { return spineColor; }
     public float getThickness() { return thickness; }
 
+    /** Texture ID based on language for colored book spines. */
+    public int getTextureId() {
+        if (language == null) return 5; // TEX_BOOK (green default)
+        switch (language) {
+            case "Java":       return 5;  // green
+            case "Python":     return 9;  // blue
+            case "JavaScript": return 10; // yellow
+            case "TypeScript": return 10; // yellow
+            case "HTML":       return 11; // orange
+            case "CSS":        return 11; // orange
+            case "C++":        return 12; // red
+            case "Rust":       return 12; // red
+            case "Go":         return 9;  // blue
+            case "Shell":      return 13; // grey
+            case "Markdown":   return 14; // white/cream
+            case "JSON":       return 10; // yellow
+            case "YAML":       return 10; // yellow
+            case "SQL":        return 9;  // blue
+            case "Text":       return 14; // white
+            default:           return 5;  // green
+        }
+    }
+
     /**
      * Detect language from file extension.
      */
