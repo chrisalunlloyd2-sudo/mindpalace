@@ -23,7 +23,8 @@ public class Renderer {
     public static final int TEX_BOOK   = 5;
     public static final int TEX_PLAQUE = 6;
     public static final int TEX_WHITE  = 7;
-    private static final int TEX_COUNT = 8;
+    public static final int TEX_CROSSHAIR = 8;
+    private static final int TEX_COUNT = 9;
 
     private Texture[] textures = new Texture[TEX_COUNT];
 
@@ -48,6 +49,7 @@ public class Renderer {
         textures[TEX_BOOK]   = new Texture(0.15f, 0.40f, 0.25f);  // green (default)
         textures[TEX_PLAQUE] = new Texture(0.70f, 0.60f, 0.30f);  // brass/gold
         textures[TEX_WHITE]  = new Texture(1.0f, 1.0f, 1.0f);
+        textures[TEX_CROSSHAIR] = new Texture(0.0f, 1.0f, 0.0f); // bright green laser dot
 
         projectionMatrix = new Matrix4f();
     }
