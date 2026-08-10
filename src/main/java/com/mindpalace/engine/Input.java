@@ -54,8 +54,8 @@ public class Input {
         leftClickPrev = leftClick;
         rightClickPrev = rightClick;
 
-        // Poll all keys
-        for (int i = 0; i <= GLFW.GLFW_KEY_LAST; i++) {
+        // Poll valid keys only (GLFW key codes start at 32 = GLFW_KEY_SPACE)
+        for (int i = 32; i <= GLFW.GLFW_KEY_LAST; i++) {
             keys[i] = GLFW.glfwGetKey(window, i) == GLFW.GLFW_PRESS;
         }
     }
