@@ -4,17 +4,16 @@ import org.lwjgl.glfw.GLFW;
 
 /**
  * Input system — keyboard + mouse for FPS controls.
- * Tracks held keys, just-pressed keys, mouse delta.
+ * Uses cursor-hide + recenter method (compatible with all GPUs).
  */
 public class Input {
     private final long window;
     private final boolean[] keys = new boolean[GLFW.GLFW_KEY_LAST + 1];
     private final boolean[] keysPrev = new boolean[GLFW.GLFW_KEY_LAST + 1];
 
-    private double mouseX, mouseY;
     private double deltaX, deltaY;
-    private boolean firstMouse = true;
-    private double lastMouseX, lastMouseY;
+    private double centerX, centerY;
+    private boolean cursorCaptured = true;
 
     private boolean leftClick, rightClick;
     private boolean leftClickPrev, rightClickPrev;
@@ -22,23 +21,14 @@ public class Input {
     public Input(long window) {
         this.window = window;
 
-        // Mouse callback
-        GLFW.glfwSetCursorPosCallback(window, (w, x, y) -> {
-            if (firstMouse) {
-                lastMouseX = x;
-                lastMouseY = y;
-                firstMouse = false;
-            }
-            deltaX = x - lastMouseX;
-            deltaY = y - lastMouseY;
-            lastMouseX = x;
-            lastMouseY = y;
-            mouseX = x;
-            mouseY = y;
-        });
+        // Get initial window center for cursor recenter
+        int[] w = new int[1], h = new int[1];
+        GLFW.glfwGetWindowSize(window, w, h);
+        centerX = w[0] / 2.0;
+        centerY = h[0] / 2.0;
 
         // Mouse button callback
-        GLFW.glfwSetMouseButtonCallback(window, (w, button, action, mods) -> {
+        GLFW.glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
             if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
                 leftClick = action == GLFW.GLFW_PRESS;
             }
@@ -49,20 +39,40 @@ public class Input {
     }
 
     public void update(double dt) {
-        // Copy current state to previous
+        // Copy current key state to previous
         System.arraycopy(keys, 0, keysPrev, 0, keys.length);
         leftClickPrev = leftClick;
         rightClickPrev = rightClick;
 
-        // Poll valid keys only (GLFW key codes start at 32 = GLFW_KEY_SPACE)
+        // Poll valid keys only (GLFW key codes start at 32)
         for (int i = 32; i <= GLFW.GLFW_KEY_LAST; i++) {
             keys[i] = GLFW.glfwGetKey(window, i) == GLFW.GLFW_PRESS;
         }
+
+        // Mouse delta via cursor recenter (works on all GPUs)
+        if (cursorCaptured) {
+            double[] mx = new double[1], my = new double[1];
+            GLFW.glfwGetCursorPos(window, mx, my);
+            deltaX = mx[0] - centerX;
+            deltaY = my[0] - centerY;
+            GLFW.glfwSetCursorPos(window, centerX, centerY);
+        } else {
+            deltaX = 0;
+            deltaY = 0;
+        }
     }
 
-    public boolean isKeyDown(int key) {
-        return keys[key];
+    public void setCursorCaptured(boolean captured) {
+        this.cursorCaptured = captured;
+        if (captured) {
+            GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_HIDDEN);
+            GLFW.glfwSetCursorPos(window, centerX, centerY);
+        } else {
+            GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
+        }
     }
+
+    public boolean isKeyDown(int key) { return keys[key]; }
 
     public boolean isKeyJustPressed(int key) {
         return keys[key] && !keysPrev[key];
@@ -84,14 +94,6 @@ public class Input {
         return dy;
     }
 
-    public boolean isLeftClick() {
-        return leftClick && !leftClickPrev;
-    }
-
-    public boolean isRightClick() {
-        return rightClick && !rightClickPrev;
-    }
-
-    public double getMouseX() { return mouseX; }
-    public double getMouseY() { return mouseY; }
+    public boolean isLeftClick() { return leftClick && !leftClickPrev; }
+    public boolean isRightClick() { return rightClick && !rightClickPrev; }
 }

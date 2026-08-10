@@ -105,7 +105,7 @@ public class GameEngine {
         github = new GitHubClient();
 
         // Lock mouse for FPS controls
-        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+        input.setCursorCaptured(true);
 
         lastFrameTime = GLFW.glfwGetTime();
         accumulator = 0.0;
@@ -153,10 +153,10 @@ public class GameEngine {
         if (input.isKeyJustPressed(GLFW.GLFW_KEY_ESCAPE)) {
             if (state == GameState.PLAYING) {
                 state = GameState.MENU;
-                GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
+                input.setCursorCaptured(false);
             } else {
                 state = GameState.PLAYING;
-                GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+                input.setCursorCaptured(true);
             }
         }
 
