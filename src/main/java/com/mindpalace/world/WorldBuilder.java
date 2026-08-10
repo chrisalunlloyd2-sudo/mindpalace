@@ -149,6 +149,12 @@ public class WorldBuilder {
             new Vector3f(0, start.y + h / 2, end.z),
             new Vector3f(w, h, 0.2f),
             null);
+
+        // Start wall (behind player at spawn)
+        renderer.drawCube(
+            new Vector3f(0, start.y + h / 2, start.z),
+            new Vector3f(w, h, 0.2f),
+            null);
     }
 
     private void renderRoom(Renderer renderer, Room room) {
