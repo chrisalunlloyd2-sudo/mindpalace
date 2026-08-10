@@ -14,15 +14,9 @@ public class HUD {
     private String lastPrompt = "";
 
     public void render(Renderer renderer, Player player, WorldBuilder world) {
-        // Crosshair dot — tiny cube 0.4m in front of camera
-        Vector3f camPos = player.getPosition();
-        Vector3f front = player.getLookDirection();
-        Vector3f dotPos = new Vector3f(camPos).add(
-            front.x * 0.4f, front.y * 0.4f, front.z * 0.4f);
-        renderer.drawCube(dotPos, new Vector3f(0.015f, 0.015f, 0.015f), Renderer.TEX_CROSSHAIR);
-
         // Door interaction prompt
         Vector3f origin = player.getPosition();
+        Vector3f front = player.getLookDirection();
         String prompt = "";
         for (Room room : world.getRooms()) {
             Vector3f dp = room.getDoorPosition();
