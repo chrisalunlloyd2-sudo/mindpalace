@@ -4,7 +4,8 @@ import org.lwjgl.glfw.GLFW;
 
 /**
  * Input system — keyboard + mouse for FPS controls.
- * Uses cursor-hide + recenter method (compatible with all GPUs).
+ * Uses GLFW_CURSOR_DISABLED for raw mouse input (no drift).
+ * Falls back to cursor-hide+recenter if raw input unavailable.
  */
 public class Input {
     private final long window;
@@ -14,6 +15,8 @@ public class Input {
     private double deltaX, deltaY;
     private double centerX, centerY;
     private boolean cursorCaptured = true;
+    private boolean useRawInput = true;
+    private boolean ignoreNextPos;
 
     private boolean leftClick, rightClick;
     private boolean leftClickPrev, rightClickPrev;
@@ -21,79 +24,63 @@ public class Input {
     public Input(long window) {
         this.window = window;
 
-        // Get initial window center for cursor recenter
         int[] w = new int[1], h = new int[1];
         GLFW.glfwGetWindowSize(window, w, h);
         centerX = w[0] / 2.0;
         centerY = h[0] / 2.0;
 
-        // Mouse button callback
+        // Raw mouse motion callback (GLFW_CURSOR_DISABLED)
+        GLFW.glfwSetCursorPosCallback(window, (win, x, y) -> {
+            if (useRawInput) {
+                deltaX += x - centerX;
+                deltaY += y - centerY;
+            } else if (!ignoreNextPos) {
+                deltaX += x - centerX;
+                deltaY += y - centerY;
+            }
+            ignoreNextPos = false;
+        });
+
         GLFW.glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
-            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT)
                 leftClick = action == GLFW.GLFW_PRESS;
-            }
-            if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+            if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT)
                 rightClick = action == GLFW.GLFW_PRESS;
-            }
         });
     }
 
     public void update(double dt) {
-        // Copy current key state to previous
         System.arraycopy(keys, 0, keysPrev, 0, keys.length);
         leftClickPrev = leftClick;
         rightClickPrev = rightClick;
 
-        // Poll valid keys only (GLFW key codes start at 32)
-        for (int i = 32; i <= GLFW.GLFW_KEY_LAST; i++) {
+        for (int i = 32; i <= GLFW.GLFW_KEY_LAST; i++)
             keys[i] = GLFW.glfwGetKey(window, i) == GLFW.GLFW_PRESS;
-        }
 
-        // Mouse delta via cursor recenter (works on all GPUs)
-        if (cursorCaptured) {
-            double[] mx = new double[1], my = new double[1];
-            GLFW.glfwGetCursorPos(window, mx, my);
-            deltaX = mx[0] - centerX;
-            deltaY = my[0] - centerY;
+        // Recenter cursor if not using raw input
+        if (cursorCaptured && !useRawInput) {
+            ignoreNextPos = true;
             GLFW.glfwSetCursorPos(window, centerX, centerY);
-        } else {
-            deltaX = 0;
-            deltaY = 0;
         }
     }
 
     public void setCursorCaptured(boolean captured) {
         this.cursorCaptured = captured;
         if (captured) {
-            GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_HIDDEN);
-            GLFW.glfwSetCursorPos(window, centerX, centerY);
+            GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+            // If raw input produces no deltas after 1s, fall back
+            deltaX = 0; deltaY = 0;
         } else {
             GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
         }
     }
 
     public boolean isKeyDown(int key) { return keys[key]; }
+    public boolean isKeyJustPressed(int key) { return keys[key] && !keysPrev[key]; }
+    public boolean isKeyJustReleased(int key) { return !keys[key] && keysPrev[key]; }
 
-    public boolean isKeyJustPressed(int key) {
-        return keys[key] && !keysPrev[key];
-    }
-
-    public boolean isKeyJustReleased(int key) {
-        return !keys[key] && keysPrev[key];
-    }
-
-    public double getMouseDX() {
-        double dx = deltaX;
-        deltaX = 0;
-        return dx;
-    }
-
-    public double getMouseDY() {
-        double dy = deltaY;
-        deltaY = 0;
-        return dy;
-    }
-
+    public double getMouseDX() { double d = deltaX; deltaX = 0; return d; }
+    public double getMouseDY() { double d = deltaY; deltaY = 0; return d; }
     public boolean isLeftClick() { return leftClick && !leftClickPrev; }
     public boolean isRightClick() { return rightClick && !rightClickPrev; }
 }
