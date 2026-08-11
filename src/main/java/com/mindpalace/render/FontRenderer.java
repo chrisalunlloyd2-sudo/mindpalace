@@ -18,12 +18,12 @@ import java.nio.ByteBuffer;
  * Glyph UVs computed in shader from glyph index uniform.
  */
 public class FontRenderer {
-    private static final int GLYPH_W = 8;
-    private static final int GLYPH_H = 16;
+    private static final int GLYPH_W = 16;
+    private static final int GLYPH_H = 28;
     private static final int COLS = 16;
     private static final int ROWS = 6;
-    private static final int ATLAS_W = COLS * GLYPH_W;
-    private static final int ATLAS_H = ROWS * GLYPH_H;
+    private static final int ATLAS_W = COLS * GLYPH_W;  // 256
+    private static final int ATLAS_H = ROWS * GLYPH_H;  // 168
 
     private int textureId;
     private int vao, vbo, ebo;
@@ -49,7 +49,7 @@ public class FontRenderer {
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         g.setColor(Color.WHITE);
-        g.setFont(new Font("Monospaced", Font.BOLD, 12));
+        g.setFont(new Font("Monospaced", Font.BOLD, 20));
 
         FontMetrics fm = g.getFontMetrics();
         for (int i = 0; i < 95; i++) {
@@ -160,6 +160,17 @@ public class FontRenderer {
 
     public void renderText(String text, Vector3f position, float charSize, Vector3f color,
                            Matrix4f projection, Matrix4f view, Vector3f facingNormal) {
+        renderTextInternal(text, position, charSize, color, projection, view, facingNormal, false);
+    }
+
+    /** Render text flat on the floor (XZ plane, facing +Y). */
+    public void renderFloorText(String text, Vector3f position, float charSize, Vector3f color,
+                                Matrix4f projection, Matrix4f view) {
+        renderTextInternal(text, position, charSize, color, projection, view, new Vector3f(0, 1, 0), true);
+    }
+
+    private void renderTextInternal(String text, Vector3f position, float charSize, Vector3f color,
+                                    Matrix4f projection, Matrix4f view, Vector3f facingNormal, boolean floor) {
         if (!ready || text == null || text.isEmpty()) return;
 
         GL11.glEnable(GL11.GL_BLEND);
@@ -187,10 +198,16 @@ public class FontRenderer {
             int glyphIndex = c - 32;
 
             float cx = startX + i * charSize;
-            Matrix4f model = new Matrix4f()
-                .translate(cx, position.y, position.z)
-                .rotateY(angleY)
-                .scale(charSize, charSize * 1.6f, 1f);
+            Matrix4f model = new Matrix4f();
+            if (floor) {
+                model.translate(cx, position.y, position.z)
+                     .rotateX((float) -Math.PI / 2f)
+                     .scale(charSize, charSize * 1.6f, 1f);
+            } else {
+                model.translate(cx, position.y, position.z)
+                     .rotateY(angleY)
+                     .scale(charSize, charSize * 1.6f, 1f);
+            }
 
             textShader.setUniform("model", model);
             textShader.setUniform("glyphIndex", glyphIndex);

@@ -347,6 +347,7 @@ public class GameEngine {
         // Render neon sign text
         if (fontRenderer != null && fontRenderer.isReady()) {
             renderNeonSignText();
+            renderFloorMap();
         }
 
         if (state == GameState.PLAYING) {
@@ -391,10 +392,43 @@ public class GameEngine {
 
             // Truncate long names
             String name = room.getRepoName();
-            if (name.length() > 18) name = name.substring(0, 16) + "..";
+            if (name.length() > 14) name = name.substring(0, 12) + "..";
 
-            float charSize = 0.07f;
+            float charSize = 0.12f;
             fontRenderer.renderText(name, signPos, charSize, color, proj, view, facing);
+        }
+    }
+
+    private void renderFloorMap() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+
+        for (Room room : world.getRooms()) {
+            Vector3f dp = room.getDoorPosition();
+            if (dp == null) continue;
+            float dist = camPos.distance(dp);
+            if (dist > 15f) continue;
+
+            // Floor label position — in front of door on the floor
+            float wallX = room.getHallwaySide() == 0
+                ? -WorldBuilder.HALLWAY_WIDTH / 2f
+                : WorldBuilder.HALLWAY_WIDTH / 2f;
+            float offsetX = wallX > 0 ? -0.8f : 0.8f;
+            float floorY = room.getFloor() == 0 ? 0.02f : WorldBuilder.HALLWAY_HEIGHT + 1.0f + 0.02f;
+
+            Vector3f floorPos = new Vector3f(wallX + offsetX, floorY, dp.z);
+
+            // Short name for floor
+            String name = room.getRepoName();
+            if (name.length() > 10) name = name.substring(0, 8) + "..";
+
+            Vector3f color = room.isPrivate()
+                ? new Vector3f(0.8f, 0.3f, 0.5f)
+                : new Vector3f(0.3f, 0.7f, 0.9f);
+
+            fontRenderer.renderFloorText(name, floorPos, 0.10f, color, proj, view);
         }
     }
 

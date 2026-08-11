@@ -1,181 +1,154 @@
-# 🏰 MindPalace — 3D GitHub Repository Explorer
+# MindPalace — 3D GitHub Repository Explorer
 
-**A Doom-style first-person walkthrough of your code universe.**
+A Doom-style first-person walkthrough of your code universe. Walk a grand hallway where every door is a GitHub repo. Each room has wooden bookcases — every book is a file you can read, edit, create, or delete. Full GitHub CRUD from inside a 3D game.
 
-Walk through a grand hallway where every door is a GitHub repo. Each room has bookshelves — every book is a file you can read, edit, create, or delete. Full GitHub CRUD from inside a 3D game.
+## Features
 
-## 🎮 The Experience
+- 3D first-person engine with Phong lighting (LWJGL 3 + OpenGL 3.3)
+- 51 rooms across 2 floors, each mapped to a real GitHub repo
+- Wooden bookcases on 3 walls per room, books grouped by language
+- Color-coded book spines: blue=Python, yellow=JS, green=Java, red=C++, orange=HTML, grey=Shell, cream=Markdown
+- Neon signs above every door with repo name (cyan=public, pink=private)
+- Floor labels in front of each door
+- Retro terminal book editor — click any book to view/edit/create/delete/suggest
+- GitHub PAT auto-loaded from Windows Credential Manager
+- Full CRUD: read, edit, create, delete files — synced to GitHub
+- Last commit info shown in HUD when looking at a door
+- Frustum + distance culling for performance
+- Acceleration/friction movement (Doom-style), wall collision
 
-```
-     ┌──────────────────────────────────────────────────┐
-     │  ██ LONG HALLWAY (Ground Floor) ██               │
-     │  ┌──┐ ┌──┐ ┌──┐ ┌──┐    ┌──┐ ┌──┐ ┌──┐ ┌──┐    │
-     │  │R1│ │R2│ │R3│ │..│    │..│ │..│ │..│ │R25│    │
-     │  └──┘ └──┘ └──┘ └──┘    └──┘ └──┘ └──┘ └──┘    │
-     │  ← 25 rooms each side →                           │
-     │                         STAIRS →                  │
-     │  ██ UPPER HALLWAY ██                              │
-     │  ┌──┐ ┌──┐ ┌──┐ ┌──┐    ┌──┐ ┌──┐ ┌──┐ ┌──┐    │
-     │  │R26││R27││R28││..│    │..│ │..│ │..│ │R50│    │
-     │  └──┘ └──┘ └──┘ └──┘    └──┘ └──┘ └──┘ └──┘    │
-     │  + ViperAI_Notes special room                     │
-     └──────────────────────────────────────────────────┘
-```
+## Quick Start
 
-## 🏗️ Architecture
+### Prerequisites
 
-- **Engine:** LWJGL 3 + OpenGL 3.3+ (GPU-accelerated)
-- **Language:** Java 17
-- **Build:** Maven
-- **GitHub:** OkHttp REST API
-- **Math:** JOML
-- **Installer:** Inno Setup (Windows .exe)
+- Java 17+
+- Maven 3.9+
+- Windows 10/11 (uses Windows Credential Manager for GitHub auth)
+- GPU with OpenGL 3.3 support
 
-## 🎯 Features
+### Build & Run
 
-### Phase 1 (CURRENT)
-- ✅ 3D first-person engine with Phong lighting
-- ✅ Procedural hallway + room generation
-- ✅ 123 GitHub repos mapped to rooms
-- ✅ Books = files on shelves
-- ✅ WASD movement + mouse look
-- ✅ GitHub PAT auth (Windows Credential Manager)
-- ✅ Book viewer (read file contents)
-- ✅ Edit, create, delete books (files)
-- ✅ Settings menu (graphics, audio, controls, theme)
-- ✅ Windows installer with PAT input
-
-### Phase 2 (NEXT)
-- 🔲 ImGui-style overlay for book viewer
-- 🔲 Second room per repo (comments, gists, archive)
-- 🔲 Audio (footsteps, doors, ambient)
-- 🔲 Minimap
-- 🔲 Texture loading from files
-- 🔲 Gamepad support
-- 🔲 VR mode (OpenXR)
-
-## 🚀 Quick Start
-
-### Build
 ```bash
-# Set up Java and Maven
+# Clone
+git clone https://github.com/chrisalunlloyd2-sudo/mindpalace.git
+cd mindpalace
+
+# Set Java/Maven paths (Windows)
 export JAVA_HOME="C:/Program Files/Java/jdk-17"
 export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
 
 # Compile
-mvn clean compile
+"$JAVA_HOME/bin/java" -cp "$M2_HOME/boot/plexus-classworlds-2.11.0.jar" \
+  -Dclassworlds.conf="$M2_HOME/bin/m2.conf" -Dmaven.home="$M2_HOME" \
+  -Dmaven.multiModuleProjectDirectory="$PWD" \
+  org.codehaus.plexus.classworlds.launcher.Launcher clean compile
 
-# Package
-mvn package -DskipTests
+# Package (fat jar)
+"$JAVA_HOME/bin/java" -cp "$M2_HOME/boot/plexus-classworlds-2.11.0.jar" \
+  -Dclassworlds.conf="$M2_HOME/bin/m2.conf" -Dmaven.home="$M2_HOME" \
+  -Dmaven.multiModuleProjectDirectory="$PWD" \
+  org.codehaus.plexus.classworlds.launcher.Launcher package -DskipTests
 
 # Run
-java -jar target/mindpalace-1.0.0.jar
+"$JAVA_HOME/bin/java" -jar target/mindpalace-1.0.0.jar
 ```
 
 ### Controls
+
 | Key | Action |
 |-----|--------|
 | WASD | Move |
 | Mouse | Look around |
-| Shift | Sprint |
-| Space | Jump |
-| E | Interact (open door, read book) |
-| F | Toggle flashlight |
-| ESC | Settings menu |
+| Enter | Open door / exit room |
+| Left Click | Click book to open editor |
+| ESC | Toggle menu / close editor |
 | F11 | Fullscreen toggle |
 
-## 📦 Windows Installer
+### Book Editor Commands
 
-The installer (`mindpalace-setup-1.0.0.exe`) will:
-1. Install MindPalace to `Program Files\MindPalace`
-2. Ask for your GitHub PAT during install
-3. Auto-populate all 123 repos on first run
-4. Create desktop shortcut
+When a book is open, type these in the terminal:
 
-## 🔐 GitHub Integration
+| Command | Action |
+|---------|--------|
+| `:e` | Edit mode |
+| `:n` | Create new file |
+| `:d` | Delete file |
+| `:s` | AI suggestions |
+| `:w` | Save (in edit/create mode) |
+| `:q` | Close / go back |
+| `:y` | Confirm delete |
 
-MindPalace uses your GitHub Personal Access Token to:
-- List all your repos
-- Read file contents
-- Create, update, and delete files
-- Sync metadata
-
-Token is stored locally in Windows Credential Manager. Never sent anywhere except api.github.com.
-
-## 📊 Scale
-
-- **123 GitHub repos** (chrisalunlloyd2-sudo)
-- **49 local repos** in AIGEN_SYS
-- **ViperAI_Notes** special room
-- **~100 rooms** across 2 floors
-- **Thousands of books** (files)
-
-## 🎨 Themes
-
-- **Stone** — Classic dungeon hallway
-- **Wood** — Warm library feel
-- **Marble** — Grand archive
-- **SciFi** — Neon-lit corridor
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 mindpalace/
 ├── pom.xml
+├── README.md
 ├── src/main/java/com/mindpalace/
-│   ├── Main.java              # Entry point
+│   ├── Main.java
 │   ├── engine/
-│   │   ├── GameEngine.java    # Game loop, window, state
-│   │   ├── Input.java         # Keyboard + mouse
+│   │   ├── GameEngine.java    # Game loop, window, state, neon text, floor map
+│   │   ├── Input.java         # Keyboard + mouse (GLFW_CURSOR_DISABLED)
 │   │   └── GameState.java     # State enum
 │   ├── render/
-│   │   ├── Renderer.java      # OpenGL renderer
-│   │   ├── Shader.java        # GLSL shader wrapper
+│   │   ├── Renderer.java      # OpenGL renderer, 19 texture types
+│   │   ├── Shader.java        # GLSL shader wrapper (file + inline)
 │   │   ├── Mesh.java          # VAO/VBO/EBO
-│   │   ├── Texture.java       # STB texture loader
-│   │   └── Camera.java        # FPS camera
+│   │   ├── Texture.java       # Solid-color texture
+│   │   ├── Camera.java        # FPS camera
+│   │   └── FontRenderer.java  # Bitmap font atlas + text rendering
 │   ├── world/
-│   │   ├── WorldBuilder.java  # Procedural world gen
+│   │   ├── WorldBuilder.java  # Procedural world, bookcases, neon signs
 │   │   ├── Room.java          # Repo room entity
 │   │   ├── Book.java          # File book entity
 │   │   ├── Hallway.java       # Hallway segment
-│   │   ├── RepoMapper.java    # Local repo scanner
+│   │   ├── RepoMapper.java    # Local repo scanner + git log
 │   │   └── RoomPopulator.java # File→book mapper
 │   ├── entity/
-│   │   └── Player.java        # FPS controller
+│   │   └── Player.java        # FPS controller, collision, door interaction
 │   ├── github/
-│   │   ├── GitHubClient.java  # REST API client
+│   │   ├── GitHubClient.java  # REST API client (CRUD)
 │   │   └── RepoScanner.java   # Remote repo merger
 │   ├── ui/
-│   │   ├── HUD.java           # Crosshair, prompts
-│   │   ├── BookViewer.java    # File read/edit/delete
+│   │   ├── HUD.java           # Door prompts + last commit
+│   │   ├── BookEditor.java    # Retro terminal file editor
 │   │   └── SettingsMenu.java  # Settings panel
 │   └── audio/
 │       └── AudioEngine.java   # OpenAL stub
-├── src/main/resources/
-│   └── shaders/
-│       ├── basic.vert         # Vertex shader
-│       └── basic.frag         # Fragment shader
+├── src/main/resources/shaders/
+│   ├── basic.vert
+│   └── basic.frag
 └── src/installer/
-    └── mindpalace.iss         # Inno Setup script
+    └── mindpalace.iss
 ```
 
-## 🔧 Development
+## Tech Stack
 
-```bash
-# Compile
-mvn clean compile
+- **Engine:** LWJGL 3.3.3 + OpenGL 3.3 Core
+- **Language:** Java 17
+- **Build:** Maven 3.9.16
+- **Math:** JOML 1.10.5
+- **HTTP:** OkHttp 4.12.0
+- **JSON:** Gson 2.10.1
+- **Font:** Java 2D → OpenGL texture atlas
 
-# Run
-mvn exec:java -Dexec.mainClass="com.mindpalace.Main"
+## GitHub Integration
 
-# Package fat jar
-mvn package -DskipTests
+Token is loaded from Windows Credential Manager automatically. Used for:
+- Listing repos
+- Reading file contents
+- Creating, updating, deleting files
+- Commit messages prefixed with "MindPalace:"
 
-# Build installer (requires Inno Setup)
-iscc src/installer/mindpalace.iss
-```
+Token never leaves your machine except to api.github.com.
+
+## Performance
+
+- Frustum culling (only render rooms in camera view)
+- Distance culling (skip rooms >30m away)
+- Max 40 books per wall, 3 walls per room
+- Intel HD Graphics 510 tested and working
 
 ---
 
-**Built with LWJGL 3, OpenGL 3.3, and love for code.**
+Built with LWJGL 3, OpenGL 3.3, and love for code.
