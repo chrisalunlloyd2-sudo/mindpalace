@@ -16,6 +16,7 @@ public class Book {
     // Visual
     private float spineColor;    // hue for spine color
     private float thickness;     // visual thickness based on file size
+    private float worldX, worldY, worldZ; // 3D position on shelf
 
     public Book(String filename, String filePath) {
         this.filename = filename;
@@ -42,6 +43,11 @@ public class Book {
     public void setSha(String sha) { this.sha = sha; }
     public float getSpineColor() { return spineColor; }
     public float getThickness() { return thickness; }
+
+    public float getWorldX() { return worldX; }
+    public float getWorldY() { return worldY; }
+    public float getWorldZ() { return worldZ; }
+    public void setWorldPosition(float x, float y, float z) { worldX = x; worldY = y; worldZ = z; }
 
     /** Texture ID based on language for colored book spines. */
     public int getTextureId() {

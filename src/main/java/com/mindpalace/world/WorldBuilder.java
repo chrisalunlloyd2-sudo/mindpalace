@@ -613,10 +613,13 @@ public class WorldBuilder {
                 }
                 Book book = currentGroup.get(bookInGroup);
                 float offset = -usableWidth / 2f + placed * (bookW + bookGap) + bookW / 2f;
-                if (wallDir == 0)
+                if (wallDir == 0) {
                     r.drawCube(new Vector3f(caseX + offset, sy, caseZ), new Vector3f(bookW, bookH, bookD), book.getTextureId());
-                else
+                    book.setWorldPosition(caseX + offset, sy, caseZ);
+                } else {
                     r.drawCube(new Vector3f(caseX, sy, caseZ + offset), new Vector3f(bookD, bookH, bookW), book.getTextureId());
+                    book.setWorldPosition(caseX, sy, caseZ + offset);
+                }
                 bookInGroup++; placed++;
             }
         }

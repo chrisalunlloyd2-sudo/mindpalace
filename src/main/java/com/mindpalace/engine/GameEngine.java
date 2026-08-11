@@ -383,6 +383,7 @@ public class GameEngine {
             renderNeonSignText();
             renderFloorMap();
             renderScreenHUD();
+            renderBookSpineText();
         }
 
         if (state == GameState.PLAYING) {
@@ -533,6 +534,29 @@ public class GameEngine {
         // Player dot (green)
         fontRenderer.renderBillboard("@", mapCenter, 0.06f,
             new Vector3f(0.0f, 1.0f, 0.0f), proj, view, camPos);
+    }
+
+    private void renderBookSpineText() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+
+        // Only render spines in current room
+        Room room = player.getCurrentRoom();
+        if (room == null) return;
+
+        for (Book book : room.getBooks()) {
+            float dist = camPos.distance(
+                new Vector3f(book.getWorldX(), book.getWorldY(), book.getWorldZ()));
+            if (dist > 8f) continue;
+
+            String name = book.getFilename();
+            if (name.length() > 10) name = name.substring(0, 8) + "..";
+            Vector3f pos = new Vector3f(book.getWorldX(), book.getWorldY(), book.getWorldZ());
+            fontRenderer.renderBillboard(name, pos, 0.03f,
+                new Vector3f(0.9f, 0.9f, 0.9f), proj, view, camPos);
+        }
     }
 
     private void toggleFullscreen() {
