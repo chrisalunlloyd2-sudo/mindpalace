@@ -125,8 +125,12 @@ public class WorldBuilder {
 
         // Hardwood floor — warm brown planks
         r.drawCube(new Vector3f(cx, s.y, cz), new Vector3f(w, 0.12f, len), Renderer.TEX_HARDWOOD);
+        // Baseboard trim
+        r.drawCube(new Vector3f(cx, s.y + 0.15f, cz), new Vector3f(w, 0.08f, len), Renderer.TEX_DOOR);
         // Ceiling
         r.drawCube(new Vector3f(cx, s.y + h, cz), new Vector3f(w, 0.15f, len), Renderer.TEX_CEILING);
+        // Crown molding
+        r.drawCube(new Vector3f(cx, s.y + h - 0.08f, cz), new Vector3f(w, 0.08f, len), Renderer.TEX_DOOR);
         // End walls
         r.drawCube(new Vector3f(cx, s.y + h / 2f, hw.getEnd().z), new Vector3f(w, h, wallT), Renderer.TEX_WALLPAPER);
         r.drawCube(new Vector3f(cx, s.y + h / 2f, s.z), new Vector3f(w, h, wallT), Renderer.TEX_WALLPAPER);
@@ -270,8 +274,12 @@ public class WorldBuilder {
 
         // Hardwood floor
         r.drawCube(new Vector3f(c.x, c.y - h / 2f, c.z), new Vector3f(w, 0.1f, d), Renderer.TEX_HARDWOOD);
+        // Baseboard trim
+        r.drawCube(new Vector3f(c.x, c.y - h / 2f + 0.12f, c.z), new Vector3f(w, 0.06f, d), Renderer.TEX_DOOR);
         // Ceiling
         r.drawCube(new Vector3f(c.x, c.y + h / 2f, c.z), new Vector3f(w, 0.1f, d), Renderer.TEX_CEILING);
+        // Crown molding
+        r.drawCube(new Vector3f(c.x, c.y + h / 2f - 0.06f, c.z), new Vector3f(w, 0.06f, d), Renderer.TEX_DOOR);
 
         // Wallpapered walls
         float bz = side == 0 ? c.z + d / 2f : c.z - d / 2f;
