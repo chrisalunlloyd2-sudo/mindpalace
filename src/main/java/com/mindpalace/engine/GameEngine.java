@@ -348,6 +348,7 @@ public class GameEngine {
         if (fontRenderer != null && fontRenderer.isReady()) {
             renderNeonSignText();
             renderFloorMap();
+            renderScreenHUD();
         }
 
         if (state == GameState.PLAYING) {
@@ -424,6 +425,34 @@ public class GameEngine {
 
             fontRenderer.renderFloorText(name, floorPos, 0.10f, color, proj, view);
         }
+    }
+
+    private void renderScreenHUD() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
+
+        // HUD at bottom of view, 3m in front
+        Vector3f hudCenter = new Vector3f(camPos).add(
+            camFront.x * 3f - camRight.x * 0f,
+            camFront.y * 3f - 0.6f,
+            camFront.z * 3f - camRight.z * 0f);
+
+        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  ESC:Menu  F11:Fullscreen";
+        fontRenderer.renderBillboard(hotkeys, hudCenter, 0.06f,
+            new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
+
+        // Room info at top
+        Vector3f hudTop = new Vector3f(camPos).add(
+            camFront.x * 3f, camFront.y * 3f + 0.5f, camFront.z * 3f);
+        String roomInfo = player.getCurrentRoom() != null
+            ? player.getCurrentRoom().getDisplayLabel()
+            : "MindPalace — " + world.getRooms().size() + " rooms";
+        fontRenderer.renderBillboard(roomInfo, hudTop, 0.08f,
+            new Vector3f(0.0f, 0.9f, 1.0f), proj, view, camPos);
     }
 
     private void toggleFullscreen() {
