@@ -134,6 +134,9 @@ public class WorldBuilder {
         renderWallWithDoors(r, s, hw, -1);
         renderWallWithDoors(r, s, hw, 1);
 
+        // Poster frames on walls between doors
+        renderPosters(r, s, hw);
+
         // Stairwell between floors
         if (hw.getFloor() == 0) {
             float stairZ = hw.getEnd().z + 2.0f;
@@ -237,6 +240,26 @@ public class WorldBuilder {
             new Vector3f(esd, esh, esw), Renderer.TEX_NEON_GREEN);
     }
 
+    private void renderPosters(Renderer r, Vector3f s, Hallway hw) {
+        float h = hw.getHeight(), len = hw.getEnd().z - s.z;
+        // Place posters on both walls between doors
+        for (int side = -1; side <= 1; side += 2) {
+            float wallX = side * hw.getWidth() / 2f;
+            float offsetX = wallX > 0 ? -0.15f : 0.15f;
+            // Posters every 10m
+            for (float pz = s.z + 5f; pz < s.z + len - 2f; pz += 10f) {
+                float py = s.y + h * 0.55f;
+                // Frame
+                float fw = 0.8f, fh = 1.0f, fd = 0.04f;
+                r.drawCube(new Vector3f(wallX + offsetX, py, pz),
+                    new Vector3f(fd + 0.02f, fh + 0.06f, fw + 0.06f), Renderer.TEX_DOOR);
+                // Poster (white)
+                r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.01f : 0.01f), py, pz),
+                    new Vector3f(fd, fh, fw), Renderer.TEX_WHITE);
+            }
+        }
+    }
+
     // ── Room ──
 
     private void renderRoom(Renderer r, Room room) {
@@ -270,6 +293,12 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x + dh, c.y - h / 2f + dw / 2f, fz), new Vector3f(ft, dw, ft), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw, fz), new Vector3f(Room.DOOR_WIDTH, ft, ft), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw + 0.15f, fz), new Vector3f(Room.DOOR_WIDTH * 0.8f, 0.15f, 0.05f), Renderer.TEX_PLAQUE);
+
+        // Doorknob
+        float knobX = c.x + dh - 0.1f;
+        float knobY = c.y - h / 2f + dw / 2f;
+        float knobZ = side == 0 ? fz + 0.06f : fz - 0.06f;
+        r.drawCube(new Vector3f(knobX, knobY, knobZ), new Vector3f(0.06f, 0.06f, 0.06f), Renderer.TEX_PLAQUE);
 
         // Table + chairs in center
         renderFurniture(r, c, w, d, h);
