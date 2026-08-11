@@ -6,8 +6,8 @@ import org.joml.Vector3f;
 import java.util.*;
 
 /**
- * Procedural world builder — hallways with door cutouts, rooms with wooden bookcases.
- * Books grouped by file type, color-coded, protruding from walls.
+ * Procedural world builder — hallways, rooms, bookcases, neon signs, stairwell.
+ * Rooms sorted by repo size. Hardwood floors, wallpaper, exit signs.
  */
 public class WorldBuilder {
     private List<Room> rooms = new ArrayList<>();
@@ -22,7 +22,6 @@ public class WorldBuilder {
     private RoomPopulator populator;
 
     private static final float ROOM_CULL_DISTANCE = 30.0f;
-    private static final int MAX_BOOKS_PER_WALL = 40;
 
     public WorldBuilder() {
         repoMapper = new RepoMapper();
@@ -32,9 +31,12 @@ public class WorldBuilder {
     public void build() {
         System.out.println("[WorldBuilder] Building MindPalace world...");
         repoMapper.scanRepos(rooms);
-        System.out.println("[WorldBuilder] Mapped " + rooms.size() + " repos to rooms");
-        layoutWorld();
+        // Populate first so we can sort by book count
         for (Room room : rooms) populator.populateRoom(room);
+        // Sort by book count (proxy for repo size) — largest repos first
+        rooms.sort((a, b) -> Integer.compare(b.getBooks().size(), a.getBooks().size()));
+        System.out.println("[WorldBuilder] Mapped " + rooms.size() + " repos to rooms (sorted by size)");
+        layoutWorld();
         System.out.println("[WorldBuilder] World built: " + hallways.size() + " hallways, " + rooms.size() + " rooms");
     }
 
@@ -106,13 +108,13 @@ public class WorldBuilder {
     }
 
     private boolean isInFront(Vector3f camPos, Vector3f camFront, Vector3f target, float dist) {
-        float dx = target.x - camPos.x;
-        float dz = target.z - camPos.z;
+        float dx = target.x - camPos.x, dz = target.z - camPos.z;
         float len = (float) Math.sqrt(dx * dx + dz * dz);
         if (len < 0.01f) return true;
-        float dot = (dx / len) * camFront.x + (dz / len) * camFront.z;
-        return dot > -0.3f || dist < 8.0f;
+        return (dx / len) * camFront.x + (dz / len) * camFront.z > -0.3f || dist < 8.0f;
     }
+
+    // ── Hallway ──
 
     private void renderHallway(Renderer r, Hallway hw) {
         Vector3f s = hw.getStart();
@@ -121,87 +123,121 @@ public class WorldBuilder {
         float cx = 0, cz = s.z + len / 2f;
         float wallT = 0.25f;
 
-        r.drawCube(new Vector3f(cx, s.y, cz), new Vector3f(w, 0.15f, len), Renderer.TEX_FLOOR);
+        // Hardwood floor — warm brown planks
+        r.drawCube(new Vector3f(cx, s.y, cz), new Vector3f(w, 0.12f, len), Renderer.TEX_HARDWOOD);
+        // Ceiling
         r.drawCube(new Vector3f(cx, s.y + h, cz), new Vector3f(w, 0.15f, len), Renderer.TEX_CEILING);
-        r.drawCube(new Vector3f(cx, s.y + h / 2f, hw.getEnd().z), new Vector3f(w, h, wallT), Renderer.TEX_WALL);
-        r.drawCube(new Vector3f(cx, s.y + h / 2f, s.z), new Vector3f(w, h, wallT), Renderer.TEX_WALL);
+        // End walls
+        r.drawCube(new Vector3f(cx, s.y + h / 2f, hw.getEnd().z), new Vector3f(w, h, wallT), Renderer.TEX_WALLPAPER);
+        r.drawCube(new Vector3f(cx, s.y + h / 2f, s.z), new Vector3f(w, h, wallT), Renderer.TEX_WALLPAPER);
+        // Side walls with doors
         renderWallWithDoors(r, s, hw, -1);
         renderWallWithDoors(r, s, hw, 1);
+
+        // Stairwell between floors
+        if (hw.getFloor() == 0) {
+            float stairZ = hw.getEnd().z + 2.0f;
+            renderStairwell(r, s.y, stairZ);
+        }
+    }
+
+    private void renderStairwell(Renderer r, float floorY, float stairZ) {
+        float sw = 1.5f, sh = 0.2f, sd = 0.5f;
+        int steps = 8;
+        float totalRise = HALLWAY_HEIGHT + 1.0f;
+        float stepRise = totalRise / steps;
+        float stepRun = 0.6f;
+
+        for (int i = 0; i < steps; i++) {
+            float sy = floorY + i * stepRise + sh / 2f;
+            float sz = stairZ + i * stepRun;
+            r.drawCube(new Vector3f(0, sy, sz), new Vector3f(sw, sh, sd), Renderer.TEX_HARDWOOD);
+        }
+
+        // Railings
+        float railH = 0.9f;
+        for (int i = 0; i <= steps; i++) {
+            float ry = floorY + i * stepRise + railH / 2f;
+            float rz = stairZ + i * stepRun;
+            r.drawCube(new Vector3f(-sw / 2f - 0.1f, ry, rz), new Vector3f(0.05f, railH, 0.05f), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(sw / 2f + 0.1f, ry, rz), new Vector3f(0.05f, railH, 0.05f), Renderer.TEX_DOOR);
+        }
+        // Top rail
+        float topY = floorY + totalRise + railH;
+        float topZ = stairZ + steps * stepRun;
+        r.drawCube(new Vector3f(-sw / 2f - 0.1f, topY, stairZ + steps * stepRun / 2f),
+            new Vector3f(0.05f, 0.05f, steps * stepRun), Renderer.TEX_DOOR);
+        r.drawCube(new Vector3f(sw / 2f + 0.1f, topY, stairZ + steps * stepRun / 2f),
+            new Vector3f(0.05f, 0.05f, steps * stepRun), Renderer.TEX_DOOR);
     }
 
     private void renderWallWithDoors(Renderer r, Vector3f s, Hallway hw, int side) {
-        float h = hw.getHeight();
-        float len = hw.getEnd().z - s.z;
-        float wallX = side * hw.getWidth() / 2f;
-        float wallT = 0.25f;
-        float dw = Room.DOOR_WIDTH;
-        float dh = Room.DOOR_HEIGHT;
+        float h = hw.getHeight(), len = hw.getEnd().z - s.z;
+        float wallX = side * hw.getWidth() / 2f, wallT = 0.25f;
+        float dw = Room.DOOR_WIDTH, dh = Room.DOOR_HEIGHT;
 
         List<Float> doorZs = new ArrayList<>();
-        for (Room room : rooms) {
-            if (room.getHallwaySide() == (side == -1 ? 0 : 1) && room.getFloor() == hw.getFloor()) {
-                Vector3f dp = room.getDoorPosition();
-                if (dp != null) doorZs.add(dp.z);
-            }
-        }
+        for (Room room : rooms)
+            if (room.getHallwaySide() == (side == -1 ? 0 : 1) && room.getFloor() == hw.getFloor())
+                if (room.getDoorPosition() != null) doorZs.add(room.getDoorPosition().z);
         doorZs.sort(Float::compare);
 
         float prevZ = s.z;
         for (float dz : doorZs) {
-            float segStart = prevZ;
             float segEnd = dz - dw / 2f;
-            if (segEnd > segStart) {
-                float segCz = (segStart + segEnd) / 2f;
-                float segLen = segEnd - segStart;
+            if (segEnd > prevZ) {
+                float segCz = (prevZ + segEnd) / 2f;
                 r.drawCube(new Vector3f(wallX, s.y + h / 2f, segCz),
-                    new Vector3f(wallT, h, segLen), Renderer.TEX_WALL);
+                    new Vector3f(wallT, h, segEnd - prevZ), Renderer.TEX_WALLPAPER);
             }
             float aboveH = h - dh;
-            if (aboveH > 0) {
+            if (aboveH > 0)
                 r.drawCube(new Vector3f(wallX, s.y + dh + aboveH / 2f, dz),
-                    new Vector3f(wallT, aboveH, dw), Renderer.TEX_WALL);
-            }
+                    new Vector3f(wallT, aboveH, dw), Renderer.TEX_WALLPAPER);
             prevZ = dz + dw / 2f;
         }
         if (prevZ < s.z + len) {
             float segCz = (prevZ + s.z + len) / 2f;
-            float segLen = s.z + len - prevZ;
             r.drawCube(new Vector3f(wallX, s.y + h / 2f, segCz),
-                new Vector3f(wallT, h, segLen), Renderer.TEX_WALL);
+                new Vector3f(wallT, h, s.z + len - prevZ), Renderer.TEX_WALLPAPER);
         }
 
-        // Neon signs above each door
+        // Neon signs + exit signs above each door
         for (Room room : rooms) {
             if (room.getHallwaySide() == (side == -1 ? 0 : 1) && room.getFloor() == hw.getFloor()) {
                 Vector3f dp = room.getDoorPosition();
                 if (dp == null) continue;
                 renderNeonSign(r, wallX, s.y + h - 0.3f, dp.z, room);
+                renderExitSign(r, wallX, s.y + h - 0.1f, dp.z);
             }
         }
     }
 
     private void renderNeonSign(Renderer r, float wallX, float signY, float signZ, Room room) {
-        float signW = 1.4f, signH = 0.25f, signD = 0.06f;
-        float glowW = signW + 0.12f, glowH = signH + 0.12f, glowD = 0.03f;
-        float offsetX = wallX > 0 ? -0.15f : 0.15f; // protrude into hallway
-
+        float signW = 2.0f, signH = 0.35f, signD = 0.06f;
+        float glowW = signW + 0.15f, glowH = signH + 0.15f, glowD = 0.03f;
+        float offsetX = wallX > 0 ? -0.15f : 0.15f;
         int neonColor = room.isPrivate() ? Renderer.TEX_NEON_PINK : Renderer.TEX_NEON_CYAN;
 
-        // Glow halo (back layer, slightly larger)
         r.drawCube(new Vector3f(wallX + offsetX, signY, signZ),
             new Vector3f(glowD, glowH, glowW), Renderer.TEX_NEON_AMBER);
-
-        // Sign panel
         r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.02f : 0.02f), signY, signZ),
             new Vector3f(signD, signH, signW), neonColor);
-
-        // Mounting brackets
-        float bracketW = 0.04f;
+        float bw = 0.04f;
         r.drawCube(new Vector3f(wallX + offsetX, signY + signH / 2f + 0.06f, signZ),
-            new Vector3f(glowD + 0.02f, 0.06f, bracketW), Renderer.TEX_DOOR);
+            new Vector3f(glowD + 0.02f, 0.06f, bw), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(wallX + offsetX, signY - signH / 2f - 0.06f, signZ),
-            new Vector3f(glowD + 0.02f, 0.06f, bracketW), Renderer.TEX_DOOR);
+            new Vector3f(glowD + 0.02f, 0.06f, bw), Renderer.TEX_DOOR);
     }
+
+    private void renderExitSign(Renderer r, float wallX, float signY, float signZ) {
+        float esw = 0.5f, esh = 0.2f, esd = 0.04f;
+        float offsetX = wallX > 0 ? -0.15f : 0.15f;
+        r.drawCube(new Vector3f(wallX + offsetX, signY, signZ),
+            new Vector3f(esd, esh, esw), Renderer.TEX_NEON_GREEN);
+    }
+
+    // ── Room ──
 
     private void renderRoom(Renderer r, Room room) {
         Vector3f c = room.getRoomCenter();
@@ -209,202 +245,148 @@ public class WorldBuilder {
         float t = Room.WALL_THICKNESS;
         int side = room.getHallwaySide();
 
-        // Floor + ceiling
-        r.drawCube(new Vector3f(c.x, c.y - h / 2f, c.z), new Vector3f(w, 0.1f, d), Renderer.TEX_FLOOR);
+        // Hardwood floor
+        r.drawCube(new Vector3f(c.x, c.y - h / 2f, c.z), new Vector3f(w, 0.1f, d), Renderer.TEX_HARDWOOD);
+        // Ceiling
         r.drawCube(new Vector3f(c.x, c.y + h / 2f, c.z), new Vector3f(w, 0.1f, d), Renderer.TEX_CEILING);
 
-        // Back wall
+        // Wallpapered walls
         float bz = side == 0 ? c.z + d / 2f : c.z - d / 2f;
-        r.drawCube(new Vector3f(c.x, c.y, bz), new Vector3f(w, h, t), Renderer.TEX_WALL);
+        r.drawCube(new Vector3f(c.x, c.y, bz), new Vector3f(w, h, t), Renderer.TEX_WALLPAPER);
+        r.drawCube(new Vector3f(c.x - w / 2f, c.y, c.z), new Vector3f(t, h, d), Renderer.TEX_WALLPAPER);
+        r.drawCube(new Vector3f(c.x + w / 2f, c.y, c.z), new Vector3f(t, h, d), Renderer.TEX_WALLPAPER);
 
-        // Side walls
-        r.drawCube(new Vector3f(c.x - w / 2f, c.y, c.z), new Vector3f(t, h, d), Renderer.TEX_WALL);
-        r.drawCube(new Vector3f(c.x + w / 2f, c.y, c.z), new Vector3f(t, h, d), Renderer.TEX_WALL);
-
-        // Front wall with door gap
+        // Front wall with door
         float fz = side == 0 ? c.z - d / 2f : c.z + d / 2f;
-        float dh = Room.DOOR_WIDTH / 2f;
-        float dw = Room.DOOR_HEIGHT;
+        float dh = Room.DOOR_WIDTH / 2f, dw = Room.DOOR_HEIGHT;
         float leftW = (w - Room.DOOR_WIDTH) / 2f;
-
-        r.drawCube(new Vector3f(c.x - w / 2f + leftW / 2f, c.y, fz), new Vector3f(leftW, h, t), Renderer.TEX_WALL);
-        r.drawCube(new Vector3f(c.x + w / 2f - leftW / 2f, c.y, fz), new Vector3f(leftW, h, t), Renderer.TEX_WALL);
-        r.drawCube(new Vector3f(c.x, c.y + h / 2f - (h - dw) / 2f, fz), new Vector3f(Room.DOOR_WIDTH, h - dw, t), Renderer.TEX_WALL);
+        r.drawCube(new Vector3f(c.x - w / 2f + leftW / 2f, c.y, fz), new Vector3f(leftW, h, t), Renderer.TEX_WALLPAPER);
+        r.drawCube(new Vector3f(c.x + w / 2f - leftW / 2f, c.y, fz), new Vector3f(leftW, h, t), Renderer.TEX_WALLPAPER);
+        r.drawCube(new Vector3f(c.x, c.y + h / 2f - (h - dw) / 2f, fz), new Vector3f(Room.DOOR_WIDTH, h - dw, t), Renderer.TEX_WALLPAPER);
 
         // Door frame
-        float frameT = 0.08f;
-        r.drawCube(new Vector3f(c.x - dh, c.y - h / 2f + dw / 2f, fz), new Vector3f(frameT, dw, frameT), Renderer.TEX_DOOR);
-        r.drawCube(new Vector3f(c.x + dh, c.y - h / 2f + dw / 2f, fz), new Vector3f(frameT, dw, frameT), Renderer.TEX_DOOR);
-        r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw, fz), new Vector3f(Room.DOOR_WIDTH, frameT, frameT), Renderer.TEX_DOOR);
+        float ft = 0.08f;
+        r.drawCube(new Vector3f(c.x - dh, c.y - h / 2f + dw / 2f, fz), new Vector3f(ft, dw, ft), Renderer.TEX_DOOR);
+        r.drawCube(new Vector3f(c.x + dh, c.y - h / 2f + dw / 2f, fz), new Vector3f(ft, dw, ft), Renderer.TEX_DOOR);
+        r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw, fz), new Vector3f(Room.DOOR_WIDTH, ft, ft), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw + 0.15f, fz), new Vector3f(Room.DOOR_WIDTH * 0.8f, 0.15f, 0.05f), Renderer.TEX_PLAQUE);
 
-        // Wooden bookcases on 3 walls
-        renderBookcase(r, room, 0);  // back
-        renderBookcase(r, room, -1); // left
-        renderBookcase(r, room, 1);  // right
+        // Table + chairs in center
+        renderFurniture(r, c, w, d, h);
+
+        // Bookcases on 3 walls
+        renderBookcase(r, room, 0);
+        renderBookcase(r, room, -1);
+        renderBookcase(r, room, 1);
     }
 
-    /** Render a full wooden bookcase on one wall, books grouped by language. */
+    private void renderFurniture(Renderer r, Vector3f c, float w, float d, float h) {
+        float floorY = c.y - h / 2f;
+        // Simple table
+        float tableY = floorY + 0.6f;
+        r.drawCube(new Vector3f(c.x, tableY, c.z), new Vector3f(1.2f, 0.06f, 0.8f), Renderer.TEX_DOOR);
+        // Legs
+        for (int lx = -1; lx <= 1; lx += 2)
+            for (int lz = -1; lz <= 1; lz += 2)
+                r.drawCube(new Vector3f(c.x + lx * 0.5f, floorY + 0.3f, c.z + lz * 0.3f),
+                    new Vector3f(0.06f, 0.6f, 0.06f), Renderer.TEX_DOOR);
+        // Chairs
+        for (int ch = -1; ch <= 1; ch += 2) {
+            float chZ = c.z + ch * 0.7f;
+            r.drawCube(new Vector3f(c.x, floorY + 0.35f, chZ), new Vector3f(0.5f, 0.06f, 0.5f), Renderer.TEX_SHELF);
+            r.drawCube(new Vector3f(c.x, floorY + 0.7f, chZ + 0.2f), new Vector3f(0.5f, 0.5f, 0.06f), Renderer.TEX_SHELF);
+        }
+    }
+
     private void renderBookcase(Renderer r, Room room, int wallDir) {
         Vector3f c = room.getRoomCenter();
         float w = Room.ROOM_WIDTH, d = Room.ROOM_DEPTH, h = Room.ROOM_HEIGHT;
         int side = room.getHallwaySide();
 
-        // Bookcase dimensions — protrudes 0.5m into room
-        float caseDepth = 0.5f;
-        float caseWidth, caseX, caseZ;
-        float inset = 0.3f; // gap from wall edges
-
+        float caseDepth = 0.5f, caseWidth, caseX, caseZ, inset = 0.3f;
         if (wallDir == 0) {
-            caseWidth = w - inset * 2;
-            caseX = c.x;
-            caseZ = side == 0 ? c.z + d / 2f - caseDepth / 2f - 0.1f
-                              : c.z - d / 2f + caseDepth / 2f + 0.1f;
+            caseWidth = w - inset * 2; caseX = c.x;
+            caseZ = side == 0 ? c.z + d / 2f - caseDepth / 2f - 0.1f : c.z - d / 2f + caseDepth / 2f + 0.1f;
         } else if (wallDir == -1) {
-            caseWidth = d - inset * 2;
-            caseX = c.x - w / 2f + caseDepth / 2f + 0.1f;
-            caseZ = c.z;
+            caseWidth = d - inset * 2; caseX = c.x - w / 2f + caseDepth / 2f + 0.1f; caseZ = c.z;
         } else {
-            caseWidth = d - inset * 2;
-            caseX = c.x + w / 2f - caseDepth / 2f - 0.1f;
-            caseZ = c.z;
+            caseWidth = d - inset * 2; caseX = c.x + w / 2f - caseDepth / 2f - 0.1f; caseZ = c.z;
         }
 
-        float caseBottom = c.y - h / 2f + 0.1f;
-        float caseTop = c.y + h / 2f - 0.1f;
-        float caseHeight = caseTop - caseBottom;
-        float caseMidY = (caseBottom + caseTop) / 2f;
+        float caseBottom = c.y - h / 2f + 0.1f, caseTop = c.y + h / 2f - 0.1f;
+        float caseHeight = caseTop - caseBottom, caseMidY = (caseBottom + caseTop) / 2f;
 
-        // Bookcase back panel (thin)
+        // Back panel
         float backX = caseX, backZ = caseZ;
+        if (wallDir == 0) backZ = side == 0 ? caseZ + caseDepth / 2f - 0.05f : caseZ - caseDepth / 2f + 0.05f;
+        else if (wallDir == -1) backX = caseX - caseDepth / 2f + 0.05f;
+        else backX = caseX + caseDepth / 2f - 0.05f;
+        if (wallDir == 0) r.drawCube(new Vector3f(backX, caseMidY, backZ), new Vector3f(caseWidth, caseHeight, 0.05f), Renderer.TEX_SHELF);
+        else r.drawCube(new Vector3f(backX, caseMidY, backZ), new Vector3f(0.05f, caseHeight, caseWidth), Renderer.TEX_SHELF);
+
+        // Side + top/bottom panels
+        float pt = 0.06f;
         if (wallDir == 0) {
-            backZ = side == 0 ? caseZ + caseDepth / 2f - 0.05f : caseZ - caseDepth / 2f + 0.05f;
-        } else if (wallDir == -1) {
-            backX = caseX - caseDepth / 2f + 0.05f;
+            r.drawCube(new Vector3f(caseX - caseWidth / 2f, caseMidY, caseZ), new Vector3f(pt, caseHeight, caseDepth), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX + caseWidth / 2f, caseMidY, caseZ), new Vector3f(pt, caseHeight, caseDepth), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX, caseBottom, caseZ), new Vector3f(caseWidth, pt, caseDepth), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX, caseTop, caseZ), new Vector3f(caseWidth, pt, caseDepth), Renderer.TEX_DOOR);
         } else {
-            backX = caseX + caseDepth / 2f - 0.05f;
-        }
-        if (wallDir == 0) {
-            r.drawCube(new Vector3f(backX, caseMidY, backZ),
-                new Vector3f(caseWidth, caseHeight, 0.05f), Renderer.TEX_SHELF);
-        } else {
-            r.drawCube(new Vector3f(backX, caseMidY, backZ),
-                new Vector3f(0.05f, caseHeight, caseWidth), Renderer.TEX_SHELF);
+            r.drawCube(new Vector3f(caseX, caseMidY, caseZ - caseWidth / 2f), new Vector3f(caseDepth, caseHeight, pt), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX, caseMidY, caseZ + caseWidth / 2f), new Vector3f(caseDepth, caseHeight, pt), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX, caseBottom, caseZ), new Vector3f(caseDepth, pt, caseWidth), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(caseX, caseTop, caseZ), new Vector3f(caseDepth, pt, caseWidth), Renderer.TEX_DOOR);
         }
 
-        // Side panels
-        float panelT = 0.06f;
-        if (wallDir == 0) {
-            r.drawCube(new Vector3f(caseX - caseWidth / 2f, caseMidY, caseZ),
-                new Vector3f(panelT, caseHeight, caseDepth), Renderer.TEX_DOOR);
-            r.drawCube(new Vector3f(caseX + caseWidth / 2f, caseMidY, caseZ),
-                new Vector3f(panelT, caseHeight, caseDepth), Renderer.TEX_DOOR);
-        } else {
-            r.drawCube(new Vector3f(caseX, caseMidY, caseZ - caseWidth / 2f),
-                new Vector3f(caseDepth, caseHeight, panelT), Renderer.TEX_DOOR);
-            r.drawCube(new Vector3f(caseX, caseMidY, caseZ + caseWidth / 2f),
-                new Vector3f(caseDepth, caseHeight, panelT), Renderer.TEX_DOOR);
-        }
-
-        // Top + bottom panels
-        if (wallDir == 0) {
-            r.drawCube(new Vector3f(caseX, caseBottom, caseZ),
-                new Vector3f(caseWidth, panelT, caseDepth), Renderer.TEX_DOOR);
-            r.drawCube(new Vector3f(caseX, caseTop, caseZ),
-                new Vector3f(caseWidth, panelT, caseDepth), Renderer.TEX_DOOR);
-        } else {
-            r.drawCube(new Vector3f(caseX, caseBottom, caseZ),
-                new Vector3f(caseDepth, panelT, caseWidth), Renderer.TEX_DOOR);
-            r.drawCube(new Vector3f(caseX, caseTop, caseZ),
-                new Vector3f(caseDepth, panelT, caseWidth), Renderer.TEX_DOOR);
-        }
-
-        // Group books by language
+        // Books grouped by language
         List<Book> allBooks = room.getBooks();
         Map<String, List<Book>> byLang = new LinkedHashMap<>();
         for (Book bk : allBooks) {
             String lang = bk.getLanguage() != null ? bk.getLanguage() : "Other";
             byLang.computeIfAbsent(lang, k -> new ArrayList<>()).add(bk);
         }
-
-        // Flatten groups into shelf layout
         List<List<Book>> groups = new ArrayList<>(byLang.values());
         int totalBooks = 0;
         for (List<Book> g : groups) totalBooks += Math.min(g.size(), 15);
         if (totalBooks == 0) return;
 
         int rows = 3;
-        float shelfSpacing = (caseHeight - panelT * 2) / rows;
-        float shelfY0 = caseBottom + panelT + shelfSpacing / 2f;
-        float bookH = shelfSpacing * 0.75f;
-        float bookD = caseDepth * 0.6f;
+        float shelfSpacing = (caseHeight - pt * 2) / rows;
+        float shelfY0 = caseBottom + pt + shelfSpacing / 2f;
+        float bookH = shelfSpacing * 0.75f, bookD = caseDepth * 0.6f;
 
-        // Distribute groups across shelves
-        int groupIdx = 0;
-        int bookInGroup = 0;
+        int groupIdx = 0, bookInGroup = 0;
         List<Book> currentGroup = groups.isEmpty() ? new ArrayList<>() : groups.get(0);
 
         for (int row = 0; row < rows; row++) {
             float sy = shelfY0 + row * shelfSpacing;
+            if (wallDir == 0)
+                r.drawCube(new Vector3f(caseX, sy - bookH / 2f - 0.02f, caseZ), new Vector3f(caseWidth - pt, 0.03f, caseDepth - 0.05f), Renderer.TEX_SHELF);
+            else
+                r.drawCube(new Vector3f(caseX, sy - bookH / 2f - 0.02f, caseZ), new Vector3f(caseDepth - 0.05f, 0.03f, caseWidth - pt), Renderer.TEX_SHELF);
 
-            // Shelf board
-            if (wallDir == 0) {
-                r.drawCube(new Vector3f(caseX, sy - bookH / 2f - 0.02f, caseZ),
-                    new Vector3f(caseWidth - panelT, 0.03f, caseDepth - 0.05f), Renderer.TEX_SHELF);
-            } else {
-                r.drawCube(new Vector3f(caseX, sy - bookH / 2f - 0.02f, caseZ),
-                    new Vector3f(caseDepth - 0.05f, 0.03f, caseWidth - panelT), Renderer.TEX_SHELF);
-            }
-
-            // Books on this shelf
-            float usableWidth = caseWidth - panelT * 2 - 0.2f;
-            float bookW = 0.10f;
-            float bookGap = 0.02f;
+            float usableWidth = caseWidth - pt * 2 - 0.2f;
+            float bookW = 0.10f, bookGap = 0.02f;
             int maxBooks = (int) (usableWidth / (bookW + bookGap));
-            int booksPlaced = 0;
+            int placed = 0;
 
-            while (booksPlaced < maxBooks && groupIdx < groups.size()) {
+            while (placed < maxBooks && groupIdx < groups.size()) {
                 if (bookInGroup >= currentGroup.size() || bookInGroup >= 15) {
-                    groupIdx++;
-                    bookInGroup = 0;
+                    groupIdx++; bookInGroup = 0;
                     if (groupIdx >= groups.size()) break;
                     currentGroup = groups.get(groupIdx);
-                    // Divider between groups
-                    float divX, divZ;
-                    float divOffset = -usableWidth / 2f + booksPlaced * (bookW + bookGap);
-                    if (wallDir == 0) {
-                        divX = caseX + divOffset;
-                        divZ = caseZ;
-                        r.drawCube(new Vector3f(divX, sy, divZ),
-                            new Vector3f(0.02f, bookH, bookD), Renderer.TEX_DOOR);
-                    } else {
-                        divX = caseX;
-                        divZ = caseZ + divOffset;
-                        r.drawCube(new Vector3f(divX, sy, divZ),
-                            new Vector3f(bookD, bookH, 0.02f), Renderer.TEX_DOOR);
-                    }
-                    booksPlaced++;
-                    continue;
+                    float divOff = -usableWidth / 2f + placed * (bookW + bookGap);
+                    if (wallDir == 0) r.drawCube(new Vector3f(caseX + divOff, sy, caseZ), new Vector3f(0.02f, bookH, bookD), Renderer.TEX_DOOR);
+                    else r.drawCube(new Vector3f(caseX, sy, caseZ + divOff), new Vector3f(bookD, bookH, 0.02f), Renderer.TEX_DOOR);
+                    placed++; continue;
                 }
-
                 Book book = currentGroup.get(bookInGroup);
-                float offset = -usableWidth / 2f + booksPlaced * (bookW + bookGap) + bookW / 2f;
-                float bx, bz;
-
-                if (wallDir == 0) {
-                    bx = caseX + offset;
-                    bz = caseZ;
-                    r.drawCube(new Vector3f(bx, sy, bz),
-                        new Vector3f(bookW, bookH, bookD), book.getTextureId());
-                } else {
-                    bx = caseX;
-                    bz = caseZ + offset;
-                    r.drawCube(new Vector3f(bx, sy, bz),
-                        new Vector3f(bookD, bookH, bookW), book.getTextureId());
-                }
-
-                bookInGroup++;
-                booksPlaced++;
+                float offset = -usableWidth / 2f + placed * (bookW + bookGap) + bookW / 2f;
+                if (wallDir == 0)
+                    r.drawCube(new Vector3f(caseX + offset, sy, caseZ), new Vector3f(bookW, bookH, bookD), book.getTextureId());
+                else
+                    r.drawCube(new Vector3f(caseX, sy, caseZ + offset), new Vector3f(bookD, bookH, bookW), book.getTextureId());
+                bookInGroup++; placed++;
             }
         }
     }
@@ -415,8 +397,7 @@ public class WorldBuilder {
     public Room findRoomAt(Vector3f pos) {
         for (Room room : rooms) {
             Vector3f c = room.getRoomCenter();
-            if (Math.abs(pos.x - c.x) < Room.ROOM_WIDTH / 2f &&
-                Math.abs(pos.z - c.z) < Room.ROOM_DEPTH / 2f) return room;
+            if (Math.abs(pos.x - c.x) < Room.ROOM_WIDTH / 2f && Math.abs(pos.z - c.z) < Room.ROOM_DEPTH / 2f) return room;
         }
         return null;
     }

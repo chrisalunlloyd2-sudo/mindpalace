@@ -15,15 +15,15 @@ import java.nio.ByteBuffer;
 
 /**
  * Bitmap font renderer — generates a texture atlas from Java 2D, renders text as quads.
- * Glyph UVs computed in shader from glyph index uniform.
+ * Supports wall-facing, floor, and billboard (always face camera) modes.
  */
 public class FontRenderer {
     private static final int GLYPH_W = 16;
     private static final int GLYPH_H = 28;
     private static final int COLS = 16;
     private static final int ROWS = 6;
-    private static final int ATLAS_W = COLS * GLYPH_W;  // 256
-    private static final int ATLAS_H = ROWS * GLYPH_H;  // 168
+    private static final int ATLAS_W = COLS * GLYPH_W;
+    private static final int ATLAS_H = ROWS * GLYPH_H;
 
     private int textureId;
     private int vao, vbo, ebo;
@@ -50,25 +50,19 @@ public class FontRenderer {
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         g.setColor(Color.WHITE);
         g.setFont(new Font("Monospaced", Font.BOLD, 20));
-
         FontMetrics fm = g.getFontMetrics();
         for (int i = 0; i < 95; i++) {
             char c = (char) (i + 32);
-            int col = i % COLS;
-            int row = i / COLS;
-            int x = col * GLYPH_W;
-            int y = row * GLYPH_H;
+            int col = i % COLS, row = i / COLS;
+            int x = col * GLYPH_W, y = row * GLYPH_H;
             String s = String.valueOf(c);
-            int sw = fm.stringWidth(s);
-            g.drawString(s, x + (GLYPH_W - sw) / 2, y + fm.getAscent());
+            g.drawString(s, x + (GLYPH_W - fm.stringWidth(s)) / 2, y + fm.getAscent());
         }
         g.dispose();
-
         int[] pixels = new int[ATLAS_W * ATLAS_H];
         img.getRGB(0, 0, ATLAS_W, ATLAS_H, pixels, 0, ATLAS_W);
-
         ByteBuffer buf = ByteBuffer.allocateDirect(ATLAS_W * ATLAS_H * 4);
-        for (int y = ATLAS_H - 1; y >= 0; y--) {
+        for (int y = ATLAS_H - 1; y >= 0; y--)
             for (int x = 0; x < ATLAS_W; x++) {
                 int px = pixels[y * ATLAS_W + x];
                 buf.put((byte) ((px >> 16) & 0xFF));
@@ -76,39 +70,27 @@ public class FontRenderer {
                 buf.put((byte) (px & 0xFF));
                 buf.put((byte) ((px >> 24) & 0xFF));
             }
-        }
         buf.flip();
-
         textureId = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_CLAMP);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_CLAMP);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, ATLAS_W, ATLAS_H, 0,
-            GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, ATLAS_W, ATLAS_H, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf);
     }
 
     private void buildMesh() {
-        float[] verts = {
-            0,0,0, 0,0,1, 0,0,
-            1,0,0, 0,0,1, 1,0,
-            1,1,0, 0,0,1, 1,1,
-            0,1,0, 0,0,1, 0,1,
-        };
+        float[] verts = {0,0,0, 0,0,1, 0,0, 1,0,0, 0,0,1, 1,0, 1,1,0, 0,0,1, 1,1, 0,1,0, 0,0,1, 0,1};
         int[] indices = {0,1,2, 0,2,3};
-
         vao = GL30.glGenVertexArrays();
         GL30.glBindVertexArray(vao);
-
         vbo = GL15.glGenBuffers();
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
         GL15.glBufferData(GL15.GL_ARRAY_BUFFER, verts, GL15.GL_STATIC_DRAW);
-
         ebo = GL15.glGenBuffers();
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
         GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indices, GL15.GL_STATIC_DRAW);
-
         int stride = 8 * 4;
         GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, stride, 0);
         GL20.glEnableVertexAttribArray(0);
@@ -116,7 +98,6 @@ public class FontRenderer {
         GL20.glEnableVertexAttribArray(1);
         GL20.glVertexAttribPointer(2, 2, GL11.GL_FLOAT, false, stride, 6 * 4);
         GL20.glEnableVertexAttribArray(2);
-
         GL30.glBindVertexArray(0);
     }
 
@@ -139,11 +120,8 @@ public class FontRenderer {
             "  float u1 = float(col + 1) / 16.0;\n" +
             "  float v0 = float(row) / 6.0;\n" +
             "  float v1 = float(row + 1) / 6.0;\n" +
-            "  vec2 uvOff = vec2(u0, v0);\n" +
-            "  vec2 uvScale = vec2(u1 - u0, v1 - v0);\n" +
-            "  TexCoord = uvOff + aTexCoord * uvScale;\n" +
+            "  TexCoord = vec2(u0, v0) + aTexCoord * vec2(u1 - u0, v1 - v0);\n" +
             "}\n";
-
         String fragSrc =
             "#version 330 core\n" +
             "in vec2 TexCoord;\n" +
@@ -154,66 +132,65 @@ public class FontRenderer {
             "  float a = texture(tex, TexCoord).r;\n" +
             "  FragColor = vec4(textColor.rgb, textColor.a * a);\n" +
             "}\n";
-
         textShader = new Shader(vertSrc, fragSrc, true);
     }
 
+    /** Wall-facing text. */
     public void renderText(String text, Vector3f position, float charSize, Vector3f color,
                            Matrix4f projection, Matrix4f view, Vector3f facingNormal) {
-        renderTextInternal(text, position, charSize, color, projection, view, facingNormal, false);
+        renderInternal(text, position, charSize, color, projection, view, facingNormal, false, false);
     }
 
-    /** Render text flat on the floor (XZ plane, facing +Y). */
+    /** Text flat on floor. */
     public void renderFloorText(String text, Vector3f position, float charSize, Vector3f color,
                                 Matrix4f projection, Matrix4f view) {
-        renderTextInternal(text, position, charSize, color, projection, view, new Vector3f(0, 1, 0), true);
+        renderInternal(text, position, charSize, color, projection, view, new Vector3f(0, 1, 0), true, false);
     }
 
-    private void renderTextInternal(String text, Vector3f position, float charSize, Vector3f color,
-                                    Matrix4f projection, Matrix4f view, Vector3f facingNormal, boolean floor) {
-        if (!ready || text == null || text.isEmpty()) return;
+    /** Billboard text — always faces the camera. */
+    public void renderBillboard(String text, Vector3f position, float charSize, Vector3f color,
+                                Matrix4f projection, Matrix4f view, Vector3f camPos) {
+        Vector3f toCam = new Vector3f(camPos).sub(position).normalize();
+        renderInternal(text, position, charSize, color, projection, view, toCam, false, true);
+    }
 
+    private void renderInternal(String text, Vector3f position, float charSize, Vector3f color,
+                                Matrix4f projection, Matrix4f view, Vector3f facingNormal,
+                                boolean floor, boolean billboard) {
+        if (!ready || text == null || text.isEmpty()) return;
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_CULL_FACE);
-
         textShader.bind();
         textShader.setUniform("projection", projection);
         textShader.setUniform("view", view);
         textShader.setUniform("textColor", new Vector4f(color.x, color.y, color.z, 1.0f));
-
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
         textShader.setUniform("tex", 0);
-
         GL30.glBindVertexArray(vao);
-
         float totalW = text.length() * charSize;
         float startX = position.x - totalW / 2f + charSize / 2f;
         float angleY = (float) Math.atan2(facingNormal.x, facingNormal.z);
-
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             if (c < 32 || c > 126) c = '?';
-            int glyphIndex = c - 32;
-
             float cx = startX + i * charSize;
             Matrix4f model = new Matrix4f();
             if (floor) {
-                model.translate(cx, position.y, position.z)
-                     .rotateX((float) -Math.PI / 2f)
+                model.translate(cx, position.y, position.z).rotateX((float) -Math.PI / 2f)
+                     .scale(charSize, charSize * 1.6f, 1f);
+            } else if (billboard) {
+                model.translate(cx, position.y, position.z).rotateY(angleY)
                      .scale(charSize, charSize * 1.6f, 1f);
             } else {
-                model.translate(cx, position.y, position.z)
-                     .rotateY(angleY)
+                model.translate(cx, position.y, position.z).rotateY(angleY)
                      .scale(charSize, charSize * 1.6f, 1f);
             }
-
             textShader.setUniform("model", model);
-            textShader.setUniform("glyphIndex", glyphIndex);
+            textShader.setUniform("glyphIndex", c - 32);
             GL11.glDrawElements(GL11.GL_TRIANGLES, 6, GL11.GL_UNSIGNED_INT, 0);
         }
-
         GL30.glBindVertexArray(0);
         GL11.glEnable(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_BLEND);

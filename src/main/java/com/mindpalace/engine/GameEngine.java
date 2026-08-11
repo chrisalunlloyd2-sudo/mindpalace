@@ -373,7 +373,6 @@ public class GameEngine {
             float dist = camPos.distance(dp);
             if (dist > 25f) continue;
 
-            // Sign position — same as renderNeonSign in WorldBuilder
             float signY = (room.getFloor() == 0 ? 0 : WorldBuilder.HALLWAY_HEIGHT + 1.0f)
                 + WorldBuilder.HALLWAY_HEIGHT - 0.3f;
             float wallX = room.getHallwaySide() == 0
@@ -382,20 +381,15 @@ public class GameEngine {
             float offsetX = wallX > 0 ? -0.20f : 0.20f;
             Vector3f signPos = new Vector3f(wallX + offsetX, signY, dp.z);
 
-            // Facing direction (into hallway)
-            Vector3f facing = new Vector3f(wallX > 0 ? -1 : 1, 0, 0);
-
-            // Color: cyan for public, pink for private
             Vector3f color = room.isPrivate()
                 ? new Vector3f(1.0f, 0.2f, 0.6f)
                 : new Vector3f(0.0f, 0.9f, 1.0f);
 
-            // Truncate long names
             String name = room.getRepoName();
             if (name.length() > 14) name = name.substring(0, 12) + "..";
 
-            float charSize = 0.12f;
-            fontRenderer.renderText(name, signPos, charSize, color, proj, view, facing);
+            // Billboard — always faces camera, 200% bigger
+            fontRenderer.renderBillboard(name, signPos, 0.24f, color, proj, view, camPos);
         }
     }
 
