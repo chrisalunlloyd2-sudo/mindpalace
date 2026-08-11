@@ -149,6 +149,8 @@ public class WorldBuilder {
             renderLaboratory(r, s.y, stairZ + 6.0f);
             // Courtyard after the lab
             renderCourtyard(r, s.y, stairZ + 18.0f);
+            // Outside world after courtyard
+            renderOutside(r, s.y, stairZ + 34.0f);
         }
     }
 
@@ -323,6 +325,51 @@ public class WorldBuilder {
         // Courtyard sign
         r.drawCube(new Vector3f(cx, floorY + ch - 0.3f, cz - cd / 2f + 0.15f),
             new Vector3f(4f, 0.3f, 0.06f), Renderer.TEX_NEON_AMBER);
+    }
+
+    private void renderOutside(Renderer r, float floorY, float outZ) {
+        float ow = 30f, od = 25f;
+        float cx = 0, cz = outZ + od / 2f;
+
+        // Grass ground
+        r.drawCube(new Vector3f(cx, floorY - 0.1f, cz), new Vector3f(ow, 0.2f, od), Renderer.TEX_GRASS);
+
+        // Sun (yellow sphere approximation — large flat disc on back wall)
+        r.drawCube(new Vector3f(cx, floorY + 8f, cz + od / 2f - 0.1f),
+            new Vector3f(3f, 3f, 0.1f), Renderer.TEX_NEON_AMBER);
+
+        // Trees (trunk + canopy)
+        float[][] treePos = {{-10, 5}, {-6, 12}, {8, 8}, {12, 15}, {-12, 18}, {10, 20}};
+        for (float[] tp : treePos) {
+            float tx = tp[0], tz = outZ + tp[1];
+            // Trunk
+            r.drawCube(new Vector3f(tx, floorY + 1.5f, tz), new Vector3f(0.3f, 3f, 0.3f), Renderer.TEX_WOOD);
+            // Canopy (3 layers)
+            r.drawCube(new Vector3f(tx, floorY + 3.5f, tz), new Vector3f(2.5f, 1.5f, 2.5f), Renderer.TEX_GRASS);
+            r.drawCube(new Vector3f(tx, floorY + 4.5f, tz), new Vector3f(1.8f, 1.2f, 1.8f), Renderer.TEX_GRASS);
+            r.drawCube(new Vector3f(tx, floorY + 5.3f, tz), new Vector3f(1.0f, 0.8f, 1.0f), Renderer.TEX_GRASS);
+        }
+
+        // Lake
+        float lz = outZ + od - 3f;
+        r.drawCube(new Vector3f(cx - 5f, floorY + 0.05f, lz), new Vector3f(10f, 0.1f, 6f), Renderer.TEX_WATER);
+
+        // Lakehouse
+        float lhx = cx + 8f, lhz = outZ + od - 6f;
+        // Floor
+        r.drawCube(new Vector3f(lhx, floorY + 0.1f, lhz), new Vector3f(5f, 0.15f, 4f), Renderer.TEX_WOOD);
+        // Walls
+        r.drawCube(new Vector3f(lhx, floorY + 1.5f, lhz - 2f), new Vector3f(5f, 3f, 0.2f), Renderer.TEX_WOOD);
+        r.drawCube(new Vector3f(lhx, floorY + 1.5f, lhz + 2f), new Vector3f(5f, 3f, 0.2f), Renderer.TEX_WOOD);
+        r.drawCube(new Vector3f(lhx - 2.5f, floorY + 1.5f, lhz), new Vector3f(0.2f, 3f, 4f), Renderer.TEX_WOOD);
+        r.drawCube(new Vector3f(lhx + 2.5f, floorY + 1.5f, lhz), new Vector3f(0.2f, 3f, 4f), Renderer.TEX_WOOD);
+        // Roof (A-frame)
+        r.drawCube(new Vector3f(lhx, floorY + 3.2f, lhz), new Vector3f(5.5f, 0.15f, 4.5f), Renderer.TEX_DOOR);
+        // Door
+        r.drawCube(new Vector3f(lhx, floorY + 1.0f, lhz - 2.1f), new Vector3f(1.2f, 2f, 0.1f), Renderer.TEX_DOOR);
+        // Windows
+        r.drawCube(new Vector3f(lhx - 1.5f, floorY + 1.8f, lhz - 2.1f), new Vector3f(0.8f, 0.8f, 0.05f), Renderer.TEX_NEON_CYAN);
+        r.drawCube(new Vector3f(lhx + 1.5f, floorY + 1.8f, lhz - 2.1f), new Vector3f(0.8f, 0.8f, 0.05f), Renderer.TEX_NEON_CYAN);
     }
 
     private void renderWallWithDoors(Renderer r, Vector3f s, Hallway hw, int side) {
