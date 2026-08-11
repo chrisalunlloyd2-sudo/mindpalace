@@ -36,7 +36,9 @@ public class Renderer {
     public static final int TEX_NEON_AMBER = 18;
     public static final int TEX_HARDWOOD = 19;
     public static final int TEX_WALLPAPER = 20;
-    private static final int TEX_COUNT = 21;
+    public static final int TEX_METAL = 21;
+    public static final int TEX_CONCRETE = 22;
+    private static final int TEX_COUNT = 23;
 
     private Texture[] textures = new Texture[TEX_COUNT];
 
@@ -74,6 +76,8 @@ public class Renderer {
         textures[TEX_NEON_AMBER] = new Texture(1.0f, 0.7f, 0.1f);
         textures[TEX_HARDWOOD] = new Texture(0.35f, 0.20f, 0.10f);
         textures[TEX_WALLPAPER] = new Texture(0.28f, 0.24f, 0.30f);
+        textures[TEX_METAL] = new Texture(0.45f, 0.45f, 0.48f);
+        textures[TEX_CONCRETE] = new Texture(0.35f, 0.33f, 0.30f);
 
         projectionMatrix = new Matrix4f();
     }

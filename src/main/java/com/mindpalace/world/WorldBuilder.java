@@ -145,6 +145,8 @@ public class WorldBuilder {
         if (hw.getFloor() == 0) {
             float stairZ = hw.getEnd().z + 2.0f;
             renderStairwell(r, s.y, stairZ);
+            // Laboratory at end of first hallway
+            renderLaboratory(r, s.y, stairZ + 6.0f);
         }
     }
 
@@ -176,6 +178,72 @@ public class WorldBuilder {
             new Vector3f(0.05f, 0.05f, steps * stepRun), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(sw / 2f + 0.1f, topY, stairZ + steps * stepRun / 2f),
             new Vector3f(0.05f, 0.05f, steps * stepRun), Renderer.TEX_DOOR);
+    }
+
+    private void renderLaboratory(Renderer r, float floorY, float labZ) {
+        float lw = 10f, ld = 8f, lh = 5f;
+        float cx = 0, cy = floorY + lh / 2f, cz = labZ + ld / 2f;
+        float t = 0.3f;
+
+        // Concrete floor
+        r.drawCube(new Vector3f(cx, floorY, cz), new Vector3f(lw, 0.15f, ld), Renderer.TEX_CONCRETE);
+        // Ceiling
+        r.drawCube(new Vector3f(cx, floorY + lh, cz), new Vector3f(lw, 0.15f, ld), Renderer.TEX_METAL);
+        // Metal walls
+        r.drawCube(new Vector3f(cx, cy, cz - ld / 2f), new Vector3f(lw, lh, t), Renderer.TEX_METAL);
+        r.drawCube(new Vector3f(cx, cy, cz + ld / 2f), new Vector3f(lw, lh, t), Renderer.TEX_METAL);
+        r.drawCube(new Vector3f(cx - lw / 2f, cy, cz), new Vector3f(t, lh, ld), Renderer.TEX_METAL);
+        r.drawCube(new Vector3f(cx + lw / 2f, cy, cz), new Vector3f(t, lh, ld), Renderer.TEX_METAL);
+
+        // Lab tables (3 rows)
+        for (int row = 0; row < 3; row++) {
+            float tz = cz - ld / 2f + 2f + row * 2.5f;
+            // Table surface
+            r.drawCube(new Vector3f(cx - 2f, floorY + 1.0f, tz), new Vector3f(3f, 0.08f, 1.2f), Renderer.TEX_METAL);
+            // Legs
+            for (int lx = -1; lx <= 1; lx += 2) {
+                for (int lz = -1; lz <= 1; lz += 2) {
+                    r.drawCube(new Vector3f(cx - 2f + lx * 1.3f, floorY + 0.5f, tz + lz * 0.5f),
+                        new Vector3f(0.08f, 1.0f, 0.08f), Renderer.TEX_METAL);
+                }
+            }
+            // Computer monitor (block)
+            r.drawCube(new Vector3f(cx - 2f, floorY + 1.4f, tz - 0.3f),
+                new Vector3f(0.8f, 0.6f, 0.15f), Renderer.TEX_NEON_CYAN);
+            // Keyboard
+            r.drawCube(new Vector3f(cx - 2f, floorY + 1.08f, tz + 0.3f),
+                new Vector3f(0.6f, 0.04f, 0.2f), Renderer.TEX_WHITE);
+        }
+
+        // Microscope (center table)
+        float mz = cz;
+        r.drawCube(new Vector3f(cx + 2f, floorY + 1.0f, mz), new Vector3f(2f, 0.08f, 1.2f), Renderer.TEX_METAL);
+        for (int lx = -1; lx <= 1; lx += 2) {
+            for (int lz = -1; lz <= 1; lz += 2) {
+                r.drawCube(new Vector3f(cx + 2f + lx * 0.8f, floorY + 0.5f, mz + lz * 0.5f),
+                    new Vector3f(0.08f, 1.0f, 0.08f), Renderer.TEX_METAL);
+            }
+        }
+        // Microscope body
+        r.drawCube(new Vector3f(cx + 2f, floorY + 1.3f, mz), new Vector3f(0.15f, 0.5f, 0.15f), Renderer.TEX_WHITE);
+        // Eyepiece
+        r.drawCube(new Vector3f(cx + 2f, floorY + 1.6f, mz), new Vector3f(0.08f, 0.15f, 0.08f), Renderer.TEX_DOOR);
+        // Objective lens
+        r.drawCube(new Vector3f(cx + 2f, floorY + 1.05f, mz), new Vector3f(0.06f, 0.1f, 0.06f), Renderer.TEX_NEON_AMBER);
+
+        // Server rack (back wall)
+        for (int i = 0; i < 4; i++) {
+            float sy = floorY + 0.3f + i * 0.5f;
+            r.drawCube(new Vector3f(cx + lw / 2f - 0.5f, sy, cz + ld / 2f - 0.3f),
+                new Vector3f(0.6f, 0.4f, 0.5f), Renderer.TEX_DOOR);
+            // Blinking lights
+            r.drawCube(new Vector3f(cx + lw / 2f - 0.3f, sy, cz + ld / 2f - 0.1f),
+                new Vector3f(0.05f, 0.05f, 0.05f), Renderer.TEX_NEON_GREEN);
+        }
+
+        // Lab sign
+        r.drawCube(new Vector3f(cx, floorY + lh - 0.3f, cz - ld / 2f + 0.15f),
+            new Vector3f(3f, 0.3f, 0.06f), Renderer.TEX_NEON_AMBER);
     }
 
     private void renderWallWithDoors(Renderer r, Vector3f s, Hallway hw, int side) {
