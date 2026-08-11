@@ -17,7 +17,7 @@ public class Input {
     private boolean firstMouse = true;
 
     private boolean leftClick, rightClick;
-    private boolean leftClickPrev, rightClickPrev;
+    private boolean leftClickJust, rightClickJust;
 
     public Input(long window) {
         this.window = window;
@@ -31,17 +31,19 @@ public class Input {
         });
 
         GLFW.glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
-            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT)
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                if (action == GLFW.GLFW_PRESS) leftClickJust = true;
                 leftClick = action == GLFW.GLFW_PRESS;
-            if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT)
+            }
+            if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                if (action == GLFW.GLFW_PRESS) rightClickJust = true;
                 rightClick = action == GLFW.GLFW_PRESS;
+            }
         });
     }
 
     public void update(double dt) {
         System.arraycopy(keys, 0, keysPrev, 0, keys.length);
-        leftClickPrev = leftClick;
-        rightClickPrev = rightClick;
 
         for (int i = 32; i <= GLFW.GLFW_KEY_LAST; i++)
             keys[i] = GLFW.glfwGetKey(window, i) == GLFW.GLFW_PRESS;
@@ -64,6 +66,17 @@ public class Input {
 
     public double getMouseDX() { double d = accumDX; accumDX = 0; return d; }
     public double getMouseDY() { double d = accumDY; accumDY = 0; return d; }
-    public boolean isLeftClick() { return leftClick && !leftClickPrev; }
-    public boolean isRightClick() { return rightClick && !rightClickPrev; }
+
+    /** Returns true once per click — resets after read. */
+    public boolean isLeftClick() {
+        boolean v = leftClickJust;
+        leftClickJust = false;
+        return v;
+    }
+
+    public boolean isRightClick() {
+        boolean v = rightClickJust;
+        rightClickJust = false;
+        return v;
+    }
 }
