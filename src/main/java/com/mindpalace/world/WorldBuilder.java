@@ -42,26 +42,25 @@ public class WorldBuilder {
 
     private void layoutWorld() {
         int total = rooms.size();
-        int perFloor = (total + 1) / 2;
+        int floors = 4;
+        int perFloor = (total + floors - 1) / floors;
         int perSide = (perFloor + 1) / 2;
 
-        Hallway h0 = new Hallway(0);
         float len = perSide * DOOR_SPACING + HALLWAY_START_OFFSET * 2;
-        h0.setStart(new Vector3f(0, 0, 0));
-        h0.setEnd(new Vector3f(0, 0, len));
-        h0.setWidth(HALLWAY_WIDTH);
-        h0.setHeight(HALLWAY_HEIGHT);
-        hallways.add(h0);
+        float floorGap = HALLWAY_HEIGHT + 1.0f;
+        float zOffset = len + 4.0f;
 
-        Hallway h1 = new Hallway(1);
-        h1.setStart(new Vector3f(0, HALLWAY_HEIGHT + 1.0f, len + 4.0f));
-        h1.setEnd(new Vector3f(0, HALLWAY_HEIGHT + 1.0f, len + 4.0f + len));
-        h1.setWidth(HALLWAY_WIDTH);
-        h1.setHeight(HALLWAY_HEIGHT);
-        hallways.add(h1);
+        for (int f = 0; f < floors; f++) {
+            Hallway hw = new Hallway(f);
+            hw.setStart(new Vector3f(0, f * floorGap, f * zOffset));
+            hw.setEnd(new Vector3f(0, f * floorGap, f * zOffset + len));
+            hw.setWidth(HALLWAY_WIDTH);
+            hw.setHeight(HALLWAY_HEIGHT);
+            hallways.add(hw);
+        }
 
         int idx = 0;
-        for (int floor = 0; floor < 2 && idx < total; floor++) {
+        for (int floor = 0; floor < floors && idx < total; floor++) {
             Hallway hw = hallways.get(floor);
             float hz = hw.getStart().z;
             float hy = hw.getStart().y;
@@ -142,14 +141,15 @@ public class WorldBuilder {
         renderPosters(r, s, hw);
 
         // Stairwell between floors
-        if (hw.getFloor() == 0) {
+        if (hw.getFloor() < hallways.size() - 1) {
             float stairZ = hw.getEnd().z + 2.0f;
             renderStairwell(r, s.y, stairZ);
-            // Laboratory at end of first hallway
+        }
+        // Special areas only on floor 0
+        if (hw.getFloor() == 0) {
+            float stairZ = hw.getEnd().z + 2.0f;
             renderLaboratory(r, s.y, stairZ + 6.0f);
-            // Courtyard after the lab
             renderCourtyard(r, s.y, stairZ + 18.0f);
-            // Outside world after courtyard
             renderOutside(r, s.y, stairZ + 34.0f);
         }
     }
