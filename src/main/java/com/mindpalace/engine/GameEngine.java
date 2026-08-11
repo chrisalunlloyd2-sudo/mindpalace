@@ -11,6 +11,8 @@ import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.audio.AudioEngine;
+import com.mindpalace.agent.AgentManager;
+import com.mindpalace.agent.AgentChat;
 import org.joml.Vector3f;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
@@ -38,6 +40,8 @@ public class GameEngine {
     private BookEditor bookEditor;
     private GitHubClient github;
     private AudioEngine audio;
+    private AgentManager agentManager;
+    private AgentChat agentChat;
     private GameState state;
 
     private double lastFrameTime;
@@ -125,6 +129,16 @@ public class GameEngine {
         github = new GitHubClient();
         bookEditor = new BookEditor(github);
 
+        // Start LLM agents from SIMS1337
+        agentManager = new AgentManager();
+        agentChat = new AgentChat();
+        agentManager.setCallbacks(
+            msg -> agentChat.addMessage(msg),
+            msg -> agentChat.addMessage(msg),
+            msg -> System.out.println("[Agent] " + msg)
+        );
+        agentManager.start();
+
         loadingText = "Ready.";
         loadingProgress = 1.0f;
         renderLoadingFrame();
@@ -204,8 +218,14 @@ public class GameEngine {
                 pendingCommand = null;
             }
         }
-        if (cmd != null && bookEditor.isOpen()) {
-            bookEditor.handleCommand(cmd);
+        if (cmd != null) {
+            if (bookEditor.isOpen()) {
+                bookEditor.handleCommand(cmd);
+            } else if (agentChat != null && agentChat.isOpen() && agentManager != null) {
+                // Route to agent chat
+                agentChat.addMessage("[You] " + cmd);
+                agentManager.onUserChat(cmd);
+            }
         }
 
         // ESC toggles
@@ -226,15 +246,29 @@ public class GameEngine {
         if (state == GameState.PLAYING) {
             player.update(dt, input, world);
 
+            // Update agent context when in a room
+            if (player.getCurrentRoom() != null && agentManager != null) {
+                agentManager.setContext(player.getCurrentRoom(), null);
+            }
+
             // Book click detection — left click in a room
             if (input.isLeftClick() && player.getCurrentRoom() != null) {
                 Book clicked = findBookInSights(player.getCurrentRoom());
                 if (clicked != null) {
                     bookEditor.open(clicked, player.getCurrentRoom(),
                         player.getPosition(), player.getLookDirection());
+                    // Set agent context to this book
+                    if (agentManager != null) {
+                        agentManager.setContext(player.getCurrentRoom(), clicked);
+                    }
                     state = GameState.BOOK_VIEW;
                     input.setCursorCaptured(false);
                 }
+            }
+
+            // Tab toggles agent chat
+            if (input.isKeyJustPressed(GLFW.GLFW_KEY_TAB) && agentChat != null) {
+                agentChat.toggle(player.getPosition(), player.getLookDirection());
             }
         }
 
@@ -357,6 +391,10 @@ public class GameEngine {
 
         if (bookEditor.isOpen()) {
             bookEditor.render(renderer);
+        }
+
+        if (agentChat != null && agentChat.isOpen()) {
+            agentChat.render(renderer);
         }
 
         GLFW.glfwSwapBuffers(window);
