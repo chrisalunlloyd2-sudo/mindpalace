@@ -491,6 +491,48 @@ public class GameEngine {
             : "MindPalace — " + world.getRooms().size() + " rooms";
         fontRenderer.renderBillboard(roomInfo, hudTop, 0.08f,
             new Vector3f(0.0f, 0.9f, 1.0f), proj, view, camPos);
+
+        // Minimap — top-right corner
+        renderMinimap(cam, proj, view, camPos, camFront, camRight);
+    }
+
+    private void renderMinimap(Camera cam, Matrix4f proj, Matrix4f view,
+                                Vector3f camPos, Vector3f camFront, Vector3f camRight) {
+        // Position minimap in top-right of view, 2.5m in front
+        Vector3f mapCenter = new Vector3f(camPos).add(
+            camFront.x * 2.5f + camRight.x * 1.2f,
+            camFront.y * 2.5f + 0.4f,
+            camFront.z * 2.5f + camRight.z * 1.2f);
+
+        // Floor indicator
+        int floor = player.getCurrentRoom() != null ? player.getCurrentRoom().getFloor() : 0;
+        String mapLabel = "F" + (floor + 1) + "  " + world.getRooms().size() + " rooms";
+        fontRenderer.renderBillboard(mapLabel, mapCenter, 0.05f,
+            new Vector3f(0.5f, 0.9f, 0.5f), proj, view, camPos);
+
+        // Room dots — show nearby rooms on current floor
+        for (Room room : world.getRooms()) {
+            if (room.getFloor() != floor) continue;
+            Vector3f dp = room.getDoorPosition();
+            if (dp == null) continue;
+            float dist = camPos.distance(dp);
+            if (dist > 20f) continue;
+
+            // Map room position relative to player onto minimap
+            float dx = (dp.x - camPos.x) * 0.15f;
+            float dz = (dp.z - camPos.z) * 0.15f;
+            Vector3f dotPos = new Vector3f(mapCenter).add(
+                camRight.x * dx, 0, camFront.x * dz + camFront.z * dz);
+
+            Vector3f dotColor = room.isPrivate()
+                ? new Vector3f(1.0f, 0.3f, 0.5f)
+                : new Vector3f(0.3f, 0.8f, 1.0f);
+            fontRenderer.renderBillboard(".", dotPos, 0.04f, dotColor, proj, view, camPos);
+        }
+
+        // Player dot (green)
+        fontRenderer.renderBillboard("@", mapCenter, 0.06f,
+            new Vector3f(0.0f, 1.0f, 0.0f), proj, view, camPos);
     }
 
     private void toggleFullscreen() {
