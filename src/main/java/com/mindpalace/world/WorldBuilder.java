@@ -147,6 +147,8 @@ public class WorldBuilder {
             renderStairwell(r, s.y, stairZ);
             // Laboratory at end of first hallway
             renderLaboratory(r, s.y, stairZ + 6.0f);
+            // Courtyard after the lab
+            renderCourtyard(r, s.y, stairZ + 18.0f);
         }
     }
 
@@ -244,6 +246,83 @@ public class WorldBuilder {
         // Lab sign
         r.drawCube(new Vector3f(cx, floorY + lh - 0.3f, cz - ld / 2f + 0.15f),
             new Vector3f(3f, 0.3f, 0.06f), Renderer.TEX_NEON_AMBER);
+    }
+
+    private void renderCourtyard(Renderer r, float floorY, float courtZ) {
+        float cw = 14f, cd = 12f, ch = 6f;
+        float cx = 0, cy = floorY + ch / 2f, cz = courtZ + cd / 2f;
+        float t = 0.3f;
+
+        // Hardwood floor
+        r.drawCube(new Vector3f(cx, floorY, cz), new Vector3f(cw, 0.12f, cd), Renderer.TEX_HARDWOOD);
+        // Glass ceiling (cyan-tinted)
+        r.drawCube(new Vector3f(cx, floorY + ch, cz), new Vector3f(cw, 0.1f, cd), Renderer.TEX_NEON_CYAN);
+        // Wallpapered walls
+        r.drawCube(new Vector3f(cx, cy, cz - cd / 2f), new Vector3f(cw, ch, t), Renderer.TEX_WALLPAPER);
+        r.drawCube(new Vector3f(cx, cy, cz + cd / 2f), new Vector3f(cw, ch, t), Renderer.TEX_WALLPAPER);
+        r.drawCube(new Vector3f(cx - cw / 2f, cy, cz), new Vector3f(t, ch, cd), Renderer.TEX_WALLPAPER);
+        r.drawCube(new Vector3f(cx + cw / 2f, cy, cz), new Vector3f(t, ch, cd), Renderer.TEX_WALLPAPER);
+
+        // Central fountain
+        float fx = cx, fz = cz;
+        // Basin
+        r.drawCube(new Vector3f(fx, floorY + 0.3f, fz), new Vector3f(3f, 0.5f, 3f), Renderer.TEX_CONCRETE);
+        // Water (blue)
+        r.drawCube(new Vector3f(fx, floorY + 0.55f, fz), new Vector3f(2.6f, 0.05f, 2.6f), Renderer.TEX_NEON_CYAN);
+        // Center pillar
+        r.drawCube(new Vector3f(fx, floorY + 0.8f, fz), new Vector3f(0.3f, 0.6f, 0.3f), Renderer.TEX_WHITE);
+        // Top tier
+        r.drawCube(new Vector3f(fx, floorY + 1.1f, fz), new Vector3f(1.2f, 0.15f, 1.2f), Renderer.TEX_WHITE);
+        r.drawCube(new Vector3f(fx, floorY + 1.2f, fz), new Vector3f(0.8f, 0.05f, 0.8f), Renderer.TEX_NEON_CYAN);
+
+        // Couches (left side)
+        for (int i = 0; i < 2; i++) {
+            float sx = cx - cw / 2f + 2f + i * 4f;
+            float sz = cz - cd / 2f + 2f;
+            // Seat
+            r.drawCube(new Vector3f(sx, floorY + 0.4f, sz), new Vector3f(2.5f, 0.3f, 1.0f), Renderer.TEX_BOOK_RED);
+            // Back
+            r.drawCube(new Vector3f(sx, floorY + 0.8f, sz + 0.5f), new Vector3f(2.5f, 0.5f, 0.15f), Renderer.TEX_BOOK_RED);
+            // Armrests
+            r.drawCube(new Vector3f(sx - 1.1f, floorY + 0.5f, sz), new Vector3f(0.2f, 0.2f, 1.0f), Renderer.TEX_DOOR);
+            r.drawCube(new Vector3f(sx + 1.1f, floorY + 0.5f, sz), new Vector3f(0.2f, 0.2f, 1.0f), Renderer.TEX_DOOR);
+        }
+
+        // TV screens (back wall)
+        for (int i = 0; i < 2; i++) {
+            float tvx = cx - 2f + i * 4f;
+            r.drawCube(new Vector3f(tvx, floorY + 2.5f, cz + cd / 2f - 0.2f),
+                new Vector3f(2.5f, 1.5f, 0.1f), Renderer.TEX_NEON_CYAN);
+            // Frame
+            r.drawCube(new Vector3f(tvx, floorY + 2.5f, cz + cd / 2f - 0.15f),
+                new Vector3f(2.7f, 1.7f, 0.08f), Renderer.TEX_DOOR);
+        }
+
+        // Bar (right side)
+        float bx = cx + cw / 2f - 2f, bz = cz - cd / 2f + 3f;
+        r.drawCube(new Vector3f(bx, floorY + 1.0f, bz), new Vector3f(3f, 0.1f, 1.0f), Renderer.TEX_DOOR);
+        // Bar front panel
+        r.drawCube(new Vector3f(bx, floorY + 0.5f, bz + 0.5f), new Vector3f(3f, 1.0f, 0.1f), Renderer.TEX_DOOR);
+        // Stools
+        for (int i = 0; i < 3; i++) {
+            float sx = bx - 1f + i * 1f;
+            r.drawCube(new Vector3f(sx, floorY + 0.5f, bz - 0.5f), new Vector3f(0.3f, 0.6f, 0.3f), Renderer.TEX_METAL);
+            r.drawCube(new Vector3f(sx, floorY + 0.85f, bz - 0.5f), new Vector3f(0.4f, 0.08f, 0.4f), Renderer.TEX_BOOK_RED);
+        }
+
+        // Hotel safe (corner, encrypted secrets)
+        float safeX = cx - cw / 2f + 1.5f, safeZ = cz + cd / 2f - 1.5f;
+        r.drawCube(new Vector3f(safeX, floorY + 0.6f, safeZ), new Vector3f(1.0f, 1.0f, 0.8f), Renderer.TEX_METAL);
+        // Safe door
+        r.drawCube(new Vector3f(safeX, floorY + 0.6f, safeZ + 0.4f), new Vector3f(0.8f, 0.8f, 0.05f), Renderer.TEX_DOOR);
+        // Combination dial
+        r.drawCube(new Vector3f(safeX, floorY + 0.6f, safeZ + 0.43f), new Vector3f(0.15f, 0.15f, 0.03f), Renderer.TEX_PLAQUE);
+        // Handle
+        r.drawCube(new Vector3f(safeX + 0.2f, floorY + 0.6f, safeZ + 0.45f), new Vector3f(0.08f, 0.3f, 0.06f), Renderer.TEX_PLAQUE);
+
+        // Courtyard sign
+        r.drawCube(new Vector3f(cx, floorY + ch - 0.3f, cz - cd / 2f + 0.15f),
+            new Vector3f(4f, 0.3f, 0.06f), Renderer.TEX_NEON_AMBER);
     }
 
     private void renderWallWithDoors(Renderer r, Vector3f s, Hallway hw, int side) {
