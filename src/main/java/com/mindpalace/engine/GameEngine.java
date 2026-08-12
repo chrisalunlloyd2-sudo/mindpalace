@@ -414,6 +414,7 @@ public class GameEngine {
             renderFloorMap();
             renderScreenHUD();
             renderBookSpineText();
+            renderBookTooltip();
         }
 
         if (state == GameState.PLAYING) {
@@ -592,6 +593,35 @@ public class GameEngine {
             fontRenderer.renderBillboard(name, pos, 0.03f,
                 new Vector3f(0.9f, 0.9f, 0.9f), proj, view, camPos);
         }
+    }
+
+    private void renderBookTooltip() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+
+        Room room = player.getCurrentRoom();
+        if (room == null) return;
+
+        // Find the book the player is looking at
+        Book looked = findBookInSights(room);
+        if (looked == null) return;
+
+        // Position tooltip above the book
+        Vector3f tipPos = new Vector3f(
+            looked.getWorldX(), looked.getWorldY() + 0.15f, looked.getWorldZ());
+
+        String tip = looked.getFilename() + " | " + looked.getLanguage()
+            + " | " + formatSize(looked.getSizeBytes());
+        fontRenderer.renderBillboard(tip, tipPos, 0.04f,
+            new Vector3f(1.0f, 1.0f, 0.6f), proj, view, camPos);
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes < 1024) return bytes + "B";
+        if (bytes < 1024 * 1024) return String.format("%.1fKB", bytes / 1024.0);
+        return String.format("%.1fMB", bytes / (1024.0 * 1024.0));
     }
 
     private void toggleFullscreen() {
