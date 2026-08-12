@@ -13,6 +13,8 @@ import com.mindpalace.github.GitHubClient;
 import com.mindpalace.audio.AudioEngine;
 import com.mindpalace.agent.AgentManager;
 import com.mindpalace.agent.AgentChat;
+import com.mindpalace.deploy.DeployManager;
+import com.mindpalace.deploy.AnimationSystem;
 import org.joml.Vector3f;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
@@ -42,6 +44,8 @@ public class GameEngine {
     private AudioEngine audio;
     private AgentManager agentManager;
     private AgentChat agentChat;
+    private DeployManager deployManager;
+    private AnimationSystem animationSystem;
     private GameState state;
 
     private double lastFrameTime;
@@ -139,6 +143,17 @@ public class GameEngine {
         );
         agentManager.start();
 
+        // Deploy system + animations
+        deployManager = new DeployManager();
+        animationSystem = new AnimationSystem();
+        deployManager.setCallback((status, msg) -> {
+            System.out.println("[Deploy] " + status + ": " + msg);
+            if (status == DeployManager.Status.DEPLOYED && player.getCurrentRoom() != null) {
+                Vector3f signPos = player.getCurrentRoom().getDoorPosition();
+                if (signPos != null) animationSystem.startDeployAnimation(signPos);
+            }
+        });
+
         loadingText = "Ready.";
         loadingProgress = 1.0f;
         renderLoadingFrame();
@@ -229,7 +244,7 @@ public class GameEngine {
         }
 
         // ESC toggles
-        if (input.isKeyJustPressed(GLFW.GLFW_KEY_ESCAPE)) {
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_ESCAPE)) {
             if (bookEditor.isOpen()) {
                 bookEditor.close();
                 input.setCursorCaptured(true);
@@ -267,13 +282,23 @@ public class GameEngine {
             }
 
             // Tab toggles agent chat
-            if (input.isKeyJustPressed(GLFW.GLFW_KEY_TAB) && agentChat != null) {
+            if (input.wasKeyPressed(GLFW.GLFW_KEY_TAB) && agentChat != null) {
                 agentChat.toggle(player.getPosition(), player.getLookDirection());
             }
         }
 
-        if (input.isKeyJustPressed(GLFW.GLFW_KEY_F11))
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F11))
             toggleFullscreen();
+
+        // Update animations
+        if (animationSystem != null) animationSystem.update((float) dt);
+
+        // Trigger deploy on book save
+        if (bookEditor.isOpen() && bookEditor.isDirty() && player.getCurrentRoom() != null) {
+            deployManager.deploy(player.getCurrentRoom(),
+                "mindpalace: saved " + bookEditor.getCurrentBook().getFilename());
+            bookEditor.clearDirty();
+        }
     }
 
     private Book findBookInSights(Room room) {
@@ -396,6 +421,11 @@ public class GameEngine {
 
         if (agentChat != null && agentChat.isOpen()) {
             agentChat.render(renderer);
+        }
+
+        // Render deploy animations
+        if (animationSystem != null && animationSystem.isActive()) {
+            animationSystem.render(renderer);
         }
 
         GLFW.glfwSwapBuffers(window);

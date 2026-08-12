@@ -61,8 +61,8 @@ public class Input {
     }
 
     public boolean isKeyDown(int key) { return keys[key]; }
-    public boolean isKeyJustPressed(int key) { return keys[key] && !keysPrev[key]; }
-    public boolean isKeyJustReleased(int key) { return !keys[key] && keysPrev[key]; }
+    public boolean wasKeyPressed(int key) { return keys[key] && !keysPrev[key]; }
+    public boolean wasKeyReleased(int key) { return !keys[key] && keysPrev[key]; }
 
     public double getMouseDX() { double d = accumDX; accumDX = 0; return d; }
     public double getMouseDY() { double d = accumDY; accumDY = 0; return d; }

@@ -434,4 +434,6 @@ public class BookEditor {
     public Book getCurrentBook() { return currentBook; }
     public String getEditBuffer() { return editBuffer; }
     public String getTerminal() { return terminal.toString(); }
+    public boolean isDirty() { return dirty; }
+    public void clearDirty() { dirty = false; }
 }
