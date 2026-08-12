@@ -29,6 +29,11 @@ public class Room {
     private List<Book> books = new ArrayList<>();
     private Room backRoom;  // second room for comments/gists/archive
 
+    // Door animation
+    private float doorOpenAmount = 0f;  // 0=closed, 1=fully open (slid up)
+    private float doorAnimTarget = 0f;
+    private static final float DOOR_ANIM_SPEED = 3.0f;  // units per second
+
     // Room dimensions
     public static final float ROOM_WIDTH = 6.0f;
     public static final float ROOM_DEPTH = 6.0f;
@@ -74,6 +79,18 @@ public class Room {
     public void addBook(Book book) { books.add(book); }
     public Room getBackRoom() { return backRoom; }
     public void setBackRoom(Room room) { this.backRoom = room; }
+
+    // Door animation
+    public float getDoorOpenAmount() { return doorOpenAmount; }
+    public void openDoor() { doorAnimTarget = 1f; }
+    public void closeDoor() { doorAnimTarget = 0f; }
+    public void updateDoorAnimation(float dt) {
+        if (doorOpenAmount < doorAnimTarget) {
+            doorOpenAmount = Math.min(doorAnimTarget, doorOpenAmount + DOOR_ANIM_SPEED * dt);
+        } else if (doorOpenAmount > doorAnimTarget) {
+            doorOpenAmount = Math.max(doorAnimTarget, doorOpenAmount - DOOR_ANIM_SPEED * dt);
+        }
+    }
 
     /**
      * Get display label for the door plaque.

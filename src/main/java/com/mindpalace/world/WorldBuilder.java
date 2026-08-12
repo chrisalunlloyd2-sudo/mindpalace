@@ -489,6 +489,15 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x + w / 2f - leftW / 2f, c.y, fz), new Vector3f(leftW, h, t), Renderer.TEX_WALLPAPER);
         r.drawCube(new Vector3f(c.x, c.y + h / 2f - (h - dw) / 2f, fz), new Vector3f(Room.DOOR_WIDTH, h - dw, t), Renderer.TEX_WALLPAPER);
 
+        // Door panel — slides up when opened
+        float doorSlide = room.getDoorOpenAmount() * dw;
+        float doorPanelY = c.y - h / 2f + dw / 2f + doorSlide;
+        float doorPanelH = dw * (1f - room.getDoorOpenAmount());
+        if (doorPanelH > 0.01f) {
+            r.drawCube(new Vector3f(c.x, doorPanelY, fz),
+                new Vector3f(Room.DOOR_WIDTH - 0.04f, doorPanelH, t + 0.02f), Renderer.TEX_DOOR);
+        }
+
         // Door frame
         float ft = 0.08f;
         r.drawCube(new Vector3f(c.x - dh, c.y - h / 2f + dw / 2f, fz), new Vector3f(ft, dw, ft), Renderer.TEX_DOOR);

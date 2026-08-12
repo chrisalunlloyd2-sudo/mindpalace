@@ -155,6 +155,7 @@ public class Player {
 
     private void enterRoom(Room room) {
         currentRoom = room;
+        room.openDoor();
         Vector3f c = room.getRoomCenter();
         float ez = room.getHallwaySide() == 0 ? c.z + Room.ROOM_DEPTH / 2f - 1.2f
                                               : c.z - Room.ROOM_DEPTH / 2f + 1.2f;
@@ -166,6 +167,7 @@ public class Player {
     private void exitRoom() {
         if (currentRoom == null) return;
         Room room = currentRoom;
+        room.closeDoor();
         currentRoom = null;
         Vector3f dp = room.getDoorPosition();
         float ex = room.getHallwaySide() == 0 ? dp.x + 1.2f : dp.x - 1.2f;

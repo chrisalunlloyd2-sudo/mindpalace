@@ -261,6 +261,11 @@ public class GameEngine {
         if (state == GameState.PLAYING) {
             player.update(dt, input, world);
 
+            // Update door animations for all rooms
+            for (Room room : world.getRooms()) {
+                room.updateDoorAnimation((float) dt);
+            }
+
             // Update agent context when in a room
             if (player.getCurrentRoom() != null && agentManager != null) {
                 agentManager.setContext(player.getCurrentRoom(), null);
