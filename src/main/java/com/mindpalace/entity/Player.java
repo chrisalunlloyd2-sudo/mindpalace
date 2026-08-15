@@ -4,6 +4,7 @@ import com.mindpalace.engine.Input;
 import com.mindpalace.render.Camera;
 import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.world.Room;
+import com.mindpalace.audio.AudioEngine;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
@@ -28,12 +29,15 @@ public class Player {
 
     private Room currentRoom;
     private double interactCooldown;
+    private AudioEngine audio;
 
     public Player() {
         camera = new Camera();
         camera.setPosition(0, EYE_HEIGHT, 3);
         camera.setYaw(0); // looking +Z down hallway
     }
+
+    public void setAudio(AudioEngine a) { this.audio = a; }
 
     public void update(double dt, Input input, WorldBuilder world) {
         float dtf = (float) dt;
@@ -52,6 +56,7 @@ public class Player {
         if (input.isKeyDown(GLFW.GLFW_KEY_D)) wishDir.add(camera.getRight());
 
         boolean moving = wishDir.lengthSquared() > 0.01f;
+        if (moving && onGround && audio != null) audio.playFootstep();
         if (moving) {
             wishDir.normalize();
             float targetSpeed = MOVE_SPEED * (input.isKeyDown(GLFW.GLFW_KEY_LEFT_SHIFT) ? SPRINT_MULT : 1.0f);
@@ -156,6 +161,7 @@ public class Player {
     private void enterRoom(Room room) {
         currentRoom = room;
         room.openDoor();
+        if (audio != null) audio.playDoorOpen();
         Vector3f c = room.getRoomCenter();
         float ez = room.getHallwaySide() == 0 ? c.z + Room.ROOM_DEPTH / 2f - 1.2f
                                               : c.z - Room.ROOM_DEPTH / 2f + 1.2f;

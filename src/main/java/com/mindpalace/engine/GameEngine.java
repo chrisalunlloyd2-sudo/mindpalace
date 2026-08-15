@@ -46,6 +46,8 @@ public class GameEngine {
     private AgentChat agentChat;
     private DeployManager deployManager;
     private AnimationSystem animationSystem;
+    private boolean searchMode;
+    private String searchQuery = "";
     private GameState state;
 
     private double lastFrameTime;
@@ -118,6 +120,7 @@ public class GameEngine {
         player = new Player();
         hud = new HUD();
         audio = new AudioEngine();
+        player.setAudio(audio);
 
         loadingText = "Scanning repositories...";
         loadingProgress = 0.3f;
@@ -161,6 +164,7 @@ public class GameEngine {
         state = GameState.PLAYING;
         loading = false;
         input.setCursorCaptured(true);
+        audio.playAmbientStart();
 
         lastFrameTime = GLFW.glfwGetTime();
         accumulator = 0.0;
@@ -234,7 +238,20 @@ public class GameEngine {
             }
         }
         if (cmd != null) {
-            if (bookEditor.isOpen()) {
+            if (searchMode) {
+                searchQuery = cmd;
+                Room found = findRepoByName(searchQuery);
+                if (found != null && found.getDoorPosition() != null) {
+                    Vector3f dp = found.getDoorPosition();
+                    player.getCamera().setPosition(dp.x + (found.getHallwaySide() == 0 ? 1.5f : -1.5f),
+                        player.getCamera().getPosition().y, dp.z);
+                    System.out.println("[Search] Jumped to " + found.getDisplayLabel());
+                } else {
+                    System.out.println("[Search] No repo matching '" + searchQuery + "'");
+                }
+                searchMode = false;
+                input.setCursorCaptured(true);
+            } else if (bookEditor.isOpen()) {
                 bookEditor.handleCommand(cmd);
             } else if (agentChat != null && agentChat.isOpen() && agentManager != null) {
                 // Route to agent chat
@@ -289,6 +306,18 @@ public class GameEngine {
             // Tab toggles agent chat
             if (input.wasKeyPressed(GLFW.GLFW_KEY_TAB) && agentChat != null) {
                 agentChat.toggle(player.getPosition(), player.getLookDirection());
+            }
+
+            // / toggles search mode
+            if (input.wasKeyPressed(GLFW.GLFW_KEY_SLASH) && !bookEditor.isOpen()) {
+                searchMode = !searchMode;
+                searchQuery = "";
+                if (searchMode) {
+                    input.setCursorCaptured(false);
+                    System.out.println("[Search] Type repo name, Enter to jump, ESC to cancel");
+                } else {
+                    input.setCursorCaptured(true);
+                }
             }
         }
 
@@ -637,6 +666,21 @@ public class GameEngine {
         }
         GLFW.glfwSetWindowMonitor(window, monitor, 0, 0, width, height, GLFW.GLFW_DONT_CARE);
         renderer.resize(width, height);
+    }
+
+    private Room findRepoByName(String query) {
+        String q = query.toLowerCase().trim();
+        Room best = null;
+        int bestScore = Integer.MAX_VALUE;
+        for (Room room : world.getRooms()) {
+            String name = room.getRepoName().toLowerCase();
+            if (name.equals(q)) return room; // exact match
+            if (name.contains(q)) {
+                int score = name.length() - q.length();
+                if (score < bestScore) { bestScore = score; best = room; }
+            }
+        }
+        return best;
     }
 
     private void cleanup() {
