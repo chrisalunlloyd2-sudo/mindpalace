@@ -4,6 +4,7 @@ import com.mindpalace.engine.Input;
 import com.mindpalace.render.Camera;
 import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.world.Room;
+import com.mindpalace.world.Hallway;
 import com.mindpalace.audio.AudioEngine;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
@@ -108,6 +109,23 @@ public class Player {
         }
 
         camera.setPosition(newPos);
+
+        // Teleport pad — walk onto cyan pad at hallway end to go up
+        if (currentRoom == null && onGround) {
+            for (Hallway hw : world.getHallways()) {
+                if (hw.getFloor() >= world.getHallways().size() - 1) continue;
+                float padZ = hw.getEnd().z - 1.0f;
+                float padY = hw.getStart().y;
+                if (Math.abs(newPos.x) < 0.75f && Math.abs(newPos.z - padZ) < 0.75f
+                    && Math.abs(newPos.y - padY) < 0.5f) {
+                    // Teleport to next floor
+                    Hallway next = world.getHallways().get(hw.getFloor() + 1);
+                    camera.setPosition(0, next.getStart().y + EYE_HEIGHT, next.getStart().z + 2f);
+                    System.out.println("[TELEPORT] Floor " + (hw.getFloor() + 1) + " -> " + (next.getFloor() + 1));
+                    return;
+                }
+            }
+        }
 
         // Door interaction — Enter key
         if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && interactCooldown <= 0) {

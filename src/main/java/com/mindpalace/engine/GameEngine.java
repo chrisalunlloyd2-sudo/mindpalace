@@ -49,6 +49,7 @@ public class GameEngine {
     private AnimationSystem animationSystem;
     private boolean searchMode;
     private String searchQuery = "";
+    private boolean showHelp;
     private GameState state;
 
     private double lastFrameTime;
@@ -325,6 +326,10 @@ public class GameEngine {
         if (input.wasKeyPressed(GLFW.GLFW_KEY_F11))
             toggleFullscreen();
 
+        // F1 toggles help overlay
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F1))
+            showHelp = !showHelp;
+
         // Update animations
         if (animationSystem != null) animationSystem.update((float) dt);
 
@@ -465,6 +470,9 @@ public class GameEngine {
         if (animationSystem != null && animationSystem.isActive()) {
             animationSystem.render(renderer);
         }
+
+        // Help overlay
+        if (showHelp) renderHelpOverlay();
 
         GLFW.glfwSwapBuffers(window);
     }
@@ -684,6 +692,43 @@ public class GameEngine {
             String label = "Floor " + (hw.getFloor() + 1);
             fontRenderer.renderBillboard(label, signPos, 0.15f,
                 new Vector3f(0.2f, 1.0f, 0.3f), proj, view, camPos);
+        }
+    }
+
+    private void renderHelpOverlay() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
+
+        Vector3f helpCenter = new Vector3f(camPos).add(
+            camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
+
+        String[] lines = {
+            "=== CONTROLS ===",
+            "WASD: Move    Mouse: Look    Shift: Sprint",
+            "Enter: Open/Close Door    Space: Jump",
+            "Click: Open Book    ESC: Menu/Close",
+            "/: Search Repo    Tab: Agent Chat",
+            "F1: Help    F11: Fullscreen",
+            "",
+            "=== AGENTS ===",
+            "phi3:mini (tool) + tinyllama:1.1b (critic)",
+            "Auto-cycle every 5 min in rooms",
+            "Tab to chat, type in console",
+            "",
+            "=== EDITOR ===",
+            ":e edit  :n new  :d delete  :s suggest  :q quit"
+        };
+
+        float y = helpCenter.y + 0.6f;
+        for (String line : lines) {
+            Vector3f linePos = new Vector3f(helpCenter.x, y, helpCenter.z);
+            fontRenderer.renderBillboard(line, linePos, 0.05f,
+                new Vector3f(0.7f, 0.9f, 1.0f), proj, view, camPos);
+            y -= 0.12f;
         }
     }
 
