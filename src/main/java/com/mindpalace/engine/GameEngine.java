@@ -6,6 +6,7 @@ import com.mindpalace.render.Camera;
 import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
+import com.mindpalace.world.Hallway;
 import com.mindpalace.entity.Player;
 import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
@@ -444,6 +445,8 @@ public class GameEngine {
             renderScreenHUD();
             renderBookSpineText();
             renderBookTooltip();
+            renderBookHighlight();
+            renderFloorSigns();
         }
 
         if (state == GameState.PLAYING) {
@@ -651,6 +654,37 @@ public class GameEngine {
         if (bytes < 1024) return bytes + "B";
         if (bytes < 1024 * 1024) return String.format("%.1fKB", bytes / 1024.0);
         return String.format("%.1fMB", bytes / (1024.0 * 1024.0));
+    }
+
+    private void renderBookHighlight() {
+        Room room = player.getCurrentRoom();
+        if (room == null) return;
+        Book looked = findBookInSights(room);
+        if (looked == null) return;
+
+        // Draw a glowing outline cube around the book
+        Vector3f pos = new Vector3f(looked.getWorldX(), looked.getWorldY(), looked.getWorldZ());
+        float s = 0.12f;
+        renderer.drawCube(pos, new Vector3f(s, s, s), Renderer.TEX_NEON_AMBER);
+    }
+
+    private void renderFloorSigns() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+
+        for (Hallway hw : world.getHallways()) {
+            Vector3f s = hw.getStart();
+            float signY = s.y + WorldBuilder.HALLWAY_HEIGHT - 0.5f;
+            float signZ = s.z + 1.5f;
+            Vector3f signPos = new Vector3f(0, signY, signZ);
+            if (camPos.distance(signPos) > 20f) continue;
+
+            String label = "Floor " + (hw.getFloor() + 1);
+            fontRenderer.renderBillboard(label, signPos, 0.15f,
+                new Vector3f(0.2f, 1.0f, 0.3f), proj, view, camPos);
+        }
     }
 
     private void toggleFullscreen() {

@@ -137,6 +137,17 @@ public class WorldBuilder {
         renderWallWithDoors(r, s, hw, -1);
         renderWallWithDoors(r, s, hw, 1);
 
+        // Floor indicator sign at hallway start
+        float signX = 0, signY = s.y + h - 0.5f, signZ = s.z + 1.5f;
+        r.drawCube(new Vector3f(signX, signY, signZ),
+            new Vector3f(1.5f, 0.4f, 0.08f), Renderer.TEX_NEON_GREEN);
+        // Teleport pad at hallway end (to next floor)
+        if (hw.getFloor() < hallways.size() - 1) {
+            float padZ = hw.getEnd().z - 1.0f;
+            r.drawCube(new Vector3f(0, s.y + 0.06f, padZ),
+                new Vector3f(1.5f, 0.06f, 1.5f), Renderer.TEX_NEON_CYAN);
+        }
+
         // Poster frames on walls between doors
         renderPosters(r, s, hw);
 
