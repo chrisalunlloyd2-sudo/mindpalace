@@ -525,6 +525,9 @@ public class WorldBuilder {
         // Table + chairs in center
         renderFurniture(r, c, w, d, h);
 
+        // Ornaments — potted plant + lamp
+        renderOrnaments(r, c, w, d, h, side);
+
         // Bookcases on 3 walls
         renderBookcase(r, room, 0);
         renderBookcase(r, room, -1);
@@ -547,6 +550,35 @@ public class WorldBuilder {
             r.drawCube(new Vector3f(c.x, floorY + 0.35f, chZ), new Vector3f(0.5f, 0.06f, 0.5f), Renderer.TEX_SHELF);
             r.drawCube(new Vector3f(c.x, floorY + 0.7f, chZ + 0.2f), new Vector3f(0.5f, 0.5f, 0.06f), Renderer.TEX_SHELF);
         }
+    }
+
+    private void renderOrnaments(Renderer r, Vector3f c, float w, float d, float h, int side) {
+        float floorY = c.y - h / 2f;
+
+        // Potted plant — back corner
+        float plantX = c.x - w / 2f + 0.6f;
+        float plantZ = side == 0 ? c.z + d / 2f - 0.6f : c.z - d / 2f + 0.6f;
+        // Pot (brown cylinder approximation)
+        r.drawCube(new Vector3f(plantX, floorY + 0.2f, plantZ),
+            new Vector3f(0.25f, 0.4f, 0.25f), Renderer.TEX_DOOR);
+        // Plant foliage (green sphere approximation)
+        r.drawCube(new Vector3f(plantX, floorY + 0.55f, plantZ),
+            new Vector3f(0.35f, 0.35f, 0.35f), Renderer.TEX_GRASS);
+        r.drawCube(new Vector3f(plantX + 0.1f, floorY + 0.5f, plantZ),
+            new Vector3f(0.2f, 0.25f, 0.2f), Renderer.TEX_GRASS);
+
+        // Floor lamp — opposite corner
+        float lampX = c.x + w / 2f - 0.6f;
+        float lampZ = side == 0 ? c.z - d / 2f + 0.6f : c.z + d / 2f - 0.6f;
+        // Pole
+        r.drawCube(new Vector3f(lampX, floorY + 0.8f, lampZ),
+            new Vector3f(0.06f, 1.6f, 0.06f), Renderer.TEX_PLAQUE);
+        // Lampshade
+        r.drawCube(new Vector3f(lampX, floorY + 1.65f, lampZ),
+            new Vector3f(0.3f, 0.2f, 0.3f), Renderer.TEX_NEON_AMBER);
+        // Light glow
+        r.drawCube(new Vector3f(lampX, floorY + 1.5f, lampZ),
+            new Vector3f(0.15f, 0.15f, 0.15f), Renderer.TEX_NEON_AMBER);
     }
 
     private void renderBookcase(Renderer r, Room room, int wallDir) {
