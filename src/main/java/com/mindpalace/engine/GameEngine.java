@@ -8,6 +8,9 @@ import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Hallway;
 import com.mindpalace.entity.Player;
+import com.mindpalace.entity.AgentNPC;
+import com.mindpalace.agent.KnowledgeGraph;
+import com.mindpalace.world.TodoCrystal;
 import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
 import com.mindpalace.github.GitHubClient;
@@ -51,6 +54,9 @@ public class GameEngine {
     private DeployManager deployManager;
     private AnimationSystem animationSystem;
     private LiveUpdateManager liveUpdateManager;
+    private KnowledgeGraph knowledgeGraph;
+    private final List<AgentNPC> npcs = new ArrayList<>();
+    private final List<TodoCrystal> crystals = new ArrayList<>();
     private boolean searchMode;
     private String searchQuery = "";
     private boolean showHelp;
@@ -152,6 +158,15 @@ public class GameEngine {
         );
         agentManager.start();
 
+        // Build the knowledge graph + spawn agent NPCs (bodies in the world)
+        knowledgeGraph = new KnowledgeGraph();
+        knowledgeGraph.build(world.getRooms());
+        spawnNPCs();
+        spawnCrystals();
+        System.out.println("[NPC] " + npcs.size() + " agents spawned, "
+            + crystals.size() + " TODO crystals, KG: "
+            + knowledgeGraph.nodeCount() + " nodes / " + knowledgeGraph.edgeCount() + " edges");
+
         // Deploy system + animations
         deployManager = new DeployManager();
         animationSystem = new AnimationSystem();
@@ -204,6 +219,69 @@ public class GameEngine {
 
         lastFrameTime = GLFW.glfwGetTime();
         accumulator = 0.0;
+    }
+
+    private void spawnNPCs() {
+        // Explorer = tool agent (phi3:mini), Critic = critic agent (tinyllama:1.1b)
+        AgentNPC explorer = new AgentNPC("Explorer", AgentNPC.Role.EXPLORER, 42L, knowledgeGraph);
+        AgentNPC critic = new AgentNPC("Critic", AgentNPC.Role.CRITIC, 1337L, knowledgeGraph);
+
+        // Place them at the first two rooms' centers (or hallway start if empty)
+        List<Room> rooms = world.getRooms();
+        if (!rooms.isEmpty()) {
+            Room r0 = rooms.get(0);
+            if (r0.getRoomCenter() != null) explorer.setPosition(new Vector3f(r0.getRoomCenter()).add(0, 1.0f, 0));
+            if (rooms.size() > 1 && rooms.get(1).getRoomCenter() != null)
+                critic.setPosition(new Vector3f(rooms.get(1).getRoomCenter()).add(0, 1.0f, 0));
+            else if (r0.getRoomCenter() != null)
+                critic.setPosition(new Vector3f(r0.getRoomCenter()).add(1.5f, 1.0f, 0));
+        }
+        npcs.add(explorer);
+        npcs.add(critic);
+    }
+
+    private void spawnCrystals() {
+        // Scan repo files for TODO/FIXME/HACK comments → spawn a crystal per hit (cap 40)
+        int cap = 40;
+        for (Room room : world.getRooms()) {
+            if (crystals.size() >= cap) break;
+            String localPath = room.getLocalPath();
+            if (localPath == null) continue;
+            for (Book book : room.getBooks()) {
+                if (crystals.size() >= cap) break;
+                String content = readBookContent(room, book);
+                if (content == null) continue;
+                String upper = content.toUpperCase();
+                int idx = upper.indexOf("TODO");
+                if (idx < 0) idx = upper.indexOf("FIXME");
+                if (idx < 0) idx = upper.indexOf("HACK");
+                if (idx < 0) continue;
+                int end = content.indexOf('\n', idx);
+                if (end < 0) end = Math.min(content.length(), idx + 60);
+                String text = content.substring(idx, Math.min(end, idx + 60)).trim();
+                TodoCrystal c = new TodoCrystal(text, room.getRepoName(), book.getFilePath());
+                if (book.getWorldX() != 0 || book.getWorldY() != 0 || book.getWorldZ() != 0) {
+                    c.setPosition(new Vector3f(book.getWorldX(), book.getWorldY() + 0.3f, book.getWorldZ()));
+                } else if (room.getRoomCenter() != null) {
+                    c.setPosition(new Vector3f(room.getRoomCenter()).add(0, 0.3f, 0));
+                }
+                crystals.add(c);
+            }
+        }
+    }
+
+    /** Read a book's file content directly from disk (content is lazily loaded). */
+    private String readBookContent(Room room, Book book) {
+        String localPath = room.getLocalPath();
+        if (localPath == null || book.getFilePath() == null) return null;
+        try {
+            java.nio.file.Path p = java.nio.file.Path.of(localPath, book.getFilePath());
+            if (!java.nio.file.Files.isRegularFile(p)) return null;
+            if (java.nio.file.Files.size(p) > 200_000) return null; // skip huge files
+            return java.nio.file.Files.readString(p);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void startConsoleReader() {
@@ -320,6 +398,22 @@ public class GameEngine {
             // Update door animations for all rooms
             for (Room room : world.getRooms()) {
                 room.updateDoorAnimation((float) dt);
+            }
+
+            // Update agent NPCs (bodies + behaviors)
+            for (AgentNPC npc : npcs) {
+                npc.update((float) dt, world.getRooms());
+                // Explorer picks up nearby crystals
+                if (npc.getRole() == AgentNPC.Role.EXPLORER && npc.getCarriedCrystal() == null) {
+                    for (TodoCrystal c : crystals) {
+                        if (c.isCarried() || c.getPosition() == null) continue;
+                        if (npc.getPosition().distance(c.getPosition()) < 1.5f) {
+                            npc.pickUpCrystal(c);
+                            System.out.println("[NPC] Explorer picked up TODO: " + c.getLabel());
+                            break;
+                        }
+                    }
+                }
             }
 
             // Update agent context when in a room
@@ -480,6 +574,10 @@ public class GameEngine {
         renderer.beginFrame(player.getCamera());
         world.render(renderer, player.getCamera());
 
+        // Render agent NPCs (bodies) + TODO crystals
+        renderNPCs();
+        renderCrystals();
+
         // Render neon sign text
         if (fontRenderer != null && fontRenderer.isReady()) {
             renderNeonSignText();
@@ -512,6 +610,65 @@ public class GameEngine {
         if (showHelp) renderHelpOverlay();
 
         GLFW.glfwSwapBuffers(window);
+    }
+
+    private void renderNPCs() {
+        Camera cam = player.getCamera();
+        for (AgentNPC npc : npcs) {
+            Vector3f p = npc.getPosition();
+            if (cam.getPosition().distance(p) > 30f) continue;
+
+            // Body — a small capsule-ish stack of cubes, bobbing while walking
+            float bob = (float) Math.sin(npc.getBobPhase()) * 0.05f;
+            Vector3f bodyPos = new Vector3f(p.x, p.y + bob, p.z);
+            int tex = npc.getBodyTexture();
+
+            // Torso
+            renderer.drawCube(bodyPos, new Vector3f(0.4f, 0.6f, 0.25f), tex);
+            // Head
+            renderer.drawCube(new Vector3f(bodyPos.x, bodyPos.y + 0.45f, bodyPos.z),
+                new Vector3f(0.25f, 0.25f, 0.25f), Renderer.TEX_WHITE);
+            // Carried crystal (if any) floats above head
+            if (npc.getCarriedCrystal() != null) {
+                renderer.drawCube(new Vector3f(bodyPos.x, bodyPos.y + 0.8f, bodyPos.z),
+                    new Vector3f(0.12f, 0.12f, 0.12f), Renderer.TEX_NEON_GREEN);
+            }
+
+            // Name label
+            if (fontRenderer != null && fontRenderer.isReady()) {
+                Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+                Matrix4f view = cam.getViewMatrix();
+                Vector3f labelPos = new Vector3f(bodyPos.x, bodyPos.y + 0.9f, bodyPos.z);
+                String label = npc.getName() + " [" + npc.getState() + "]";
+                Vector3f color = npc.getRole() == AgentNPC.Role.EXPLORER
+                    ? new Vector3f(0.2f, 0.9f, 1.0f)
+                    : new Vector3f(1.0f, 0.7f, 0.2f);
+                fontRenderer.renderBillboard(label, labelPos, 0.05f, color, proj, view, cam.getPosition());
+            }
+        }
+    }
+
+    private void renderCrystals() {
+        Camera cam = player.getCamera();
+        for (TodoCrystal c : crystals) {
+            if (c.isCarried() || c.getPosition() == null) continue;
+            Vector3f p = c.getPosition();
+            if (cam.getPosition().distance(p) > 20f) continue;
+
+            // Hex crystal — a tall thin cube (height = complexity)
+            float h = c.getHeight();
+            renderer.drawCube(new Vector3f(p.x, p.y + h / 2f, p.z),
+                new Vector3f(0.15f, h, 0.15f), Renderer.TEX_NEON_GREEN);
+
+            // Label
+            if (fontRenderer != null && fontRenderer.isReady()) {
+                Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+                Matrix4f view = cam.getViewMatrix();
+                Vector3f labelPos = new Vector3f(p.x, p.y + h + 0.15f, p.z);
+                fontRenderer.renderBillboard(c.getLabel(), labelPos, 0.03f,
+                    new Vector3f(0.3f, 1.0f, 0.4f), proj, view, cam.getPosition());
+            }
+        }
     }
 
     private void renderNeonSignText() {
