@@ -38,6 +38,15 @@ public class RoomPopulator {
                     } catch (IOException ignored) {}
 
                     room.addBook(book);
+
+                    // Test files → lab devices (schema: Test → Lab device)
+                    if (LabDevice.isTestFile(p.getFileName().toString())) {
+                        LabDevice dev = new LabDevice(
+                            p.getFileName().toString(),
+                            room.getRepoName(),
+                            LabDevice.guessStatus(p.getFileName().toString()));
+                        room.addLabDevice(dev);
+                    }
                 });
         } catch (IOException e) {
             System.err.println("[RoomPopulator] Error scanning " + path + ": " + e.getMessage());

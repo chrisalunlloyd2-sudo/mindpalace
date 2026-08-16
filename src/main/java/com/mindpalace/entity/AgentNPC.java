@@ -166,6 +166,18 @@ public class AgentNPC {
         if (gossipLog.size() > 20) gossipLog.remove(0);
     }
 
+    /** Attract this agent toward a newly-appeared room (curiosity-driven). */
+    public void attractTo(Room room) {
+        if (room == null || room.getRoomCenter() == null) return;
+        // Only move if curious enough (KV-driven) — otherwise keep current path
+        if (!kv.roll("curiosity")) return;
+        currentRoom = room;
+        target = new Vector3f(room.getRoomCenter());
+        target.y = 1.0f;
+        state = State.WALKING;
+        stateTimer = 10f;
+    }
+
     public String getLatestGossip() {
         return gossipLog.isEmpty() ? null : gossipLog.get(gossipLog.size() - 1);
     }

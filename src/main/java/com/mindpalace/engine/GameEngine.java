@@ -197,6 +197,15 @@ public class GameEngine {
                 texIds.add(Renderer.TEX_WALLPAPER);
                 animationSystem.startConstructionAnimation(c, targets, sizes, texIds);
                 System.out.println("[LiveUpdate] Animating new room into view: " + room.getRepoName());
+
+                // Rebuild the KG so agents can navigate into the new area
+                if (knowledgeGraph != null) {
+                    knowledgeGraph.build(world.getRooms());
+                }
+                // Attract agents toward the new room (curiosity)
+                for (AgentNPC npc : npcs) {
+                    npc.attractTo(room);
+                }
             }
             @Override
             public void onNewBook(Room room, String filename) {

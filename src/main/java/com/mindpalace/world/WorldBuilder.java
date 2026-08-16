@@ -555,10 +555,37 @@ public class WorldBuilder {
         // Ornaments — potted plant + lamp
         renderOrnaments(r, c, w, d, h, side);
 
+        // Lab devices — test files as glowing devices in the back corner
+        renderLabDevices(r, room, c, w, d, h, side);
+
         // Bookcases on 3 walls
         renderBookcase(r, room, 0);
         renderBookcase(r, room, -1);
         renderBookcase(r, room, 1);
+    }
+
+    private void renderLabDevices(Renderer r, Room room, Vector3f c, float w, float d, float h, int side) {
+        List<LabDevice> devices = room.getLabDevices();
+        if (devices.isEmpty()) return;
+        float floorY = c.y - h / 2f;
+
+        // Test lab corner — back-left, opposite the plant
+        float labX = c.x + w / 2f - 0.8f;
+        float labZ = side == 0 ? c.z + d / 2f - 0.8f : c.z - d / 2f + 0.8f;
+
+        int count = Math.min(devices.size(), 6);
+        for (int i = 0; i < count; i++) {
+            LabDevice dev = devices.get(i);
+            float dx = labX - (i % 3) * 0.35f;
+            float dz = labZ - (i / 3) * 0.35f;
+            // Device body
+            r.drawCube(new Vector3f(dx, floorY + 0.35f, dz),
+                new Vector3f(0.2f, 0.3f, 0.2f), Renderer.TEX_METAL);
+            // Glow indicator (status color)
+            r.drawCube(new Vector3f(dx, floorY + 0.6f, dz),
+                new Vector3f(0.08f, 0.08f, 0.08f), dev.getGlowTexture());
+            dev.setPosition(new Vector3f(dx, floorY + 0.6f, dz));
+        }
     }
 
     private void renderFurniture(Renderer r, Vector3f c, float w, float d, float h) {
@@ -735,8 +762,12 @@ public class WorldBuilder {
         room.setDoorPosition(new Vector3f(doorX, hy + 1.0f, doorZ));
         room.setRoomCenter(new Vector3f(cx, hy + Room.ROOM_HEIGHT / 2f, doorZ));
         room.setDoorRotation(side == 0 ? 90 : -90);
+
+        // Objects spawn: populate books + lab devices for the new room
+        populator.populateRoom(room);
         System.out.println("[WorldBuilder] Live-added room: " + room.getRepoName()
-            + " (floor " + (floor + 1) + ")");
+            + " (floor " + (floor + 1) + ", " + room.getBooks().size() + " books, "
+            + room.getLabDevices().size() + " lab devices)");
     }
 
     public Room findRoomAt(Vector3f pos) {

@@ -28,6 +28,7 @@ public class Room {
 
     // Contents
     private List<Book> books = new ArrayList<>();
+    private List<LabDevice> labDevices = new ArrayList<>();
     private Room backRoom;  // second room for comments/gists/archive
 
     // Door animation
@@ -80,6 +81,8 @@ public class Room {
 
     public List<Book> getBooks() { return books; }
     public void addBook(Book book) { books.add(book); }
+    public List<LabDevice> getLabDevices() { return labDevices; }
+    public void addLabDevice(LabDevice d) { labDevices.add(d); }
     public Room getBackRoom() { return backRoom; }
     public void setBackRoom(Room room) { this.backRoom = room; }
 
