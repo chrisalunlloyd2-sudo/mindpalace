@@ -17,6 +17,7 @@ public class Room {
     private String localPath;
     private String remoteUrl;
     private String lastCommit;  // most recent commit message + date
+    private boolean fogged;     // fog-of-war: hidden until explored (private/remote repos)
 
     // Position in world
     private Vector3f doorPosition;  // center of doorway
@@ -63,6 +64,8 @@ public class Room {
     public void setRemoteUrl(String url) { this.remoteUrl = url; }
     public String getLastCommit() { return lastCommit; }
     public void setLastCommit(String c) { this.lastCommit = c; }
+    public boolean isFogged() { return fogged; }
+    public void setFogged(boolean f) { this.fogged = f; }
 
     public Vector3f getDoorPosition() { return doorPosition; }
     public void setDoorPosition(Vector3f pos) { this.doorPosition = pos; }

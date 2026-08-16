@@ -2,6 +2,8 @@ package com.mindpalace.world;
 
 import com.mindpalace.render.Camera;
 import com.mindpalace.render.Renderer;
+import com.mindpalace.github.GitHubClient;
+import com.mindpalace.github.RepoScanner;
 import org.joml.Vector3f;
 import java.util.*;
 
@@ -20,17 +22,35 @@ public class WorldBuilder {
 
     private RepoMapper repoMapper;
     private RoomPopulator populator;
+    private FogOfWar fogOfWar;
 
     private static final float ROOM_CULL_DISTANCE = 30.0f;
 
     public WorldBuilder() {
         repoMapper = new RepoMapper();
         populator = new RoomPopulator();
+        fogOfWar = new FogOfWar(4.0f, 8.0f);
     }
+
+    public FogOfWar getFogOfWar() { return fogOfWar; }
 
     public void build() {
         System.out.println("[WorldBuilder] Building MindPalace world...");
         repoMapper.scanRepos(rooms);
+
+        // Fog of war: fetch remote (incl. private) repos from GitHub and mark them fogged
+        GitHubClient gh = new GitHubClient();
+        if (gh.loadTokenFromCredentialManager()) {
+            try {
+                RepoScanner scanner = new RepoScanner(gh);
+                scanner.mergeRemoteRepos(rooms);
+            } catch (Exception e) {
+                System.err.println("[WorldBuilder] Remote merge failed: " + e.getMessage());
+            }
+        } else {
+            System.out.println("[WorldBuilder] No GitHub token — remote/private repos stay hidden");
+        }
+
         // Populate first so we can sort by book count
         for (Room room : rooms) populator.populateRoom(room);
         // Sort by book count (proxy for repo size) — largest repos first
@@ -42,7 +62,7 @@ public class WorldBuilder {
 
     private void layoutWorld() {
         int total = rooms.size();
-        int floors = 4;
+        int floors = Math.max(4, (total + 16) / 17); // ~17 rooms per floor
         int perFloor = (total + floors - 1) / floors;
         int perSide = (perFloor + 1) / 2;
 
@@ -95,6 +115,8 @@ public class WorldBuilder {
             float dist = camPos.distance(c);
             if (dist > ROOM_CULL_DISTANCE) continue;
             if (!isInFront(camPos, camFront, c, dist)) continue;
+            // Fog of war: skip fogged rooms until their hex is revealed
+            if (room.isFogged() && !fogOfWar.isRoomRevealed(room)) continue;
             renderRoom(r, room);
         }
     }
@@ -391,7 +413,11 @@ public class WorldBuilder {
         List<Float> doorZs = new ArrayList<>();
         for (Room room : rooms)
             if (room.getHallwaySide() == (side == -1 ? 0 : 1) && room.getFloor() == hw.getFloor())
-                if (room.getDoorPosition() != null) doorZs.add(room.getDoorPosition().z);
+                if (room.getDoorPosition() != null) {
+                    // Fogged rooms have no visible door until revealed
+                    if (room.isFogged() && !fogOfWar.isRoomRevealed(room)) continue;
+                    doorZs.add(room.getDoorPosition().z);
+                }
         doorZs.sort(Float::compare);
 
         float prevZ = s.z;
@@ -419,6 +445,7 @@ public class WorldBuilder {
             if (room.getHallwaySide() == (side == -1 ? 0 : 1) && room.getFloor() == hw.getFloor()) {
                 Vector3f dp = room.getDoorPosition();
                 if (dp == null) continue;
+                if (room.isFogged() && !fogOfWar.isRoomRevealed(room)) continue;
                 renderNeonSign(r, wallX, s.y + h - 0.3f, dp.z, room);
                 renderExitSign(r, wallX, s.y + h - 0.1f, dp.z);
             }
@@ -679,6 +706,38 @@ public class WorldBuilder {
 
     public List<Room> getRooms() { return rooms; }
     public List<Hallway> getHallways() { return hallways; }
+
+    /** Add a room to the live world and lay it out (no restart needed). */
+    public void addRoom(Room room) {
+        rooms.add(room);
+        // Assign to the last floor, next available slot
+        int total = rooms.size();
+        int floors = Math.max(4, (total + 16) / 17);
+        int perFloor = (total + floors - 1) / floors;
+        int perSide = (perFloor + 1) / 2;
+
+        int idx = total - 1;
+        int floor = Math.min(floors - 1, idx / (perSide * 2));
+        int within = idx % (perSide * 2);
+        int side = within / perSide;
+        int i = within % perSide;
+
+        Hallway hw = hallways.get(floor);
+        float hz = hw.getStart().z;
+        float hy = hw.getStart().y;
+        float doorZ = hz + HALLWAY_START_OFFSET + i * DOOR_SPACING;
+        float doorX = side == 0 ? -HALLWAY_WIDTH / 2f : HALLWAY_WIDTH / 2f;
+        float cx = side == 0 ? -HALLWAY_WIDTH / 2f - Room.ROOM_DEPTH / 2f - Room.WALL_THICKNESS
+                             : HALLWAY_WIDTH / 2f + Room.ROOM_DEPTH / 2f + Room.WALL_THICKNESS;
+
+        room.setFloor(floor);
+        room.setHallwaySide(side);
+        room.setDoorPosition(new Vector3f(doorX, hy + 1.0f, doorZ));
+        room.setRoomCenter(new Vector3f(cx, hy + Room.ROOM_HEIGHT / 2f, doorZ));
+        room.setDoorRotation(side == 0 ? 90 : -90);
+        System.out.println("[WorldBuilder] Live-added room: " + room.getRepoName()
+            + " (floor " + (floor + 1) + ")");
+    }
 
     public Room findRoomAt(Vector3f pos) {
         for (Room room : rooms) {

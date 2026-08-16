@@ -32,6 +32,7 @@ public class AgentManager {
     private Room currentRoom;
     private Book currentBook;
     private String lastUserMessage;
+    private final Set<String> discoveredRepos = new HashSet<>();
 
     // Callbacks for tool execution
     private Consumer<String> onToolMessage;
@@ -81,6 +82,12 @@ public class AgentManager {
     public void setContext(Room room, Book book) {
         this.currentRoom = room;
         this.currentBook = book;
+        // Track discovery: when a fogged room is revealed, agents "discover" it
+        if (room != null && !discoveredRepos.contains(room.getRepoName())) {
+            discoveredRepos.add(room.getRepoName());
+            log("[AgentManager] Discovered repo: " + room.getRepoName()
+                + (room.isFogged() ? " (fog lifted)" : ""));
+        }
     }
 
     public void setCallbacks(Consumer<String> tool, Consumer<String> critic, Consumer<String> console) {
@@ -154,6 +161,8 @@ public class AgentManager {
 
     private String buildContext() {
         StringBuilder sb = new StringBuilder();
+        sb.append("Fog of war: ").append(discoveredRepos.size())
+          .append(" repos discovered so far. Hidden repos remain unexplored.\n");
         if (currentRoom != null) {
             sb.append("Current room: ").append(currentRoom.getRepoName())
               .append(" (").append(currentRoom.getLanguage()).append(")")

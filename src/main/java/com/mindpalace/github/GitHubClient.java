@@ -30,25 +30,30 @@ public class GitHubClient {
 
     /**
      * Try to get token from Windows Credential Manager.
+     * Spawns `git credential-manager get` directly (no shell) and writes the
+     * credential request to stdin — avoids WSL/bash resolution issues.
      */
     public boolean loadTokenFromCredentialManager() {
         try {
-            ProcessBuilder pb = new ProcessBuilder("cmdkey", "/list");
+            ProcessBuilder pb = new ProcessBuilder("git", "credential-manager", "get");
+            pb.redirectErrorStream(true);
             Process p = pb.start();
-            String output = new String(p.getInputStream().readAllBytes());
-            if (output.contains("git:https://github.com") || output.contains("github.com")) {
-                // Token exists in credential manager — we'll use git to fetch it
-                ProcessBuilder pb2 = new ProcessBuilder(
-                    "bash", "-c",
-                    "echo 'protocol=https\nhost=github.com\n' | git credential-manager get 2>/dev/null | grep password | cut -d= -f2"
-                );
-                Process p2 = pb2.start();
-                String tok = new String(p2.getInputStream().readAllBytes()).trim();
-                if (!tok.isEmpty() && tok.length() >= 40) {
-                    this.token = tok;
-                    this.authenticated = true;
-                    System.out.println("[GitHub] Authenticated via Windows Credential Manager");
-                    return true;
+            p.getOutputStream().write("protocol=https\nhost=github.com\n\n".getBytes());
+            p.getOutputStream().flush();
+            p.getOutputStream().close();
+            String out = new String(p.getInputStream().readAllBytes());
+            p.waitFor();
+
+            for (String line : out.split("\n")) {
+                if (line.toLowerCase().startsWith("password=")) {
+                    String tok = line.substring("password=".length()).trim();
+                    tok = tok.replaceAll("[^\\x20-\\x7E]", "");
+                    if (tok.length() >= 20) {
+                        this.token = tok;
+                        this.authenticated = true;
+                        System.out.println("[GitHub] Authenticated via Windows Credential Manager");
+                        return true;
+                    }
                 }
             }
         } catch (Exception e) {

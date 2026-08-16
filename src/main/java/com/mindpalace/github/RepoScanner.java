@@ -44,10 +44,21 @@ public class RepoScanner {
                 }
             }
             if (!found) {
-                // Remote-only repo — add it
+                // Remote-only repo — add it, fogged until explored
                 remote.setLocalPath(null); // no local copy
+                remote.setFogged(true);
                 localRooms.add(remote);
-                System.out.println("[RepoScanner] Added remote-only: " + remote.getRepoName());
+                System.out.println("[RepoScanner] Added remote-only (fogged): " + remote.getRepoName());
+            } else {
+                // Private repos that exist locally are also fogged until explored
+                if (remote.isPrivate()) {
+                    for (Room local : localRooms) {
+                        if (local.getRepoName().equalsIgnoreCase(remote.getRepoName())) {
+                            local.setFogged(true);
+                            break;
+                        }
+                    }
+                }
             }
         }
     }

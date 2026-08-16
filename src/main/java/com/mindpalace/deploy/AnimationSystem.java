@@ -10,11 +10,31 @@ import java.util.*;
  */
 public class AnimationSystem {
     private final List<Particle> particles = new ArrayList<>();
+    private final List<BuildBlock> buildBlocks = new ArrayList<>();
     private final Random rand = new Random();
     private boolean active;
     private Vector3f source;
     private float elapsed;
     private static final int MAX_PARTICLES = 200;
+
+    /** A block in a "construction" animation — rises from floor and assembles. */
+    public static class BuildBlock {
+        Vector3f target;   // final resting position
+        Vector3f pos;      // current position (starts below floor)
+        Vector3f size;
+        int texId;
+        float delay;       // stagger delay before this block starts rising
+        float riseTime;    // how long it takes to rise into place
+
+        BuildBlock(Vector3f target, Vector3f size, int texId, float delay) {
+            this.target = new Vector3f(target);
+            this.size = new Vector3f(size);
+            this.texId = texId;
+            this.delay = delay;
+            this.riseTime = 0.6f + (float) Math.random() * 0.6f;
+            this.pos = new Vector3f(target.x, target.y - 4f, target.z); // start below
+        }
+    }
 
     public static class Particle {
         Vector3f pos, vel;
@@ -38,6 +58,7 @@ public class AnimationSystem {
         source = new Vector3f(worldPos);
         elapsed = 0;
         particles.clear();
+        buildBlocks.clear();
 
         // Burst of particles
         for (int i = 0; i < 80; i++) {
@@ -56,6 +77,26 @@ public class AnimationSystem {
                 color,
                 rand.nextFloat() * 0.08f + 0.03f
             ));
+        }
+    }
+
+    /**
+     * Start a "construction" animation — blocks rise from the floor and assemble
+     * into a structure (GTA Vice City loading style). Used for live code updates.
+     */
+    public void startConstructionAnimation(Vector3f center, List<Vector3f> blockTargets,
+                                           List<Vector3f> blockSizes, List<Integer> texIds) {
+        active = true;
+        source = new Vector3f(center);
+        elapsed = 0;
+        particles.clear();
+        buildBlocks.clear();
+
+        float delay = 0f;
+        for (int i = 0; i < blockTargets.size(); i++) {
+            buildBlocks.add(new BuildBlock(
+                blockTargets.get(i), blockSizes.get(i), texIds.get(i), delay));
+            delay += 0.05f; // stagger each block
         }
     }
 
@@ -81,6 +122,22 @@ public class AnimationSystem {
     public void update(float dt) {
         if (!active) return;
         elapsed += dt;
+
+        // Update construction blocks
+        Iterator<BuildBlock> bit = buildBlocks.iterator();
+        while (bit.hasNext()) {
+            BuildBlock b = bit.next();
+            if (elapsed < b.delay) continue; // not this block's turn yet
+            float t = (elapsed - b.delay) / b.riseTime;
+            if (t >= 1f) {
+                b.pos.set(b.target);
+                bit.remove();
+                continue;
+            }
+            // Ease-out rise
+            float e = 1f - (1f - t) * (1f - t);
+            b.pos.y = b.target.y - 4f + (4f * e);
+        }
 
         Iterator<Particle> it = particles.iterator();
         while (it.hasNext()) {
@@ -113,13 +170,17 @@ public class AnimationSystem {
             }
         }
 
-        if (elapsed > 4f && particles.isEmpty()) {
+        if (elapsed > 4f && particles.isEmpty() && buildBlocks.isEmpty()) {
             active = false;
         }
     }
 
     /** Render all particles as colored cubes. */
     public void render(Renderer renderer) {
+        // Construction blocks first (they're the "building" effect)
+        for (BuildBlock b : buildBlocks) {
+            renderer.drawCube(b.pos, b.size, b.texId);
+        }
         for (Particle p : particles) {
             float alpha = p.life / p.maxLife;
             Vector3f faded = new Vector3f(

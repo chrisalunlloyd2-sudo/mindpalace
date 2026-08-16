@@ -16,6 +16,7 @@ import com.mindpalace.agent.AgentManager;
 import com.mindpalace.agent.AgentChat;
 import com.mindpalace.deploy.DeployManager;
 import com.mindpalace.deploy.AnimationSystem;
+import com.mindpalace.deploy.LiveUpdateManager;
 import org.joml.Vector3f;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
@@ -26,6 +27,8 @@ import org.lwjgl.system.MemoryUtil;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
 
 public class GameEngine {
     private long window;
@@ -47,6 +50,7 @@ public class GameEngine {
     private AgentChat agentChat;
     private DeployManager deployManager;
     private AnimationSystem animationSystem;
+    private LiveUpdateManager liveUpdateManager;
     private boolean searchMode;
     private String searchQuery = "";
     private boolean showHelp;
@@ -158,6 +162,36 @@ public class GameEngine {
                 if (signPos != null) animationSystem.startDeployAnimation(signPos);
             }
         });
+
+        // Live update system — watches for new repos, animates them into view
+        liveUpdateManager = new LiveUpdateManager(github, world);
+        liveUpdateManager.setCallback(new LiveUpdateManager.UpdateCallback() {
+            @Override
+            public void onNewRoom(Room room) {
+                // Animate the new room's blocks assembling into view
+                Vector3f c = room.getRoomCenter();
+                List<Vector3f> targets = new ArrayList<>();
+                List<Vector3f> sizes = new ArrayList<>();
+                List<Integer> texIds = new ArrayList<>();
+                // Floor, walls, ceiling as construction blocks
+                targets.add(new Vector3f(c.x, c.y - Room.ROOM_HEIGHT / 2f, c.z));
+                sizes.add(new Vector3f(Room.ROOM_WIDTH, 0.1f, Room.ROOM_DEPTH));
+                texIds.add(Renderer.TEX_HARDWOOD);
+                targets.add(new Vector3f(c.x, c.y, c.z));
+                sizes.add(new Vector3f(Room.ROOM_WIDTH, Room.ROOM_HEIGHT, Room.ROOM_DEPTH));
+                texIds.add(Renderer.TEX_WALLPAPER);
+                animationSystem.startConstructionAnimation(c, targets, sizes, texIds);
+                System.out.println("[LiveUpdate] Animating new room into view: " + room.getRepoName());
+            }
+            @Override
+            public void onNewBook(Room room, String filename) {
+                // Book-level updates just pulse the room's sign
+                Vector3f dp = room.getDoorPosition();
+                if (dp != null) animationSystem.startGlowPulse(dp);
+            }
+        });
+        liveUpdateManager.snapshot();
+        liveUpdateManager.start();
 
         loadingText = "Ready.";
         loadingProgress = 1.0f;
@@ -279,6 +313,9 @@ public class GameEngine {
 
         if (state == GameState.PLAYING) {
             player.update(dt, input, world);
+
+            // Fog of war: reveal hexes around the player
+            world.getFogOfWar().reveal(player.getPosition());
 
             // Update door animations for all rooms
             for (Room room : world.getRooms()) {
@@ -486,6 +523,7 @@ public class GameEngine {
         for (Room room : world.getRooms()) {
             Vector3f dp = room.getDoorPosition();
             if (dp == null) continue;
+            if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
             float dist = camPos.distance(dp);
             if (dist > 25f) continue;
 
@@ -518,6 +556,7 @@ public class GameEngine {
         for (Room room : world.getRooms()) {
             Vector3f dp = room.getDoorPosition();
             if (dp == null) continue;
+            if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
             float dist = camPos.distance(dp);
             if (dist > 15f) continue;
 
@@ -590,6 +629,7 @@ public class GameEngine {
         // Room dots — show nearby rooms on current floor
         for (Room room : world.getRooms()) {
             if (room.getFloor() != floor) continue;
+            if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
             Vector3f dp = room.getDoorPosition();
             if (dp == null) continue;
             float dist = camPos.distance(dp);
@@ -763,6 +803,8 @@ public class GameEngine {
     }
 
     private void cleanup() {
+        if (liveUpdateManager != null) liveUpdateManager.stop();
+        if (deployManager != null) deployManager.shutdown();
         audio.cleanup();
         renderer.cleanup();
         GLFW.glfwDestroyWindow(window);
