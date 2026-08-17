@@ -176,7 +176,7 @@ public class BookViewer {
             try {
                 java.nio.file.Path filePath = java.nio.file.Path.of(
                     currentRoom.getLocalPath(), currentBook.getFilePath());
-                String content = java.nio.file.Files.readString(filePath);
+                String content = java.nio.file.Files.readString(filePath, java.nio.charset.StandardCharsets.UTF_8);
                 currentBook.setContent(content);
                 return;
             } catch (Exception ignored) {}

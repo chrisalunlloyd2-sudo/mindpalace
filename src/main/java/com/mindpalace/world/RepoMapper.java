@@ -75,7 +75,7 @@ public class RepoMapper {
             ProcessBuilder pb = new ProcessBuilder("git", "-C", repoDir.getAbsolutePath(), "remote", "get-url", "origin");
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            String url = new String(p.getInputStream().readAllBytes()).trim();
+            String url = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
             if (!url.isEmpty() && p.waitFor() == 0) {
                 room.setRemoteUrl(url);
                 // Extract the REAL GitHub repo name from the remote URL — this is
@@ -96,7 +96,7 @@ public class RepoMapper {
                 "log", "-1", "--format=%s (%ar)");
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            String msg = new String(p.getInputStream().readAllBytes()).trim();
+            String msg = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
             if (!msg.isEmpty() && p.waitFor() == 0) {
                 room.setLastCommit(msg);
             }

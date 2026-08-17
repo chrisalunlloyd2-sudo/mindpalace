@@ -39,10 +39,10 @@ public class GitHubClient {
             ProcessBuilder pb = new ProcessBuilder("git", "credential-manager", "get");
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            p.getOutputStream().write("protocol=https\nhost=github.com\n\n".getBytes());
+            p.getOutputStream().write("protocol=https\nhost=github.com\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
             p.getOutputStream().flush();
             p.getOutputStream().close();
-            String out = new String(p.getInputStream().readAllBytes());
+            String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             p.waitFor();
 
             for (String line : out.split("\n")) {
@@ -181,7 +181,7 @@ public class GitHubClient {
     public boolean upsertFile(String repoName, String filePath, String content, String commitMessage, String sha) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("message", commitMessage);
-        body.addProperty("content", java.util.Base64.getEncoder().encodeToString(content.getBytes()));
+        body.addProperty("content", java.util.Base64.getEncoder().encodeToString(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         if (sha != null) body.addProperty("sha", sha);
 
         RequestBody reqBody = RequestBody.create(body.toString(), MediaType.parse("application/json"));

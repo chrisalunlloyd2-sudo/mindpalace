@@ -74,7 +74,7 @@ public class AgentManager {
         criticLifespan.setSystemPrompt(CRITIC_SYSTEM_PROMPT);
 
         // Start autonomous cycle
-        scheduler.scheduleAtFixedRate(this::autonomousCycle, 30, CYCLE_MS / 1000, TimeUnit.SECONDS);
+        scheduler.scheduleWithFixedDelay(this::autonomousCycle, 30, CYCLE_MS / 1000, TimeUnit.SECONDS);
     }
 
     public void stop() {

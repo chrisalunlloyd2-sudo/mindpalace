@@ -18,6 +18,41 @@
 
 ---
 
+## DATAFLOW + CODE-QUALITY AUDIT (2026-08-17, round 2)
+
+**Fixed & pushed in this round (commit after A1-A5):**
+
+- **UTF-8 charset fixes (11 sites, 8 files)** — the big Windows dataflow corruption class:
+  `getBytes()`/`readAllBytes()`/`readString()` used the PLATFORM default charset
+  (cp1252 on many Windows installs). Same string → different bytes on Windows vs Linux:
+  - `MemoryManager.sha1` — memory dedup hashes drifted across machines
+  - `GitHubClient.upsertFile` — UTF-8 file content re-encoded cp1252 → corrupted bytes pushed to GitHub
+  - `RepoMapper` git remote/log output — commit messages with unicode → mojibake on door labels
+  - `DeployManager`, `GameEngine`, `BookEditor`, `BookViewer`, `Shader` — same class
+  All now `StandardCharsets.UTF_8`.
+- **LiveUpdateManager: new remote rooms had EMPTY shelves** — `world.addRoom` → `populator.populateRoom`
+  returns immediately when `localPath == null` (remote-only rooms). `onNewBook` callback existed but was
+  never called. Now: on new repo detection, fetch books via GitHub API, `addBook` each, fire `onNewBook`.
+- **AgentManager: `scheduleAtFixedRate` → `scheduleWithFixedDelay`** — a 5-min autonomous cycle that
+  outlasts its interval now queues overlapping cycles racing on `currentRoom/currentBook`. Fixed delay
+  guarantees no overlap.
+- **ModelLifespan: RAG was DEAD CODE** — `retrieve()` had zero callers; memories accumulated to cap 200
+  and were never injected. Now `buildMessages()` grounds every call with top-3 memories by last user query.
+
+**Left for the local agent (needs real build/test + judgement):**
+
+- **L2. `DeployManager.runBuild`**: `p.waitFor(30, SECONDS)` without reading the pipe (chatty build blocks on
+  the 64KB pipe buffer → times out → marked DEPLOYED while still running). Fix: read output to a file,
+  check exit code, `destroy()` on timeout.
+- **L3. `BookViewer.java` (214 lines) is dead code** — never referenced. Decide: wire it into the editor
+  (dual-pane view) or leave as reference. Do NOT delete (ADD-only doctrine).
+- **L4. `LiveUpdateManager` polls `fetchAllRepos()` every 15s** — wasteful + rate-limit pressure. Bump to
+  60s+ or cache with ETag/`updated_at` watermark.
+- **L5. `OllamaClient.chat` returns null on IO error and "" on missing content** — callers must check BOTH
+  (`isBlank()`), some paths only check null (BehaviorTree does check isEmpty; verify others).
+- **L6. Ollama availability checked once at AgentManager.start()** — if Ollama starts later, agents stay
+  disabled forever. Add periodic availability retry (e.g., every 5 min, cheap /tags call).
+
 ## PHASE A — Prototype the 5 fixes (do FIRST, no screenshots)
 
 Each step: `mvn -q compile` + new JUnit test + commit. Proof is the test, not a render.

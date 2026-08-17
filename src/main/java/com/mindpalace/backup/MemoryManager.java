@@ -127,7 +127,7 @@ public class MemoryManager {
     private String sha1(String s) {
         try {
             java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
-            byte[] d = md.digest(s.getBytes());
+            byte[] d = md.digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
             for (byte b : d) sb.append(String.format("%02x", b));
             return sb.toString();

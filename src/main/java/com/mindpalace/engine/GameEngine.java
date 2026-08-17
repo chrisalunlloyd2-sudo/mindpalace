@@ -316,7 +316,7 @@ public class GameEngine {
             java.nio.file.Path p = java.nio.file.Path.of(localPath, book.getFilePath());
             if (!java.nio.file.Files.isRegularFile(p)) return null;
             if (java.nio.file.Files.size(p) > 200_000) return null; // skip huge files
-            return java.nio.file.Files.readString(p);
+            return java.nio.file.Files.readString(p, java.nio.charset.StandardCharsets.UTF_8);
         } catch (Exception e) {
             return null;
         }

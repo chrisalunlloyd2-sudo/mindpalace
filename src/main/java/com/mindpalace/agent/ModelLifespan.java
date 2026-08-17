@@ -50,6 +50,7 @@ public class ModelLifespan {
 
     // Rolling summary (compaction)
     private String summary = "";
+    private String lastQuery = "";
 
     // Repetition detection — catch verbatim/near-verbatim loops
     private final Deque<String> recentReplies = new ArrayDeque<>();
@@ -70,6 +71,7 @@ public class ModelLifespan {
     /** Add a turn and return the (possibly corrected) message list to send. */
     public synchronized List<Map<String, String>> addTurn(String role, String content) {
         history.addLast(Map.of("role", role, "content", content));
+        if (role.equals("user")) lastQuery = content;
 
         // Detect drift on assistant replies
         if (role.equals("assistant") && content != null && !content.isEmpty()) {
@@ -107,6 +109,14 @@ public class ModelLifespan {
         if (systemPrompt != null) out.add(Map.of("role", "system", "content", systemPrompt));
         if (!summary.isEmpty()) {
             out.add(Map.of("role", "system", "content", "Conversation summary so far:\n" + summary));
+        }
+        // Ground the next call with the top-k memories most similar to the last
+        // user query (the lightweight RAG — was stored but never retrieved).
+        if (!lastQuery.isEmpty()) {
+            List<String> mem = retrieve(lastQuery, 3);
+            if (!mem.isEmpty()) {
+                out.add(Map.of("role", "system", "content", "Relevant memory:\n- " + String.join("\n- ", mem)));
+            }
         }
         out.addAll(history);
         return out;

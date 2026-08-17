@@ -88,7 +88,7 @@ public class DeployManager {
         ProcessBuilder pb = new ProcessBuilder(cmd).directory(new File(repoPath));
         pb.redirectErrorStream(true);
         Process p = pb.start();
-        String out = new String(p.getInputStream().readAllBytes());
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         int code = p.waitFor();
         if (code != 0 && !out.contains("nothing to commit") && !out.contains("Everything up-to-date")) {
             throw new RuntimeException("git " + args[0] + " failed: " + out.trim());

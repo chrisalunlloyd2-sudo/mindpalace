@@ -1,5 +1,6 @@
 package com.mindpalace.deploy;
 
+import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.github.GitHubClient;
@@ -85,6 +86,18 @@ public class LiveUpdateManager {
                     if (validateRepo(r)) {
                         System.out.println("[LiveUpdate] New repo detected: " + r.getRepoName());
                         r.setFogged(false); // newly created repos are visible immediately
+                        // Populate books from GitHub so the new room's shelves aren't
+                        // empty until restart (addRoom->populateRoom only handles local paths).
+                        try {
+                            List<Book> books = github.fetchRepoContents(r.getRepoName());
+                            for (Book b : books) {
+                                r.addBook(b);
+                                if (callback != null) callback.onNewBook(r, b.getFilename());
+                            }
+                            System.out.println("[LiveUpdate] Populated " + books.size() + " books for " + r.getRepoName());
+                        } catch (Exception e) {
+                            System.err.println("[LiveUpdate] Book populate failed for " + r.getRepoName() + ": " + e.getMessage());
+                        }
                         world.addRoom(r);
                         if (callback != null) callback.onNewRoom(r);
                     }

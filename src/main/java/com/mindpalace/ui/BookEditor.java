@@ -392,7 +392,7 @@ public class BookEditor {
         if (currentRoom.getLocalPath() != null) {
             try {
                 Path fp = Path.of(currentRoom.getLocalPath(), currentBook.getFilePath());
-                currentBook.setContent(TextSanitizer.asciiSafe(TextSanitizer.stripCR(Files.readString(fp))));
+                currentBook.setContent(TextSanitizer.asciiSafe(TextSanitizer.stripCR(Files.readString(fp, java.nio.charset.StandardCharsets.UTF_8))));
                 return;
             } catch (Exception e) {
                 println("[ERR] Local read failed: " + e.getMessage());

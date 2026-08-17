@@ -60,7 +60,7 @@ public class Shader {
         } catch (Exception ignored) {}
         // Fallback: direct filesystem
         try {
-            return Files.readString(Path.of("src/main/resources/" + path));
+            return Files.readString(Path.of("src/main/resources/" + path), java.nio.charset.StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new RuntimeException("Failed to load shader: " + path, e);
         }
