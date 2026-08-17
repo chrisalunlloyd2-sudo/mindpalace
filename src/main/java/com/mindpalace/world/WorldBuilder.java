@@ -23,7 +23,7 @@ public class WorldBuilder {
     // Stairway geometry (walkable ramp between floors)
     public static final int STAIR_STEPS = 8;
     public static final float STAIR_RUN = 0.6f;
-    public static final float STAIR_OFFSET = 2.0f;   // gap after hallway end
+    public static final float STAIR_OFFSET = 0.0f;   // stairs start at hallway end (was 2.0, hidden behind end wall)
 
     private RepoMapper repoMapper;
     private RoomPopulator populator;
@@ -229,8 +229,7 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(cx, s.y + h, cz), new Vector3f(w, 0.15f, len), Renderer.TEX_CEILING);
         // Crown molding
         r.drawCube(new Vector3f(cx, s.y + h - 0.08f, cz), new Vector3f(w, 0.08f, len), Renderer.TEX_DOOR);
-        // End walls
-        r.drawCube(new Vector3f(cx, s.y + h / 2f, hw.getEnd().z), new Vector3f(w, h, wallT), Renderer.TEX_WALLPAPER);
+        // End wall at START only; NO end wall — stairwell must be visible/walkable (Chris: cannot traverse levels)
         r.drawCube(new Vector3f(cx, s.y + h / 2f, s.z), new Vector3f(w, h, wallT), Renderer.TEX_WALLPAPER);
         // Side walls with doors
         renderWallWithDoors(r, s, hw, -1);
@@ -252,7 +251,7 @@ public class WorldBuilder {
 
         // Stairwell between floors
         if (hw.getFloor() < hallways.size() - 1) {
-            float stairZ = hw.getEnd().z + 2.0f;
+            float stairZ = hw.getEnd().z + STAIR_OFFSET;
             renderStairwell(r, s.y, stairZ);
         }
         // Special areas only on floor 0
