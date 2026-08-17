@@ -21,9 +21,11 @@ public class FontRenderer {
     private static final int GLYPH_W = 16;
     private static final int GLYPH_H = 28;
     private static final int COLS = 16;
-    private static final int ROWS = 6;
     private static final int ATLAS_W = COLS * GLYPH_W;
-    private static final int ATLAS_H = ROWS * GLYPH_H;
+    private int rows;   // dynamic: ceil(glyphCount / COLS)
+    private int atlasH;
+    private final java.util.Map<Character, Integer> glyphIndex = new java.util.HashMap<>();
+    private int questionIdx;
 
     private int textureId;
     private int vao, vbo, ebo;
@@ -44,25 +46,39 @@ public class FontRenderer {
     }
 
     private void buildAtlas() {
-        BufferedImage img = new BufferedImage(ATLAS_W, ATLAS_H, BufferedImage.TYPE_INT_ARGB);
+        // Glyph coverage: ASCII printable + Latin-1 Supplement + Box Drawing + common symbols.
+        // (The old atlas only covered 32..126 — every Unicode char rendered as '?' or garbage.)
+        java.util.List<Character> glyphs = new java.util.ArrayList<>();
+        for (int i = 32; i <= 126; i++) glyphs.add((char) i);
+        for (int i = 160; i <= 255; i++) glyphs.add((char) i);
+        for (int i = 0x2500; i <= 0x257F; i++) glyphs.add((char) i);
+        for (char extra : new char[]{'\u2022','\u00B7','\u2192','\u2190','\u2026','\u2550','\u2551','\u2588','\u2713','\u2717','\u2605','\u2606','\u266A'}) {
+            if (!glyphs.contains(extra)) glyphs.add(extra);
+        }
+        rows = (glyphs.size() + COLS - 1) / COLS;
+        atlasH = rows * GLYPH_H;
+        for (int i = 0; i < glyphs.size(); i++) glyphIndex.put(glyphs.get(i), i);
+        questionIdx = glyphIndex.getOrDefault('?', 0);
+
+        BufferedImage img = new BufferedImage(ATLAS_W, atlasH, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         g.setColor(Color.WHITE);
         g.setFont(new Font("Monospaced", Font.BOLD, 20));
         FontMetrics fm = g.getFontMetrics();
-        for (int i = 0; i < 95; i++) {
-            char c = (char) (i + 32);
+        for (int i = 0; i < glyphs.size(); i++) {
+            char c = glyphs.get(i);
             int col = i % COLS, row = i / COLS;
             int x = col * GLYPH_W, y = row * GLYPH_H;
             String s = String.valueOf(c);
             g.drawString(s, x + (GLYPH_W - fm.stringWidth(s)) / 2, y + fm.getAscent());
         }
         g.dispose();
-        int[] pixels = new int[ATLAS_W * ATLAS_H];
-        img.getRGB(0, 0, ATLAS_W, ATLAS_H, pixels, 0, ATLAS_W);
-        ByteBuffer buf = ByteBuffer.allocateDirect(ATLAS_W * ATLAS_H * 4);
-        for (int y = ATLAS_H - 1; y >= 0; y--)
+        int[] pixels = new int[ATLAS_W * atlasH];
+        img.getRGB(0, 0, ATLAS_W, atlasH, pixels, 0, ATLAS_W);
+        ByteBuffer buf = ByteBuffer.allocateDirect(ATLAS_W * atlasH * 4);
+        for (int y = atlasH - 1; y >= 0; y--)
             for (int x = 0; x < ATLAS_W; x++) {
                 int px = pixels[y * ATLAS_W + x];
                 buf.put((byte) ((px >> 16) & 0xFF));
@@ -77,7 +93,7 @@ public class FontRenderer {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_CLAMP);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_CLAMP);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, ATLAS_W, ATLAS_H, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, ATLAS_W, atlasH, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf);
     }
 
     private void buildMesh() {
@@ -111,6 +127,7 @@ public class FontRenderer {
             "uniform mat4 view;\n" +
             "uniform mat4 model;\n" +
             "uniform int glyphIndex;\n" +
+            "uniform float atlasRows;\n" +
             "out vec2 TexCoord;\n" +
             "void main() {\n" +
             "  gl_Position = projection * view * model * vec4(aPos, 1.0);\n" +
@@ -118,8 +135,8 @@ public class FontRenderer {
             "  int row = glyphIndex / 16;\n" +
             "  float u0 = float(col) / 16.0;\n" +
             "  float u1 = float(col + 1) / 16.0;\n" +
-            "  float v0 = float(row) / 6.0;\n" +
-            "  float v1 = float(row + 1) / 6.0;\n" +
+            "  float v0 = float(row) / atlasRows;\n" +
+            "  float v1 = float(row + 1) / atlasRows;\n" +
             "  TexCoord = vec2(u0, v0) + aTexCoord * vec2(u1 - u0, v1 - v0);\n" +
             "}\n";
         String fragSrc =
@@ -180,13 +197,14 @@ public class FontRenderer {
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
         textShader.setUniform("tex", 0);
+        textShader.setUniform("atlasRows", (float) rows);
         GL30.glBindVertexArray(vao);
         float totalW = text.length() * charSize;
         float startX = position.x - totalW / 2f + charSize / 2f;
         float angleY = (float) Math.atan2(facingNormal.x, facingNormal.z);
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            if (c < 32 || c > 126) c = '?';
+            int gi = glyphIndex.getOrDefault(c, questionIdx);
             float cx = startX + i * charSize;
             Matrix4f model = new Matrix4f();
             if (floor) {
@@ -200,7 +218,7 @@ public class FontRenderer {
                      .scale(charSize, charSize * 1.6f, 1f);
             }
             textShader.setUniform("model", model);
-            textShader.setUniform("glyphIndex", c - 32);
+            textShader.setUniform("glyphIndex", gi);
             GL11.glDrawElements(GL11.GL_TRIANGLES, 6, GL11.GL_UNSIGNED_INT, 0);
         }
         GL30.glBindVertexArray(0);
