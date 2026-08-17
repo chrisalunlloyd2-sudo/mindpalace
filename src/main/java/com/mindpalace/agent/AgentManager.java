@@ -9,8 +9,8 @@ import java.util.function.Consumer;
 
 /**
  * Manages two LLM agents from SIMS1337:
- *   - Tool Agent (phi3:mini) — tool-calling, can read/edit/create/delete files
- *   - Critic Agent (tinyllama:1.1b) — actor-critic, reviews tool agent's actions
+ *   - Tool Agent (llama3.2:3b) — tool-calling, can read/edit/create/delete files
+ *   - Critic Agent (gemma2:2b) — actor-critic, reviews tool agent's actions
  *
  * Autonomous cycle: every 5 minutes, agents discuss the current room/book.
  * User chat: when user types in a room, agents respond immediately.
@@ -103,28 +103,32 @@ public class AgentManager {
 
     // ── User chat ──
 
-    /** User sends a message — agents respond immediately. */
+    /** User sends a message — agents respond (serialized, 5-min spaced). */
     public void onUserChat(String message) {
         if (!available || !running) return;
         this.lastUserMessage = message;
 
         String context = buildContext();
-        String prompt = context + "\n\nUser says: " + message + "\n\nRespond helpfully. If the user wants to modify code, propose specific changes.";
+        String toolPrompt = context + "\n\nUser says: " + message
+            + "\n\nRespond helpfully. If the user wants to modify code, propose specific changes.";
 
-        // Tool agent responds first
-        scheduler.execute(() -> {
-            String toolResp = toolLifespan.chat(context + "\n\nUser says: " + message + "\n\nRespond helpfully. If the user wants to modify code, propose specific changes.");
-            if (toolResp != null && !toolResp.isEmpty()) {
-                emit(onToolMessage, "[Tool Agent] " + toolResp);
-            }
-
-            // Critic reviews
-            String criticPrompt = "The user said: " + message + "\nThe tool agent responded: " + (toolResp != null ? toolResp : "(no response)") + "\nProvide your critique and suggestions.";
-            String criticResp = criticLifespan.chat(criticPrompt);
-            if (criticResp != null && !criticResp.isEmpty()) {
-                emit(onCriticMessage, "[Critic] " + criticResp);
-            }
-        });
+        // Tool agent first (through the scheduler — one call at a time)
+        modelScheduler.submit(TOOL_MODEL, toolPrompt, toolLifespan)
+            .thenAccept(toolResp -> {
+                if (toolResp != null && !toolResp.isEmpty()) {
+                    emit(onToolMessage, "[Tool Agent] " + toolResp);
+                }
+                // Critic reviews AFTER tool completes (scheduler spaces it 5 min)
+                String criticPrompt = "The user said: " + message
+                    + "\nThe tool agent responded: " + (toolResp != null ? toolResp : "(no response)")
+                    + "\nProvide your critique and suggestions.";
+                modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
+                    .thenAccept(criticResp -> {
+                        if (criticResp != null && !criticResp.isEmpty()) {
+                            emit(onCriticMessage, "[Critic] " + criticResp);
+                        }
+                    });
+            });
     }
 
     // ── Autonomous cycle ──
@@ -143,19 +147,23 @@ public class AgentManager {
 
         log("[AgentManager] Auto-cycle — agents discussing " + (currentRoom != null ? currentRoom.getRepoName() : "?"));
 
-        // Tool agent proposes an action
+        // Tool agent proposes an action (serialized through scheduler)
         String toolPrompt = context + "\n\nIt's time for your 5-minute review. What should we do? Propose one concrete action.";
-        String toolResp = toolLifespan.chat(toolPrompt);
-        if (toolResp != null && !toolResp.isEmpty()) {
-            emit(onToolMessage, "[Auto] " + toolResp);
-        }
-
-        // Critic reviews the proposal
-        String criticPrompt = "The tool agent proposes: " + (toolResp != null ? toolResp : "(nothing)") + "\nEvaluate this proposal. Should we proceed? What risks or improvements?";
-        String criticResp = criticLifespan.chat(criticPrompt);
-        if (criticResp != null && !criticResp.isEmpty()) {
-            emit(onCriticMessage, "[Auto] " + criticResp);
-        }
+        modelScheduler.submit(TOOL_MODEL, toolPrompt, toolLifespan)
+            .thenAccept(toolResp -> {
+                if (toolResp != null && !toolResp.isEmpty()) {
+                    emit(onToolMessage, "[Auto] " + toolResp);
+                }
+                // Critic reviews AFTER tool completes (scheduler spaces it 5 min)
+                String criticPrompt = "The tool agent proposes: " + (toolResp != null ? toolResp : "(nothing)")
+                    + "\nEvaluate this proposal. Should we proceed? What risks or improvements?";
+                modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
+                    .thenAccept(criticResp -> {
+                        if (criticResp != null && !criticResp.isEmpty()) {
+                            emit(onCriticMessage, "[Auto] " + criticResp);
+                        }
+                    });
+            });
     }
 
     // ── Helpers ──
