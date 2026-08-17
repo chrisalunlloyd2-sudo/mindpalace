@@ -38,7 +38,7 @@ public class FontRenderer {
             buildMesh();
             buildShader();
             ready = true;
-            System.out.println("[FontRenderer] Ready — " + ATLAS_W + "x" + ATLAS_H + " atlas");
+            System.out.println("[FontRenderer] Ready — " + ATLAS_W + "x" + atlasH + " atlas");
         } catch (Exception e) {
             System.err.println("[FontRenderer] Init failed: " + e.getMessage());
             ready = false;
