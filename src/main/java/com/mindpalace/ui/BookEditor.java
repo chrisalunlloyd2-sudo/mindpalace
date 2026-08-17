@@ -5,7 +5,6 @@ import com.mindpalace.agent.OllamaClient;
 import com.mindpalace.render.Camera;
 import com.mindpalace.render.FontRenderer;
 import com.mindpalace.render.Renderer;
-import com.mindpalace.util.TextSanitizer;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import com.mindpalace.github.GitHubClient;
@@ -153,7 +152,6 @@ public class BookEditor {
         String content = currentBook.getContent();
         if (content == null || content.isEmpty()) content = "(empty file)";
         String snippet = content.length() > 2000 ? content.substring(0, 2000) : content;
-        snippet = TextSanitizer.asciiSafe(TextSanitizer.stripCR(snippet));
 
         try {
             List<Map<String, String>> messages = new ArrayList<>();
@@ -172,7 +170,7 @@ public class BookEditor {
                     String l = line.trim();
                     if (l.isEmpty()) continue;
                     suggestions.add(l);
-                    println("| " + padRight(trunc(TextSanitizer.asciiSafe(l), 34), 34) + " |");
+                    println("| " + padRight(trunc(l, 34), 34) + " |");
                 }
             }
         } catch (Exception e) {
@@ -206,7 +204,7 @@ public class BookEditor {
         }
         String text = suggestions.get(idx - 1);
         if (editBuffer == null) editBuffer = "";
-        editBuffer += TextSanitizer.asciiSafe(text) + "\n";
+        editBuffer += text + "\n";
         dirty = true;
         println("[OK] Applied suggestion #" + idx + " — switch to :e to review, :w to save");
     }
@@ -392,7 +390,7 @@ public class BookEditor {
         if (currentRoom.getLocalPath() != null) {
             try {
                 Path fp = Path.of(currentRoom.getLocalPath(), currentBook.getFilePath());
-                currentBook.setContent(TextSanitizer.asciiSafe(TextSanitizer.stripCR(Files.readString(fp, java.nio.charset.StandardCharsets.UTF_8))));
+                currentBook.setContent(Files.readString(fp, java.nio.charset.StandardCharsets.UTF_8));
                 return;
             } catch (Exception e) {
                 println("[ERR] Local read failed: " + e.getMessage());
@@ -489,7 +487,7 @@ public class BookEditor {
         float left = panelPos.x - PANEL_WIDTH / 2f + 0.15f;
         float top = panelPos.y + PANEL_HEIGHT / 2f - 0.12f;
         for (int i = start; i < lines.length; i++) {
-            String line = TextSanitizer.asciiSafe(lines[i].replace("\r", ""));
+            String line = lines[i].replace("\r", "");
             if (line.length() > 46) line = line.substring(0, 46);
             if (line.isEmpty()) continue;
             float w = line.length() * charSize;
