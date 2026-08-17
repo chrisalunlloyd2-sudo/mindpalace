@@ -33,7 +33,9 @@ public class RepoScanner {
             boolean found = false;
             for (Room local : localRooms) {
                 if (local.getRepoName().equalsIgnoreCase(remote.getRepoName())) {
-                    // Merge remote metadata into local
+                    // Merge remote metadata into local — and adopt the REAL GitHub
+                    // name (canonical casing) so doors show the true repo name.
+                    local.setRepoName(remote.getRepoName());
                     if (local.getRemoteUrl() == null) local.setRemoteUrl(remote.getRemoteUrl());
                     if (local.getLanguage() == null) local.setLanguage(remote.getLanguage());
                     if (local.getRepoDescription() == null) local.setRepoDescription(remote.getRepoDescription());

@@ -103,31 +103,15 @@ public class Player {
 
         newPos = collide(pos, newPos, world);
 
-        // Ground
-        if (newPos.y <= EYE_HEIGHT) {
-            newPos.y = EYE_HEIGHT;
+        // Ground — use the world's ground height (walkable stairs between floors)
+        float groundY = world.getGroundHeight(newPos.x, newPos.z) + EYE_HEIGHT;
+        if (newPos.y <= groundY) {
+            newPos.y = groundY;
             velocity.y = 0;
             onGround = true;
         }
 
         camera.setPosition(newPos);
-
-        // Teleport pad — walk onto cyan pad at hallway end to go up
-        if (currentRoom == null && onGround) {
-            for (Hallway hw : world.getHallways()) {
-                if (hw.getFloor() >= world.getHallways().size() - 1) continue;
-                float padZ = hw.getEnd().z - 1.0f;
-                float padY = hw.getStart().y;
-                if (Math.abs(newPos.x) < 0.75f && Math.abs(newPos.z - padZ) < 0.75f
-                    && Math.abs(newPos.y - padY) < 0.5f) {
-                    // Teleport to next floor
-                    Hallway next = world.getHallways().get(hw.getFloor() + 1);
-                    camera.setPosition(0, next.getStart().y + EYE_HEIGHT, next.getStart().z + 2f);
-                    System.out.println("[TELEPORT] Floor " + (hw.getFloor() + 1) + " -> " + (next.getFloor() + 1));
-                    return;
-                }
-            }
-        }
 
         // Door interaction — Enter key (suppressed while typing in chat)
         if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && interactCooldown <= 0 && !chatTyping) {
@@ -148,10 +132,17 @@ public class Player {
             if (next.x < -hw + r) next.x = -hw + r;
             if (next.x > hw - r) next.x = hw - r;
             if (next.z < 0.1f) next.z = 0.1f;
+            // Allow walking past the hallway end into the stairway zone
+            float maxZ = 0.1f;
             if (!world.getHallways().isEmpty()) {
-                float endZ = world.getHallways().get(0).getEnd().z;
-                if (next.z > endZ - r) next.z = endZ - r;
+                maxZ = world.getHallways().get(0).getEnd().z;
             }
+            // Extend to cover the stairway (stairs sit after the hallway end)
+            if (!world.getStairways().isEmpty()) {
+                float[] last = world.getStairways().get(world.getStairways().size() - 1);
+                maxZ = Math.max(maxZ, last[2] + 1.0f);
+            }
+            if (next.z > maxZ - r) next.z = maxZ - r;
         } else {
             Vector3f c = currentRoom.getRoomCenter();
             float rw = Room.ROOM_WIDTH / 2f - r;

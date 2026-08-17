@@ -43,6 +43,27 @@ public class RepoMapper {
         System.out.println("[RepoMapper] Found " + rooms.size() + " repos locally");
     }
 
+    /**
+     * Extract the canonical repo name from a git remote URL.
+     * Handles: https://github.com/user/repo.git, git@github.com:user/repo.git,
+     * ssh://git@github.com/user/repo.git, and bare paths.
+     */
+    private String extractRepoName(String url) {
+        if (url == null) return null;
+        String u = url.trim();
+        // Strip trailing .git
+        if (u.endsWith(".git")) u = u.substring(0, u.length() - 4);
+        // Strip trailing slash
+        if (u.endsWith("/")) u = u.substring(0, u.length() - 1);
+        // Take the last path segment
+        int slash = u.lastIndexOf('/');
+        if (slash >= 0) u = u.substring(slash + 1);
+        // Handle scp-like git@host:user/repo
+        int colon = u.lastIndexOf(':');
+        if (colon >= 0) u = u.substring(colon + 1);
+        return u;
+    }
+
     private void detectRepoMeta(Room room, File repoDir) {
         // Try to read git remote
         try {
@@ -52,6 +73,13 @@ public class RepoMapper {
             String url = new String(p.getInputStream().readAllBytes()).trim();
             if (!url.isEmpty() && p.waitFor() == 0) {
                 room.setRemoteUrl(url);
+                // Extract the REAL GitHub repo name from the remote URL — this is
+                // the canonical name (fixes local-folder case/hyphen/underscore
+                // variants like sims1337backend vs SIMS1337-BACKEND).
+                String realName = extractRepoName(url);
+                if (realName != null && !realName.isEmpty()) {
+                    room.setRepoName(realName);
+                }
             }
         } catch (Exception e) {
             // No remote — local only

@@ -20,9 +20,17 @@ public class WorldBuilder {
     public static final float DOOR_SPACING = 5.0f;
     public static final float HALLWAY_START_OFFSET = 3.0f;
 
+    // Stairway geometry (walkable ramp between floors)
+    public static final int STAIR_STEPS = 8;
+    public static final float STAIR_RUN = 0.6f;
+    public static final float STAIR_OFFSET = 2.0f;   // gap after hallway end
+
     private RepoMapper repoMapper;
     private RoomPopulator populator;
     private FogOfWar fogOfWar;
+
+    // Stairways connecting floors: {startZ, startY, endZ, endY}
+    private final List<float[]> stairways = new ArrayList<>();
 
     private static final float ROOM_CULL_DISTANCE = 30.0f;
 
@@ -33,6 +41,35 @@ public class WorldBuilder {
     }
 
     public FogOfWar getFogOfWar() { return fogOfWar; }
+
+    public List<float[]> getStairways() { return stairways; }
+
+    /**
+     * Ground height (Y of the floor surface) at a world position, for walkable
+     * stairs. Returns the floor Y of the hallway/stairway under (x,z), or the
+     * base floor if none. Used by the Player so it can climb stairs instead of
+     * teleporting.
+     */
+    public float getGroundHeight(float x, float z) {
+        // Check stairways first (they span between floors)
+        for (float[] s : stairways) {
+            float startZ = s[0], startY = s[1], endZ = s[2], endY = s[3];
+            if (z >= startZ - 0.3f && z <= endZ + 0.3f && Math.abs(x) < HALLWAY_WIDTH / 2f) {
+                float t = (z - startZ) / (endZ - startZ);
+                t = Math.max(0f, Math.min(1f, t));
+                return startY + (endY - startY) * t;
+            }
+        }
+        // Otherwise, find the hallway whose z-range contains this position
+        for (Hallway hw : hallways) {
+            float hz = hw.getStart().z;
+            float len = hw.getEnd().z - hz;
+            if (z >= hz - 1f && z <= hz + len + 1f) {
+                return hw.getStart().y;
+            }
+        }
+        return 0f;
+    }
 
     public void build() {
         System.out.println("[WorldBuilder] Building MindPalace world...");
@@ -53,11 +90,40 @@ public class WorldBuilder {
 
         // Populate first so we can sort by book count
         for (Room room : rooms) populator.populateRoom(room);
+
+        // Deduplicate rooms by canonical repo name (local folders with the same
+        // git remote collapse to one room — keeps doors showing one true name)
+        dedupeRooms();
+
         // Sort by book count (proxy for repo size) — largest repos first
         rooms.sort((a, b) -> Integer.compare(b.getBooks().size(), a.getBooks().size()));
         System.out.println("[WorldBuilder] Mapped " + rooms.size() + " repos to rooms (sorted by size)");
         layoutWorld();
         System.out.println("[WorldBuilder] World built: " + hallways.size() + " hallways, " + rooms.size() + " rooms");
+    }
+
+    /** Collapse rooms that share a canonical repo name (case-insensitive). */
+    private void dedupeRooms() {
+        Map<String, Room> seen = new LinkedHashMap<>();
+        for (Room room : rooms) {
+            String key = room.getRepoName().toLowerCase();
+            Room existing = seen.get(key);
+            if (existing == null) {
+                seen.put(key, room);
+            } else {
+                // Merge: keep the room with more books (richer content)
+                if (room.getBooks().size() > existing.getBooks().size()) {
+                    seen.put(key, room);
+                }
+            }
+        }
+        int before = rooms.size();
+        rooms.clear();
+        rooms.addAll(seen.values());
+        if (rooms.size() < before) {
+            System.out.println("[WorldBuilder] Deduplicated " + (before - rooms.size())
+                + " duplicate repo folders");
+        }
     }
 
     private void layoutWorld() {
@@ -77,6 +143,17 @@ public class WorldBuilder {
             hw.setWidth(HALLWAY_WIDTH);
             hw.setHeight(HALLWAY_HEIGHT);
             hallways.add(hw);
+        }
+
+        // Register walkable stairways between consecutive floors
+        stairways.clear();
+        for (int f = 0; f < floors - 1; f++) {
+            Hallway hw = hallways.get(f);
+            float startZ = hw.getEnd().z + STAIR_OFFSET;
+            float startY = hw.getStart().y;
+            float endY = hallways.get(f + 1).getStart().y;
+            float endZ = startZ + STAIR_STEPS * STAIR_RUN;
+            stairways.add(new float[]{startZ, startY, endZ, endY});
         }
 
         int idx = 0;
