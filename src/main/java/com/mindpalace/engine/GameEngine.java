@@ -252,12 +252,13 @@ public class GameEngine {
         AgentNPC explorer = new AgentNPC("Explorer", AgentNPC.Role.EXPLORER, 42L, knowledgeGraph);
         AgentNPC critic = new AgentNPC("Critic", AgentNPC.Role.CRITIC, 1337L, knowledgeGraph);
 
-        // Attach real SLM brains (Ollama) — phi3:mini + tinyllama:1.1b
+        // Attach real SLM brains (Ollama) — tool + critic models
         com.mindpalace.agent.OllamaClient ollama = new com.mindpalace.agent.OllamaClient();
         if (ollama.isAvailable()) {
             explorer.attachBrain(ollama);
             critic.attachBrain(ollama);
-            System.out.println("[NPC] SLM brains attached (phi3:mini + tinyllama:1.1b)");
+            System.out.println("[NPC] SLM brains attached (" + com.mindpalace.agent.ModelConfig.TOOL_MODEL
+                + " + " + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + ")");
         } else {
             System.out.println("[NPC] Ollama unavailable — agents run on KV/KG fallback");
         }
@@ -379,12 +380,12 @@ public class GameEngine {
     private void update(double dt) {
         input.update(dt);
 
-        // Idle detection: mark activity on any input
+        // Idle detection: mark activity on any input (non-draining — does NOT
+        // consume mouse deltas, so Player still gets look left/right)
         if (idleDetector != null) {
-            if (input.getMouseDX() != 0 || input.getMouseDY() != 0
+            if (input.consumeActivity()
                 || input.isKeyDown(GLFW.GLFW_KEY_W) || input.isKeyDown(GLFW.GLFW_KEY_A)
-                || input.isKeyDown(GLFW.GLFW_KEY_S) || input.isKeyDown(GLFW.GLFW_KEY_D)
-                || input.isLeftClick() || input.isRightClick()) {
+                || input.isKeyDown(GLFW.GLFW_KEY_S) || input.isKeyDown(GLFW.GLFW_KEY_D)) {
                 idleDetector.markActivity();
             }
             idleDetector.update();
@@ -453,6 +454,11 @@ public class GameEngine {
             // Update agent NPCs (bodies + behaviors)
             for (AgentNPC npc : npcs) {
                 npc.update((float) dt, world.getRooms());
+                // Surface the SLM's reasoning into the chat HUD (coherent thread)
+                String reason = npc.consumeReason();
+                if (reason != null && agentChat != null) {
+                    agentChat.addMessage("[" + npc.getName() + "] " + reason);
+                }
                 // Explorer picks up nearby crystals
                 if (npc.getRole() == AgentNPC.Role.EXPLORER && npc.getCarriedCrystal() == null) {
                     for (TodoCrystal c : crystals) {
@@ -979,9 +985,9 @@ public class GameEngine {
             "F1: Help    F11: Fullscreen",
             "",
             "=== AGENTS ===",
-            "phi3:mini (tool) + tinyllama:1.1b (critic)",
+            com.mindpalace.agent.ModelConfig.TOOL_MODEL + " (tool) + " + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + " (critic)",
             "Auto-cycle every 5 min in rooms",
-            "Tab to chat, type in console",
+            "Enter to chat, type in-game",
             "",
             "=== EDITOR ===",
             ":e edit  :n new  :d delete  :s suggest  :q quit"

@@ -4,6 +4,7 @@ import com.mindpalace.agent.KVTree;
 import com.mindpalace.agent.KnowledgeGraph;
 import com.mindpalace.agent.BehaviorTree;
 import com.mindpalace.agent.OllamaClient;
+import com.mindpalace.agent.ModelConfig;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.TodoCrystal;
@@ -57,9 +58,9 @@ public class AgentNPC {
         this.target = new Vector3f(position);
     }
 
-    /** Attach a real SLM brain (phi3:mini for Explorer, tinyllama:1.1b for Critic). */
+    /** Attach a real SLM brain (tool model for Explorer, critic model for Critic). */
     public void attachBrain(OllamaClient ollama) {
-        String model = role == Role.EXPLORER ? "phi3:mini" : "tinyllama:1.1b";
+        String model = role == Role.EXPLORER ? ModelConfig.TOOL_MODEL : ModelConfig.CRITIC_MODEL;
         this.brain = new BehaviorTree(ollama, model, name);
     }
 
@@ -258,6 +259,20 @@ public class AgentNPC {
 
     public String getLatestGossip() {
         return gossipLog.isEmpty() ? null : gossipLog.get(gossipLog.size() - 1);
+    }
+
+    /** The SLM's most recent reasoning (why it chose its last action). */
+    public String getLastReason() {
+        return brain != null ? brain.getLastReason() : null;
+    }
+
+    /** Consume the SLM's latest reasoning (returns + clears, for chat surfacing). */
+    public String consumeReason() {
+        if (brain == null) return null;
+        String r = brain.getLastReason();
+        if (r == null || r.isEmpty()) return null;
+        brain.clearReason();
+        return r;
     }
 
     // ── Getters ──

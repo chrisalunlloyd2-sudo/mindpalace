@@ -101,4 +101,44 @@ public class OllamaClient {
         msgs.add(Map.of("role", "user", "content", userMessage));
         return chat(model, msgs, null);
     }
+
+    /**
+     * Generate an embedding vector for a text (for drift detection / retrieval).
+     * Uses nomic-embed-text. Returns null on failure.
+     */
+    public float[] embed(String text) {
+        if (text == null || text.isEmpty()) return null;
+        JsonObject body = new JsonObject();
+        body.addProperty("model", "nomic-embed-text");
+        body.addProperty("prompt", text);
+        try {
+            Request r = new Request.Builder()
+                .url(BASE + "/embeddings")
+                .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+                .build();
+            try (Response resp = http.newCall(r).execute()) {
+                if (!resp.isSuccessful() || resp.body() == null) return null;
+                JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
+                JsonArray arr = result.getAsJsonArray("embedding");
+                float[] vec = new float[arr.size()];
+                for (int i = 0; i < arr.size(); i++) vec[i] = arr.get(i).getAsFloat();
+                return vec;
+            }
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** Cosine similarity between two vectors. */
+    public static float cosine(float[] a, float[] b) {
+        if (a == null || b == null || a.length != b.length) return 0f;
+        float dot = 0, na = 0, nb = 0;
+        for (int i = 0; i < a.length; i++) {
+            dot += a[i] * b[i];
+            na += a[i] * a[i];
+            nb += b[i] * b[i];
+        }
+        if (na == 0 || nb == 0) return 0f;
+        return dot / (float) (Math.sqrt(na) * Math.sqrt(nb));
+    }
 }

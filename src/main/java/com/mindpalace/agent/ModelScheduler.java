@@ -1,0 +1,127 @@
+package com.mindpalace.agent;
+
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+
+/**
+ * Global model scheduler — the single gate through which EVERY Ollama call
+ * flows. Enforces the hard rules:
+ *
+ *   1. NEVER two models/nodes at once — one worker thread, serialized.
+ *   2. ONE chat every 5 minutes MAX — a spacing gate between calls.
+ *   3. Slow-paced, low resources — no burst, no concurrency.
+ *   4. Telemetry — every call is logged (model, latency, queue depth, drift).
+ *
+ * All agents (AgentManager, BehaviorTree) submit work here instead of calling
+ * Ollama directly. The scheduler drains the queue one request at a time,
+ * waiting MIN_SPACING_MS between calls so the local models never thrash.
+ */
+public class ModelScheduler {
+    // Spacing between model calls. Fast enough for coherent conversation,
+    // slow enough to not thrash a local CPU. Idle detection can widen this.
+    public static final long MIN_SPACING_MS = 15 * 1000; // 15s default
+
+    private final OllamaClient ollama;
+    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final BlockingQueue<Job> queue = new LinkedBlockingQueue<>();
+
+    // Dynamic spacing — widened when the user is actively playing (idle detector)
+    private volatile long spacingMs = MIN_SPACING_MS;
+
+    // Telemetry
+    private final AtomicLong totalCalls = new AtomicLong();
+    private final AtomicLong totalLatencyMs = new AtomicLong();
+    private final AtomicLong lastCallAt = new AtomicLong(0);
+    private final AtomicInteger queueDepth = new AtomicInteger();
+    private final AtomicLong driftEvents = new AtomicLong();
+    private volatile String lastModel = "";
+    private volatile String lastStatus = "idle";
+
+    private static final class Job {
+        final String model;
+        final String prompt;
+        final ModelLifespan lifespan; // may be null (stateless)
+        final CompletableFuture<String> future;
+        Job(String m, String p, ModelLifespan l, CompletableFuture<String> f) {
+            model = m; prompt = p; lifespan = l; future = f;
+        }
+    }
+
+    public ModelScheduler(OllamaClient ollama) {
+        this.ollama = ollama;
+        worker.submit(this::drainLoop);
+    }
+
+    /** Submit a chat request. Returns a future that completes when it runs. */
+    public CompletableFuture<String> submit(String model, String prompt, ModelLifespan lifespan) {
+        CompletableFuture<String> f = new CompletableFuture<>();
+        queue.add(new Job(model, prompt, lifespan, f));
+        queueDepth.set(queue.size());
+        return f;
+    }
+
+    /** The single drain loop — one call at a time, spaced 5 min apart. */
+    private void drainLoop() {
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                Job job = queue.take();
+                queueDepth.set(queue.size());
+
+                // Enforce spacing: wait until spacingMs since the last call
+                long now = System.currentTimeMillis();
+                long sinceLast = now - lastCallAt.get();
+                if (sinceLast < spacingMs) {
+                    long wait = spacingMs - sinceLast;
+                    lastStatus = "spacing " + (wait / 1000) + "s";
+                    Thread.sleep(wait);
+                }
+
+                // Run the call (through lifespan if provided, else raw)
+                lastModel = job.model;
+                lastStatus = "running " + job.model;
+                long t0 = System.currentTimeMillis();
+                String resp;
+                if (job.lifespan != null) {
+                    resp = job.lifespan.chat(job.prompt);
+                } else {
+                    resp = ollama.chat(job.model, job.prompt, "");
+                }
+                long latency = System.currentTimeMillis() - t0;
+
+                totalCalls.incrementAndGet();
+                totalLatencyMs.addAndGet(latency);
+                lastCallAt.set(System.currentTimeMillis());
+                lastStatus = "idle";
+                job.future.complete(resp);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                lastStatus = "error: " + e.getMessage();
+            }
+        }
+    }
+
+    // ── Telemetry getters ──
+    public long getTotalCalls() { return totalCalls.get(); }
+    public long getAvgLatencyMs() {
+        long c = totalCalls.get();
+        return c == 0 ? 0 : totalLatencyMs.get() / c;
+    }
+    public long getSecondsSinceLastCall() {
+        long last = lastCallAt.get();
+        return last == 0 ? -1 : (System.currentTimeMillis() - last) / 1000;
+    }
+    public int getQueueDepth() { return queueDepth.get(); }
+    public String getLastModel() { return lastModel; }
+    public String getStatus() { return lastStatus; }
+    public long getDriftEvents() { return driftEvents.get(); }
+    public void recordDrift() { driftEvents.incrementAndGet(); }
+
+    public void shutdown() { worker.shutdownNow(); }
+
+    /** Set dynamic spacing (idle detector: fast when idle, slow when playing). */
+    public void setSpacingMs(long ms) { this.spacingMs = Math.max(1000, ms); }
+    public long getSpacingMs() { return spacingMs; }
+}

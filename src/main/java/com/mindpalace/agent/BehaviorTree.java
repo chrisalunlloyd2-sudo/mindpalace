@@ -16,6 +16,11 @@ import java.util.function.Consumer;
  * given its current context (room, books, crystals, KV state). The reply is
  * parsed into a discrete Action, which the NPC body then executes.
  *
+ * COHERENCE: decisions run through a ModelLifespan, so the model keeps a
+ * bounded conversation history + rolling summary + drift correctors + RAG
+ * memory. This is what makes the agents talk about a continuous thread
+ * instead of a fresh, contextless reply every tick.
+ *
  * Falls back to deterministic KV/KG behavior if Ollama is slow/unavailable,
  * so the world never freezes waiting on a model.
  */
@@ -28,6 +33,7 @@ public class BehaviorTree {
     private final OllamaClient ollama;
     private final String model;
     private final String roleName;
+    private final ModelLifespan lifespan;   // stateful brain (history + drift + RAG)
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Random rand = new Random();
 
@@ -39,6 +45,10 @@ public class BehaviorTree {
         this.ollama = ollama;
         this.model = model;
         this.roleName = roleName;
+        // Token budget below the model's ceiling; drift threshold from ModelConfig
+        int budget = model.equals(ModelConfig.TOOL_MODEL) ? ModelConfig.TOOL_BUDGET : ModelConfig.CRITIC_BUDGET;
+        this.lifespan = new ModelLifespan(ollama, model, budget, ModelConfig.DRIFT_THRESHOLD);
+        this.lifespan.setSystemPrompt(SYSTEM_PROMPT);
     }
 
     /**
@@ -61,16 +71,17 @@ public class BehaviorTree {
     /** Synchronous decision — used by the async worker. */
     private Action decide(String context) {
         String prompt = buildPrompt(context);
-        String reply = ollama.chat(model, SYSTEM_PROMPT, prompt);
+        // Stateful chat through ModelLifespan (history + drift + correctors)
+        String reply = lifespan.chat(prompt);
         if (reply == null || reply.isEmpty()) {
             return fallback();
         }
+        lastReason = reply;
         return parse(reply);
     }
 
     private String buildPrompt(String context) {
-        return "You are " + roleName + ", an agent NPC in MindPalace.\n"
-            + "Current situation:\n" + context + "\n\n"
+        return "Current situation:\n" + context + "\n\n"
             + "Choose ONE action from: WALK_TO_ROOM, READ_BOOK, PLACE_BOOK, "
             + "CARRY_CRYSTAL, MARK_RISK, GOSSIP, IDLE.\n"
             + "Reply with just the action word and a short reason.";
@@ -94,11 +105,16 @@ public class BehaviorTree {
     }
 
     public Action getLastAction() { return lastAction; }
+    public String getLastReason() { return lastReason; }
+    public void clearReason() { lastReason = ""; }
     public boolean isDecisionPending() { return decisionPending; }
+    public ModelLifespan getLifespan() { return lifespan; }
 
     public void shutdown() { executor.shutdownNow(); }
 
     private static final String SYSTEM_PROMPT =
         "You are an autonomous coding agent with a physical body in a 3D world. "
-        + "You decide your next action based on your surroundings. Be decisive and concise.";
+        + "You decide your next action based on your surroundings and your recent "
+        + "history. Stay on a coherent thread: remember what you were doing and "
+        + "continue it. Be decisive and concise.";
 }

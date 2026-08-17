@@ -19,14 +19,15 @@ public class AgentManager {
     private final OllamaClient ollama;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private final Gson gson = new Gson();
+    private final ModelScheduler modelScheduler;  // serializes ALL model calls
 
-    // Agent configs
-    private static final String TOOL_MODEL = "phi3:mini";
-    private static final String CRITIC_MODEL = "tinyllama:1.1b";
+    // Agent configs (centralized in ModelConfig)
+    private static final String TOOL_MODEL = ModelConfig.TOOL_MODEL;
+    private static final String CRITIC_MODEL = ModelConfig.CRITIC_MODEL;
 
-    // Conversation histories
-    private final List<Map<String, String>> toolHistory = new ArrayList<>();
-    private final List<Map<String, String>> criticHistory = new ArrayList<>();
+    // Conversation histories — now managed by ModelLifespan (bounded + drift-corrected)
+    private final ModelLifespan toolLifespan;
+    private final ModelLifespan criticLifespan;
 
     // Current context
     private Room currentRoom;
@@ -50,6 +51,10 @@ public class AgentManager {
 
     public AgentManager() {
         this.ollama = new OllamaClient();
+        this.modelScheduler = new ModelScheduler(ollama);
+        // Budgets below each model's context ceiling (see ModelConfig)
+        this.toolLifespan = new ModelLifespan(ollama, TOOL_MODEL, ModelConfig.TOOL_BUDGET, ModelConfig.DRIFT_THRESHOLD);
+        this.criticLifespan = new ModelLifespan(ollama, CRITIC_MODEL, ModelConfig.CRITIC_BUDGET, ModelConfig.DRIFT_THRESHOLD);
     }
 
     // ── Lifecycle ──
@@ -65,8 +70,8 @@ public class AgentManager {
         log("[AgentManager] Autonomous cycle: every 5 minutes");
 
         // Initialize system prompts
-        toolHistory.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT));
-        criticHistory.add(Map.of("role", "system", "content", CRITIC_SYSTEM_PROMPT));
+        toolLifespan.setSystemPrompt(TOOL_SYSTEM_PROMPT);
+        criticLifespan.setSystemPrompt(CRITIC_SYSTEM_PROMPT);
 
         // Start autonomous cycle
         scheduler.scheduleAtFixedRate(this::autonomousCycle, 30, CYCLE_MS / 1000, TimeUnit.SECONDS);
@@ -108,17 +113,15 @@ public class AgentManager {
 
         // Tool agent responds first
         scheduler.execute(() -> {
-            String toolResp = ollama.chat(TOOL_MODEL, toolHistory, null);
+            String toolResp = toolLifespan.chat(context + "\n\nUser says: " + message + "\n\nRespond helpfully. If the user wants to modify code, propose specific changes.");
             if (toolResp != null && !toolResp.isEmpty()) {
-                toolHistory.add(Map.of("role", "assistant", "content", toolResp));
                 emit(onToolMessage, "[Tool Agent] " + toolResp);
             }
 
             // Critic reviews
             String criticPrompt = "The user said: " + message + "\nThe tool agent responded: " + (toolResp != null ? toolResp : "(no response)") + "\nProvide your critique and suggestions.";
-            String criticResp = ollama.chat(CRITIC_MODEL, criticHistory, null);
+            String criticResp = criticLifespan.chat(criticPrompt);
             if (criticResp != null && !criticResp.isEmpty()) {
-                criticHistory.add(Map.of("role", "assistant", "content", criticResp));
                 emit(onCriticMessage, "[Critic] " + criticResp);
             }
         });
@@ -142,17 +145,15 @@ public class AgentManager {
 
         // Tool agent proposes an action
         String toolPrompt = context + "\n\nIt's time for your 5-minute review. What should we do? Propose one concrete action.";
-        String toolResp = ollama.chat(TOOL_MODEL, toolHistory, null);
+        String toolResp = toolLifespan.chat(toolPrompt);
         if (toolResp != null && !toolResp.isEmpty()) {
-            toolHistory.add(Map.of("role", "assistant", "content", toolResp));
             emit(onToolMessage, "[Auto] " + toolResp);
         }
 
         // Critic reviews the proposal
         String criticPrompt = "The tool agent proposes: " + (toolResp != null ? toolResp : "(nothing)") + "\nEvaluate this proposal. Should we proceed? What risks or improvements?";
-        String criticResp = ollama.chat(CRITIC_MODEL, criticHistory, null);
+        String criticResp = criticLifespan.chat(criticPrompt);
         if (criticResp != null && !criticResp.isEmpty()) {
-            criticHistory.add(Map.of("role", "assistant", "content", criticResp));
             emit(onCriticMessage, "[Auto] " + criticResp);
         }
     }
@@ -275,14 +276,14 @@ public class AgentManager {
         "You are paired with a critic agent who reviews your actions. " +
         "When the user asks to modify code, use your tools to propose changes. " +
         "Be concise and specific. When you want to use a tool, describe what you'd do. " +
-        "You are running on phi3:mini via Ollama. " +
+        "You are running on " + TOOL_MODEL + " via Ollama. " +
         "The current room and book context will be provided before each message.";
 
     private static final String CRITIC_SYSTEM_PROMPT =
         "You are an actor-critic AI agent in MindPalace, a 3D GitHub repository explorer. " +
         "Your role is to review the tool agent's proposals and provide semantic feedback. " +
         "Evaluate: is the action correct? Are there risks? Could it be improved? " +
-        "Be constructive and specific. You are running on tinyllama:1.1b via Ollama. " +
+        "Be constructive and specific. You are running on " + CRITIC_MODEL + " via Ollama. " +
         "The current room and book context will be provided before each message.";
 
     // ── Getters ──
@@ -291,4 +292,6 @@ public class AgentManager {
     public boolean isRunning() { return running; }
     public String getToolModel() { return TOOL_MODEL; }
     public String getCriticModel() { return CRITIC_MODEL; }
+    public ModelLifespan getToolLifespan() { return toolLifespan; }
+    public ModelLifespan getCriticLifespan() { return criticLifespan; }
 }

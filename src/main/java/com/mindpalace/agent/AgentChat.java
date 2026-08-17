@@ -90,6 +90,7 @@ public class AgentChat {
             String line = messages.get(i);
             Vector3f pos = new Vector3f(anchor.x, y, anchor.z);
             Vector3f color = line.startsWith("[Critic]") ? new Vector3f(1.0f, 0.7f, 0.2f)
+                          : line.startsWith("[Explorer]") ? new Vector3f(0.2f, 0.9f, 1.0f)
                           : line.startsWith("[Tool") || line.startsWith("[Auto") ? new Vector3f(0.2f, 0.9f, 1.0f)
                           : line.startsWith("[You]") ? new Vector3f(0.4f, 1.0f, 0.4f)
                           : new Vector3f(0.8f, 0.8f, 0.8f);

@@ -19,6 +19,11 @@ public class Input {
     private boolean leftClick, rightClick;
     private boolean leftClickJust, rightClickJust;
 
+    // Activity flag — set on ANY input (mouse move, key, click) WITHOUT draining
+    // the mouse delta accumulator. Used by idle detection so it never eats
+    // the deltas the Player needs for look left/right.
+    private volatile boolean activityFlag;
+
     // Character input (for in-game chat typing)
     private final StringBuilder charBuffer = new StringBuilder();
     private boolean charCallbackSet;
@@ -32,6 +37,7 @@ public class Input {
             accumDY += y - lastY;
             lastX = x;
             lastY = y;
+            activityFlag = true;  // mouse moved
         });
 
         GLFW.glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
@@ -43,6 +49,7 @@ public class Input {
                 if (action == GLFW.GLFW_PRESS) rightClickJust = true;
                 rightClick = action == GLFW.GLFW_PRESS;
             }
+            activityFlag = true;
         });
 
         // Character input for chat typing
@@ -52,8 +59,16 @@ public class Input {
                     charBuffer.append((char) codepoint);
                 }
             }
+            activityFlag = true;
         });
         charCallbackSet = true;
+    }
+
+    /** Consume-and-clear the activity flag (non-draining of mouse deltas). */
+    public boolean consumeActivity() {
+        boolean v = activityFlag;
+        activityFlag = false;
+        return v;
     }
 
     /** Drain typed characters since last call. */
