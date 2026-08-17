@@ -41,6 +41,7 @@ public class ModelLifespan {
     private final Deque<float[]> recentEmbeddings = new ArrayDeque<>();
     private static final int DRIFT_WINDOW = 8;   // look at last N replies
     private int driftCount;
+    private int turnCounter;   // sample embeddings, don't embed every turn
 
     // Memory (embedding -> text), lightweight RAG
     private final List<float[]> memoryVecs = new ArrayList<>();
@@ -137,8 +138,12 @@ public class ModelLifespan {
         return s.replaceAll("\\s+", " ").trim().toLowerCase();
     }
 
-    /** Detect semantic drift via embedding centroid. */
+    /** Detect semantic drift via embedding centroid (sampled, not every turn). */
     private void detectDrift(String reply) {
+        // Sample: only embed every 3rd reply to cut inference cost
+        turnCounter++;
+        if (turnCounter % 3 != 0) return;
+
         float[] vec = ollama.embed(reply);
         if (vec == null) return; // embedding model unavailable — skip
 
@@ -200,8 +205,10 @@ public class ModelLifespan {
         }
     }
 
-    /** Store a substantive turn as retrievable memory. */
+    /** Store a substantive turn as retrievable memory (sampled to cut cost). */
     private void remember(String text) {
+        // Only embed every 3rd substantive turn — memory doesn't need every line
+        if (turnCounter % 3 != 0) return;
         float[] vec = ollama.embed(text);
         if (vec == null) return;
         memoryVecs.add(vec);

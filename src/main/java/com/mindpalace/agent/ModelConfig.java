@@ -12,17 +12,17 @@ public final class ModelConfig {
     private ModelConfig() {}
 
     /** Tool agent — proposes edits, reads/writes files. */
-    public static final String TOOL_MODEL = "llama3.2:3b";
+    public static final String TOOL_MODEL = "llama3.2:1b";
 
     /** Critic agent — reviews the tool agent's proposals. */
-    public static final String CRITIC_MODEL = "gemma2:2b";
+    public static final String CRITIC_MODEL = "qwen2.5:0.5b";
 
     /** Embedding model for drift detection + RAG memory. */
     public static final String EMBED_MODEL = "nomic-embed-text";
 
     /** Token budgets (below each model's context ceiling). */
-    public static final int TOOL_BUDGET = 4000;
-    public static final int CRITIC_BUDGET = 2500;
+    public static final int TOOL_BUDGET = 2000;
+    public static final int CRITIC_BUDGET = 1000;
 
     /** Drift threshold — cosine similarity below this = drifted. */
     public static final float DRIFT_THRESHOLD = 0.55f;
