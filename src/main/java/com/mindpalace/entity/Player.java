@@ -32,6 +32,7 @@ public class Player {
     private double interactCooldown;
     private AudioEngine audio;
     private boolean chatTyping;  // suppress door interaction while typing in chat
+    private double teleportCooldown; // prevent pad re-trigger bounce
 
     public Player() {
         camera = new Camera();
@@ -113,6 +114,28 @@ public class Player {
 
         camera.setPosition(newPos);
 
+        // Teleport pad — walk onto the cyan pad at the hallway end to go up one floor
+        teleportCooldown -= dt;
+        if (currentRoom == null && teleportCooldown <= 0 && world.getHallways().size() > 1) {
+            Vector3f p = camera.getPosition();
+            for (Hallway hw : world.getHallways()) {
+                if (hw.getFloor() >= world.getHallways().size() - 1) continue; // no pad on top floor
+                float padZ = hw.getEnd().z - 1.0f;
+                if (Math.abs(p.x) < 1.05f && Math.abs(p.z - padZ) < 1.05f
+                        && Math.abs(p.y - (hw.getStart().y + EYE_HEIGHT)) < 0.75f) {
+                    Hallway next = world.getHallways().get(hw.getFloor() + 1);
+                    camera.setPosition(0f, next.getStart().y + EYE_HEIGHT, next.getStart().z + 1.5f);
+                    camera.setYaw(0); // face down the next hallway
+                    velocity.set(0, 0, 0);
+                    onGround = true;
+                    teleportCooldown = 1.0;
+                    if (audio != null) audio.playDoorOpen();
+                    System.out.println("[TELEPORT] Floor " + hw.getFloor() + " -> " + (hw.getFloor() + 1));
+                    break;
+                }
+            }
+        }
+
         // Door interaction — Enter key (suppressed while typing in chat)
         if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && interactCooldown <= 0 && !chatTyping) {
             if (currentRoom == null) {
@@ -135,7 +158,9 @@ public class Player {
             // Allow walking past the hallway end into the stairway zone
             float maxZ = 0.1f;
             if (!world.getHallways().isEmpty()) {
-                maxZ = world.getHallways().get(0).getEnd().z;
+                // Cover the TOP floor's end so every floor is walkable (was floor 0 only)
+                Hallway top = world.getHallways().get(world.getHallways().size() - 1);
+                maxZ = top.getEnd().z;
             }
             // Extend to cover the stairway (stairs sit after the hallway end)
             if (!world.getStairways().isEmpty()) {
