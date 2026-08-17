@@ -252,13 +252,14 @@ public class GameEngine {
         AgentNPC explorer = new AgentNPC("Explorer", AgentNPC.Role.EXPLORER, 42L, knowledgeGraph);
         AgentNPC critic = new AgentNPC("Critic", AgentNPC.Role.CRITIC, 1337L, knowledgeGraph);
 
-        // Attach real SLM brains (Ollama) — tool + critic models
+        // Attach real SLM brains, gated by the SHARED scheduler (one call at a time)
         com.mindpalace.agent.OllamaClient ollama = new com.mindpalace.agent.OllamaClient();
+        com.mindpalace.agent.ModelScheduler sched = agentManager != null ? agentManager.getScheduler() : null;
         if (ollama.isAvailable()) {
-            explorer.attachBrain(ollama);
-            critic.attachBrain(ollama);
+            explorer.attachBrain(ollama, sched);
+            critic.attachBrain(ollama, sched);
             System.out.println("[NPC] SLM brains attached (" + com.mindpalace.agent.ModelConfig.TOOL_MODEL
-                + " + " + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + ")");
+                + " + " + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + ") — serialized via scheduler");
         } else {
             System.out.println("[NPC] Ollama unavailable — agents run on KV/KG fallback");
         }

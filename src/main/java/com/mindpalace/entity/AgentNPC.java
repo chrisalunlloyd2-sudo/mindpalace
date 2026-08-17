@@ -58,10 +58,12 @@ public class AgentNPC {
         this.target = new Vector3f(position);
     }
 
-    /** Attach a real SLM brain (tool model for Explorer, critic model for Critic). */
-    public void attachBrain(OllamaClient ollama) {
-        String model = role == Role.EXPLORER ? ModelConfig.TOOL_MODEL : ModelConfig.CRITIC_MODEL;
-        this.brain = new BehaviorTree(ollama, model, name);
+    /** Attach a real SLM brain, gated by the shared model scheduler. */
+    public void attachBrain(OllamaClient ollama, com.mindpalace.agent.ModelScheduler scheduler) {
+        String model = role == Role.EXPLORER
+            ? com.mindpalace.agent.ModelConfig.TOOL_MODEL
+            : com.mindpalace.agent.ModelConfig.CRITIC_MODEL;
+        this.brain = new BehaviorTree(ollama, model, name, scheduler);
     }
 
     public void update(float dt, List<Room> rooms) {
@@ -110,10 +112,10 @@ public class AgentNPC {
     private void decide(List<Room> rooms) {
         if (rooms.isEmpty()) { state = State.IDLE; stateTimer = 2f; return; }
 
-        // Consult the real SLM brain (throttled) — it overrides KV/KG when it answers
+        // Consult the real SLM brain (throttled to 5-min pacing) — overrides KV/KG
         decisionCooldown -= 0.5f;
         if (brain != null && decisionCooldown <= 0 && !brain.isDecisionPending()) {
-            decisionCooldown = 8f; // ask every ~8s
+            decisionCooldown = 300f; // ask every ~5 minutes (matches scheduler spacing)
             String ctx = buildBrainContext();
             brain.requestDecision(ctx, action -> applyAction(action, rooms));
             // Keep current behavior while waiting; the callback will redirect

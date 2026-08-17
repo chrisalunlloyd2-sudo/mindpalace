@@ -34,6 +34,7 @@ public class BehaviorTree {
     private final String model;
     private final String roleName;
     private final ModelLifespan lifespan;   // stateful brain (history + drift + RAG)
+    private final ModelScheduler scheduler; // shared gate — one model call at a time
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Random rand = new Random();
 
@@ -41,10 +42,11 @@ public class BehaviorTree {
     private volatile Action lastAction = Action.IDLE;
     private volatile String lastReason = "";
 
-    public BehaviorTree(OllamaClient ollama, String model, String roleName) {
+    public BehaviorTree(OllamaClient ollama, String model, String roleName, ModelScheduler scheduler) {
         this.ollama = ollama;
         this.model = model;
         this.roleName = roleName;
+        this.scheduler = scheduler;
         // Token budget below the model's ceiling; drift threshold from ModelConfig
         int budget = model.equals(ModelConfig.TOOL_MODEL) ? ModelConfig.TOOL_BUDGET : ModelConfig.CRITIC_BUDGET;
         this.lifespan = new ModelLifespan(ollama, model, budget, ModelConfig.DRIFT_THRESHOLD);
@@ -71,8 +73,18 @@ public class BehaviorTree {
     /** Synchronous decision — used by the async worker. */
     private Action decide(String context) {
         String prompt = buildPrompt(context);
-        // Stateful chat through ModelLifespan (history + drift + correctors)
-        String reply = lifespan.chat(prompt);
+        // Stateful chat through ModelLifespan, gated by the shared scheduler
+        // (one model call at a time, 5-min spacing — never two models at once)
+        String reply;
+        if (scheduler != null) {
+            try {
+                reply = scheduler.submit(model, prompt, lifespan).get(120, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                reply = null;
+            }
+        } else {
+            reply = lifespan.chat(prompt);
+        }
         if (reply == null || reply.isEmpty()) {
             return fallback();
         }

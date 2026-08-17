@@ -302,4 +302,5 @@ public class AgentManager {
     public String getCriticModel() { return CRITIC_MODEL; }
     public ModelLifespan getToolLifespan() { return toolLifespan; }
     public ModelLifespan getCriticLifespan() { return criticLifespan; }
+    public ModelScheduler getScheduler() { return modelScheduler; }
 }
