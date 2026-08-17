@@ -20,6 +20,9 @@ import com.mindpalace.agent.AgentChat;
 import com.mindpalace.deploy.DeployManager;
 import com.mindpalace.deploy.AnimationSystem;
 import com.mindpalace.deploy.LiveUpdateManager;
+import com.mindpalace.backup.BackupManager;
+import com.mindpalace.backup.MemoryManager;
+import com.mindpalace.agent.IdleDetector;
 import org.joml.Vector3f;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
@@ -57,6 +60,9 @@ public class GameEngine {
     private KnowledgeGraph knowledgeGraph;
     private final List<AgentNPC> npcs = new ArrayList<>();
     private final List<TodoCrystal> crystals = new ArrayList<>();
+    private BackupManager backupManager;
+    private MemoryManager memoryManager;
+    private IdleDetector idleDetector;
     private boolean searchMode;
     private String searchQuery = "";
     private boolean showHelp;
@@ -217,6 +223,17 @@ public class GameEngine {
         liveUpdateManager.snapshot();
         liveUpdateManager.start();
 
+        // Idle detection — agents work harder when idle, quiet when playing
+        idleDetector = new IdleDetector();
+
+        // Self-managing memory + never-make-code-twice DB
+        memoryManager = new MemoryManager(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory");
+        memoryManager.start();
+
+        // Cold backup to D: — mirror everything (chats, logs, code, files)
+        backupManager = new BackupManager("D:/mindpalace_backup");
+        backupManager.start();
+
         loadingText = "Ready.";
         loadingProgress = 1.0f;
         renderLoadingFrame();
@@ -234,6 +251,16 @@ public class GameEngine {
         // Explorer = tool agent (phi3:mini), Critic = critic agent (tinyllama:1.1b)
         AgentNPC explorer = new AgentNPC("Explorer", AgentNPC.Role.EXPLORER, 42L, knowledgeGraph);
         AgentNPC critic = new AgentNPC("Critic", AgentNPC.Role.CRITIC, 1337L, knowledgeGraph);
+
+        // Attach real SLM brains (Ollama) — phi3:mini + tinyllama:1.1b
+        com.mindpalace.agent.OllamaClient ollama = new com.mindpalace.agent.OllamaClient();
+        if (ollama.isAvailable()) {
+            explorer.attachBrain(ollama);
+            critic.attachBrain(ollama);
+            System.out.println("[NPC] SLM brains attached (phi3:mini + tinyllama:1.1b)");
+        } else {
+            System.out.println("[NPC] Ollama unavailable — agents run on KV/KG fallback");
+        }
 
         // Place them at the first two rooms' centers (or hallway start if empty)
         List<Room> rooms = world.getRooms();
@@ -352,6 +379,17 @@ public class GameEngine {
     private void update(double dt) {
         input.update(dt);
 
+        // Idle detection: mark activity on any input
+        if (idleDetector != null) {
+            if (input.getMouseDX() != 0 || input.getMouseDY() != 0
+                || input.isKeyDown(GLFW.GLFW_KEY_W) || input.isKeyDown(GLFW.GLFW_KEY_A)
+                || input.isKeyDown(GLFW.GLFW_KEY_S) || input.isKeyDown(GLFW.GLFW_KEY_D)
+                || input.isLeftClick() || input.isRightClick()) {
+                idleDetector.markActivity();
+            }
+            idleDetector.update();
+        }
+
         // Process console commands for editor
         String cmd = null;
         synchronized (this) {
@@ -401,6 +439,9 @@ public class GameEngine {
         if (state == GameState.PLAYING) {
             player.update(dt, input, world);
 
+            // Sync chat-typing state to player (suppress door interaction)
+            player.setChatTyping(agentChat != null && agentChat.isTyping());
+
             // Fog of war: reveal hexes around the player
             world.getFogOfWar().reveal(player.getPosition());
 
@@ -445,9 +486,26 @@ public class GameEngine {
                 }
             }
 
-            // Tab toggles agent chat
-            if (input.wasKeyPressed(GLFW.GLFW_KEY_TAB) && agentChat != null) {
-                agentChat.toggle(player.getPosition(), player.getLookDirection());
+            // Enter toggles chat typing (cursor pops up, type, Enter to send)
+            if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && agentChat != null && !bookEditor.isOpen()) {
+                if (agentChat.isTyping()) {
+                    String msg = agentChat.commitInput();
+                    if (msg != null && agentManager != null) {
+                        agentChat.addMessage("[You] " + msg);
+                        agentManager.onUserChat(msg);
+                    }
+                    input.setCursorCaptured(true);
+                } else {
+                    agentChat.toggleTyping();
+                    input.setCursorCaptured(false);
+                }
+            }
+
+            // While typing, capture characters + backspace
+            if (agentChat != null && agentChat.isTyping()) {
+                String typed = input.drainTypedChars();
+                if (!typed.isEmpty()) agentChat.appendInput(typed);
+                if (input.wasKeyPressed(GLFW.GLFW_KEY_BACKSPACE)) agentChat.backspace();
             }
 
             // / toggles search mode
@@ -606,8 +664,8 @@ public class GameEngine {
             bookEditor.render(renderer);
         }
 
-        if (agentChat != null && agentChat.isOpen()) {
-            agentChat.render(renderer);
+        if (agentChat != null) {
+            agentChat.render(renderer, fontRenderer, player.getCamera(), width, height);
         }
 
         // Render deploy animations
@@ -969,6 +1027,8 @@ public class GameEngine {
     }
 
     private void cleanup() {
+        if (backupManager != null) backupManager.stop();
+        if (memoryManager != null) memoryManager.stop();
         if (liveUpdateManager != null) liveUpdateManager.stop();
         if (deployManager != null) deployManager.shutdown();
         audio.cleanup();

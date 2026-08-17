@@ -31,6 +31,7 @@ public class Player {
     private Room currentRoom;
     private double interactCooldown;
     private AudioEngine audio;
+    private boolean chatTyping;  // suppress door interaction while typing in chat
 
     public Player() {
         camera = new Camera();
@@ -39,6 +40,7 @@ public class Player {
     }
 
     public void setAudio(AudioEngine a) { this.audio = a; }
+    public void setChatTyping(boolean t) { this.chatTyping = t; }
 
     public void update(double dt, Input input, WorldBuilder world) {
         float dtf = (float) dt;
@@ -127,8 +129,8 @@ public class Player {
             }
         }
 
-        // Door interaction — Enter key
-        if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && interactCooldown <= 0) {
+        // Door interaction — Enter key (suppressed while typing in chat)
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && interactCooldown <= 0 && !chatTyping) {
             if (currentRoom == null) {
                 Room target = findDoor(world);
                 if (target != null) { enterRoom(target); interactCooldown = 0.5; }

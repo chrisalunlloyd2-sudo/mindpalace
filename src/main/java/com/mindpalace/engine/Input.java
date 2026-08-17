@@ -19,6 +19,10 @@ public class Input {
     private boolean leftClick, rightClick;
     private boolean leftClickJust, rightClickJust;
 
+    // Character input (for in-game chat typing)
+    private final StringBuilder charBuffer = new StringBuilder();
+    private boolean charCallbackSet;
+
     public Input(long window) {
         this.window = window;
 
@@ -40,6 +44,25 @@ public class Input {
                 rightClick = action == GLFW.GLFW_PRESS;
             }
         });
+
+        // Character input for chat typing
+        GLFW.glfwSetCharCallback(window, (win, codepoint) -> {
+            synchronized (charBuffer) {
+                if (codepoint >= 32 && codepoint < 0x10000) {
+                    charBuffer.append((char) codepoint);
+                }
+            }
+        });
+        charCallbackSet = true;
+    }
+
+    /** Drain typed characters since last call. */
+    public String drainTypedChars() {
+        synchronized (charBuffer) {
+            String s = charBuffer.toString();
+            charBuffer.setLength(0);
+            return s;
+        }
     }
 
     public void update(double dt) {

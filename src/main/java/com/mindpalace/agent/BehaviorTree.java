@@ -1,0 +1,104 @@
+package com.mindpalace.agent;
+
+import com.mindpalace.world.Room;
+import com.mindpalace.world.Book;
+import com.mindpalace.world.TodoCrystal;
+
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.Consumer;
+
+/**
+ * Behavior tree — the SLM brain that drives an agent NPC's body.
+ *
+ * Each decision tick, the agent's real small language model (phi3:mini for
+ * Explorer, tinyllama:1.1b for Critic) is asked "what should you do next?"
+ * given its current context (room, books, crystals, KV state). The reply is
+ * parsed into a discrete Action, which the NPC body then executes.
+ *
+ * Falls back to deterministic KV/KG behavior if Ollama is slow/unavailable,
+ * so the world never freezes waiting on a model.
+ */
+public class BehaviorTree {
+    public enum Action {
+        WALK_TO_ROOM, READ_BOOK, PLACE_BOOK, CARRY_CRYSTAL,
+        MARK_RISK, GOSSIP, IDLE
+    }
+
+    private final OllamaClient ollama;
+    private final String model;
+    private final String roleName;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Random rand = new Random();
+
+    private volatile boolean decisionPending;
+    private volatile Action lastAction = Action.IDLE;
+    private volatile String lastReason = "";
+
+    public BehaviorTree(OllamaClient ollama, String model, String roleName) {
+        this.ollama = ollama;
+        this.model = model;
+        this.roleName = roleName;
+    }
+
+    /**
+     * Request a decision asynchronously. When the SLM replies, the callback
+     * fires with the chosen action. Non-blocking — the NPC keeps its current
+     * behavior until the decision lands.
+     */
+    public void requestDecision(String context, Consumer<Action> onDecide) {
+        if (decisionPending) return;
+        decisionPending = true;
+
+        executor.submit(() -> {
+            Action a = decide(context);
+            lastAction = a;
+            decisionPending = false;
+            if (onDecide != null) onDecide.accept(a);
+        });
+    }
+
+    /** Synchronous decision — used by the async worker. */
+    private Action decide(String context) {
+        String prompt = buildPrompt(context);
+        String reply = ollama.chat(model, SYSTEM_PROMPT, prompt);
+        if (reply == null || reply.isEmpty()) {
+            return fallback();
+        }
+        return parse(reply);
+    }
+
+    private String buildPrompt(String context) {
+        return "You are " + roleName + ", an agent NPC in MindPalace.\n"
+            + "Current situation:\n" + context + "\n\n"
+            + "Choose ONE action from: WALK_TO_ROOM, READ_BOOK, PLACE_BOOK, "
+            + "CARRY_CRYSTAL, MARK_RISK, GOSSIP, IDLE.\n"
+            + "Reply with just the action word and a short reason.";
+    }
+
+    private Action parse(String reply) {
+        String up = reply.toUpperCase();
+        if (up.contains("WALK")) return Action.WALK_TO_ROOM;
+        if (up.contains("READ")) return Action.READ_BOOK;
+        if (up.contains("PLACE")) return Action.PLACE_BOOK;
+        if (up.contains("CARRY") || up.contains("CRYSTAL")) return Action.CARRY_CRYSTAL;
+        if (up.contains("MARK") || up.contains("RISK")) return Action.MARK_RISK;
+        if (up.contains("GOSSIP")) return Action.GOSSIP;
+        return Action.IDLE;
+    }
+
+    /** Deterministic fallback when the model is unavailable. */
+    private Action fallback() {
+        Action[] actions = Action.values();
+        return actions[rand.nextInt(actions.length)];
+    }
+
+    public Action getLastAction() { return lastAction; }
+    public boolean isDecisionPending() { return decisionPending; }
+
+    public void shutdown() { executor.shutdownNow(); }
+
+    private static final String SYSTEM_PROMPT =
+        "You are an autonomous coding agent with a physical body in a 3D world. "
+        + "You decide your next action based on your surroundings. Be decisive and concise.";
+}

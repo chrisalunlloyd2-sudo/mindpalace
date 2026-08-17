@@ -2,6 +2,8 @@ package com.mindpalace.entity;
 
 import com.mindpalace.agent.KVTree;
 import com.mindpalace.agent.KnowledgeGraph;
+import com.mindpalace.agent.BehaviorTree;
+import com.mindpalace.agent.OllamaClient;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.TodoCrystal;
@@ -28,6 +30,8 @@ public class AgentNPC {
     private final KVTree kv;
     private final KnowledgeGraph kg;
     private final Random rand;
+    private BehaviorTree brain;   // real SLM brain (phi3:mini / tinyllama:1.1b)
+    private float decisionCooldown; // throttle SLM calls
 
     private Vector3f position;
     private Vector3f target;
@@ -51,6 +55,12 @@ public class AgentNPC {
         this.rand = new Random(seed);
         this.position = new Vector3f(0, 1.0f, 0);
         this.target = new Vector3f(position);
+    }
+
+    /** Attach a real SLM brain (phi3:mini for Explorer, tinyllama:1.1b for Critic). */
+    public void attachBrain(OllamaClient ollama) {
+        String model = role == Role.EXPLORER ? "phi3:mini" : "tinyllama:1.1b";
+        this.brain = new BehaviorTree(ollama, model, name);
     }
 
     public void update(float dt, List<Room> rooms) {
@@ -99,6 +109,15 @@ public class AgentNPC {
     private void decide(List<Room> rooms) {
         if (rooms.isEmpty()) { state = State.IDLE; stateTimer = 2f; return; }
 
+        // Consult the real SLM brain (throttled) — it overrides KV/KG when it answers
+        decisionCooldown -= 0.5f;
+        if (brain != null && decisionCooldown <= 0 && !brain.isDecisionPending()) {
+            decisionCooldown = 8f; // ask every ~8s
+            String ctx = buildBrainContext();
+            brain.requestDecision(ctx, action -> applyAction(action, rooms));
+            // Keep current behavior while waiting; the callback will redirect
+        }
+
         // Gossip: occasionally emit a line (driven by KV gossip)
         if (kv.roll("gossip") && !gossipLog.isEmpty()) {
             state = State.GOSSIPING;
@@ -106,17 +125,76 @@ public class AgentNPC {
             return;
         }
 
-        // Pick a destination using the KG (navigation routes)
+        // Deterministic fallback: pick a destination using the KG
         Room dest = pickDestination(rooms);
         if (dest != null && dest.getRoomCenter() != null) {
             currentRoom = dest;
             target = new Vector3f(dest.getRoomCenter());
             target.y = 1.0f;
             state = State.WALKING;
-            stateTimer = 8f; // max walk time before re-deciding
+            stateTimer = 8f;
         } else {
             state = State.IDLE;
             stateTimer = 2f;
+        }
+    }
+
+    /** Build a compact context string for the SLM to reason over. */
+    private String buildBrainContext() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Role: ").append(role).append("\n");
+        if (currentRoom != null) {
+            sb.append("In room: ").append(currentRoom.getRepoName())
+              .append(" (").append(currentRoom.getBooks().size()).append(" books)\n");
+        }
+        if (currentBook != null) {
+            sb.append("Reading: ").append(currentBook.getFilename()).append("\n");
+        }
+        if (carriedCrystal != null) {
+            sb.append("Carrying TODO crystal: ").append(carriedCrystal.getLabel()).append("\n");
+        }
+        sb.append("KV curiosity=").append(kv.get("curiosity"))
+          .append(" risk=").append(kv.get("riskTolerance"))
+          .append(" gossip=").append(kv.get("gossip")).append("\n");
+        return sb.toString();
+    }
+
+    /** Apply an SLM-chosen action to the body. */
+    private void applyAction(BehaviorTree.Action action, List<Room> rooms) {
+        switch (action) {
+            case WALK_TO_ROOM -> {
+                Room dest = pickDestination(rooms);
+                if (dest != null && dest.getRoomCenter() != null) {
+                    currentRoom = dest;
+                    target = new Vector3f(dest.getRoomCenter());
+                    target.y = 1.0f;
+                    state = State.WALKING;
+                    stateTimer = 8f;
+                }
+            }
+            case READ_BOOK -> {
+                if (currentRoom != null && !currentRoom.getBooks().isEmpty()) {
+                    currentBook = currentRoom.getBooks().get(rand.nextInt(currentRoom.getBooks().size()));
+                    state = State.READING;
+                    stateTimer = 3f;
+                }
+            }
+            case CARRY_CRYSTAL -> {
+                state = State.CARRYING;
+                stateTimer = 6f;
+            }
+            case MARK_RISK -> {
+                state = State.MARKING;
+                stateTimer = 2f;
+            }
+            case GOSSIP -> {
+                state = State.GOSSIPING;
+                stateTimer = 1.5f;
+            }
+            default -> {
+                state = State.IDLE;
+                stateTimer = 2f;
+            }
         }
     }
 
