@@ -17,6 +17,9 @@ public final class ModelConfig {
     /** Critic agent — reviews the tool agent's proposals. */
     public static final String CRITIC_MODEL = "qwen2.5:0.5b";
 
+    /** Code-suggestion model for the in-game book editor (small + fast). */
+    public static final String CODE_MODEL = "qwen2.5:0.5b";
+
     /** Embedding model for drift detection + RAG memory. */
     public static final String EMBED_MODEL = "nomic-embed-text";
 

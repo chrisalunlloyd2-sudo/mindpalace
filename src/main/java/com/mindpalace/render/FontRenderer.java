@@ -158,6 +158,18 @@ public class FontRenderer {
                                 Matrix4f projection, Matrix4f view, Vector3f facingNormal,
                                 boolean floor, boolean billboard) {
         if (!ready || text == null || text.isEmpty()) return;
+        // Multi-line text: split and render line by line (also strips CR so
+        // CRLF content from GitHub never reaches the glyph atlas).
+        if (text.indexOf('\n') >= 0 || text.indexOf('\r') >= 0) {
+            String[] lines = text.replace("\r", "").split("\n", -1);
+            float lineH = charSize * 1.7f;
+            for (int li = 0; li < lines.length; li++) {
+                if (lines[li].isEmpty()) continue;
+                Vector3f p = new Vector3f(position.x, position.y + li * lineH, position.z);
+                renderInternal(lines[li], p, charSize, color, projection, view, facingNormal, floor, billboard);
+            }
+            return;
+        }
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_CULL_FACE);

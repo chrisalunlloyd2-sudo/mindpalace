@@ -551,79 +551,32 @@ public class GameEngine {
         }
     }
 
+    /**
+     * Find the book the player is looking at, using each placed book's real
+     * world position (matches what is actually drawn on the shelves).
+     */
     private Book findBookInSights(Room room) {
         Vector3f origin = player.getPosition();
         Vector3f dir = player.getLookDirection();
-        Vector3f c = room.getRoomCenter();
-        float w = Room.ROOM_WIDTH, d = Room.ROOM_DEPTH, h = Room.ROOM_HEIGHT;
-        int side = room.getHallwaySide();
-
-        // Check back wall bookcase
-        float bz = side == 0 ? c.z + d / 2f - 0.25f : c.z - d / 2f + 0.25f;
-        Book hit = raycastBooks(origin, dir, c.x, c.y, bz, w - 0.6f, true);
-        if (hit != null) return hit;
-
-        // Check left wall bookcase
-        float lx = c.x - w / 2f + 0.25f;
-        hit = raycastBooks(origin, dir, lx, c.y, c.z, d - 0.6f, false);
-        if (hit != null) return hit;
-
-        // Check right wall bookcase
-        float rx = c.x + w / 2f - 0.25f;
-        hit = raycastBooks(origin, dir, rx, c.y, c.z, d - 0.6f, false);
-        return hit;
-    }
-
-    private Book raycastBooks(Vector3f origin, Vector3f dir, float caseX, float caseY, float caseZ, float caseWidth, boolean facingZ) {
-        float caseDepth = 0.5f;
-        float caseBottom = caseY - Room.ROOM_HEIGHT / 2f + 0.1f;
-        float caseTop = caseY + Room.ROOM_HEIGHT / 2f - 0.1f;
-        float caseHeight = caseTop - caseBottom;
-        float shelfSpacing = caseHeight / 3f;
-        float shelfY0 = caseBottom + 0.06f + shelfSpacing / 2f;
-        float bookH = shelfSpacing * 0.75f;
         float bookW = 0.10f;
-        float bookGap = 0.02f;
-        float usableWidth = caseWidth - 0.12f - 0.2f;
-        int maxBooks = (int) (usableWidth / (bookW + bookGap));
-
-        for (int row = 0; row < 3; row++) {
-            float sy = shelfY0 + row * shelfSpacing;
-            for (int b = 0; b < maxBooks; b++) {
-                float offset = -usableWidth / 2f + b * (bookW + bookGap) + bookW / 2f;
-                float bx, bz, bw, bd;
-                if (facingZ) {
-                    bx = caseX + offset;
-                    bz = caseZ;
-                    bw = bookW;
-                    bd = caseDepth * 0.6f;
-                } else {
-                    bx = caseX;
-                    bz = caseZ + offset;
-                    bw = caseDepth * 0.6f;
-                    bd = bookW;
-                }
-
-                // Ray-AABB intersection
-                Vector3f hit = rayAABB(origin, dir,
-                    bx - bw / 2f, sy - bookH / 2f, bz - bd / 2f,
-                    bx + bw / 2f, sy + bookH / 2f, bz + bd / 2f);
-                if (hit != null) {
-                    // Find which book this is
-                    Room room = player.getCurrentRoom();
-                    if (room != null) {
-                        int wallIdx = facingZ ? 0 : (caseX < room.getRoomCenter().x ? 1 : 2);
-                        int perWall = Math.min(40, room.getBooks().size() / 3);
-                        int startIdx = wallIdx * perWall;
-                        int bookIdx = startIdx + row * (perWall / 3) + b;
-                        if (bookIdx < room.getBooks().size()) {
-                            return room.getBooks().get(bookIdx);
-                        }
-                    }
-                }
+        float bookD = 0.30f;
+        float caseHeight = Room.ROOM_HEIGHT - 0.2f;
+        float shelfSpacing = (caseHeight - 0.12f) / 3f; // matches WorldBuilder (pt = 0.06)
+        float bookH = shelfSpacing * 0.75f;
+        Book best = null;
+        float bestT = Float.MAX_VALUE;
+        for (Book book : room.getBooks()) {
+            if (!book.isPlaced()) continue;
+            float bx = book.getWorldX(), by = book.getWorldY(), bz = book.getWorldZ();
+            Vector3f hit = rayAABB(origin, dir,
+                bx - bookW / 2f, by - bookH / 2f, bz - bookD / 2f,
+                bx + bookW / 2f, by + bookH / 2f, bz + bookD / 2f);
+            if (hit != null) {
+                float t = hit.distance(origin);
+                if (t < bestT) { bestT = t; best = book; }
             }
         }
-        return null;
+        return best;
     }
 
     private Vector3f rayAABB(Vector3f origin, Vector3f dir, float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
@@ -674,6 +627,7 @@ public class GameEngine {
 
         if (bookEditor.isOpen()) {
             bookEditor.render(renderer);
+            bookEditor.renderText(fontRenderer, player.getCamera(), width, height);
         }
 
         if (agentChat != null) {

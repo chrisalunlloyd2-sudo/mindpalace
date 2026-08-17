@@ -799,9 +799,11 @@ public class WorldBuilder {
                 if (wallDir == 0) {
                     r.drawCube(new Vector3f(caseX + offset, sy, caseZ), new Vector3f(bookW, bookH, bookD), book.getTextureId());
                     book.setWorldPosition(caseX + offset, sy, caseZ);
+                    book.setPlaced(true);
                 } else {
                     r.drawCube(new Vector3f(caseX, sy, caseZ + offset), new Vector3f(bookD, bookH, bookW), book.getTextureId());
                     book.setWorldPosition(caseX, sy, caseZ + offset);
+                    book.setPlaced(true);
                 }
                 bookInGroup++; placed++;
             }

@@ -12,6 +12,7 @@ public class Book {
     private String lastModified;
     private String lastCommitMessage;
     private String sha;          // GitHub blob SHA
+    private boolean placed;      // true once drawn on a shelf (clickable)
 
     // Visual
     private float spineColor;    // hue for spine color
@@ -41,6 +42,8 @@ public class Book {
     public void setLastCommitMessage(String msg) { this.lastCommitMessage = msg; }
     public String getSha() { return sha; }
     public void setSha(String sha) { this.sha = sha; }
+    public boolean isPlaced() { return placed; }
+    public void setPlaced(boolean placed) { this.placed = placed; }
     public float getSpineColor() { return spineColor; }
     public float getThickness() { return thickness; }
 
@@ -54,6 +57,10 @@ public class Book {
         if (language == null) return 5; // TEX_BOOK (green default)
         switch (language) {
             case "Java":       return 5;  // green
+            case "C#":         return 5;  // green
+            case "Kotlin":     return 10; // yellow
+            case "Ruby":       return 12; // red
+            case "PHP":        return 11; // orange
             case "Python":     return 9;  // blue
             case "JavaScript": return 10; // yellow
             case "TypeScript": return 10; // yellow
@@ -79,8 +86,16 @@ public class Book {
         String name = filename.toLowerCase();
         if (name.endsWith(".java")) return "Java";
         if (name.endsWith(".py")) return "Python";
-        if (name.endsWith(".js")) return "JavaScript";
-        if (name.endsWith(".ts")) return "TypeScript";
+        if (name.endsWith(".js") || name.endsWith(".jsx")) return "JavaScript";
+        if (name.endsWith(".ts") || name.endsWith(".tsx")) return "TypeScript";
+        if (name.endsWith(".cs")) return "C#";
+        if (name.endsWith(".kt") || name.endsWith(".kts")) return "Kotlin";
+        if (name.endsWith(".rb")) return "Ruby";
+        if (name.endsWith(".php")) return "PHP";
+        if (name.endsWith(".vue")) return "HTML";
+        if (name.endsWith(".toml") || name.endsWith(".ini")) return "YAML";
+        if (name.endsWith(".gradle")) return "Java";
+        if (name.endsWith("dockerfile")) return "Shell";
         if (name.endsWith(".html")) return "HTML";
         if (name.endsWith(".css")) return "CSS";
         if (name.endsWith(".cpp") || name.endsWith(".c") || name.endsWith(".h")) return "C++";

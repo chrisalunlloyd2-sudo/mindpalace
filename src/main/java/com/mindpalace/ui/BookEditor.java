@@ -1,9 +1,15 @@
 package com.mindpalace.ui;
 
+import com.mindpalace.agent.ModelConfig;
+import com.mindpalace.agent.OllamaClient;
+import com.mindpalace.render.Camera;
+import com.mindpalace.render.FontRenderer;
 import com.mindpalace.render.Renderer;
+import com.mindpalace.util.TextSanitizer;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import com.mindpalace.github.GitHubClient;
+import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import java.nio.file.*;
 import java.util.*;
@@ -27,6 +33,8 @@ public class BookEditor {
     private String createFilename;
     private StringBuilder terminal = new StringBuilder();
     private boolean dirty;
+    private OllamaClient ollama;
+    private List<String> suggestions = new ArrayList<>();
 
     // Panel position in 3D
     private Vector3f panelPos = new Vector3f();
@@ -36,6 +44,7 @@ public class BookEditor {
 
     public BookEditor(GitHubClient github) {
         this.github = github;
+        this.ollama = new OllamaClient();
     }
 
     public void open(Book book, Room room, Vector3f playerPos, Vector3f lookDir) {
@@ -130,34 +139,76 @@ public class BookEditor {
     public void actionSuggest() {
         mode = Mode.SUGGEST;
         terminal.setLength(0);
-        println("╔══════════════════════════════════════════╗");
-        println("║  AI SUGGESTIONS — " + padRight(currentBook != null ? currentBook.getFilename() : "?", 22) + " ║");
-        println("╠══════════════════════════════════════════╣");
-        println("║  Based on file analysis:                ║");
-        println("║                                          ║");
+        suggestions.clear();
+        println("+------------------------------------+");
+        println("| AI SUGGESTIONS - " + padRight(currentBook != null ? currentBook.getFilename() : "?", 22) + " |");
+        println("+------------------------------------+");
 
-        if (currentBook != null) {
-            String lang = currentBook.getLanguage();
-            String name = currentBook.getFilename();
-            println("║  • Add docstring to " + padRight(trunc(name, 20), 20) + " ║");
-            println("║  • Extract magic numbers to constants   ║");
-            println("║  • Add error handling for edge cases    ║");
-            if ("Python".equals(lang)) {
-                println("║  • Add type hints (PEP 484)             ║");
-                println("║  • Convert to async where applicable    ║");
-            } else if ("Java".equals(lang)) {
-                println("║  • Add null-safety annotations           ║");
-                println("║  • Extract interface from class         ║");
-            } else if ("JavaScript".equals(lang)) {
-                println("║  • Convert to ES6 arrow functions       ║");
-                println("║  • Add JSDoc type annotations           ║");
-            }
-            println("║  • Add unit tests                       ║");
-            println("║  • Improve variable naming              ║");
+        if (currentBook == null) {
+            println("| No book open.                      |");
+            println("+------------------------------------+");
+            return;
         }
-        println("║                                          ║");
-        println("║  :a = apply suggestion #    :q = back   ║");
-        println("╚══════════════════════════════════════════╝");
+
+        String content = currentBook.getContent();
+        if (content == null || content.isEmpty()) content = "(empty file)";
+        String snippet = content.length() > 2000 ? content.substring(0, 2000) : content;
+        snippet = TextSanitizer.asciiSafe(TextSanitizer.stripCR(snippet));
+
+        try {
+            List<Map<String, String>> messages = new ArrayList<>();
+            messages.add(Map.of("role", "system",
+                "content", "You are a code review assistant. Give concrete, specific, numbered suggestions (1. 2. 3. ...) to improve the given code. Be brief and actionable."));
+            messages.add(Map.of("role", "user",
+                "content", "File: " + currentBook.getFilePath()
+                    + "\nLanguage: " + currentBook.getLanguage()
+                    + "\n\n```\n" + snippet + "\n```\n\nList concrete suggestions."));
+            String reply = ollama.chat(ModelConfig.CODE_MODEL, messages, null);
+            if (reply == null || reply.isBlank()) {
+                println("| [ERR] Empty response - is Ollama   |");
+                println("| running? (run: ollama serve)       |");
+            } else {
+                for (String line : reply.split("\n")) {
+                    String l = line.trim();
+                    if (l.isEmpty()) continue;
+                    suggestions.add(l);
+                    println("| " + padRight(trunc(TextSanitizer.asciiSafe(l), 34), 34) + " |");
+                }
+            }
+        } catch (Exception e) {
+            println("| [ERR] Ollama: " + padRight(trunc(e.getMessage(), 28), 28) + " |");
+        }
+        println("+------------------------------------+");
+        println(":a <n> = apply suggestion    :q = back");
+        println("+------------------------------------+");
+    }
+
+    private void applySuggestion(String cmd) {
+        if (suggestions.isEmpty()) {
+            println("[ERR] No suggestions available — run :s first");
+            return;
+        }
+        String num = cmd.substring(2).trim();
+        if (num.isEmpty()) {
+            println("Usage: :a <n>  (1.." + suggestions.size() + ")");
+            return;
+        }
+        int idx;
+        try {
+            idx = Integer.parseInt(num);
+        } catch (NumberFormatException e) {
+            println("[ERR] Bad index: " + num);
+            return;
+        }
+        if (idx < 1 || idx > suggestions.size()) {
+            println("[ERR] Index out of range 1.." + suggestions.size());
+            return;
+        }
+        String text = suggestions.get(idx - 1);
+        if (editBuffer == null) editBuffer = "";
+        editBuffer += TextSanitizer.asciiSafe(text) + "\n";
+        dirty = true;
+        println("[OK] Applied suggestion #" + idx + " — switch to :e to review, :w to save");
     }
 
     public void handleCommand(String cmd) {
@@ -178,6 +229,7 @@ public class BookEditor {
                 break;
             case SUGGEST:
                 if (cmd.equals(":q")) actionView();
+                else if (cmd.startsWith(":a")) applySuggestion(cmd);
                 break;
         }
     }
@@ -331,18 +383,29 @@ public class BookEditor {
     }
 
     private void loadContent() {
+        if (currentBook == null || currentBook.getFilePath() == null) return;
+        // Binary/image books can't be displayed as text.
+        if ("Image".equals(currentBook.getLanguage())) {
+            currentBook.setContent("(binary image file — open in an external editor)");
+            return;
+        }
         if (currentRoom.getLocalPath() != null) {
             try {
                 Path fp = Path.of(currentRoom.getLocalPath(), currentBook.getFilePath());
-                currentBook.setContent(Files.readString(fp));
+                currentBook.setContent(TextSanitizer.asciiSafe(TextSanitizer.stripCR(Files.readString(fp))));
                 return;
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                println("[ERR] Local read failed: " + e.getMessage());
+            }
         }
         if (github != null && github.isAuthenticated()) {
             try {
                 String content = github.fetchFileContent(currentRoom.getRepoName(), currentBook.getFilePath());
                 if (content != null) currentBook.setContent(content);
-            } catch (Exception ignored) {}
+                else println("[ERR] GitHub fetch returned nothing for " + currentBook.getFilePath());
+            } catch (Exception e) {
+                println("[ERR] GitHub fetch: " + e.getMessage());
+            }
         }
     }
 
@@ -407,6 +470,32 @@ public class BookEditor {
         r.drawCube(new Vector3f(panelPos.x + hw, panelPos.y, panelPos.z), new Vector3f(bt, PANEL_HEIGHT, bt), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(panelPos.x, panelPos.y - hh, panelPos.z), new Vector3f(PANEL_WIDTH, bt, bt), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(panelPos.x, panelPos.y + hh, panelPos.z), new Vector3f(PANEL_WIDTH, bt, bt), Renderer.TEX_DOOR);
+    }
+
+    /**
+     * Render the terminal buffer as billboard text on the floating panel.
+     * (The buffer is also mirrored to System.out — this makes it visible in-world.)
+     */
+    public void renderText(FontRenderer font, Camera cam, int width, int height) {
+        if (!isOpen || font == null || !font.isReady()) return;
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        String full = terminal.toString();
+        String[] lines = full.split("\n", -1);
+        int start = Math.max(0, lines.length - 18);
+        float charSize = 0.042f;
+        float lineH = charSize * 1.7f;
+        float left = panelPos.x - PANEL_WIDTH / 2f + 0.15f;
+        float top = panelPos.y + PANEL_HEIGHT / 2f - 0.12f;
+        for (int i = start; i < lines.length; i++) {
+            String line = TextSanitizer.asciiSafe(lines[i].replace("\r", ""));
+            if (line.length() > 46) line = line.substring(0, 46);
+            if (line.isEmpty()) continue;
+            float w = line.length() * charSize;
+            Vector3f pos = new Vector3f(left + w / 2f, top - (i - start) * lineH, panelPos.z);
+            font.renderBillboard(line, pos, charSize, new Vector3f(0.3f, 1.0f, 0.3f), proj, view, camPos);
+        }
     }
 
     // ── Helpers ──

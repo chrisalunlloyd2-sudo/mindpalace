@@ -12,8 +12,11 @@ public class RepoMapper {
     private static final String VIPER_NOTES = "C:/Users/viper/OneDrive/ViperAI_Notes";
 
     public void scanRepos(List<Room> rooms) {
-        // Scan local AIGEN_SYS repos
-        File aigenDir = new File(AIGEN_SYS);
+        // Scan local repos dir — override with MIND_PALACE_REPOS_DIR env var
+        // or -Dmindpalace.repos=... (falls back to the historical AIGEN_SYS path)
+        String reposDir = System.getenv("MIND_PALACE_REPOS_DIR");
+        if (reposDir == null || reposDir.isEmpty()) reposDir = System.getProperty("mindpalace.repos", AIGEN_SYS);
+        File aigenDir = new File(reposDir);
         if (aigenDir.exists() && aigenDir.isDirectory()) {
             File[] repos = aigenDir.listFiles(File::isDirectory);
             if (repos != null) {
@@ -29,8 +32,10 @@ public class RepoMapper {
             }
         }
 
-        // Add ViperAI_Notes as a special room
-        File notesDir = new File(VIPER_NOTES);
+        // Add ViperAI_Notes as a special room (override with MIND_PALACE_NOTES_DIR)
+        String notesPath = System.getenv("MIND_PALACE_NOTES_DIR");
+        if (notesPath == null || notesPath.isEmpty()) notesPath = VIPER_NOTES;
+        File notesDir = new File(notesPath);
         if (notesDir.exists()) {
             Room notesRoom = new Room("ViperAI_Notes");
             notesRoom.setLocalPath(VIPER_NOTES);

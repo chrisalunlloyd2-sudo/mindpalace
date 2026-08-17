@@ -1,6 +1,7 @@
 package com.mindpalace.github;
 
 import com.google.gson.*;
+import com.mindpalace.util.TextSanitizer;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import okhttp3.*;
@@ -168,7 +169,7 @@ public class GitHubClient {
 
         try (Response resp = http.newCall(req).execute()) {
             if (resp.isSuccessful()) {
-                return resp.body().string();
+                return TextSanitizer.asciiSafe(TextSanitizer.stripCR(resp.body().string()));
             }
         }
         return null;
