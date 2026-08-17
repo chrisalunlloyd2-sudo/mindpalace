@@ -390,6 +390,11 @@ public class GameEngine {
                 idleDetector.markActivity();
             }
             idleDetector.update();
+            // Pace the model scheduler: quiet down (15 min) while playing,
+            // 5-min floor when idle. Never below the hard floor.
+            if (agentManager != null && agentManager.getScheduler() != null) {
+                agentManager.getScheduler().setSpacingMs(idleDetector.getSpacingMs());
+            }
         }
 
         // Process console commands for editor

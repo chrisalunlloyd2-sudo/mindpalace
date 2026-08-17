@@ -40,4 +40,12 @@ public class IdleDetector {
     public long getCycleInterval(long baseMs) {
         return (long) (baseMs / getPacingMultiplier());
     }
+
+    /**
+     * Model spacing in ms. Idle → 5 min floor (agents work). Active/playing →
+     * 15 min (quiet down, low resources). Never below the 5-min hard floor.
+     */
+    public long getSpacingMs() {
+        return idle ? 5 * 60 * 1000L : 15 * 60 * 1000L;
+    }
 }

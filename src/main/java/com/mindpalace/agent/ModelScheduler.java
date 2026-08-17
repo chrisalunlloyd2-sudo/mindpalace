@@ -18,9 +18,10 @@ import java.util.concurrent.atomic.*;
  * waiting MIN_SPACING_MS between calls so the local models never thrash.
  */
 public class ModelScheduler {
-    // Spacing between model calls. Fast enough for coherent conversation,
-    // slow enough to not thrash a local CPU. Idle detection can widen this.
-    public static final long MIN_SPACING_MS = 15 * 1000; // 15s default
+    // Spacing between model calls — HARD FLOOR of 5 minutes. The user's rule:
+    // "ONE CHAT EVERY 5 MINS MAX, SLOW-PACED, LOW RESOURCES." Idle detection can
+    // widen this further (even slower when playing), but NEVER faster than 5 min.
+    public static final long MIN_SPACING_MS = 5 * 60 * 1000; // 5 minutes
 
     private final OllamaClient ollama;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -121,7 +122,7 @@ public class ModelScheduler {
 
     public void shutdown() { worker.shutdownNow(); }
 
-    /** Set dynamic spacing (idle detector: fast when idle, slow when playing). */
-    public void setSpacingMs(long ms) { this.spacingMs = Math.max(1000, ms); }
+    /** Set dynamic spacing (idle detector: slow when playing, never below 5 min). */
+    public void setSpacingMs(long ms) { this.spacingMs = Math.max(MIN_SPACING_MS, ms); }
     public long getSpacingMs() { return spacingMs; }
 }
