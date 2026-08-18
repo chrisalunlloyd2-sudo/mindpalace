@@ -52,7 +52,7 @@ public class FontRenderer {
         for (int i = 32; i <= 126; i++) glyphs.add((char) i);
         for (int i = 160; i <= 255; i++) glyphs.add((char) i);
         for (int i = 0x2500; i <= 0x257F; i++) glyphs.add((char) i);
-        for (char extra : new char[]{'\u2022','\u00B7','\u2192','\u2190','\u2026','\u2550','\u2551','\u2588','\u2713','\u2717','\u2605','\u2606','\u266A'}) {
+        for (char extra : new char[]{'\u2022','\u00B7','\u2192','\u2190','\u2026','\u2550','\u2551','\u2588','\u2591','\u2713','\u2717','\u2605','\u2606','\u266A'}) {
             if (!glyphs.contains(extra)) glyphs.add(extra);
         }
         rows = (glyphs.size() + COLS - 1) / COLS;

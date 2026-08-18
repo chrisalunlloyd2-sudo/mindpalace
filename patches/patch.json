@@ -1,0 +1,16 @@
+{
+  "id": "2026-08-17-demo",
+  "title": "First Patch",
+  "message": "The palace breathes. New rooms appeared while you watched.",
+  "texts": [
+    "Live patches work — this room was built while the game was running.",
+    "Nothing lives forever, nothing runs for free."
+  ],
+  "rooms": [
+    {"name": "Patch Demo", "desc": "A room that appeared live.", "lang": "patch"},
+    {"name": "Kernel Workshop", "desc": "Where Kernel builds.", "lang": "java"}
+  ],
+  "books": [
+    {"title": "Patching Guide", "content": "Drop a new patch.json here.\nThe game says GAME PATCH LOADING and ships it live.\nNever delete — only add."}
+  ]
+}

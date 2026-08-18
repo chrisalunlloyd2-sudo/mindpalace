@@ -20,6 +20,7 @@ import com.mindpalace.agent.AgentChat;
 import com.mindpalace.deploy.DeployManager;
 import com.mindpalace.deploy.AnimationSystem;
 import com.mindpalace.deploy.LiveUpdateManager;
+import com.mindpalace.deploy.PatchManager;
 import com.mindpalace.backup.BackupManager;
 import com.mindpalace.backup.MemoryManager;
 import com.mindpalace.agent.IdleDetector;
@@ -57,6 +58,13 @@ public class GameEngine {
     private DeployManager deployManager;
     private AnimationSystem animationSystem;
     private LiveUpdateManager liveUpdateManager;
+    private PatchManager patchManager;
+    private double patchPollTimer = 8.0;
+    private boolean patchCinematic;
+    private double patchTimer;
+    private String patchCinematicTitle = "";
+    private String patchToast = "";
+    private double patchToastTimer;
     private KnowledgeGraph knowledgeGraph;
     private final List<AgentNPC> npcs = new ArrayList<>();
     private final List<TodoCrystal> crystals = new ArrayList<>();
@@ -195,6 +203,9 @@ public class GameEngine {
 
         // Live update system — watches for new repos, animates them into view
         liveUpdateManager = new LiveUpdateManager(github, world);
+
+        // Live patch system — patches/patch.json, "GAME PATCH LOADING" cinematic
+        patchManager = new PatchManager(PatchManager.defaultDir());
         liveUpdateManager.setCallback(new LiveUpdateManager.UpdateCallback() {
             @Override
             public void onNewRoom(Room room) {
@@ -452,8 +463,35 @@ public class GameEngine {
             }
         }
 
+        // Live patches — poll manifest, play the loading cinematic, ship content
+        if (patchManager != null) {
+            patchPollTimer -= dt;
+            if (patchPollTimer <= 0) { patchManager.poll(); patchPollTimer = 8.0; }
+            if (!patchCinematic && patchManager.hasPending()) {
+                PatchManager.Patch pp = patchManager.peekPending();
+                patchCinematicTitle = (pp != null && pp.title != null) ? pp.title : "Update";
+                patchCinematic = true;
+                patchTimer = 0.0;
+                System.out.println("[Patch] cinematic start: " + patchCinematicTitle);
+            }
+            if (patchCinematic) {
+                patchTimer += dt;
+                if (patchTimer >= 3.0) {
+                    PatchManager.Patch pp = patchManager.takePending();
+                    if (pp != null) {
+                        patchManager.apply(pp, world);
+                        patchToast = "PATCH " + pp.id + " LOADED — " + (pp.title != null ? pp.title : "");
+                        patchToastTimer = 10.0;
+                        System.out.println("[Patch] " + patchToast);
+                    }
+                    patchCinematic = false;
+                }
+            }
+            if (patchToastTimer > 0) patchToastTimer -= dt;
+        }
+
         if (state == GameState.PLAYING) {
-            player.update(dt, input, world);
+            if (!patchCinematic) player.update(dt, input, world);
 
             // Sync chat-typing state to player (suppress door interaction)
             player.setChatTyping(agentChat != null && agentChat.isTyping());
@@ -809,6 +847,34 @@ public class GameEngine {
 
         // Minimap — top-right corner
         renderMinimap(cam, proj, view, camPos, camFront, camRight);
+
+        // ---- Live patch cinematic + loaded toast (billboards in front of camera) ----
+        if (patchCinematic || patchToastTimer > 0) {
+            Vector3f base = new Vector3f(camPos).add(new Vector3f(camFront).mul(2.4f));
+            if (patchCinematic) {
+                int bars = Math.min(10, (int) (patchTimer / 3.0 * 10));
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < 10; i++) sb.append(i < bars ? '\u2588' : '\u2591');
+                fontRenderer.renderBillboard("GAME PATCH LOADING",
+                    new Vector3f(base.x, base.y + 0.40f, base.z), 0.11f,
+                    new Vector3f(0.35f, 1.0f, 0.65f), proj, view, camPos);
+                fontRenderer.renderBillboard(patchCinematicTitle,
+                    new Vector3f(base.x, base.y + 0.20f, base.z), 0.06f,
+                    new Vector3f(0.6f, 0.8f, 1.0f), proj, view, camPos);
+                fontRenderer.renderBillboard(sb.toString(),
+                    new Vector3f(base.x, base.y + 0.05f, base.z), 0.05f,
+                    new Vector3f(1.0f, 0.8f, 0.3f), proj, view, camPos);
+            } else if (patchToastTimer > 0) {
+                fontRenderer.renderBillboard(patchToast,
+                    new Vector3f(base.x, base.y + 0.30f, base.z), 0.07f,
+                    new Vector3f(0.4f, 1.0f, 0.5f), proj, view, camPos);
+                if (patchManager != null && !patchManager.getPatchTexts().isEmpty()) {
+                    fontRenderer.renderBillboard(patchManager.getPatchTexts().get(0),
+                        new Vector3f(base.x, base.y + 0.14f, base.z), 0.045f,
+                        new Vector3f(0.9f, 0.9f, 0.9f), proj, view, camPos);
+                }
+            }
+        }
     }
 
     private void renderMinimap(Camera cam, Matrix4f proj, Matrix4f view,
