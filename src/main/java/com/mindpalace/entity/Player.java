@@ -161,8 +161,9 @@ public class Player {
         if (currentRoom == null) {
             if (next.x < -hw + r) next.x = -hw + r;
             if (next.x > hw - r) next.x = hw - r;
-            if (next.z < 0.1f) next.z = 0.1f;
-            // Walkable to the top floor's end (teleporter sits just before it)
+            // Walkable in front of the palace (outside area) down to -55,
+            // and up to the top floor's end (teleporter sits just before it).
+            if (next.z < -55f) next.z = -55f;
             float maxZ = 0.1f;
             if (!world.getHallways().isEmpty()) {
                 Hallway top = world.getHallways().get(world.getHallways().size() - 1);
@@ -253,13 +254,13 @@ public class Player {
         System.out.println("[TELEPORT] -> Floor " + (floor + 1));
     }
 
-    /** Teleport to the outside area (floor 0, past the courtyard). */
+    /** Teleport to the outside area (floor 0, in front of the palace). */
     public void teleportOutside(WorldBuilder world) {
         if (world.getHallways().isEmpty()) return;
         Hallway hw = world.getHallways().get(0);
         currentRoom = null;
-        // Outside sits at stairZ + 34 on floor 0 (see WorldBuilder.renderOutside)
-        float outZ = hw.getEnd().z + 2.0f + 34.0f + 12.0f;
+        // Outside sits at frontZ - 48 on floor 0 (see WorldBuilder.renderOutside)
+        float outZ = hw.getStart().z - 2.0f - 48.0f + 12.0f;
         camera.setPosition(0f, hw.getStart().y + EYE_HEIGHT, outZ);
         camera.setYaw(0);
         camera.setPitch(0);

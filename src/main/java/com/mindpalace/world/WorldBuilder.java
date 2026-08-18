@@ -247,12 +247,13 @@ public class WorldBuilder {
         // Poster frames on walls between doors
         renderPosters(r, s, hw);
 
-        // Special areas only on floor 0
+        // Special areas only on floor 0 — placed in FRONT of the palace
+        // entrance (negative Z) so they don't overlap upper floors' hallways.
         if (hw.getFloor() == 0) {
-            float stairZ = hw.getEnd().z + 2.0f;
-            renderLaboratory(r, s.y, stairZ + 6.0f);
-            renderCourtyard(r, s.y, stairZ + 18.0f);
-            renderOutside(r, s.y, stairZ + 34.0f);
+            float frontZ = hw.getStart().z - 2.0f;   // just before the entrance wall
+            renderLaboratory(r, s.y, frontZ - 8.0f);   // lab spans ~ -10..-2
+            renderCourtyard(r, s.y, frontZ - 22.0f);   // courtyard ~ -24..-12
+            renderOutside(r, s.y, frontZ - 48.0f);     // outside ~ -50..-25
         }
     }
 

@@ -1351,6 +1351,18 @@ public class GameEngine {
         System.out.println((editorOpened ? "PASS" : "FAIL") + " editor opens on book click");
         if (editorOpened) pass++; else fail++;
 
+        // 9. Teleporter destinations: teleport to each floor + outside
+        boolean teleportOk = true;
+        for (int f = 0; f < world.getHallways().size(); f++) {
+            player.teleportToFloor(f, world);
+            float expectedY = world.getHallways().get(f).getStart().y + 1.6f;
+            if (Math.abs(player.getPosition().y - expectedY) > 0.5f) teleportOk = false;
+        }
+        player.teleportOutside(world);
+        if (player.getPosition().z > -10f) teleportOk = false; // outside is negative Z
+        System.out.println((teleportOk ? "PASS" : "FAIL") + " teleporter destinations (floors + outside)");
+        if (teleportOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);
     }
