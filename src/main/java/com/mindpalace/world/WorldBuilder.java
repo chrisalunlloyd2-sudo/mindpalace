@@ -29,6 +29,10 @@ public class WorldBuilder {
     private RoomPopulator populator;
     private FogOfWar fogOfWar;
 
+    // Global animation clock (seconds) — drives pulsing teleporters, neon, etc.
+    public float time = 0f;
+    public void tick(float dt) { time += dt; }
+
     // Stairways connecting floors: {startZ, startY, endZ, endY}
     private final List<float[]> stairways = new ArrayList<>();
 
@@ -145,16 +149,10 @@ public class WorldBuilder {
             hallways.add(hw);
         }
 
-        // Register walkable stairways between consecutive floors
+        // No stairways — teleporters handle floor transitions (stairs were
+        // removed: they poked through the floor above and looked like a
+        // "block in the middle of the hall").
         stairways.clear();
-        for (int f = 0; f < floors - 1; f++) {
-            Hallway hw = hallways.get(f);
-            float startZ = hw.getEnd().z + STAIR_OFFSET;
-            float startY = hw.getStart().y;
-            float endY = hallways.get(f + 1).getStart().y;
-            float endZ = startZ + STAIR_STEPS * STAIR_RUN;
-            stairways.add(new float[]{startZ, startY, endZ, endY});
-        }
 
         int idx = 0;
         for (int floor = 0; floor < floors && idx < total; floor++) {
@@ -239,21 +237,16 @@ public class WorldBuilder {
         float signX = 0, signY = s.y + h - 0.5f, signZ = s.z + 1.5f;
         r.drawCube(new Vector3f(signX, signY, signZ),
             new Vector3f(1.5f, 0.4f, 0.08f), Renderer.TEX_NEON_GREEN);
-        // Teleport pad at hallway end (to next floor)
+
+        // Teleporter pad at hallway end (to next floor) — cool animated portal
         if (hw.getFloor() < hallways.size() - 1) {
             float padZ = hw.getEnd().z - 1.0f;
-            r.drawCube(new Vector3f(0, s.y + 0.06f, padZ),
-                new Vector3f(1.5f, 0.06f, 1.5f), Renderer.TEX_NEON_CYAN);
+            renderTeleporter(r, s.y, padZ);
         }
 
         // Poster frames on walls between doors
         renderPosters(r, s, hw);
 
-        // Stairwell between floors
-        if (hw.getFloor() < hallways.size() - 1) {
-            float stairZ = hw.getEnd().z + STAIR_OFFSET;
-            renderStairwell(r, s.y, stairZ);
-        }
         // Special areas only on floor 0
         if (hw.getFloor() == 0) {
             float stairZ = hw.getEnd().z + 2.0f;
@@ -263,34 +256,33 @@ public class WorldBuilder {
         }
     }
 
-    private void renderStairwell(Renderer r, float floorY, float stairZ) {
-        float sw = 1.5f, sh = 0.2f, sd = 0.5f;
-        int steps = 8;
-        float totalRise = HALLWAY_HEIGHT + 1.0f;
-        float stepRise = totalRise / steps;
-        float stepRun = 0.6f;
+    /**
+     * Teleporter — a pulsing cyan portal pad with a rising light beam.
+     * Replaces the old stairwell (which poked through the floor above and
+     * looked like a "block in the middle of the hall").
+     */
+    private void renderTeleporter(Renderer r, float floorY, float padZ) {
+        float pulse = 0.5f + 0.5f * (float) Math.sin(time * 3.0f);
+        float padY = floorY + 0.06f;
 
-        for (int i = 0; i < steps; i++) {
-            float sy = floorY + i * stepRise + sh / 2f;
-            float sz = stairZ + i * stepRun;
-            r.drawCube(new Vector3f(0, sy, sz), new Vector3f(sw, sh, sd), Renderer.TEX_HARDWOOD);
+        // Base ring (amber)
+        r.drawCube(new Vector3f(0, padY, padZ), new Vector3f(2.0f, 0.08f, 2.0f), Renderer.TEX_NEON_AMBER);
+        // Inner pad (cyan, pulses)
+        r.drawCube(new Vector3f(0, padY + 0.04f, padZ),
+            new Vector3f(1.5f + pulse * 0.3f, 0.06f, 1.5f + pulse * 0.3f), Renderer.TEX_NEON_CYAN);
+        // Rising light beam (vertical column, pulses upward)
+        float beamH = 1.5f + pulse * 1.5f;
+        r.drawCube(new Vector3f(0, padY + 0.1f + beamH / 2f, padZ),
+            new Vector3f(0.5f, beamH, 0.5f), Renderer.TEX_NEON_CYAN);
+        // Floating sparkle orbs around the beam
+        for (int i = 0; i < 4; i++) {
+            float ang = time * 2.0f + i * (float) Math.PI / 2f;
+            float ox = (float) Math.cos(ang) * 1.2f;
+            float oz = (float) Math.sin(ang) * 1.2f;
+            float oy = padY + 0.5f + 0.4f * (float) Math.sin(time * 4.0f + i);
+            r.drawCube(new Vector3f(ox, oy, padZ + oz),
+                new Vector3f(0.12f, 0.12f, 0.12f), Renderer.TEX_NEON_GREEN);
         }
-
-        // Railings
-        float railH = 0.9f;
-        for (int i = 0; i <= steps; i++) {
-            float ry = floorY + i * stepRise + railH / 2f;
-            float rz = stairZ + i * stepRun;
-            r.drawCube(new Vector3f(-sw / 2f - 0.1f, ry, rz), new Vector3f(0.05f, railH, 0.05f), Renderer.TEX_DOOR);
-            r.drawCube(new Vector3f(sw / 2f + 0.1f, ry, rz), new Vector3f(0.05f, railH, 0.05f), Renderer.TEX_DOOR);
-        }
-        // Top rail
-        float topY = floorY + totalRise + railH;
-        float topZ = stairZ + steps * stepRun;
-        r.drawCube(new Vector3f(-sw / 2f - 0.1f, topY, stairZ + steps * stepRun / 2f),
-            new Vector3f(0.05f, 0.05f, steps * stepRun), Renderer.TEX_DOOR);
-        r.drawCube(new Vector3f(sw / 2f + 0.1f, topY, stairZ + steps * stepRun / 2f),
-            new Vector3f(0.05f, 0.05f, steps * stepRun), Renderer.TEX_DOOR);
     }
 
     private void renderLaboratory(Renderer r, float floorY, float labZ) {

@@ -94,10 +94,13 @@ public class Renderer {
         projectionMatrix = camera.getProjectionMatrix(aspect);
         basicShader.setUniform("projection", projectionMatrix);
         basicShader.setUniform("view", camera.getViewMatrix());
-        basicShader.setUniform("lightPos", new Vector3f(0, 10, 0));
+        // Headlamp: light follows the player so upper floors aren't pitch black
+        // (the old fixed light at y=10 sat BELOW floors 1+ and left them dark).
+        Vector3f camPos = camera.getPosition();
+        basicShader.setUniform("lightPos", new Vector3f(camPos.x, camPos.y + 3.0f, camPos.z));
         basicShader.setUniform("lightColor", new Vector3f(1.0f, 0.95f, 0.8f));
-        basicShader.setUniform("ambientStrength", 0.35f);
-        basicShader.setUniform("viewPos", camera.getPosition());
+        basicShader.setUniform("ambientStrength", 0.55f);
+        basicShader.setUniform("viewPos", camPos);
     }
 
     public void drawMesh(Mesh mesh, Matrix4f model, int texId) {

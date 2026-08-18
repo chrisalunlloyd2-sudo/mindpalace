@@ -155,17 +155,11 @@ public class Player {
             if (next.x < -hw + r) next.x = -hw + r;
             if (next.x > hw - r) next.x = hw - r;
             if (next.z < 0.1f) next.z = 0.1f;
-            // Allow walking past the hallway end into the stairway zone
+            // Walkable to the top floor's end (teleporter sits just before it)
             float maxZ = 0.1f;
             if (!world.getHallways().isEmpty()) {
-                // Cover the TOP floor's end so every floor is walkable (was floor 0 only)
                 Hallway top = world.getHallways().get(world.getHallways().size() - 1);
                 maxZ = top.getEnd().z;
-            }
-            // Extend to cover the stairway (stairs sit after the hallway end)
-            if (!world.getStairways().isEmpty()) {
-                float[] last = world.getStairways().get(world.getStairways().size() - 1);
-                maxZ = Math.max(maxZ, last[2] + 1.0f);
             }
             if (next.z > maxZ - r) next.z = maxZ - r;
         } else {

@@ -135,8 +135,10 @@ public class FontRenderer {
             "  int row = glyphIndex / 16;\n" +
             "  float u0 = float(col) / 16.0;\n" +
             "  float u1 = float(col + 1) / 16.0;\n" +
-            "  float v0 = float(row) / atlasRows;\n" +
-            "  float v1 = float(row + 1) / atlasRows;\n" +
+            "  // Atlas is uploaded top-down (image row 0 = texture v=1), so invert v:\n" +
+            "  // without this every glyph sampled the WRONG row (text looked garbled).\n" +
+            "  float v0 = 1.0 - float(row + 1) / atlasRows;\n" +
+            "  float v1 = 1.0 - float(row) / atlasRows;\n" +
             "  TexCoord = vec2(u0, v0) + aTexCoord * vec2(u1 - u0, v1 - v0);\n" +
             "}\n";
         String fragSrc =

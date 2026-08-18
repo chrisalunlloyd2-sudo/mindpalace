@@ -511,6 +511,7 @@ public class GameEngine {
         }
 
         if (state == GameState.PLAYING) {
+            world.tick((float) dt);
             if (!patchCinematic) player.update(dt, input, world);
 
             // Sync chat-typing state to player (suppress door interaction)
@@ -1118,6 +1119,7 @@ public class GameEngine {
      * captures a frame every 0.5s. Used with --autodrive <dir>.
      */
     private void updateAutodrive(double dt) {
+        world.tick((float) dt);
         shotTimer += dt;
         if (shotTimer >= 0.5) {
             shotTimer = 0.0;
