@@ -3,6 +3,7 @@ package com.mindpalace.engine;
 import com.mindpalace.render.Renderer;
 import com.mindpalace.render.FontRenderer;
 import com.mindpalace.render.Camera;
+import com.mindpalace.render.Screenshot;
 import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
@@ -91,11 +92,24 @@ public class GameEngine {
     private BufferedReader consoleReader;
     private String pendingCommand;
 
+    // Screenshot + auto-drive (agent "sees" the game)
+    private boolean autodrive;
+    private String screenshotDir;
+    private int shotCounter;
+    private double shotTimer;
+
     public void run() {
         init();
         startConsoleReader();
         loop();
         cleanup();
+    }
+
+    /** Enable auto-drive walkthrough (called from Main before run()). */
+    public void setAutodrive(String dir) {
+        this.autodrive = true;
+        this.screenshotDir = dir;
+        System.out.println("[Autodrive] enabled, screenshots -> " + dir);
     }
 
     private void init() {
@@ -375,7 +389,8 @@ public class GameEngine {
             accumulator += frameTime;
 
             while (accumulator >= PHYSICS_DT) {
-                update(PHYSICS_DT);
+                if (autodrive) updateAutodrive(PHYSICS_DT);
+                else update(PHYSICS_DT);
                 accumulator -= PHYSICS_DT;
             }
 
@@ -488,6 +503,11 @@ public class GameEngine {
                 }
             }
             if (patchToastTimer > 0) patchToastTimer -= dt;
+        }
+
+        // F12 — screenshot (agent "sees" the game)
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F12)) {
+            captureScreenshot();
         }
 
         if (state == GameState.PLAYING) {
@@ -1078,5 +1098,35 @@ public class GameEngine {
         GLFW.glfwDestroyWindow(window);
         GLFW.glfwTerminate();
         GLFW.glfwSetErrorCallback(null).free();
+    }
+
+    // ── Screenshot + auto-drive ──
+
+    /** Capture the current frame to screenshots/<n>.png. */
+    private void captureScreenshot() {
+        if (screenshotDir == null) screenshotDir = "screenshots";
+        java.io.File dir = new java.io.File(screenshotDir);
+        if (!dir.exists()) dir.mkdirs();
+        String path = screenshotDir + "/shot_" + String.format("%04d", shotCounter++) + ".png";
+        String written = Screenshot.capture(width, height, path);
+        if (written != null) System.out.println("[Screenshot] " + written);
+    }
+
+    /**
+     * Auto-drive: scripted walkthrough that captures frames so the agent can
+     * SEE the world. Drives the camera directly (no Input/GLFW callbacks) and
+     * captures a frame every 0.5s. Used with --autodrive <dir>.
+     */
+    private void updateAutodrive(double dt) {
+        shotTimer += dt;
+        if (shotTimer >= 0.5) {
+            shotTimer = 0.0;
+            captureScreenshot();
+        }
+        // Walk forward down the hallway (camera looks +Z by default)
+        Camera cam = player.getCamera();
+        Vector3f p = cam.getPosition();
+        p.z += 6.0f * (float) dt;
+        cam.setPosition(p);
     }
 }

@@ -1,24 +1,2 @@
-# Maven
-target/
-*.jar
-*.war
-
-# IDE
-.idea/
-*.iml
-.vscode/
-.project
-.classpath
-.settings/
-
-# OS
-.DS_Store
-Thumbs.db
-*.swp
-*.swo
-
-# Logs
-*.log
-
-# Config (contains PAT)
-config/pat.txt
+screenshots/
+*.png
