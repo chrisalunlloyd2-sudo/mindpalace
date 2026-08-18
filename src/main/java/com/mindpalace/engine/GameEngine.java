@@ -2,6 +2,7 @@ package com.mindpalace.engine;
 
 import com.mindpalace.render.Renderer;
 import com.mindpalace.render.FontRenderer;
+import com.mindpalace.render.BloomEffect;
 import com.mindpalace.render.Camera;
 import com.mindpalace.render.Screenshot;
 import com.mindpalace.world.WorldBuilder;
@@ -47,6 +48,7 @@ public class GameEngine {
 
     private Renderer renderer;
     private FontRenderer fontRenderer;
+    private BloomEffect bloom;
     private WorldBuilder world;
     private Player player;
     private Input input;
@@ -179,6 +181,7 @@ public class GameEngine {
 
         input = new Input(window);
         renderer = new Renderer(width, height);
+        bloom = new BloomEffect(width, height);
         fontRenderer = new FontRenderer();
         player = new Player();
         hud = new HUD();
@@ -814,6 +817,7 @@ public class GameEngine {
     }
 
     private void render(double alpha) {
+        bloom.begin();
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
         renderer.beginFrame(player.getCamera());
         world.render(renderer, player.getCamera());
@@ -858,6 +862,7 @@ public class GameEngine {
         // Help overlay
         if (showHelp) renderHelpOverlay();
 
+        bloom.end();
         GLFW.glfwSwapBuffers(window);
     }
 
@@ -1329,6 +1334,7 @@ public class GameEngine {
         }
         GLFW.glfwSetWindowMonitor(window, monitor, 0, 0, width, height, GLFW.GLFW_DONT_CARE);
         renderer.resize(width, height);
+        bloom.resize(width, height);
     }
 
     private Room findRepoByName(String query) {
@@ -1353,6 +1359,7 @@ public class GameEngine {
         if (deployManager != null) deployManager.shutdown();
         audio.cleanup();
         renderer.cleanup();
+        bloom.cleanup();
         GLFW.glfwDestroyWindow(window);
         GLFW.glfwTerminate();
         GLFW.glfwSetErrorCallback(null).free();
@@ -1531,6 +1538,17 @@ public class GameEngine {
         state = GameState.PLAYING; menuPage = 0;
         System.out.println((menuOk ? "PASS" : "FAIL") + " ESC menu (pages + live settings)");
         if (menuOk) pass++; else fail++;
+
+        // 11. Bloom post-processing: pipeline runs without GL errors, tunable
+        boolean bloomOk = bloom != null && bloom.isEnabled();
+        if (bloomOk) {
+            float t = bloom.getThreshold(), i = bloom.getIntensity();
+            bloom.setThreshold(0.5f); bloom.setIntensity(0.9f);
+            render(0); // exercise the full bright->blur->composite path
+            bloom.setThreshold(t); bloom.setIntensity(i);
+        }
+        System.out.println((bloomOk ? "PASS" : "FAIL") + " bloom post-processing (bright/blur/composite)");
+        if (bloomOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);

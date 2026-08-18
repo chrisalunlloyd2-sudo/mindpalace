@@ -102,6 +102,11 @@ public class Shader {
         GL20.glUniform3f(loc, vec.x, vec.y, vec.z);
     }
 
+    public void setUniform(String name, org.joml.Vector2f vec) {
+        int loc = getUniformLocation(name);
+        GL20.glUniform2f(loc, vec.x, vec.y);
+    }
+
     public void setUniform(String name, org.joml.Vector4f vec) {
         int loc = getUniformLocation(name);
         GL20.glUniform4f(loc, vec.x, vec.y, vec.z, vec.w);
