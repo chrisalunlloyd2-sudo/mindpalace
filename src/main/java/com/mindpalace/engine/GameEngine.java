@@ -45,6 +45,8 @@ import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.system.MemoryUtil;
+import java.util.ArrayList;
+import java.util.List;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -125,6 +127,9 @@ public class GameEngine {
     private GameState state;
     private boolean teleportMenu;   // teleporter destination picker is open
     private int teleportSel;        // selected destination index
+    private boolean padDismissed;   // ESC pressed while still standing on the pad
+    private final List<String> teleportLabels = new ArrayList<>();
+    private final List<Integer> teleportTargets = new ArrayList<>(); // >=0 floor, -1 outside, -2 cancel
     private int menuSel;            // selected option in the ESC menu
     private int menuPage;           // 0=main, 1=video, 2=controls, 3=audio, 4=music, 5=agents
     private int moodIdx;            // Beats StudioLab mood preset cursor
@@ -935,6 +940,7 @@ public class GameEngine {
         if (input.wasKeyPressed(GLFW.GLFW_KEY_ESCAPE)) {
             if (teleportMenu) {
                 teleportMenu = false;
+                padDismissed = true;   // stay dismissed until we step off the pad
                 input.setCursorCaptured(true);
             } else if (bookEditor.isOpen()) {
                 bookEditor.close();
@@ -959,11 +965,16 @@ public class GameEngine {
 
         // Teleporter destination picker — open on Enter OR left-click while
         // standing on a pad (Diablo town-portal style: explicit interact).
+        // Stepping off the pad clears the dismissal so it can open again.
+        if (player.getPadFloor() < 0) padDismissed = false;
+
         if (teleportMenu) {
             handleTeleportMenu(input);
         } else if (state == GameState.PLAYING
                 && (player.getPadFloor() >= 0 || player.isOnPlanetPad())
-                && (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) || input.isLeftClick())) {
+                && (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) || input.isLeftClick())
+                && !padDismissed) {
+            rebuildTeleportDestinations();
             teleportMenu = true;
             teleportSel = 0;
             input.setCursorCaptured(false);
@@ -1276,10 +1287,32 @@ public class GameEngine {
         return dir.dot(to) > 0.85f;
     }
 
+    /**
+     * Build the destination list for the pad the player is standing on. The
+     * floor you are already on is excluded — picking it used to be a silent
+     * no-op that read as a broken teleporter. Cancel is always last.
+     */
+    private void rebuildTeleportDestinations() {
+        teleportLabels.clear();
+        teleportTargets.clear();
+        int here = player.getPadFloor();
+        int floors = world.getHallways().size();
+        for (int f = 0; f < floors; f++) {
+            if (f == here) continue;
+            teleportLabels.add("Floor " + (f + 1));
+            teleportTargets.add(f);
+        }
+        teleportLabels.add("Outside");
+        teleportTargets.add(-1);
+        teleportLabels.add("Cancel");
+        teleportTargets.add(-2);
+    }
+
     /** Handle the teleporter destination picker (up/down/enter/number keys). */
     private void handleTeleportMenu(Input input) {
-        int pads = world.getTeleporterPads().size();
-        int options = pads + 3; // each pad + "Outside" + "Planet" + "Palace"
+        int options = teleportTargets.size();
+        if (options == 0) { teleportMenu = false; input.setCursorCaptured(true); return; }
+
         if (input.wasKeyPressed(GLFW.GLFW_KEY_UP) || input.wasKeyPressed(GLFW.GLFW_KEY_W)) {
             teleportSel = (teleportSel - 1 + options) % options;
         }
@@ -1296,14 +1329,13 @@ public class GameEngine {
         if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER)) {
             teleportMenu = false;
             input.setCursorCaptured(true);
-            if (teleportSel < pads) {
-                player.teleportToPad(teleportSel, world);
-            } else if (teleportSel == pads) {
+            int target = teleportTargets.get(teleportSel);
+            if (target >= 0) {
+                player.teleportToFloor(target, world);
+            } else if (target == -1) {
                 player.teleportOutside(world);
-            } else if (teleportSel == pads + 1) {
-                player.teleportToPlanet(world);
             } else {
-                player.teleportToPalace(world);
+                padDismissed = true;   // Cancel — don't reopen until we step off
             }
         }
     }
@@ -2471,28 +2503,24 @@ public class GameEngine {
         Vector3f center = new Vector3f(camPos).add(
             camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
 
-        int pads = world.getTeleporterPads().size();
-        int options = pads + 3;
+        int options = teleportLabels.size();
         float lineH = 0.12f;
         float startY = center.y + (options * lineH) / 2f;
 
         fontRenderer.renderBillboard("TELEPORT DESTINATION", center, 0.09f,
             new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
 
-        // Theme for one destination: floor pads rotate through the palette,
-        // the planet pad has its own pair; non-pad destinations (Outside,
-        // Palace) get no swatch — only physical pads are color-matchable.
-        java.util.function.IntFunction<PortalTheme> themeFor = i ->
-            i < pads      ? PortalTheme.forPad(i)
-          : i == pads + 1 ? PortalTheme.PLANET
-          : null;
+        // Theme for one destination: physical floor pads carry the palette pair
+        // (target >= 0 → PortalTheme.forPad(target)); non-pad destinations
+        // (Outside, Cancel) get no swatch — only physical pads are matchable.
+        java.util.function.IntFunction<PortalTheme> themeFor = i -> {
+            if (i < 0 || i >= teleportTargets.size()) return null;
+            int t = teleportTargets.get(i);
+            return t >= 0 ? PortalTheme.forPad(t) : null;
+        };
 
         for (int i = 0; i < options; i++) {
-            String label;
-            if (i < pads) label = (i + 1) + ". Teleporter " + (i + 1) + " (Floor " + (i + 1) + ")";
-            else if (i == pads) label = (i + 1) + ". Outside";
-            else if (i == pads + 1) label = (i + 1) + ". Planet";
-            else label = (i + 1) + ". Palace (return)";
+            String label = (i + 1) + ". " + teleportLabels.get(i);
             if (i == teleportSel) label = "> " + label + " <";
             Vector3f pos = new Vector3f(center.x, startY - i * lineH, center.z);
             Vector3f col = (i == teleportSel)
@@ -3207,13 +3235,12 @@ public class GameEngine {
         float hitRate = placedBooks > 0 ? (float) clickableBooks / placedBooks : 0f;
         if (clickableRooms > 0 && hitRate >= 0.9f) pass++; else fail++;
 
-        // 3. Teleporter pads exist (one per floor except top)
-        int pads = 0;
-        for (Hallway hw : world.getHallways()) {
-            if (hw.getFloor() < world.getHallways().size() - 1) pads++;
-        }
-        System.out.println((pads > 0 ? "PASS" : "FAIL") + " teleporter pads: " + pads);
-        if (pads > 0) pass++; else fail++;
+        // 3. Teleporter pads exist (one per floor, including the top)
+        int pads = world.getHallways().size();
+        boolean padsOk = pads == world.getHallways().size() && pads > 0;
+        System.out.println((padsOk ? "PASS" : "FAIL") + " teleporter pads: " + pads
+            + "/" + world.getHallways().size() + " floors");
+        if (padsOk) pass++; else fail++;
 
         // 4. Agents spawned
         System.out.println((npcs.size() >= 2 ? "PASS" : "FAIL") + " agents: " + npcs.size());
