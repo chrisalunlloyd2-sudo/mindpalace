@@ -753,7 +753,7 @@ public class GameEngine {
     private int menuOptionCount() {
         switch (menuPage) {
             case 0: return 6;  // Resume, Video, Controls, Audio, Agents, Quit
-            case 1: return 3;  // FOV, Sensitivity, Fullscreen
+            case 1: return 5;  // FOV, Sensitivity, Fullscreen, Bloom intensity, Bloom threshold
             case 2: return 1;  // (controls are fixed; informational)
             case 3: return 2;  // Master volume, Sound on/off
             case 4: return 2;  // Auto-cycle interval, agent models (info)
@@ -767,6 +767,8 @@ public class GameEngine {
                 if (sel == 0) player.getCamera().setFov(clamp(player.getCamera().getFov() + dir * 5f, 50f, 120f));
                 if (sel == 1) player.getCamera().setSensitivity(clamp(player.getCamera().getSensitivity() + dir * 0.01f, 0.02f, 0.3f));
                 if (sel == 2) toggleFullscreen();
+                if (sel == 3 && bloom != null) bloom.setIntensity(clamp(bloom.getIntensity() + dir * 0.1f, 0f, 2f));
+                if (sel == 4 && bloom != null) bloom.setThreshold(clamp(bloom.getThreshold() + dir * 0.05f, 0f, 1f));
                 break;
             case 3: // audio
                 if (sel == 0) audio.setMasterVolume(clamp(audio.getMasterVolume() + dir * 0.1f, 0f, 1f));
@@ -1192,6 +1194,8 @@ public class GameEngine {
                     "FOV: " + (int) player.getCamera().getFov(),
                     "Sensitivity: " + String.format("%.2f", player.getCamera().getSensitivity()),
                     "Fullscreen: " + (fullscreen ? "ON" : "OFF"),
+                    "Bloom: " + (bloom != null ? String.format("%.1f", bloom.getIntensity()) : "n/a"),
+                    "Bloom Threshold: " + (bloom != null ? String.format("%.2f", bloom.getThreshold()) : "n/a"),
                     "(Enter to go back)"
                 };
             case 2:
