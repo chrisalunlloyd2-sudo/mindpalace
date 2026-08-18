@@ -516,6 +516,7 @@ public class WorldBuilder {
                 if (room.isFogged() && !fogOfWar.isRoomRevealed(room)) continue;
                 renderNeonSign(r, wallX, s.y + h - 0.3f, dp.z, room);
                 renderExitSign(r, wallX, s.y + h - 0.1f, dp.z);
+                renderDoorFrame(r, wallX, s.y, dp.z, room);
             }
         }
     }
@@ -545,6 +546,30 @@ public class WorldBuilder {
         float offsetX = wallX > 0 ? -0.15f : 0.15f;
         r.drawCube(new Vector3f(wallX + offsetX, signY, signZ),
             new Vector3f(esd, esh, esw), Renderer.TEX_NEON_GREEN);
+    }
+
+    /**
+     * Glowing neon door frame — a thin emissive trim around each doorway so
+     * doors read as portals, not just holes in the wall. Pulses gently.
+     */
+    private void renderDoorFrame(Renderer r, float wallX, float floorY, float doorZ, Room room) {
+        float dw = Room.DOOR_WIDTH, dh = Room.DOOR_HEIGHT;
+        float offsetX = wallX > 0 ? -0.12f : 0.12f;
+        float pulse = 0.6f + 0.4f * (float) Math.sin(time * 2.0f + doorZ);
+        int color = room.isPrivate() ? Renderer.TEX_NEON_PINK : Renderer.TEX_NEON_CYAN;
+        float t = 0.06f; // trim thickness
+
+        // Two vertical side posts
+        r.drawCube(new Vector3f(wallX + offsetX, floorY + dh / 2f, doorZ - dw / 2f),
+            new Vector3f(t, dh, t), color);
+        r.drawCube(new Vector3f(wallX + offsetX, floorY + dh / 2f, doorZ + dw / 2f),
+            new Vector3f(t, dh, t), color);
+        // Top lintel
+        r.drawCube(new Vector3f(wallX + offsetX, floorY + dh, doorZ),
+            new Vector3f(t, t, dw), color);
+        // Soft glow halo (pulses) behind the trim
+        r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.02f : 0.02f), floorY + dh / 2f, doorZ),
+            new Vector3f(0.02f, (dh + 0.2f) * pulse, (dw + 0.2f) * pulse), Renderer.TEX_NEON_AMBER);
     }
 
     private void renderPosters(Renderer r, Vector3f s, Hallway hw) {
