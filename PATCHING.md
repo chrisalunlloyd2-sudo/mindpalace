@@ -42,9 +42,18 @@ powershell -ExecutionPolicy Bypass -File deploy_patch.ps1 -PatchFile C:\patches\
   ],
   "books": [                       // books placed on the new rooms' shelves
     {"title": "Patch Notes", "content": "Line one.\nLine two."}
-  ]
+  ],
+  "graphics": {                    // OPTIONAL — hot-tune lighting live (no recompile)
+    "ambient": 0.75,               // ambient light strength (default 0.55)
+    "lightR": 1.0, "lightG": 0.95, "lightB": 0.8,  // headlamp color
+    "lightY": 3.0                  // headlamp height offset above the player
+  }
 }
 ```
+
+The `graphics` block is applied to the live renderer the moment the patch
+ships — brighter ambient, warmer/cooler light, higher headlamp — all without
+closing the game. This is how you iterate on the LOOK while it's running.
 
 ## Rules (your doctrine, enforced)
 - **ADD-only**: patches never delete or overwrite game content. A new room is

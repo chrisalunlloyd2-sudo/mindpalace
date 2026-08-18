@@ -25,6 +25,7 @@ public class PatchManager {
         public final List<String> texts = new ArrayList<>();
         public final List<Map<String, String>> rooms = new ArrayList<>();
         public final List<Map<String, String>> books = new ArrayList<>();
+        public final Map<String, String> graphics = new HashMap<>(); // ambient, lightR/G/B, lightY
         public boolean valid() { return id != null && !id.isBlank(); }
     }
 
@@ -107,6 +108,21 @@ public class PatchManager {
 
     public List<String> getPatchTexts() { return patchTexts; }
 
+    /** Hot-apply graphics tuning (ambient/light) to the live renderer. */
+    public void applyGraphics(Patch p, com.mindpalace.render.Renderer r) {
+        if (r == null || p.graphics.isEmpty()) return;
+        if (p.graphics.containsKey("ambient"))
+            r.setAmbient(Float.parseFloat(p.graphics.get("ambient")));
+        float lr = p.graphics.containsKey("lightR") ? Float.parseFloat(p.graphics.get("lightR")) : 1.0f;
+        float lg = p.graphics.containsKey("lightG") ? Float.parseFloat(p.graphics.get("lightG")) : 0.95f;
+        float lb = p.graphics.containsKey("lightB") ? Float.parseFloat(p.graphics.get("lightB")) : 0.8f;
+        r.setLightColor(lr, lg, lb);
+        if (p.graphics.containsKey("lightY"))
+            r.setLightOffset(0.0f, Float.parseFloat(p.graphics.get("lightY")), 0.0f);
+        System.out.println("[Patch] graphics applied: ambient=" + r.getAmbient()
+            + " light=(" + lr + "," + lg + "," + lb + ")");
+    }
+
     private void appendApplied(String id) {
         try {
             Files.createDirectories(patchesDir);
@@ -150,6 +166,12 @@ public class PatchManager {
             b.put("title", bm.group(1));
             b.put("content", bm.group(2).replace("\\n", "\n"));
             p.books.add(b);
+        }
+        // graphics section — hot-tunable lighting (no recompile)
+        Matcher gm = Pattern.compile("\"graphics\"\\s*:\\s*\\{([^}]*)\\}").matcher(raw);
+        if (gm.find()) {
+            Matcher kv = Pattern.compile("\"([^\"]+)\"\\s*:\\s*([0-9.]+)").matcher(gm.group(1));
+            while (kv.find()) p.graphics.put(kv.group(1), kv.group(2));
         }
         return p;
     }

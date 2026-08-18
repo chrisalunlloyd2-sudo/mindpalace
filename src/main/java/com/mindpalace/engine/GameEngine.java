@@ -481,31 +481,7 @@ public class GameEngine {
         }
 
         // Live patches — poll manifest, play the loading cinematic, ship content
-        if (patchManager != null) {
-            patchPollTimer -= dt;
-            if (patchPollTimer <= 0) { patchManager.poll(); patchPollTimer = 8.0; }
-            if (!patchCinematic && patchManager.hasPending()) {
-                PatchManager.Patch pp = patchManager.peekPending();
-                patchCinematicTitle = (pp != null && pp.title != null) ? pp.title : "Update";
-                patchCinematic = true;
-                patchTimer = 0.0;
-                System.out.println("[Patch] cinematic start: " + patchCinematicTitle);
-            }
-            if (patchCinematic) {
-                patchTimer += dt;
-                if (patchTimer >= 3.0) {
-                    PatchManager.Patch pp = patchManager.takePending();
-                    if (pp != null) {
-                        patchManager.apply(pp, world);
-                        patchToast = "PATCH " + pp.id + " LOADED — " + (pp.title != null ? pp.title : "");
-                        patchToastTimer = 10.0;
-                        System.out.println("[Patch] " + patchToast);
-                    }
-                    patchCinematic = false;
-                }
-            }
-            if (patchToastTimer > 0) patchToastTimer -= dt;
-        }
+        updatePatches(dt);
 
         // F12 — screenshot (agent "sees" the game)
         if (input.wasKeyPressed(GLFW.GLFW_KEY_F12)) {
@@ -1124,6 +1100,39 @@ public class GameEngine {
     }
 
     /**
+     * Live patch poll + cinematic + apply. Shared by update() and
+     * updateAutodrive() so patches ship in BOTH normal play and the
+     * scripted tour (previously autodrive skipped the poll entirely).
+     */
+    private void updatePatches(double dt) {
+        if (patchManager == null) return;
+        patchPollTimer -= dt;
+        if (patchPollTimer <= 0) { patchManager.poll(); patchPollTimer = 8.0; }
+        if (!patchCinematic && patchManager.hasPending()) {
+            PatchManager.Patch pp = patchManager.peekPending();
+            patchCinematicTitle = (pp != null && pp.title != null) ? pp.title : "Update";
+            patchCinematic = true;
+            patchTimer = 0.0;
+            System.out.println("[Patch] cinematic start: " + patchCinematicTitle);
+        }
+        if (patchCinematic) {
+            patchTimer += dt;
+            if (patchTimer >= 3.0) {
+                PatchManager.Patch pp = patchManager.takePending();
+                if (pp != null) {
+                    patchManager.apply(pp, world);
+                    patchManager.applyGraphics(pp, renderer);
+                    patchToast = "PATCH " + pp.id + " LOADED — " + (pp.title != null ? pp.title : "");
+                    patchToastTimer = 10.0;
+                    System.out.println("[Patch] " + patchToast);
+                }
+                patchCinematic = false;
+            }
+        }
+        if (patchToastTimer > 0) patchToastTimer -= dt;
+    }
+
+    /**
      * Auto-drive: scripted tour that captures VARIED views so the agent can
      * SEE the world from different angles (not the same frame over and over).
      * Phases: walk forward → look left at a sign → look right → look up at
@@ -1132,6 +1141,7 @@ public class GameEngine {
      */
     private void updateAutodrive(double dt) {
         world.tick((float) dt);
+        updatePatches(dt);
         shotTimer += dt;
         if (shotTimer >= 0.5) {
             shotTimer = 0.0;

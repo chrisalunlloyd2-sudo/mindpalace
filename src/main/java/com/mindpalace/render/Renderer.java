@@ -14,6 +14,11 @@ public class Renderer {
     private Matrix4f projectionMatrix;
     private int width, height;
 
+    // Live-tunable lighting (hot-applied by PatchManager without a restart)
+    private float ambientStrength = 0.55f;
+    private final Vector3f lightColor = new Vector3f(1.0f, 0.95f, 0.8f);
+    private final Vector3f lightOffset = new Vector3f(0.0f, 3.0f, 0.0f);
+
     // Texture IDs — public so WorldBuilder can reference them
     public static final int TEX_WALL   = 0;
     public static final int TEX_FLOOR  = 1;
@@ -97,11 +102,17 @@ public class Renderer {
         // Headlamp: light follows the player so upper floors aren't pitch black
         // (the old fixed light at y=10 sat BELOW floors 1+ and left them dark).
         Vector3f camPos = camera.getPosition();
-        basicShader.setUniform("lightPos", new Vector3f(camPos.x, camPos.y + 3.0f, camPos.z));
-        basicShader.setUniform("lightColor", new Vector3f(1.0f, 0.95f, 0.8f));
-        basicShader.setUniform("ambientStrength", 0.55f);
+        basicShader.setUniform("lightPos", new Vector3f(camPos).add(lightOffset));
+        basicShader.setUniform("lightColor", lightColor);
+        basicShader.setUniform("ambientStrength", ambientStrength);
         basicShader.setUniform("viewPos", camPos);
     }
+
+    // ── Live graphics tuning (hot-applied by PatchManager) ──
+    public void setAmbient(float a) { ambientStrength = a; }
+    public void setLightColor(float r, float g, float b) { lightColor.set(r, g, b); }
+    public void setLightOffset(float x, float y, float z) { lightOffset.set(x, y, z); }
+    public float getAmbient() { return ambientStrength; }
 
     public void drawMesh(Mesh mesh, Matrix4f model, int texId) {
         basicShader.setUniform("model", model);

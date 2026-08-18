@@ -810,9 +810,10 @@ public class WorldBuilder {
     /** Add a room to the live world and lay it out (no restart needed). */
     public void addRoom(Room room) {
         rooms.add(room);
-        // Assign to the last floor, next available slot
+        // Live-added rooms go on the LAST existing floor (never create a new
+        // floor — there's no hallway for it). Clamp to hallways.size()-1.
         int total = rooms.size();
-        int floors = Math.max(4, (total + 16) / 17);
+        int floors = hallways.size();
         int perFloor = (total + floors - 1) / floors;
         int perSide = (perFloor + 1) / 2;
 
