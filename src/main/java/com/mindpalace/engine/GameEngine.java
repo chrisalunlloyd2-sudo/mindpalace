@@ -1539,13 +1539,24 @@ public class GameEngine {
         System.out.println((menuOk ? "PASS" : "FAIL") + " ESC menu (pages + live settings)");
         if (menuOk) pass++; else fail++;
 
-        // 11. Bloom post-processing: pipeline runs without GL errors, tunable
+        // 11. Bloom post-processing: pipeline runs without GL errors, tunable,
+        //     AND the composited frame actually has non-black pixels.
         boolean bloomOk = bloom != null && bloom.isEnabled();
         if (bloomOk) {
             float t = bloom.getThreshold(), i = bloom.getIntensity();
             bloom.setThreshold(0.5f); bloom.setIntensity(0.9f);
             render(0); // exercise the full bright->blur->composite path
             bloom.setThreshold(t); bloom.setIntensity(i);
+            // Read back the scene FBO directly (before composite) to isolate
+            // whether the scene renders at all vs. the composite being broken.
+            float sceneLum = bloom.debugSceneLuminance();
+            int glErr = bloom.debugGlError();
+            float clearR = bloom.debugClearTest();
+            float compLum = bloom.debugCompositeLuminance();
+            System.out.println("  bloom scene FBO luminance: " + String.format("%.4f", sceneLum)
+                + ", glError=" + glErr + ", clearTest R=" + String.format("%.1f", clearR)
+                + ", composite=" + String.format("%.4f", compLum));
+            if (compLum < 0.5f) bloomOk = false; // composite produced black on screen
         }
         System.out.println((bloomOk ? "PASS" : "FAIL") + " bloom post-processing (bright/blur/composite)");
         if (bloomOk) pass++; else fail++;

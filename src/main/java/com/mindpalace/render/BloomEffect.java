@@ -4,6 +4,7 @@ import org.joml.Vector2f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
@@ -27,7 +28,7 @@ import java.nio.IntBuffer;
  */
 public class BloomEffect {
     private int width, height;
-    private int sceneFbo, sceneTex;
+    private int sceneFbo, sceneTex, sceneDepthRbo;
     private int blurFboA, blurTexA;
     private int blurFboB, blurTexB;
     private int quadVao, quadVbo, quadEbo;
@@ -144,12 +145,12 @@ public class BloomEffect {
 
     private void buildTargets() {
         sceneTex = createTexture();
-        sceneFbo = createFbo(sceneTex);
+        sceneFbo = createFbo(sceneTex, true);   // scene needs a depth buffer
 
         blurTexA = createTexture();
-        blurFboA = createFbo(blurTexA);
+        blurFboA = createFbo(blurTexA, false);
         blurTexB = createTexture();
-        blurFboB = createFbo(blurTexB);
+        blurFboB = createFbo(blurTexB, false);
     }
 
     private int createTexture() {
@@ -164,11 +165,18 @@ public class BloomEffect {
         return tex;
     }
 
-    private int createFbo(int colorTex) {
+    private int createFbo(int colorTex, boolean withDepth) {
         int fbo = GL30.glGenFramebuffers();
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
             GL11.GL_TEXTURE_2D, colorTex, 0);
+        if (withDepth) {
+            sceneDepthRbo = GL30.glGenRenderbuffers();
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, sceneDepthRbo);
+            GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL14.GL_DEPTH_COMPONENT24, width, height);
+            GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
+                GL30.GL_RENDERBUFFER, sceneDepthRbo);
+        }
         int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
         if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
             throw new RuntimeException("Bloom FBO incomplete: 0x" + Integer.toHexString(status));
@@ -201,7 +209,10 @@ public class BloomEffect {
         // 3. Vertical blur: blurTexB -> blurTexA
         renderPass(blurShader, blurTexB, blurFboA, blurTexA, new Vector2f(0f, 1.0f / height));
 
-        // 4. Composite: scene + blurTexA -> screen
+        // 4. Composite: scene + blurTexA -> screen (must rebind the default
+        //    framebuffer — renderPass left blurFboA bound).
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+        GL11.glViewport(0, 0, width, height);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
         compositeShader.bind();
@@ -258,6 +269,62 @@ public class BloomEffect {
         buildTargets();
     }
 
+    /** Diagnostic: average luminance of the scene FBO texture (0 = empty/black). */
+    public float debugSceneLuminance() {
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, sceneFbo);
+        GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+        java.nio.ByteBuffer bb = org.lwjgl.BufferUtils.createByteBuffer(width * height * 4);
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, bb);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+        long sum = 0;
+        for (int i = 0; i < width * height * 4; i++) sum += (bb.get(i) & 0xFF);
+        return sum / (float) (width * height * 4);
+    }
+
+    /** Diagnostic: last GL error code (0 = GL_NO_ERROR). */
+    public int debugGlError() {
+        return GL11.glGetError();
+    }
+
+    /** Diagnostic: clear the scene FBO to solid red, read it back. Returns avg R channel (0-255). */
+    public float debugClearTest() {
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, sceneFbo);
+        GL11.glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+        GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+        java.nio.ByteBuffer bb = org.lwjgl.BufferUtils.createByteBuffer(width * height * 4);
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, bb);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+        long sum = 0;
+        for (int k = 0; k < width * height; k++) sum += (bb.get(k * 4) & 0xFF);
+        return sum / (float) (width * height);
+    }
+
+    /** Diagnostic: composite scene+bloom to the default framebuffer, read GL_BACK. */
+    public float debugCompositeLuminance() {
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+        GL11.glViewport(0, 0, width, height);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        compositeShader.bind();
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneTex);
+        compositeShader.setUniform("scene", 0);
+        GL13.glActiveTexture(GL13.GL_TEXTURE1);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, blurTexA);
+        compositeShader.setUniform("bloom", 1);
+        compositeShader.setUniform("intensity", intensity);
+        drawQuad();
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glEnable(GL11.GL_CULL_FACE);
+        GL11.glReadBuffer(GL11.GL_BACK);
+        java.nio.ByteBuffer bb = org.lwjgl.BufferUtils.createByteBuffer(width * height * 4);
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, bb);
+        long sum = 0;
+        for (int i = 0; i < width * height * 4; i++) sum += (bb.get(i) & 0xFF);
+        return sum / (float) (width * height * 4);
+    }
+
     private void cleanupTargets() {
         GL11.glDeleteTextures(sceneTex);
         GL11.glDeleteTextures(blurTexA);
@@ -265,6 +332,7 @@ public class BloomEffect {
         GL30.glDeleteFramebuffers(sceneFbo);
         GL30.glDeleteFramebuffers(blurFboA);
         GL30.glDeleteFramebuffers(blurFboB);
+        if (sceneDepthRbo != 0) GL30.glDeleteRenderbuffers(sceneDepthRbo);
     }
 
     public void cleanup() {
