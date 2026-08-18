@@ -620,9 +620,19 @@ public class GameEngine {
         for (Book book : room.getBooks()) {
             if (!book.isPlaced()) continue;
             float bx = book.getWorldX(), by = book.getWorldY(), bz = book.getWorldZ();
+            // Books on side walls (wallDir ±1) are rotated 90°: width along Z,
+            // depth along X. The back wall (wallDir 0) is width along X, depth Z.
+            float minX, maxX, minZ, maxZ;
+            if (book.getWallDir() == 0) {
+                minX = bx - bookW / 2f; maxX = bx + bookW / 2f;
+                minZ = bz - bookD / 2f; maxZ = bz + bookD / 2f;
+            } else {
+                minX = bx - bookD / 2f; maxX = bx + bookD / 2f;
+                minZ = bz - bookW / 2f; maxZ = bz + bookW / 2f;
+            }
             Vector3f hit = rayAABB(origin, dir,
-                bx - bookW / 2f, by - bookH / 2f, bz - bookD / 2f,
-                bx + bookW / 2f, by + bookH / 2f, bz + bookD / 2f);
+                minX, by - bookH / 2f, minZ,
+                maxX, by + bookH / 2f, maxZ);
             if (hit != null) {
                 float t = hit.distance(origin);
                 if (t < bestT) { bestT = t; best = book; }

@@ -18,6 +18,7 @@ public class Book {
     private float spineColor;    // hue for spine color
     private float thickness;     // visual thickness based on file size
     private float worldX, worldY, worldZ; // 3D position on shelf
+    private int wallDir;         // 0=back wall (width along X), ±1=side wall (width along Z)
 
     public Book(String filename, String filePath) {
         this.filename = filename;
@@ -51,6 +52,8 @@ public class Book {
     public float getWorldY() { return worldY; }
     public float getWorldZ() { return worldZ; }
     public void setWorldPosition(float x, float y, float z) { worldX = x; worldY = y; worldZ = z; }
+    public int getWallDir() { return wallDir; }
+    public void setWallDir(int d) { this.wallDir = d; }
 
     /** Texture ID based on language for colored book spines. */
     public int getTextureId() {
