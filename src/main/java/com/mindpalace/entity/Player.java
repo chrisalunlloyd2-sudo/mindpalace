@@ -133,7 +133,6 @@ public class Player {
         if (currentRoom == null && teleportCooldown <= 0 && world.getHallways().size() > 1) {
             Vector3f p = camera.getPosition();
             for (Hallway hw : world.getHallways()) {
-                if (hw.getFloor() >= world.getHallways().size() - 1) continue; // no pad on top floor
                 float padZ = hw.getEnd().z - 1.0f;
                 if (Math.abs(p.x) < 1.05f && Math.abs(p.z - padZ) < 1.05f
                         && Math.abs(p.y - (hw.getStart().y + EYE_HEIGHT)) < 0.75f) {
@@ -244,8 +243,12 @@ public class Player {
         if (floor < 0 || floor >= world.getHallways().size()) return;
         Hallway hw = world.getHallways().get(floor);
         currentRoom = null;
-        camera.setPosition(0f, hw.getStart().y + EYE_HEIGHT, hw.getStart().z + 1.5f);
-        camera.setYaw(0);
+        // Arrive standing on the destination floor's pad, facing back down the
+        // hallway. Landing at the hallway start meant pads emitted but never
+        // received, so they never formed a network. The teleportCooldown below
+        // keeps the picker from re-firing the instant we land.
+        camera.setPosition(0f, hw.getStart().y + EYE_HEIGHT, hw.getEnd().z - 1.0f);
+        camera.setYaw(180);
         camera.setPitch(0);
         velocity.set(0, 0, 0);
         onGround = true;
