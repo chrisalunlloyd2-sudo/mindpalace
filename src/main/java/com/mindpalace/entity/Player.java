@@ -33,6 +33,7 @@ public class Player {
     private AudioEngine audio;
     private boolean chatTyping;  // suppress door interaction while typing in chat
     private double teleportCooldown; // prevent pad re-trigger bounce
+    private boolean noclip = false;  // free-fly (no collision, no gravity) for testing
 
     public Player() {
         camera = new Camera();
@@ -42,6 +43,8 @@ public class Player {
 
     public void setAudio(AudioEngine a) { this.audio = a; }
     public void setChatTyping(boolean t) { this.chatTyping = t; }
+    public void setNoclip(boolean n) { this.noclip = n; }
+    public boolean isNoclip() { return noclip; }
 
     public void update(double dt, Input input, WorldBuilder world) {
         float dtf = (float) dt;
@@ -87,12 +90,19 @@ public class Player {
         }
 
         // Gravity
-        if (!onGround) velocity.y += GRAVITY * dtf;
+        if (!onGround && !noclip) velocity.y += GRAVITY * dtf;
 
         // Jump
-        if (input.wasKeyPressed(GLFW.GLFW_KEY_SPACE) && onGround) {
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_SPACE) && onGround && !noclip) {
             velocity.y = JUMP_FORCE;
             onGround = false;
+        }
+
+        // Noclip: free-fly — Space/Shift fly up/down, no collision or gravity
+        if (noclip) {
+            if (input.isKeyDown(GLFW.GLFW_KEY_SPACE)) velocity.y = MOVE_SPEED;
+            else if (input.isKeyDown(GLFW.GLFW_KEY_LEFT_SHIFT)) velocity.y = -MOVE_SPEED;
+            else velocity.y = 0;
         }
 
         // Apply movement with collision
@@ -102,14 +112,16 @@ public class Player {
         newPos.y += velocity.y * dtf;
         newPos.z += velocity.z * dtf;
 
-        newPos = collide(pos, newPos, world);
+        if (!noclip) {
+            newPos = collide(pos, newPos, world);
 
-        // Ground — use the world's ground height (walkable stairs between floors)
-        float groundY = world.getGroundHeight(newPos.x, newPos.z) + EYE_HEIGHT;
-        if (newPos.y <= groundY) {
-            newPos.y = groundY;
-            velocity.y = 0;
-            onGround = true;
+            // Ground — use the world's ground height (walkable stairs between floors)
+            float groundY = world.getGroundHeight(newPos.x, newPos.z) + EYE_HEIGHT;
+            if (newPos.y <= groundY) {
+                newPos.y = groundY;
+                velocity.y = 0;
+                onGround = true;
+            }
         }
 
         camera.setPosition(newPos);

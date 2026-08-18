@@ -97,6 +97,8 @@ public class GameEngine {
     private String screenshotDir;
     private int shotCounter;
     private double shotTimer;
+    private double tourTimer;      // elapsed tour time
+    private int tourPhase;          // which leg of the scripted tour
 
     public void run() {
         init();
@@ -510,6 +512,12 @@ public class GameEngine {
             captureScreenshot();
         }
 
+        // F3 — toggle noclip (free-fly for testing/behavior observation)
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F3)) {
+            player.setNoclip(!player.isNoclip());
+            System.out.println("[NOCLIP] " + (player.isNoclip() ? "ON" : "OFF"));
+        }
+
         if (state == GameState.PLAYING) {
             world.tick((float) dt);
             if (!patchCinematic) player.update(dt, input, world);
@@ -798,10 +806,12 @@ public class GameEngine {
                 : new Vector3f(0.0f, 0.9f, 1.0f);
 
             String name = room.getRepoName();
-            if (name.length() > 14) name = name.substring(0, 12) + "..";
+            if (name.length() > 10) name = name.substring(0, 8) + "..";
 
-            // Billboard — always faces camera, 200% bigger
-            fontRenderer.renderBillboard(name, signPos, 0.24f, color, proj, view, camPos);
+            // Wall-facing text (not billboard) so it reads flat on the sign.
+            // Bigger + brighter for legibility against the dark backing plate.
+            Vector3f facing = new Vector3f(wallX > 0 ? -1 : 1, 0, 0);
+            fontRenderer.renderText(name, signPos, 0.30f, color, proj, view, facing);
         }
     }
 
@@ -1114,9 +1124,11 @@ public class GameEngine {
     }
 
     /**
-     * Auto-drive: scripted walkthrough that captures frames so the agent can
-     * SEE the world. Drives the camera directly (no Input/GLFW callbacks) and
-     * captures a frame every 0.5s. Used with --autodrive <dir>.
+     * Auto-drive: scripted tour that captures VARIED views so the agent can
+     * SEE the world from different angles (not the same frame over and over).
+     * Phases: walk forward → look left at a sign → look right → look up at
+     * teleporter → walk into a room → look down at floor text. Drives the
+     * camera directly (no Input/GLFW callbacks). Used with --autodrive <dir>.
      */
     private void updateAutodrive(double dt) {
         world.tick((float) dt);
@@ -1125,10 +1137,39 @@ public class GameEngine {
             shotTimer = 0.0;
             captureScreenshot();
         }
-        // Walk forward down the hallway (camera looks +Z by default)
+
+        tourTimer += dt;
         Camera cam = player.getCamera();
         Vector3f p = cam.getPosition();
-        p.z += 6.0f * (float) dt;
+
+        // 6-second phases, cycling through varied camera angles
+        int phase = (int) (tourTimer / 6.0);
+        float t = (float) (tourTimer % 6.0);
+
+        switch (phase % 6) {
+            case 0 -> { // walk forward down the hall
+                p.z += 6.0f * (float) dt;
+                cam.setYaw(0);
+            }
+            case 1 -> { // pan left to read a wall sign
+                cam.setYaw(-60f);
+            }
+            case 2 -> { // pan right
+                cam.setYaw(60f);
+            }
+            case 3 -> { // look up at the teleporter beam
+                cam.setYaw(0);
+                cam.setPitch(-30f);
+            }
+            case 4 -> { // look down at floor text
+                cam.setYaw(0);
+                cam.setPitch(40f);
+            }
+            case 5 -> { // strafe sideways to see a room doorway
+                p.x += 2.0f * (float) dt;
+                cam.setYaw(90f);
+            }
+        }
         cam.setPosition(p);
     }
 }

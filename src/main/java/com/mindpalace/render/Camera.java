@@ -75,6 +75,7 @@ public class Camera {
     public float getYaw() { return yaw; }
     public void setYaw(float y) { yaw = y; updateVectors(); }
     public float getPitch() { return pitch; }
+    public void setPitch(float p) { pitch = p; updateVectors(); }
     public float getFov() { return fov; }
     public void setFov(float f) { fov = f; }
 }

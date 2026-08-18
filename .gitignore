@@ -1,3 +1,4 @@
 screenshots/
 *.png
 target/
+readtext.py

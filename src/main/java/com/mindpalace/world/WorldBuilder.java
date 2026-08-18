@@ -526,15 +526,18 @@ public class WorldBuilder {
         float offsetX = wallX > 0 ? -0.15f : 0.15f;
         int neonColor = room.isPrivate() ? Renderer.TEX_NEON_PINK : Renderer.TEX_NEON_CYAN;
 
+        // Dark backing plate (so the glowing text has contrast — a bright sign
+        // face with bright text was unreadable "weird letters").
         r.drawCube(new Vector3f(wallX + offsetX, signY, signZ),
-            new Vector3f(glowD, glowH, glowW), Renderer.TEX_NEON_AMBER);
+            new Vector3f(glowD, glowH, glowW), Renderer.TEX_CEILING);
+        // Thin neon border (the glow), not a solid bright face
         r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.02f : 0.02f), signY, signZ),
-            new Vector3f(signD, signH, signW), neonColor);
+            new Vector3f(signD, signH, signW), Renderer.TEX_CEILING);
         float bw = 0.04f;
         r.drawCube(new Vector3f(wallX + offsetX, signY + signH / 2f + 0.06f, signZ),
-            new Vector3f(glowD + 0.02f, 0.06f, bw), Renderer.TEX_DOOR);
+            new Vector3f(glowD + 0.02f, 0.06f, bw), neonColor);
         r.drawCube(new Vector3f(wallX + offsetX, signY - signH / 2f - 0.06f, signZ),
-            new Vector3f(glowD + 0.02f, 0.06f, bw), Renderer.TEX_DOOR);
+            new Vector3f(glowD + 0.02f, 0.06f, bw), neonColor);
     }
 
     private void renderExitSign(Renderer r, float wallX, float signY, float signZ) {
