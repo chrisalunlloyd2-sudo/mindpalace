@@ -10,6 +10,7 @@ public class Camera {
     private Vector3f position;
     private float yaw, pitch;
     private float fov = 70.0f;
+    private float sensitivity = 0.08f;
     private float near = 0.1f, far = 200.0f;
 
     private Vector3f front, up, right;
@@ -58,9 +59,8 @@ public class Camera {
 
     /** Raw mouse input — dx/dy are pixel deltas. Sensitivity applied here. */
     public void rotate(float dx, float dy) {
-        float sens = 0.08f;
-        yaw -= dx * sens;  // negate: mouse right = look right
-        pitch -= dy * sens;
+        yaw -= dx * sensitivity;  // negate: mouse right = look right
+        pitch -= dy * sensitivity;
         if (pitch > 89) pitch = 89;
         if (pitch < -89) pitch = -89;
         updateVectors();
@@ -78,4 +78,6 @@ public class Camera {
     public void setPitch(float p) { pitch = p; updateVectors(); }
     public float getFov() { return fov; }
     public void setFov(float f) { fov = f; }
+    public float getSensitivity() { return sensitivity; }
+    public void setSensitivity(float s) { sensitivity = s; }
 }

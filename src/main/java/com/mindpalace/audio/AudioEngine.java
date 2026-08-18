@@ -122,6 +122,8 @@ public class AudioEngine {
 
     public void setMasterVolume(float v) { this.masterVolume = Math.max(0, Math.min(1, v)); }
     public void setEnabled(boolean e) { this.enabled = e; }
+    public float getMasterVolume() { return masterVolume; }
+    public boolean isEnabled() { return enabled; }
 
     public void cleanup() {
         ambientPlaying = false;

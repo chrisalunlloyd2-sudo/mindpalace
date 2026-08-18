@@ -78,6 +78,8 @@ public class GameEngine {
     private GameState state;
     private boolean teleportMenu;   // teleporter destination picker is open
     private int teleportSel;        // selected destination index
+    private int menuSel;            // selected option in the ESC menu
+    private int menuPage;           // 0=main, 1=video, 2=controls, 3=audio, 4=agents
 
     private double lastFrameTime;
     private double accumulator;
@@ -484,13 +486,21 @@ public class GameEngine {
                 bookEditor.close();
                 input.setCursorCaptured(true);
                 state = GameState.PLAYING;
+            } else if (state == GameState.MENU) {
+                state = GameState.PLAYING;
+                menuPage = 0;
+                input.setCursorCaptured(true);
             } else if (state == GameState.PLAYING) {
                 state = GameState.MENU;
+                menuSel = 0;
+                menuPage = 0;
                 input.setCursorCaptured(false);
-            } else {
-                state = GameState.PLAYING;
-                input.setCursorCaptured(true);
             }
+        }
+
+        // ESC menu navigation
+        if (state == GameState.MENU) {
+            handleMenu(input);
         }
 
         // Teleporter destination picker — open when standing on a pad
@@ -718,6 +728,69 @@ public class GameEngine {
         }
     }
 
+    /** ESC menu — navigate pages, adjust settings live. */
+    private void handleMenu(Input input) {
+        int count = menuOptionCount();
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_UP) || input.wasKeyPressed(GLFW.GLFW_KEY_W)) {
+            menuSel = (menuSel - 1 + count) % count;
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_DOWN) || input.wasKeyPressed(GLFW.GLFW_KEY_S)) {
+            menuSel = (menuSel + 1) % count;
+        }
+        // Left/right adjust the selected value (sensitivity, FOV, volume, etc.)
+        boolean left = input.wasKeyPressed(GLFW.GLFW_KEY_LEFT) || input.wasKeyPressed(GLFW.GLFW_KEY_A);
+        boolean right = input.wasKeyPressed(GLFW.GLFW_KEY_RIGHT) || input.wasKeyPressed(GLFW.GLFW_KEY_D);
+        if (left || right) adjustMenuValue(menuSel, right ? 1 : -1);
+
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER)) {
+            activateMenuOption(menuSel, input);
+        }
+    }
+
+    private int menuOptionCount() {
+        switch (menuPage) {
+            case 0: return 6;  // Resume, Video, Controls, Audio, Agents, Quit
+            case 1: return 3;  // FOV, Sensitivity, Fullscreen
+            case 2: return 1;  // (controls are fixed; informational)
+            case 3: return 2;  // Master volume, Sound on/off
+            case 4: return 2;  // Auto-cycle interval, agent models (info)
+            default: return 1;
+        }
+    }
+
+    private void adjustMenuValue(int sel, int dir) {
+        switch (menuPage) {
+            case 1: // video
+                if (sel == 0) player.getCamera().setFov(clamp(player.getCamera().getFov() + dir * 5f, 50f, 120f));
+                if (sel == 1) player.getCamera().setSensitivity(clamp(player.getCamera().getSensitivity() + dir * 0.01f, 0.02f, 0.3f));
+                if (sel == 2) toggleFullscreen();
+                break;
+            case 3: // audio
+                if (sel == 0) audio.setMasterVolume(clamp(audio.getMasterVolume() + dir * 0.1f, 0f, 1f));
+                if (sel == 1) audio.setEnabled(!audio.isEnabled());
+                break;
+        }
+    }
+
+    private void activateMenuOption(int sel, Input input) {
+        switch (menuPage) {
+            case 0: // main
+                switch (sel) {
+                    case 0: state = GameState.PLAYING; input.setCursorCaptured(true); break;
+                    case 1: menuPage = 1; menuSel = 0; break;
+                    case 2: menuPage = 2; menuSel = 0; break;
+                    case 3: menuPage = 3; menuSel = 0; break;
+                    case 4: menuPage = 4; menuSel = 0; break;
+                    case 5: GLFW.glfwSetWindowShouldClose(window, true); break;
+                }
+                break;
+            default:
+                menuPage = 0; menuSel = 0; // back to main
+        }
+    }
+
+    private static float clamp(float v, float lo, float hi) { return Math.max(lo, Math.min(hi, v)); }
+
     private Vector3f rayAABB(Vector3f origin, Vector3f dir, float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
         float tMin = 0f, tMax = 10f;
         float[] bounds = {minX, maxX, minY, maxY, minZ, maxZ};
@@ -770,6 +843,8 @@ public class GameEngine {
         }
 
         if (teleportMenu) renderTeleportMenu();
+
+        if (state == GameState.MENU) renderMenu();
 
         if (agentChat != null) {
             agentChat.render(renderer, fontRenderer, player.getCamera(), width, height);
@@ -1064,6 +1139,82 @@ public class GameEngine {
                 ? new Vector3f(1.0f, 0.9f, 0.3f)
                 : new Vector3f(0.7f, 0.7f, 0.7f);
             fontRenderer.renderBillboard(label, pos, 0.06f, col, proj, view, camPos);
+        }
+    }
+
+    private void renderMenu() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+
+        Vector3f center = new Vector3f(camPos).add(
+            camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
+
+        String[] lines = menuLines();
+        float lineH = 0.12f;
+        float startY = center.y + (lines.length * lineH) / 2f;
+
+        for (int i = 0; i < lines.length; i++) {
+            String label = lines[i];
+            // Header line (index 0) is never selectable; options start at index 1.
+            boolean selected = (i == menuSel + 1);
+            if (selected) label = "> " + label + " <";
+            Vector3f pos = new Vector3f(center.x, startY - i * lineH, center.z);
+            Vector3f col = selected
+                ? new Vector3f(1.0f, 0.9f, 0.3f)
+                : (i == 0 ? new Vector3f(0.2f, 1.0f, 0.9f) : new Vector3f(0.7f, 0.7f, 0.7f));
+            fontRenderer.renderBillboard(label, pos, 0.05f, col, proj, view, camPos);
+        }
+    }
+
+    private String[] menuLines() {
+        switch (menuPage) {
+            case 0:
+                return new String[]{
+                    "=== MIND PALACE ===",
+                    "Resume",
+                    "Video",
+                    "Controls",
+                    "Audio",
+                    "Agents",
+                    "Quit"
+                };
+            case 1:
+                return new String[]{
+                    "=== VIDEO ===",
+                    "FOV: " + (int) player.getCamera().getFov(),
+                    "Sensitivity: " + String.format("%.2f", player.getCamera().getSensitivity()),
+                    "Fullscreen: " + (fullscreen ? "ON" : "OFF"),
+                    "(Enter to go back)"
+                };
+            case 2:
+                return new String[]{
+                    "=== CONTROLS ===",
+                    "WASD: Move   Mouse: Look   Shift: Sprint",
+                    "Enter: Door   Space: Jump   Click: Book",
+                    "/: Search   Tab: Chat   F1: Help",
+                    "F3: Noclip   F11: Fullscreen   F12: Screenshot",
+                    "(Enter to go back)"
+                };
+            case 3:
+                return new String[]{
+                    "=== AUDIO ===",
+                    "Volume: " + (int) (audio.getMasterVolume() * 100) + "%",
+                    "Sound: " + (audio.isEnabled() ? "ON" : "OFF"),
+                    "(Enter to go back)"
+                };
+            case 4:
+                return new String[]{
+                    "=== AGENTS ===",
+                    com.mindpalace.agent.ModelConfig.TOOL_MODEL + " (tool) + "
+                        + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + " (critic)",
+                    "Auto-cycle every 5 min",
+                    "(Enter to go back)"
+                };
+            default:
+                return new String[]{"(Enter to go back)"};
         }
     }
 
@@ -1362,6 +1513,24 @@ public class GameEngine {
         if (player.getPosition().z > -10f) teleportOk = false; // outside is negative Z
         System.out.println((teleportOk ? "PASS" : "FAIL") + " teleporter destinations (floors + outside)");
         if (teleportOk) pass++; else fail++;
+
+        // 10. ESC menu: pages render, navigation wraps, settings adjust live
+        boolean menuOk = true;
+        state = GameState.MENU; menuPage = 0; menuSel = 0;
+        if (menuOptionCount() != 6) menuOk = false;
+        float fovBefore = player.getCamera().getFov();
+        menuPage = 1; menuSel = 0;
+        adjustMenuValue(0, 1); // FOV +5
+        if (player.getCamera().getFov() != fovBefore + 5f) menuOk = false;
+        player.getCamera().setFov(fovBefore);
+        float volBefore = audio.getMasterVolume();
+        menuPage = 3; menuSel = 0;
+        adjustMenuValue(0, 1); // volume +0.1
+        if (Math.abs(audio.getMasterVolume() - (volBefore + 0.1f)) > 0.001f) menuOk = false;
+        audio.setMasterVolume(volBefore);
+        state = GameState.PLAYING; menuPage = 0;
+        System.out.println((menuOk ? "PASS" : "FAIL") + " ESC menu (pages + live settings)");
+        if (menuOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);
