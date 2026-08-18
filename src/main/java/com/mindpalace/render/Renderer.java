@@ -15,8 +15,8 @@ public class Renderer {
     private int width, height;
 
     // Live-tunable lighting (hot-applied by PatchManager without a restart)
-    private float ambientStrength = 0.55f;
-    private final Vector3f lightColor = new Vector3f(1.0f, 0.95f, 0.8f);
+    private float ambientStrength = 0.70f;
+    private final Vector3f lightColor = new Vector3f(1.0f, 0.9f, 0.7f);
     private final Vector3f lightOffset = new Vector3f(0.0f, 3.0f, 0.0f);
 
     // Texture IDs — public so WorldBuilder can reference them
@@ -63,11 +63,11 @@ public class Renderer {
         basicShader = new Shader("shaders/basic.vert", "shaders/basic.frag");
 
         // Create distinct solid-color textures for each surface
-        textures[TEX_WALL]   = new Texture(0.45f, 0.32f, 0.22f);  // brown stone
-        textures[TEX_FLOOR]  = new Texture(0.18f, 0.13f, 0.08f);  // dark wood
-        textures[TEX_CEILING]= new Texture(0.15f, 0.15f, 0.18f);  // dark grey
-        textures[TEX_DOOR]   = new Texture(0.30f, 0.18f, 0.10f);  // darker wood
-        textures[TEX_SHELF]  = new Texture(0.35f, 0.22f, 0.14f);  // medium wood
+        textures[TEX_WALL]   = new Texture(0.55f, 0.40f, 0.28f);  // warm stone
+        textures[TEX_FLOOR]  = new Texture(0.30f, 0.20f, 0.12f);  // rich wood
+        textures[TEX_CEILING]= new Texture(0.22f, 0.22f, 0.28f);  // soft grey
+        textures[TEX_DOOR]   = new Texture(0.40f, 0.25f, 0.14f);  // medium wood
+        textures[TEX_SHELF]  = new Texture(0.45f, 0.30f, 0.18f);  // warm wood
         textures[TEX_BOOK]   = new Texture(0.15f, 0.40f, 0.25f);  // green (default)
         textures[TEX_PLAQUE] = new Texture(0.70f, 0.60f, 0.30f);  // brass/gold
         textures[TEX_WHITE]  = new Texture(1.0f, 1.0f, 1.0f);

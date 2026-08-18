@@ -1152,6 +1152,18 @@ public class GameEngine {
         Camera cam = player.getCamera();
         Vector3f p = cam.getPosition();
 
+        // Keep the tour inside the world: loop back to the start when the
+        // camera walks past the last hallway (otherwise it drifts into the
+        // void and every frame goes black).
+        float worldEnd = world.getHallways().isEmpty()
+            ? 100f
+            : world.getHallways().get(0).getEnd().z;
+        if (p.z > worldEnd + 5f) {
+            p.z = world.getHallways().get(0).getStart().z + 2f;
+            p.x = 0f;
+            cam.setPitch(0f);
+        }
+
         // 6-second phases, cycling through varied camera angles
         int phase = (int) (tourTimer / 6.0);
         float t = (float) (tourTimer % 6.0);

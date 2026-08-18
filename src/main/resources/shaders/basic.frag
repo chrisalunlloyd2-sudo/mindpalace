@@ -39,5 +39,12 @@ void main() {
     }
 
     vec3 result = (ambient + diffuse + specular) * baseColor;
+
+    // Distance fog — soft atmospheric depth (fades to a warm haze)
+    float dist = length(viewPos - FragPos);
+    float fogFactor = clamp((dist - 20.0) / 60.0, 0.0, 0.85);
+    vec3 fogColor = vec3(0.10, 0.08, 0.12); // deep violet haze
+    result = mix(result, fogColor, fogFactor);
+
     FragColor = vec4(result, 1.0);
 }
