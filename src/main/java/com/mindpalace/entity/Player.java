@@ -33,6 +33,7 @@ public class Player {
     private AudioEngine audio;
     private boolean chatTyping;  // suppress door interaction while typing in chat
     private double teleportCooldown; // prevent pad re-trigger bounce
+    private int padFloor = -1;      // floor of the pad the player is standing on (-1 = none)
     private boolean noclip = false;  // free-fly (no collision, no gravity) for testing
 
     public Player() {
@@ -126,8 +127,9 @@ public class Player {
 
         camera.setPosition(newPos);
 
-        // Teleport pad — walk onto the cyan pad at the hallway end to go up one floor
+        // Teleport pad — detect standing on a pad (destination chosen in GameEngine)
         teleportCooldown -= dt;
+        padFloor = -1;
         if (currentRoom == null && teleportCooldown <= 0 && world.getHallways().size() > 1) {
             Vector3f p = camera.getPosition();
             for (Hallway hw : world.getHallways()) {
@@ -135,14 +137,7 @@ public class Player {
                 float padZ = hw.getEnd().z - 1.0f;
                 if (Math.abs(p.x) < 1.05f && Math.abs(p.z - padZ) < 1.05f
                         && Math.abs(p.y - (hw.getStart().y + EYE_HEIGHT)) < 0.75f) {
-                    Hallway next = world.getHallways().get(hw.getFloor() + 1);
-                    camera.setPosition(0f, next.getStart().y + EYE_HEIGHT, next.getStart().z + 1.5f);
-                    camera.setYaw(0); // face down the next hallway
-                    velocity.set(0, 0, 0);
-                    onGround = true;
-                    teleportCooldown = 1.0;
-                    if (audio != null) audio.playDoorOpen();
-                    System.out.println("[TELEPORT] Floor " + hw.getFloor() + " -> " + (hw.getFloor() + 1));
+                    padFloor = hw.getFloor();
                     break;
                 }
             }
@@ -228,4 +223,50 @@ public class Player {
     public Vector3f getPosition() { return camera.getPosition(); }
     public Vector3f getLookDirection() { return camera.getFront(); }
     public Room getCurrentRoom() { return currentRoom; }
+
+    /** Teleport into a room (self-test / teleporter destination). No door anim. */
+    public void teleportIntoRoom(Room room) {
+        currentRoom = room;
+        Vector3f c = room.getRoomCenter();
+        float ez = room.getHallwaySide() == 0 ? c.z + Room.ROOM_DEPTH / 2f - 1.2f
+                                              : c.z - Room.ROOM_DEPTH / 2f + 1.2f;
+        camera.setPosition(c.x, EYE_HEIGHT, ez);
+        camera.setYaw(room.getHallwaySide() == 0 ? 180 : 0);
+        camera.setPitch(0);
+    }
+
+    /** Floor of the teleporter pad the player is standing on, or -1. */
+    public int getPadFloor() { return padFloor; }
+
+    /** Teleport to a hallway floor (teleporter destination). */
+    public void teleportToFloor(int floor, WorldBuilder world) {
+        if (floor < 0 || floor >= world.getHallways().size()) return;
+        Hallway hw = world.getHallways().get(floor);
+        currentRoom = null;
+        camera.setPosition(0f, hw.getStart().y + EYE_HEIGHT, hw.getStart().z + 1.5f);
+        camera.setYaw(0);
+        camera.setPitch(0);
+        velocity.set(0, 0, 0);
+        onGround = true;
+        teleportCooldown = 1.0;
+        if (audio != null) audio.playDoorOpen();
+        System.out.println("[TELEPORT] -> Floor " + (floor + 1));
+    }
+
+    /** Teleport to the outside area (floor 0, past the courtyard). */
+    public void teleportOutside(WorldBuilder world) {
+        if (world.getHallways().isEmpty()) return;
+        Hallway hw = world.getHallways().get(0);
+        currentRoom = null;
+        // Outside sits at stairZ + 34 on floor 0 (see WorldBuilder.renderOutside)
+        float outZ = hw.getEnd().z + 2.0f + 34.0f + 12.0f;
+        camera.setPosition(0f, hw.getStart().y + EYE_HEIGHT, outZ);
+        camera.setYaw(0);
+        camera.setPitch(0);
+        velocity.set(0, 0, 0);
+        onGround = true;
+        teleportCooldown = 1.0;
+        if (audio != null) audio.playDoorOpen();
+        System.out.println("[TELEPORT] -> Outside");
+    }
 }

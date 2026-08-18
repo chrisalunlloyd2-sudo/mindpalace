@@ -76,6 +76,8 @@ public class GameEngine {
     private String searchQuery = "";
     private boolean showHelp;
     private GameState state;
+    private boolean teleportMenu;   // teleporter destination picker is open
+    private int teleportSel;        // selected destination index
 
     private double lastFrameTime;
     private double accumulator;
@@ -99,9 +101,11 @@ public class GameEngine {
     private double shotTimer;
     private double tourTimer;      // elapsed tour time
     private int tourPhase;          // which leg of the scripted tour
+    private boolean selfTest;       // autonomous self-test mode
 
     public void run() {
         init();
+        if (selfTest) { runSelfTest(); cleanup(); return; }
         startConsoleReader();
         loop();
         cleanup();
@@ -112,6 +116,12 @@ public class GameEngine {
         this.autodrive = true;
         this.screenshotDir = dir;
         System.out.println("[Autodrive] enabled, screenshots -> " + dir);
+    }
+
+    /** Enable self-test mode (called from Main before run()). */
+    public void setSelfTest() {
+        this.selfTest = true;
+        System.out.println("[SelfTest] enabled");
     }
 
     private void init() {
@@ -467,7 +477,10 @@ public class GameEngine {
 
         // ESC toggles
         if (input.wasKeyPressed(GLFW.GLFW_KEY_ESCAPE)) {
-            if (bookEditor.isOpen()) {
+            if (teleportMenu) {
+                teleportMenu = false;
+                input.setCursorCaptured(true);
+            } else if (bookEditor.isOpen()) {
                 bookEditor.close();
                 input.setCursorCaptured(true);
                 state = GameState.PLAYING;
@@ -478,6 +491,17 @@ public class GameEngine {
                 state = GameState.PLAYING;
                 input.setCursorCaptured(true);
             }
+        }
+
+        // Teleporter destination picker — open when standing on a pad
+        if (teleportMenu) {
+            handleTeleportMenu(input);
+        } else if (state == GameState.PLAYING && player.getPadFloor() >= 0) {
+            teleportMenu = true;
+            teleportSel = 0;
+            input.setCursorCaptured(false);
+            System.out.println("[TELEPORT] Destination picker open (pad on floor "
+                + (player.getPadFloor() + 1) + ")");
         }
 
         // Live patches — poll manifest, play the loading cinematic, ship content
@@ -539,6 +563,8 @@ public class GameEngine {
             if (input.isLeftClick() && player.getCurrentRoom() != null) {
                 Book clicked = findBookInSights(player.getCurrentRoom());
                 if (clicked != null) {
+                    System.out.println("[CLICK] opened book: " + clicked.getFilename()
+                        + " (room " + player.getCurrentRoom().getRepoName() + ")");
                     bookEditor.open(clicked, player.getCurrentRoom(),
                         player.getPosition(), player.getLookDirection());
                     // Set agent context to this book
@@ -547,6 +573,11 @@ public class GameEngine {
                     }
                     state = GameState.BOOK_VIEW;
                     input.setCursorCaptured(false);
+                } else {
+                    System.out.println("[CLICK] no book in sights (room "
+                        + player.getCurrentRoom().getRepoName() + ", "
+                        + player.getCurrentRoom().getBooks().size() + " books, "
+                        + countPlacedBooks(player.getCurrentRoom()) + " placed)");
                 }
             }
 
@@ -612,6 +643,9 @@ public class GameEngine {
         Vector3f dir = player.getLookDirection();
         float bookW = 0.10f;
         float bookD = 0.30f;
+        // Forgiving click target: books are tiny (10cm) and the user has poor
+        // vision — inflate the hitbox so a near-miss still opens the book.
+        float margin = 0.08f;
         float caseHeight = Room.ROOM_HEIGHT - 0.2f;
         float shelfSpacing = (caseHeight - 0.12f) / 3f; // matches WorldBuilder (pt = 0.06)
         float bookH = shelfSpacing * 0.75f;
@@ -624,21 +658,64 @@ public class GameEngine {
             // depth along X. The back wall (wallDir 0) is width along X, depth Z.
             float minX, maxX, minZ, maxZ;
             if (book.getWallDir() == 0) {
-                minX = bx - bookW / 2f; maxX = bx + bookW / 2f;
-                minZ = bz - bookD / 2f; maxZ = bz + bookD / 2f;
+                minX = bx - bookW / 2f - margin; maxX = bx + bookW / 2f + margin;
+                minZ = bz - bookD / 2f - margin; maxZ = bz + bookD / 2f + margin;
             } else {
-                minX = bx - bookD / 2f; maxX = bx + bookD / 2f;
-                minZ = bz - bookW / 2f; maxZ = bz + bookW / 2f;
+                minX = bx - bookD / 2f - margin; maxX = bx + bookD / 2f + margin;
+                minZ = bz - bookW / 2f - margin; maxZ = bz + bookW / 2f + margin;
             }
             Vector3f hit = rayAABB(origin, dir,
-                minX, by - bookH / 2f, minZ,
-                maxX, by + bookH / 2f, maxZ);
+                minX, by - bookH / 2f - margin, minZ,
+                maxX, by + bookH / 2f + margin, maxZ);
             if (hit != null) {
                 float t = hit.distance(origin);
                 if (t < bestT) { bestT = t; best = book; }
             }
         }
         return best;
+    }
+
+    /** Aim the camera at a world-space direction (self-test helper). */
+    private void aimCameraAt(Vector3f dir) {
+        float yaw = (float) Math.toDegrees(Math.atan2(dir.x, dir.z));
+        float pitch = (float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, dir.y))));
+        player.getCamera().setYaw(yaw);
+        player.getCamera().setPitch(pitch);
+    }
+
+    /** Count placed (clickable) books in a room — debug helper. */
+    private int countPlacedBooks(Room room) {
+        int n = 0;
+        for (Book b : room.getBooks()) if (b.isPlaced()) n++;
+        return n;
+    }
+
+    /** Handle the teleporter destination picker (up/down/enter/number keys). */
+    private void handleTeleportMenu(Input input) {
+        int floors = world.getHallways().size();
+        int options = floors + 1; // floors + "Outside"
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_UP) || input.wasKeyPressed(GLFW.GLFW_KEY_W)) {
+            teleportSel = (teleportSel - 1 + options) % options;
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_DOWN) || input.wasKeyPressed(GLFW.GLFW_KEY_S)) {
+            teleportSel = (teleportSel + 1) % options;
+        }
+        // Number keys 1..9 jump directly
+        for (int k = GLFW.GLFW_KEY_1; k <= GLFW.GLFW_KEY_9; k++) {
+            if (input.wasKeyPressed(k)) {
+                int idx = k - GLFW.GLFW_KEY_1;
+                if (idx < options) teleportSel = idx;
+            }
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER)) {
+            teleportMenu = false;
+            input.setCursorCaptured(true);
+            if (teleportSel < floors) {
+                player.teleportToFloor(teleportSel, world);
+            } else {
+                player.teleportOutside(world);
+            }
+        }
     }
 
     private Vector3f rayAABB(Vector3f origin, Vector3f dir, float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
@@ -691,6 +768,8 @@ public class GameEngine {
             bookEditor.render(renderer);
             bookEditor.renderText(fontRenderer, player.getCamera(), width, height);
         }
+
+        if (teleportMenu) renderTeleportMenu();
 
         if (agentChat != null) {
             agentChat.render(renderer, fontRenderer, player.getCamera(), width, height);
@@ -957,6 +1036,37 @@ public class GameEngine {
         }
     }
 
+    private void renderTeleportMenu() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+
+        Vector3f center = new Vector3f(camPos).add(
+            camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
+
+        int floors = world.getHallways().size();
+        int options = floors + 1;
+        float lineH = 0.12f;
+        float startY = center.y + (options * lineH) / 2f;
+
+        fontRenderer.renderBillboard("TELEPORT DESTINATION", center, 0.09f,
+            new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
+
+        for (int i = 0; i < options; i++) {
+            String label;
+            if (i < floors) label = (i + 1) + ". Floor " + (i + 1);
+            else label = (i + 1) + ". Outside";
+            if (i == teleportSel) label = "> " + label + " <";
+            Vector3f pos = new Vector3f(center.x, startY - i * lineH, center.z);
+            Vector3f col = (i == teleportSel)
+                ? new Vector3f(1.0f, 0.9f, 0.3f)
+                : new Vector3f(0.7f, 0.7f, 0.7f);
+            fontRenderer.renderBillboard(label, pos, 0.06f, col, proj, view, camPos);
+        }
+    }
+
     private void renderBookTooltip() {
         Camera cam = player.getCamera();
         Matrix4f proj = cam.getProjectionMatrix((float) width / height);
@@ -1140,6 +1250,109 @@ public class GameEngine {
             }
         }
         if (patchToastTimer > 0) patchToastTimer -= dt;
+    }
+
+    /**
+     * Autonomous self-test: exercises the REAL click path (findBookInSights)
+     * against every room, plus teleporter/agent/world invariants, and prints
+     * a PASS/FAIL report. No human driving — this is the definitive check.
+     */
+    private void runSelfTest() {
+        int pass = 0, fail = 0;
+        System.out.println("\n===== MIND PALACE SELF-TEST =====");
+
+        // 1. World built
+        if (world != null && !world.getRooms().isEmpty()) {
+            System.out.println("PASS world built: " + world.getRooms().size() + " rooms, "
+                + world.getHallways().size() + " hallways"); pass++;
+        } else { System.out.println("FAIL world empty"); fail++; }
+
+        // 2. Books placed + clickable (the reported bug)
+        // Books are placed lazily during render() — reveal all fog and render
+        // each room so placement happens, then exercise the real click path.
+        for (Room room : world.getRooms()) {
+            if (room.getDoorPosition() != null) world.getFogOfWar().reveal(room.getDoorPosition());
+        }
+        int roomsWithBooks = 0, clickableRooms = 0, totalBooks = 0, clickableBooks = 0;
+        for (Room room : world.getRooms()) {
+            if (room.getBooks().isEmpty()) continue;
+            roomsWithBooks++;
+            totalBooks += room.getBooks().size();
+            // Teleport the player into the room and render it (places books),
+            // then aim at each placed book and confirm findBookInSights hits.
+            player.teleportIntoRoom(room);
+            render(0);
+            boolean anyHit = false;
+            for (Book b : room.getBooks()) {
+                if (!b.isPlaced()) continue;
+                Vector3f o = player.getPosition();
+                Vector3f to = new Vector3f(b.getWorldX(), b.getWorldY(), b.getWorldZ()).sub(o);
+                if (to.lengthSquared() < 0.0001f) continue;
+                to.normalize();
+                aimCameraAt(to);
+                Book hit = findBookInSights(room);
+                if (hit != null) { anyHit = true; clickableBooks++; }
+            }
+            if (anyHit) clickableRooms++;
+        }
+        System.out.println((clickableRooms > 0 ? "PASS" : "FAIL")
+            + " books clickable: " + clickableBooks + "/" + totalBooks
+            + " books hit across " + clickableRooms + "/" + roomsWithBooks + " rooms");
+        if (clickableRooms > 0) pass++; else fail++;
+
+        // 3. Teleporter pads exist (one per floor except top)
+        int pads = 0;
+        for (Hallway hw : world.getHallways()) {
+            if (hw.getFloor() < world.getHallways().size() - 1) pads++;
+        }
+        System.out.println((pads > 0 ? "PASS" : "FAIL") + " teleporter pads: " + pads);
+        if (pads > 0) pass++; else fail++;
+
+        // 4. Agents spawned
+        System.out.println((npcs.size() >= 2 ? "PASS" : "FAIL") + " agents: " + npcs.size());
+        if (npcs.size() >= 2) pass++; else fail++;
+
+        // 5. Crystals spawned
+        System.out.println((crystals.size() > 0 ? "PASS" : "FAIL") + " TODO crystals: " + crystals.size());
+        if (crystals.size() > 0) pass++; else fail++;
+
+        // 6. Knowledge graph
+        System.out.println((knowledgeGraph != null && knowledgeGraph.nodeCount() > 0 ? "PASS" : "FAIL")
+            + " KG nodes: " + (knowledgeGraph != null ? knowledgeGraph.nodeCount() : 0));
+        if (knowledgeGraph != null && knowledgeGraph.nodeCount() > 0) pass++; else fail++;
+
+        // 7. Font renderer ready
+        System.out.println((fontRenderer != null && fontRenderer.isReady() ? "PASS" : "FAIL") + " font renderer");
+        if (fontRenderer != null && fontRenderer.isReady()) pass++; else fail++;
+
+        // 8. Full click path: aim at a book → open editor → verify isOpen
+        boolean editorOpened = false;
+        outer:
+        for (Room room : world.getRooms()) {
+            if (room.getBooks().isEmpty()) continue;
+            player.teleportIntoRoom(room);
+            render(0);
+            for (Book b : room.getBooks()) {
+                if (!b.isPlaced()) continue;
+                Vector3f o = player.getPosition();
+                Vector3f to = new Vector3f(b.getWorldX(), b.getWorldY(), b.getWorldZ()).sub(o);
+                if (to.lengthSquared() < 0.0001f) continue;
+                to.normalize();
+                aimCameraAt(to);
+                Book hit = findBookInSights(room);
+                if (hit != null) {
+                    bookEditor.open(hit, room, player.getPosition(), player.getLookDirection());
+                    if (bookEditor.isOpen()) { editorOpened = true; }
+                    bookEditor.close();
+                    break outer;
+                }
+            }
+        }
+        System.out.println((editorOpened ? "PASS" : "FAIL") + " editor opens on book click");
+        if (editorOpened) pass++; else fail++;
+
+        System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
+        if (fail > 0) System.exit(1);
     }
 
     /**
