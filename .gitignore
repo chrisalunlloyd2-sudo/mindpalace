@@ -2,3 +2,4 @@ screenshots/
 *.png
 target/
 readtext.py
+patches/applied.json
