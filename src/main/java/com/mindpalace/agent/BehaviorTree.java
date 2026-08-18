@@ -36,7 +36,6 @@ public class BehaviorTree {
     private final ModelLifespan lifespan;   // stateful brain (history + drift + RAG)
     private final ModelScheduler scheduler; // shared gate — one model call at a time
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final Random rand = new Random();
 
     private volatile boolean decisionPending;
     private volatile Action lastAction = Action.IDLE;
@@ -110,10 +109,10 @@ public class BehaviorTree {
         return Action.IDLE;
     }
 
-    /** Deterministic fallback when the model is unavailable. */
+    /** Deterministic fallback when the model is unavailable — prefer a useful
+     *  default (read a book) over a random action, so agents stay productive. */
     private Action fallback() {
-        Action[] actions = Action.values();
-        return actions[rand.nextInt(actions.length)];
+        return Action.READ_BOOK;
     }
 
     public Action getLastAction() { return lastAction; }

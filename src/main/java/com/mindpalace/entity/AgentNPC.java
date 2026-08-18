@@ -68,6 +68,7 @@ public class AgentNPC {
 
     public void update(float dt, List<Room> rooms) {
         stateTimer -= dt;
+        decisionCooldown -= dt;  // track REAL time, not per-decision ticks
 
         // Move toward target
         if (state == State.WALKING || state == State.CARRYING) {
@@ -113,7 +114,6 @@ public class AgentNPC {
         if (rooms.isEmpty()) { state = State.IDLE; stateTimer = 2f; return; }
 
         // Consult the real SLM brain (throttled to 5-min pacing) — overrides KV/KG
-        decisionCooldown -= 0.5f;
         if (brain != null && decisionCooldown <= 0 && !brain.isDecisionPending()) {
             decisionCooldown = 300f; // ask every ~5 minutes (matches scheduler spacing)
             String ctx = buildBrainContext();
@@ -180,6 +180,16 @@ public class AgentNPC {
                     currentBook = currentRoom.getBooks().get(rand.nextInt(currentRoom.getBooks().size()));
                     state = State.READING;
                     stateTimer = 3f;
+                }
+            }
+            case PLACE_BOOK -> {
+                // Explorer places a book (generated code) in the current room
+                if (role == Role.EXPLORER && currentRoom != null) {
+                    state = State.PLACING;
+                    stateTimer = 2f;
+                } else {
+                    state = State.IDLE;
+                    stateTimer = 2f;
                 }
             }
             case CARRY_CRYSTAL -> {
