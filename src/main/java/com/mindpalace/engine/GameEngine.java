@@ -105,6 +105,15 @@ public class GameEngine {
         GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_FORWARD_COMPAT, GLFW.GLFW_TRUE);
         GLFW.glfwWindowHint(GLFW.GLFW_SAMPLES, 4);
 
+        // Size the window to the ACTUAL monitor, not a hardcoded 1920x1080.
+        // On a 1536x864 display (125% DPI) a 1920x1080 window is larger than the
+        // screen and gets cropped into a zoomed "tunnel" view that reads as VR.
+        var vm0 = GLFW.glfwGetVideoMode(GLFW.glfwGetPrimaryMonitor());
+        if (vm0 != null) {
+            width = vm0.width();
+            height = vm0.height();
+        }
+
         long monitor = fullscreen ? GLFW.glfwGetPrimaryMonitor() : MemoryUtil.NULL;
         window = GLFW.glfwCreateWindow(width, height, "MindPalace", monitor, MemoryUtil.NULL);
 
@@ -970,8 +979,9 @@ public class GameEngine {
             width = vidmode.width();
             height = vidmode.height();
         } else {
-            width = 1920;
-            height = 1080;
+            var vm = GLFW.glfwGetVideoMode(GLFW.glfwGetPrimaryMonitor());
+            width = vm != null ? vm.width() : 1920;
+            height = vm != null ? vm.height() : 1080;
         }
         GLFW.glfwSetWindowMonitor(window, monitor, 0, 0, width, height, GLFW.GLFW_DONT_CARE);
         renderer.resize(width, height);
