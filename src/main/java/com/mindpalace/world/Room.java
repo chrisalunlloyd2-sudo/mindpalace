@@ -111,6 +111,33 @@ public class Room {
         return sb.toString();
     }
 
+    /**
+     * Per-room wall/floor accent tint (RGB, 1.0 = neutral) keyed by the repo's
+     * dominant language. Gives each room a distinct "personality" at a glance.
+     */
+    public float[] getTint() {
+        if (language == null) return new float[]{1.0f, 1.0f, 1.0f};
+        switch (language) {
+            case "Java":       return new float[]{0.85f, 1.0f, 0.85f};  // green
+            case "Python":     return new float[]{0.85f, 0.9f, 1.0f};   // blue
+            case "JavaScript": return new float[]{1.0f, 0.95f, 0.7f};   // yellow
+            case "TypeScript": return new float[]{0.8f, 0.9f, 1.0f};    // steel blue
+            case "C++":        return new float[]{1.0f, 0.85f, 0.85f};  // red
+            case "C#":         return new float[]{0.85f, 0.85f, 1.0f};  // violet
+            case "Rust":       return new float[]{1.0f, 0.8f, 0.6f};    // rust orange
+            case "Go":         return new float[]{0.7f, 0.95f, 1.0f};   // cyan
+            case "Ruby":       return new float[]{1.0f, 0.7f, 0.75f};   // ruby
+            case "PHP":        return new float[]{0.85f, 0.8f, 1.0f};   // indigo
+            case "Kotlin":     return new float[]{0.9f, 0.7f, 1.0f};    // purple
+            case "Shell":      return new float[]{0.9f, 0.9f, 0.9f};    // grey
+            case "HTML":       return new float[]{1.0f, 0.8f, 0.5f};    // orange
+            case "CSS":        return new float[]{0.8f, 0.85f, 1.0f};   // light blue
+            case "Markdown":   return new float[]{1.0f, 1.0f, 0.9f};    // cream
+            case "SQL":        return new float[]{0.8f, 0.9f, 0.85f};   // teal
+            default:           return new float[]{1.0f, 1.0f, 1.0f};
+        }
+    }
+
     @Override
     public String toString() {
         return "Room{" + repoName + " @ " + roomCenter + "}";

@@ -603,6 +603,10 @@ public class WorldBuilder {
         float t = Room.WALL_THICKNESS;
         int side = room.getHallwaySide();
 
+        // Per-room language accent — tint the whole room, then reset to neutral
+        float[] tint = room.getTint();
+        r.setTint(tint[0], tint[1], tint[2]);
+
         // Hardwood floor
         r.drawCube(new Vector3f(c.x, c.y - h / 2f, c.z), new Vector3f(w, 0.1f, d), Renderer.TEX_HARDWOOD);
         // Baseboard trim
@@ -642,6 +646,13 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw, fz), new Vector3f(Room.DOOR_WIDTH, ft, ft), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw + 0.15f, fz), new Vector3f(Room.DOOR_WIDTH * 0.8f, 0.15f, 0.05f), Renderer.TEX_PLAQUE);
 
+        // Repo poster board — above the door, shows repo name/language/stars.
+        // Dark backing plate; the text is drawn by GameEngine.renderRoomPoster().
+        float posterY = c.y - h / 2f + dw + 0.15f + 0.45f;
+        float posterZ = side == 0 ? fz + 0.03f : fz - 0.03f;
+        r.drawCube(new Vector3f(c.x, posterY, posterZ),
+            new Vector3f(2.2f, 0.7f, 0.04f), Renderer.TEX_CEILING);
+
         // Doorknob
         float knobX = c.x + dh - 0.1f;
         float knobY = c.y - h / 2f + dw / 2f;
@@ -661,6 +672,8 @@ public class WorldBuilder {
         renderBookcase(r, room, 0);
         renderBookcase(r, room, -1);
         renderBookcase(r, room, 1);
+
+        r.setTint(1.0f, 1.0f, 1.0f); // reset to neutral
     }
 
     private void renderLabDevices(Renderer r, Room room, Vector3f c, float w, float d, float h, int side) {

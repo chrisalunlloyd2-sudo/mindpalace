@@ -12,6 +12,7 @@ uniform vec3 viewPos;
 uniform float ambientStrength;
 uniform sampler2D textureSampler;
 uniform int useTexture;
+uniform vec3 tintColor;
 
 void main() {
     // Ambient
@@ -37,6 +38,7 @@ void main() {
     } else {
         baseColor = vec3(0.5, 0.4, 0.3); // default brown
     }
+    baseColor *= tintColor; // per-room language accent
 
     vec3 result = (ambient + diffuse + specular) * baseColor;
 

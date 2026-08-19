@@ -18,6 +18,7 @@ public class Renderer {
     private float ambientStrength = 0.70f;
     private final Vector3f lightColor = new Vector3f(1.0f, 0.9f, 0.7f);
     private final Vector3f lightOffset = new Vector3f(0.0f, 3.0f, 0.0f);
+    private final Vector3f tintColor = new Vector3f(1.0f, 1.0f, 1.0f); // per-room accent
 
     // Texture IDs — public so WorldBuilder can reference them
     public static final int TEX_WALL   = 0;
@@ -106,6 +107,7 @@ public class Renderer {
         basicShader.setUniform("lightColor", lightColor);
         basicShader.setUniform("ambientStrength", ambientStrength);
         basicShader.setUniform("viewPos", camPos);
+        basicShader.setUniform("tintColor", tintColor);
     }
 
     // ── Live graphics tuning (hot-applied by PatchManager) ──
@@ -113,6 +115,8 @@ public class Renderer {
     public void setLightColor(float r, float g, float b) { lightColor.set(r, g, b); }
     public void setLightOffset(float x, float y, float z) { lightOffset.set(x, y, z); }
     public float getAmbient() { return ambientStrength; }
+    /** Per-room language accent tint (1,1,1 = neutral). */
+    public void setTint(float r, float g, float b) { tintColor.set(r, g, b); }
 
     public void drawMesh(Mesh mesh, Matrix4f model, int texId) {
         basicShader.setUniform("model", model);

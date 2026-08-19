@@ -848,6 +848,7 @@ public class GameEngine {
             renderFloorMap();
             renderScreenHUD();
             renderBookSpineText();
+            renderRoomPoster();
             renderBookTooltip();
             renderBookHighlight();
             renderFloorSigns();
@@ -1178,6 +1179,42 @@ public class GameEngine {
             fontRenderer.renderBillboard(name, pos, 0.03f,
                 new Vector3f(0.9f, 0.9f, 0.9f), proj, view, camPos);
         }
+    }
+
+    /** Repo poster board text — name, language, stars — above the door. */
+    private void renderRoomPoster() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+
+        Room room = player.getCurrentRoom();
+        if (room == null) return;
+
+        Vector3f c = room.getRoomCenter();
+        int side = room.getHallwaySide();
+        float h = Room.ROOM_HEIGHT, d = Room.ROOM_DEPTH;
+        float dw = Room.DOOR_HEIGHT;
+        float fz = side == 0 ? c.z - d / 2f : c.z + d / 2f;
+        float posterY = c.y - h / 2f + dw + 0.15f + 0.45f;
+        float posterZ = side == 0 ? fz + 0.06f : fz - 0.06f;
+
+        // Text faces into the room (away from the door wall)
+        Vector3f facing = new Vector3f(0, 0, side == 0 ? 1 : -1);
+
+        String name = room.getRepoName();
+        if (name.length() > 16) name = name.substring(0, 14) + "..";
+        String lang = room.getLanguage() != null ? room.getLanguage() : "?";
+        String stars = room.getStarCount() + " \u2605";
+
+        Vector3f color = room.isPrivate()
+            ? new Vector3f(1.0f, 0.4f, 0.7f)
+            : new Vector3f(0.3f, 0.9f, 1.0f);
+
+        fontRenderer.renderText(name, new Vector3f(c.x, posterY + 0.18f, posterZ),
+            0.12f, color, proj, view, facing);
+        fontRenderer.renderText(lang + "  " + stars, new Vector3f(c.x, posterY - 0.12f, posterZ),
+            0.08f, new Vector3f(0.9f, 0.9f, 0.9f), proj, view, facing);
     }
 
     private void renderTeleportMenu() {
@@ -1809,6 +1846,18 @@ public class GameEngine {
         System.out.println((lookOk ? "PASS" : "FAIL") + " mouse look turn radius ("
             + String.format("%.0f", turned) + "° from 1200px @ sens " + String.format("%.2f", sens) + ")");
         if (lookOk) pass++; else fail++;
+
+        // 15. Room personality — every room has a language tint + poster data
+        boolean personalityOk = true;
+        int tinted = 0;
+        for (Room room : world.getRooms()) {
+            float[] t = room.getTint();
+            if (t[0] != 1.0f || t[1] != 1.0f || t[2] != 1.0f) tinted++;
+        }
+        if (tinted == 0) personalityOk = false; // no room got a language accent
+        System.out.println((personalityOk ? "PASS" : "FAIL") + " room personality ("
+            + tinted + "/" + world.getRooms().size() + " rooms tinted)");
+        if (personalityOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);
