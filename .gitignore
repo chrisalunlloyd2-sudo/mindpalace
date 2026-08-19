@@ -3,3 +3,4 @@ screenshots/
 target/
 readtext.py
 patches/applied.json
+playtest*.log
