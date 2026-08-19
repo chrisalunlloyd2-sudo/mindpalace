@@ -578,6 +578,7 @@ public class GameEngine {
                 if (clicked != null) {
                     System.out.println("[CLICK] opened book: " + clicked.getFilename()
                         + " (room " + player.getCurrentRoom().getRepoName() + ")");
+                    audio.playBookOpen();
                     bookEditor.open(clicked, player.getCurrentRoom(),
                         player.getPosition(), player.getLookDirection());
                     // Set agent context to this book
@@ -754,7 +755,7 @@ public class GameEngine {
         switch (menuPage) {
             case 0: return 6;  // Resume, Video, Controls, Audio, Agents, Quit
             case 1: return 5;  // FOV, Sensitivity, Fullscreen, Bloom intensity, Bloom threshold
-            case 2: return 1;  // (controls are fixed; informational)
+            case 2: return 1;  // Invert Y (rest is informational)
             case 3: return 2;  // Master volume, Sound on/off
             case 4: return 2;  // Auto-cycle interval, agent models (info)
             default: return 1;
@@ -769,6 +770,9 @@ public class GameEngine {
                 if (sel == 2) toggleFullscreen();
                 if (sel == 3 && bloom != null) bloom.setIntensity(clamp(bloom.getIntensity() + dir * 0.1f, 0f, 2f));
                 if (sel == 4 && bloom != null) bloom.setThreshold(clamp(bloom.getThreshold() + dir * 0.05f, 0f, 1f));
+                break;
+            case 2: // controls
+                if (sel == 0) player.getCamera().setInvertY(!player.getCamera().isInvertY());
                 break;
             case 3: // audio
                 if (sel == 0) audio.setMasterVolume(clamp(audio.getMasterVolume() + dir * 0.1f, 0f, 1f));
@@ -1201,6 +1205,7 @@ public class GameEngine {
             case 2:
                 return new String[]{
                     "=== CONTROLS ===",
+                    "Invert Y: " + (player.getCamera().isInvertY() ? "ON" : "OFF"),
                     "WASD: Move   Mouse: Look   Shift: Sprint",
                     "Enter: Door   Space: Jump   Click: Book",
                     "/: Search   Tab: Chat   F1: Help",
@@ -1248,6 +1253,35 @@ public class GameEngine {
             + " | " + formatSize(looked.getSizeBytes());
         fontRenderer.renderBillboard(tip, tipPos, 0.04f,
             new Vector3f(1.0f, 1.0f, 0.6f), proj, view, camPos);
+
+        // Content preview — first line(s), lazily loaded + cached on the book.
+        String preview = previewLine(looked, room);
+        if (preview != null) {
+            Vector3f pvPos = new Vector3f(
+                looked.getWorldX(), looked.getWorldY() + 0.02f, looked.getWorldZ());
+            fontRenderer.renderBillboard(preview, pvPos, 0.03f,
+                new Vector3f(0.6f, 0.9f, 1.0f), proj, view, camPos);
+        }
+    }
+
+    /** First non-empty line of a book's content, lazily loaded + cached. */
+    private String previewLine(Book book, Room room) {
+        String c = book.getContent();
+        if (c == null) {
+            if (room.getLocalPath() == null || book.getFilePath() == null) return null;
+            try {
+                c = java.nio.file.Files.readString(
+                    java.nio.file.Path.of(room.getLocalPath(), book.getFilePath()));
+                book.setContent(c);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        for (String line : c.split("\n")) {
+            String t = line.trim();
+            if (!t.isEmpty()) return t.length() > 60 ? t.substring(0, 60) + "…" : t;
+        }
+        return null;
     }
 
     private String formatSize(long bytes) {
@@ -1539,6 +1573,20 @@ public class GameEngine {
         adjustMenuValue(0, 1); // volume +0.1
         if (Math.abs(audio.getMasterVolume() - (volBefore + 0.1f)) > 0.001f) menuOk = false;
         audio.setMasterVolume(volBefore);
+        // Invert Y toggle (controls page)
+        boolean invBefore = player.getCamera().isInvertY();
+        menuPage = 2; menuSel = 0;
+        adjustMenuValue(0, 1);
+        if (player.getCamera().isInvertY() == invBefore) menuOk = false;
+        player.getCamera().setInvertY(invBefore);
+        // Bloom intensity live-adjust (video page)
+        if (bloom != null) {
+            float bi = bloom.getIntensity();
+            menuPage = 1; menuSel = 3;
+            adjustMenuValue(3, 1);
+            if (Math.abs(bloom.getIntensity() - (bi + 0.1f)) > 0.001f) menuOk = false;
+            bloom.setIntensity(bi);
+        }
         state = GameState.PLAYING; menuPage = 0;
         System.out.println((menuOk ? "PASS" : "FAIL") + " ESC menu (pages + live settings)");
         if (menuOk) pass++; else fail++;
