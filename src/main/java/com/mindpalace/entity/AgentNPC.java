@@ -36,6 +36,7 @@ public class AgentNPC {
 
     private Vector3f position;
     private Vector3f target;
+    private Vector3f facing = new Vector3f(0, 0, 1); // movement direction (for body orientation)
     private State state = State.IDLE;
     private float stateTimer;
     private float speed = 2.5f;
@@ -77,7 +78,10 @@ public class AgentNPC {
             if (dist < 0.3f) {
                 arrive(rooms);
             } else {
-                to.normalize().mul(speed * dt);
+                to.normalize();
+                // Track facing (horizontal only) so the body orients to movement
+                facing.set(to.x, 0, to.z).normalize();
+                to.mul(speed * dt);
                 position.add(to);
                 bobPhase += dt * 8f;
             }
@@ -298,6 +302,7 @@ public class AgentNPC {
     public Book getCurrentBook() { return currentBook; }
     public TodoCrystal getCarriedCrystal() { return carriedCrystal; }
     public float getBobPhase() { return bobPhase; }
+    public Vector3f getFacing() { return facing; }
 
     /** Body color — Explorer cyan, Critic amber. */
     public int getBodyTexture() {

@@ -133,6 +133,12 @@ public class Renderer {
         drawMesh(getCubeMesh(), model, texId);
     }
 
+    /** Draw a cube rotated around the Y axis (yaw in radians) — for oriented limbs. */
+    public void drawCubeYaw(Vector3f position, Vector3f size, float yaw, int texId) {
+        Matrix4f model = new Matrix4f().translate(position).rotateY(yaw).scale(size);
+        drawMesh(getCubeMesh(), model, texId);
+    }
+
     /** Laser aim dot — small bright cube at fixed distance in front of camera. */
     public void drawLaserDot(Camera camera) {
         Vector3f pos = new Vector3f(camera.getPosition())
