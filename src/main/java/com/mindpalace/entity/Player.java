@@ -161,13 +161,17 @@ public class Player {
         if (currentRoom == null) {
             if (next.x < -hw + r) next.x = -hw + r;
             if (next.x > hw - r) next.x = hw - r;
-            // Walkable in front of the palace (outside area) down to -55,
-            // and up to the top floor's end (teleporter sits just before it).
+            // Walkable in front of the palace (outside area) down to -55.
             if (next.z < -55f) next.z = -55f;
-            float maxZ = 0.1f;
-            if (!world.getHallways().isEmpty()) {
-                Hallway top = world.getHallways().get(world.getHallways().size() - 1);
-                maxZ = top.getEnd().z;
+            // Clamp forward to the end of the hallway at the player's current
+            // floor level. (Previously clamped to the TOP floor's end, so the
+            // player could walk off the end of a lower floor into the void.)
+            float maxZ = -55f;
+            for (Hallway hall : world.getHallways()) {
+                if (Math.abs(old.y - (hall.getStart().y + EYE_HEIGHT)) < 1.5f) {
+                    maxZ = hall.getEnd().z;
+                    break;
+                }
             }
             if (next.z > maxZ - r) next.z = maxZ - r;
         } else {

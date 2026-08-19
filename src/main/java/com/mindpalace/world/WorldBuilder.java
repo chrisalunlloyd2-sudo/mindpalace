@@ -227,8 +227,10 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(cx, s.y + h, cz), new Vector3f(w, 0.15f, len), Renderer.TEX_CEILING);
         // Crown molding
         r.drawCube(new Vector3f(cx, s.y + h - 0.08f, cz), new Vector3f(w, 0.08f, len), Renderer.TEX_DOOR);
-        // End wall at START only; NO end wall — stairwell must be visible/walkable (Chris: cannot traverse levels)
+        // End wall at START and END — the teleporter pad sits just before the
+        // end wall, so the hallway no longer opens into the void.
         r.drawCube(new Vector3f(cx, s.y + h / 2f, s.z), new Vector3f(w, h, wallT), Renderer.TEX_WALLPAPER);
+        r.drawCube(new Vector3f(cx, s.y + h / 2f, s.z + len), new Vector3f(w, h, wallT), Renderer.TEX_WALLPAPER);
         // Side walls with doors
         renderWallWithDoors(r, s, hw, -1);
         renderWallWithDoors(r, s, hw, 1);

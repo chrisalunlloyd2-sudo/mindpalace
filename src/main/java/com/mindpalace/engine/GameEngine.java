@@ -533,7 +533,10 @@ public class GameEngine {
 
         if (state == GameState.PLAYING) {
             world.tick((float) dt);
-            if (!patchCinematic) player.update(dt, input, world);
+            // Freeze the player while the teleporter picker is open — otherwise
+            // Enter would trigger BOTH teleport and door interaction, and the
+            // player could keep walking off the pad.
+            if (!patchCinematic && !teleportMenu) player.update(dt, input, world);
 
             // Sync chat-typing state to player (suppress door interaction)
             player.setChatTyping(agentChat != null && agentChat.isTyping());
@@ -572,8 +575,8 @@ public class GameEngine {
                 agentManager.setContext(player.getCurrentRoom(), null);
             }
 
-            // Book click detection — left click in a room
-            if (input.isLeftClick() && player.getCurrentRoom() != null) {
+            // Book click detection — left click in a room (not while teleporter open)
+            if (input.isLeftClick() && player.getCurrentRoom() != null && !teleportMenu) {
                 Book clicked = findBookInSights(player.getCurrentRoom());
                 if (clicked != null) {
                     System.out.println("[CLICK] opened book: " + clicked.getFilename()
@@ -596,7 +599,7 @@ public class GameEngine {
             }
 
             // Enter toggles chat typing (cursor pops up, type, Enter to send)
-            if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && agentChat != null && !bookEditor.isOpen()) {
+            if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && agentChat != null && !bookEditor.isOpen() && !teleportMenu) {
                 if (agentChat.isTyping()) {
                     String msg = agentChat.commitInput();
                     if (msg != null && agentManager != null) {
@@ -1251,15 +1254,15 @@ public class GameEngine {
 
         String tip = looked.getFilename() + " | " + looked.getLanguage()
             + " | " + formatSize(looked.getSizeBytes());
-        fontRenderer.renderBillboard(tip, tipPos, 0.04f,
+        fontRenderer.renderBillboard(tip, tipPos, 0.07f,
             new Vector3f(1.0f, 1.0f, 0.6f), proj, view, camPos);
 
         // Content preview — first line(s), lazily loaded + cached on the book.
         String preview = previewLine(looked, room);
         if (preview != null) {
             Vector3f pvPos = new Vector3f(
-                looked.getWorldX(), looked.getWorldY() + 0.02f, looked.getWorldZ());
-            fontRenderer.renderBillboard(preview, pvPos, 0.03f,
+                looked.getWorldX(), looked.getWorldY() - 0.10f, looked.getWorldZ());
+            fontRenderer.renderBillboard(preview, pvPos, 0.05f,
                 new Vector3f(0.6f, 0.9f, 1.0f), proj, view, camPos);
         }
     }
@@ -1296,10 +1299,17 @@ public class GameEngine {
         Book looked = findBookInSights(room);
         if (looked == null) return;
 
-        // Draw a glowing outline cube around the book
+        // Glowing outline that WRAPS the book (was a 0.12 cube hidden inside
+        // the ~0.10×0.79×0.30 book, so it was invisible). Size to the book's
+        // real dimensions + a small halo margin.
         Vector3f pos = new Vector3f(looked.getWorldX(), looked.getWorldY(), looked.getWorldZ());
-        float s = 0.12f;
-        renderer.drawCube(pos, new Vector3f(s, s, s), Renderer.TEX_NEON_AMBER);
+        float bookH = 0.79f;   // matches WorldBuilder shelfSpacing * 0.75
+        float m = 0.03f;       // halo margin
+        if (looked.getWallDir() == 0) {
+            renderer.drawCube(pos, new Vector3f(0.10f + m, bookH + m, 0.30f + m), Renderer.TEX_NEON_AMBER);
+        } else {
+            renderer.drawCube(pos, new Vector3f(0.30f + m, bookH + m, 0.10f + m), Renderer.TEX_NEON_AMBER);
+        }
     }
 
     private void renderFloorSigns() {
