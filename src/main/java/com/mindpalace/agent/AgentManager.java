@@ -28,6 +28,7 @@ public class AgentManager {
     // Conversation histories — now managed by ModelLifespan (bounded + drift-corrected)
     private final ModelLifespan toolLifespan;
     private final ModelLifespan criticLifespan;
+    private final ModelLifespan chatLifespan;   // direct conversational thread
 
     // Current context
     private Room currentRoom;
@@ -55,6 +56,7 @@ public class AgentManager {
         // Budgets below each model's context ceiling (see ModelConfig)
         this.toolLifespan = new ModelLifespan(ollama, TOOL_MODEL, ModelConfig.TOOL_BUDGET, ModelConfig.DRIFT_THRESHOLD);
         this.criticLifespan = new ModelLifespan(ollama, CRITIC_MODEL, ModelConfig.CRITIC_BUDGET, ModelConfig.DRIFT_THRESHOLD);
+        this.chatLifespan = new ModelLifespan(ollama, ModelConfig.CHAT_MODEL, ModelConfig.TOOL_BUDGET, ModelConfig.DRIFT_THRESHOLD);
     }
 
     // ── Lifecycle ──
@@ -72,6 +74,7 @@ public class AgentManager {
         // Initialize system prompts
         toolLifespan.setSystemPrompt(TOOL_SYSTEM_PROMPT);
         criticLifespan.setSystemPrompt(CRITIC_SYSTEM_PROMPT);
+        chatLifespan.setSystemPrompt(CHAT_SYSTEM_PROMPT);
 
         // Start autonomous cycle
         scheduler.scheduleWithFixedDelay(this::autonomousCycle, 30, CYCLE_MS / 1000, TimeUnit.SECONDS);
@@ -103,31 +106,21 @@ public class AgentManager {
 
     // ── User chat ──
 
-    /** User sends a message — agents respond (serialized, 5-min spaced). */
+    /** User sends a message — the guide replies directly (immediate, no 5-min wait). */
     public void onUserChat(String message) {
         if (!available || !running) return;
         this.lastUserMessage = message;
 
         String context = buildContext();
-        String toolPrompt = context + "\n\nUser says: " + message
-            + "\n\nRespond helpfully. If the user wants to modify code, propose specific changes.";
+        String prompt = context.isEmpty() ? message : context + "\n\nPlayer says: " + message;
 
-        // Tool agent first (through the scheduler — one call at a time)
-        modelScheduler.submit(TOOL_MODEL, toolPrompt, toolLifespan)
-            .thenAccept(toolResp -> {
-                if (toolResp != null && !toolResp.isEmpty()) {
-                    emit(onToolMessage, "[Tool Agent] " + toolResp);
+        // Direct conversational reply via the chat model, on the IMMEDIATE path
+        // (bypasses the 5-min spacing gate so the player isn't left waiting).
+        modelScheduler.submitImmediate(ModelConfig.CHAT_MODEL, prompt, chatLifespan)
+            .thenAccept(resp -> {
+                if (resp != null && !resp.isEmpty()) {
+                    emit(onToolMessage, "[Guide] " + resp);
                 }
-                // Critic reviews AFTER tool completes (scheduler spaces it 5 min)
-                String criticPrompt = "The user said: " + message
-                    + "\nThe tool agent responded: " + (toolResp != null ? toolResp : "(no response)")
-                    + "\nProvide your critique and suggestions.";
-                modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
-                    .thenAccept(criticResp -> {
-                        if (criticResp != null && !criticResp.isEmpty()) {
-                            emit(onCriticMessage, "[Critic] " + criticResp);
-                        }
-                    });
             });
     }
 
@@ -298,6 +291,13 @@ public class AgentManager {
         "Discuss actual code — syntax, types, algorithms, libraries — not 'hidden repos'. " +
         "Be constructive and specific. You are running on " + CRITIC_MODEL + " via Ollama. " +
         "The current room and book context will be provided before each message.";
+
+    private static final String CHAT_SYSTEM_PROMPT =
+        "You are the MindPalace guide, a friendly AI companion in a 3D world where every room " +
+        "is a GitHub repository and every book is a file. Answer the player's questions " +
+        "directly and conversationally. If they ask about the current room or book, explain " +
+        "what that repo/file is about. Be concise, warm, and specific. You are running on " +
+        ModelConfig.CHAT_MODEL + " via Ollama.";
 
     // ── Getters ──
 

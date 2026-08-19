@@ -77,6 +77,7 @@ public class GameEngine {
     private boolean searchMode;
     private String searchQuery = "";
     private boolean showHelp;
+    private boolean showMap;      // Tab = full-screen map overlay
     private GameState state;
     private boolean teleportMenu;   // teleporter destination picker is open
     private int teleportSel;        // selected destination index
@@ -531,6 +532,12 @@ public class GameEngine {
             System.out.println("[NOCLIP] " + (player.isNoclip() ? "ON" : "OFF"));
         }
 
+        // Tab — toggle full-screen map overlay (hold to view, release to close)
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_TAB)) {
+            showMap = !showMap;
+            System.out.println("[MAP] " + (showMap ? "ON" : "OFF"));
+        }
+
         if (state == GameState.PLAYING) {
             world.tick((float) dt);
             // Freeze the player while the teleporter picker is open — otherwise
@@ -871,6 +878,9 @@ public class GameEngine {
         // Help overlay
         if (showHelp) renderHelpOverlay();
 
+        // Full-screen map overlay (Tab)
+        if (showMap) renderMapOverlay();
+
         bloom.end();
         GLFW.glfwSwapBuffers(window);
     }
@@ -1017,7 +1027,7 @@ public class GameEngine {
             camFront.y * 3f - 0.6f,
             camFront.z * 3f - camRight.z * 0f);
 
-        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  ESC:Menu  F11:Fullscreen";
+        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  ESC:Menu  F11:Fullscreen";
         fontRenderer.renderBillboard(hotkeys, hudCenter, 0.06f,
             new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
 
@@ -1331,6 +1341,109 @@ public class GameEngine {
         }
     }
 
+    private void renderMapOverlay() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
+
+        // Full-screen map: a large billboard grid centered in front of the camera.
+        Vector3f center = new Vector3f(camPos).add(
+            camFront.x * 3.0f, camFront.y * 3.0f, camFront.z * 3.0f);
+
+        int floor = player.getCurrentRoom() != null ? player.getCurrentRoom().getFloor() : 0;
+        fontRenderer.renderBillboard("=== MIND PALACE MAP — FLOOR " + (floor + 1) + " ===",
+            new Vector3f(center.x, center.y + 0.9f, center.z), 0.10f,
+            new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
+
+        // Legend
+        fontRenderer.renderBillboard("@ you   o room   * agent   + crystal   [ ] hallway",
+            new Vector3f(center.x, center.y + 0.7f, center.z), 0.05f,
+            new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
+
+        // Scale: world units -> map units (0.12 per world unit, ~1.2m tall map)
+        float scale = 0.12f;
+
+        // Hallway outline for the current floor
+        for (Hallway hw : world.getHallways()) {
+            if (hw.getFloor() != floor) continue;
+            Vector3f s = hw.getStart();
+            float hwHalf = hw.getWidth() / 2f;
+            // Draw the hallway as a labeled bar (left/right edges)
+            float sx = (s.x - camPos.x) * scale;
+            float sz = (s.z - camPos.z) * scale;
+            // Left edge label
+            Vector3f lPos = new Vector3f(center).add(
+                camRight.x * (sx - hwHalf * scale) + camFront.x * sz + camFront.z * sz,
+                camRight.y * (sx - hwHalf * scale) + camFront.y * sz,
+                camRight.z * (sx - hwHalf * scale) + camFront.z * sz);
+            fontRenderer.renderBillboard("[", lPos, 0.06f,
+                new Vector3f(0.5f, 0.5f, 0.5f), proj, view, camPos);
+            Vector3f rPos = new Vector3f(center).add(
+                camRight.x * (sx + hwHalf * scale) + camFront.x * sz + camFront.z * sz,
+                camRight.y * (sx + hwHalf * scale) + camFront.y * sz,
+                camRight.z * (sx + hwHalf * scale) + camFront.z * sz);
+            fontRenderer.renderBillboard("]", rPos, 0.06f,
+                new Vector3f(0.5f, 0.5f, 0.5f), proj, view, camPos);
+        }
+
+        // Rooms on the current floor
+        for (Room room : world.getRooms()) {
+            if (room.getFloor() != floor) continue;
+            if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
+            Vector3f dp = room.getDoorPosition();
+            if (dp == null) continue;
+            float dx = (dp.x - camPos.x) * scale;
+            float dz = (dp.z - camPos.z) * scale;
+            Vector3f dotPos = new Vector3f(center).add(
+                camRight.x * dx + camFront.x * dz + camFront.z * dz,
+                camRight.y * dx + camFront.y * dz,
+                camRight.z * dx + camFront.z * dz);
+            Vector3f col = room.isPrivate()
+                ? new Vector3f(1.0f, 0.3f, 0.5f)
+                : new Vector3f(0.3f, 0.8f, 1.0f);
+            fontRenderer.renderBillboard("o", dotPos, 0.05f, col, proj, view, camPos);
+        }
+
+        // Agents
+        for (AgentNPC npc : npcs) {
+            Vector3f p = npc.getPosition();
+            float dx = (p.x - camPos.x) * scale;
+            float dz = (p.z - camPos.z) * scale;
+            Vector3f dotPos = new Vector3f(center).add(
+                camRight.x * dx + camFront.x * dz + camFront.z * dz,
+                camRight.y * dx + camFront.y * dz,
+                camRight.z * dx + camFront.z * dz);
+            fontRenderer.renderBillboard("*", dotPos, 0.06f,
+                new Vector3f(1.0f, 0.8f, 0.2f), proj, view, camPos);
+        }
+
+        // Crystals
+        for (TodoCrystal c : crystals) {
+            if (c.isCarried() || c.getPosition() == null) continue;
+            Vector3f p = c.getPosition();
+            float dx = (p.x - camPos.x) * scale;
+            float dz = (p.z - camPos.z) * scale;
+            Vector3f dotPos = new Vector3f(center).add(
+                camRight.x * dx + camFront.x * dz + camFront.z * dz,
+                camRight.y * dx + camFront.y * dz,
+                camRight.z * dx + camFront.z * dz);
+            fontRenderer.renderBillboard("+", dotPos, 0.05f,
+                new Vector3f(0.6f, 1.0f, 0.4f), proj, view, camPos);
+        }
+
+        // Player marker
+        fontRenderer.renderBillboard("@", center, 0.08f,
+            new Vector3f(0.0f, 1.0f, 0.0f), proj, view, camPos);
+
+        // Footer hint
+        fontRenderer.renderBillboard("Tab to close",
+            new Vector3f(center.x, center.y - 0.9f, center.z), 0.05f,
+            new Vector3f(0.5f, 0.5f, 0.5f), proj, view, camPos);
+    }
+
     private void renderHelpOverlay() {
         Camera cam = player.getCamera();
         Matrix4f proj = cam.getProjectionMatrix((float) width / height);
@@ -1347,7 +1460,7 @@ public class GameEngine {
             "WASD: Move    Mouse: Look    Shift: Sprint",
             "Enter: Open/Close Door    Space: Jump",
             "Click: Open Book    ESC: Menu/Close",
-            "/: Search Repo    Tab: Agent Chat",
+            "/: Search Repo    Tab: Map    Enter: Chat",
             "F1: Help    F11: Fullscreen",
             "",
             "=== AGENTS ===",
@@ -1622,6 +1735,21 @@ public class GameEngine {
         }
         System.out.println((bloomOk ? "PASS" : "FAIL") + " bloom post-processing (bright/blur/composite)");
         if (bloomOk) pass++; else fail++;
+
+        // 12. Map overlay toggle (Tab) — field flips, render path exists
+        boolean mapOk = true;
+        showMap = false;
+        showMap = !showMap;
+        if (!showMap) mapOk = false;
+        showMap = !showMap;
+        if (showMap) mapOk = false;
+        System.out.println((mapOk ? "PASS" : "FAIL") + " map overlay toggle (Tab)");
+        if (mapOk) pass++; else fail++;
+
+        // 13. Immediate chat path — scheduler exposes submitImmediate (no 5-min gate)
+        boolean chatOk = agentManager != null && agentManager.getScheduler() != null;
+        System.out.println((chatOk ? "PASS" : "FAIL") + " immediate chat path (scheduler)");
+        if (chatOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);

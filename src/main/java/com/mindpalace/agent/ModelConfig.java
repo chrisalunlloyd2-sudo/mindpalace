@@ -20,6 +20,12 @@ public final class ModelConfig {
     /** Code-suggestion model for the in-game book editor (small + fast). */
     public static final String CODE_MODEL = "qwen2.5:0.5b";
 
+    /**
+     * Direct conversational model for user chat. A mid-size model that answers
+     * the player promptly (immediate path, no 5-min spacing) and holds a thread.
+     */
+    public static final String CHAT_MODEL = "llama3.2:3b";
+
     /** Embedding model for drift detection + RAG memory. */
     public static final String EMBED_MODEL = "nomic-embed-text";
 

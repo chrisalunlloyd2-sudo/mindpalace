@@ -44,8 +44,9 @@ public class ModelScheduler {
         final String prompt;
         final ModelLifespan lifespan; // may be null (stateless)
         final CompletableFuture<String> future;
-        Job(String m, String p, ModelLifespan l, CompletableFuture<String> f) {
-            model = m; prompt = p; lifespan = l; future = f;
+        final boolean immediate;      // skip the 5-min spacing gate (user chat)
+        Job(String m, String p, ModelLifespan l, CompletableFuture<String> f, boolean imm) {
+            model = m; prompt = p; lifespan = l; future = f; immediate = imm;
         }
     }
 
@@ -56,23 +57,39 @@ public class ModelScheduler {
 
     /** Submit a chat request. Returns a future that completes when it runs. */
     public CompletableFuture<String> submit(String model, String prompt, ModelLifespan lifespan) {
+        return enqueue(model, prompt, lifespan, false);
+    }
+
+    /**
+     * Submit a chat request that BYPASSES the 5-minute spacing gate. Used for
+     * user-initiated chat so a reply arrives promptly instead of sitting in the
+     * queue for up to 5 minutes (which made chat look dead). Still serialized
+     * on the single worker thread, so it never runs concurrently with another
+     * model call — it just skips the artificial spacing sleep.
+     */
+    public CompletableFuture<String> submitImmediate(String model, String prompt, ModelLifespan lifespan) {
+        return enqueue(model, prompt, lifespan, true);
+    }
+
+    private CompletableFuture<String> enqueue(String model, String prompt, ModelLifespan lifespan, boolean immediate) {
         CompletableFuture<String> f = new CompletableFuture<>();
-        queue.add(new Job(model, prompt, lifespan, f));
+        queue.add(new Job(model, prompt, lifespan, f, immediate));
         queueDepth.set(queue.size());
         return f;
     }
 
-    /** The single drain loop — one call at a time, spaced 5 min apart. */
+    /** The single drain loop — one call at a time, spaced 5 min apart (unless immediate). */
     private void drainLoop() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 Job job = queue.take();
                 queueDepth.set(queue.size());
 
-                // Enforce spacing: wait until spacingMs since the last call
+                // Enforce spacing: wait until spacingMs since the last call.
+                // Immediate jobs (user chat) skip this wait.
                 long now = System.currentTimeMillis();
                 long sinceLast = now - lastCallAt.get();
-                if (sinceLast < spacingMs) {
+                if (!job.immediate && sinceLast < spacingMs) {
                     long wait = spacingMs - sinceLast;
                     lastStatus = "spacing " + (wait / 1000) + "s";
                     Thread.sleep(wait);
