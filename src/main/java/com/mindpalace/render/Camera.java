@@ -10,7 +10,7 @@ public class Camera {
     private Vector3f position;
     private float yaw, pitch;
     private float fov = 70.0f;
-    private float sensitivity = 0.08f;
+    private float sensitivity = 0.15f;
     private boolean invertY = false;
     private float near = 0.1f, far = 200.0f;
 

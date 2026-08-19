@@ -776,7 +776,7 @@ public class GameEngine {
         switch (menuPage) {
             case 1: // video
                 if (sel == 0) player.getCamera().setFov(clamp(player.getCamera().getFov() + dir * 5f, 50f, 120f));
-                if (sel == 1) player.getCamera().setSensitivity(clamp(player.getCamera().getSensitivity() + dir * 0.01f, 0.02f, 0.3f));
+                if (sel == 1) player.getCamera().setSensitivity(clamp(player.getCamera().getSensitivity() + dir * 0.02f, 0.02f, 0.6f));
                 if (sel == 2) toggleFullscreen();
                 if (sel == 3 && bloom != null) bloom.setIntensity(clamp(bloom.getIntensity() + dir * 0.1f, 0f, 2f));
                 if (sel == 4 && bloom != null) bloom.setThreshold(clamp(bloom.getThreshold() + dir * 0.05f, 0f, 1f));
@@ -1795,6 +1795,20 @@ public class GameEngine {
         boolean chatOk = agentManager != null && agentManager.getScheduler() != null;
         System.out.println((chatOk ? "PASS" : "FAIL") + " immediate chat path (scheduler)");
         if (chatOk) pass++; else fail++;
+
+        // 14. Mouse look / turn radius — a full 180° turn must be reachable with
+        //     a modest mouse drag (the "can't turn around at a wall" bug).
+        boolean lookOk = true;
+        float sens = player.getCamera().getSensitivity();
+        float yaw0 = player.getCamera().getYaw();
+        // 1200px drag at current sensitivity should sweep well past 180°
+        player.getCamera().rotate(1200f, 0f);
+        float turned = Math.abs(player.getCamera().getYaw() - yaw0);
+        if (turned < 90f) lookOk = false; // can't even turn a quarter-turn
+        player.getCamera().setYaw(yaw0);
+        System.out.println((lookOk ? "PASS" : "FAIL") + " mouse look turn radius ("
+            + String.format("%.0f", turned) + "° from 1200px @ sens " + String.format("%.2f", sens) + ")");
+        if (lookOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);
