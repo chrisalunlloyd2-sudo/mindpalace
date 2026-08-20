@@ -59,20 +59,36 @@ editor with a keystroke. The databases grow massive — that's the point.
 **Phase 1.x — COMPLETE** (the palace interior):
 
 - 3D first-person engine (LWJGL 3 + OpenGL 3.3, Phong lighting + distance fog)
-- 136 rooms across 8 hallways, mapped to real GitHub repos (sorted by size)
+- 137 rooms across 9 hallways, mapped to real GitHub repos (sorted by size)
 - Wooden bookcases on 3 walls per room, books grouped by language
 - Color-coded book spines (blue=Python, yellow=JS, green=Java, red=C++,
   orange=HTML, grey=Shell, cream=Markdown)
 - Readable neon signs above every door (cyan=public, pink=private)
 - **Glowing neon door frames** — pulsing trim + halo around each doorway
 - **Teleporter pads** (pulsing cyan portals) between floors — replaced stairs
+- **Bloom post-processing** — bright-pass + blur + composite, live-tunable
+  intensity (0.0–2.0) and threshold from the Video menu
+- **Room personality** — each room tints its walls/floor/ceiling by dominant
+  language (Java green, Python blue, Rust rust-orange, Ruby pink, Go cyan,
+  C++ red); 113/137 rooms get a distinct accent
+- **Repo poster board** — dark plate above each door with repo name, language,
+  and star count
+- **90s polygon avatars** — agents have geometric heads with role-colored
+  visors, tapered torsos, articulated arms/legs, walk-cycle swing, idle bob,
+  and facing orientation
 - Hardwood floors, wallpaper, exit signs, crown molding, baseboard trim
 - Table + chairs, potted plant + floor lamp in every room
+- **Clickable plant facts** — click the potted plant for a random tech-history
+  fact toast (15 facts: first computer bug, Git's 10-day creation, Ada
+  Lovelace, Apollo 11, …)
+- **Telemetry panel** — real-time clock, KG stats, model telemetry (last model,
+  total calls, avg latency, queue depth)
 - Retro terminal book editor (view/edit/create/delete/suggest)
 - GitHub PAT auto-loaded from Windows Credential Manager; full CRUD synced
 - Frustum + distance culling, acceleration/friction movement, wall collision
 - Font renderer (bitmap atlas, wall/floor/billboard modes)
-- On-screen HUD (hotkey bar + room info), minimap, F1 help overlay
+- On-screen HUD (hotkey bar + room info), minimap, **Tab full-map overlay**,
+  F1 help overlay
 - Synthesized audio (footsteps, door creak, ambient hum)
 - Search/filter (`/` key to jump to any repo)
 - **Fog of War** — hex-grid reveal; private/remote repos hidden until explored
@@ -81,10 +97,14 @@ editor with a keystroke. The databases grow massive — that's the point.
 - **Knowledge Graph** — rooms as nodes, adjacency edges, district clustering
 - **TODO crystals** — TODO/FIXME/HACK comments → hex crystals (height = complexity)
 - **Lab devices** — test files → glowing devices (green=pass, red=fail)
-- **Always-on chat HUD** — agents' reasoning surfaced as they work
+- **Always-on chat HUD** — agents' reasoning surfaced as they work; Enter to
+  chat back (immediate path, no 5-min spacing)
 - **Backup + Memory** — cold backup to D:, never-make-code-twice / never-make-mistakes-twice SQLite DBs
 - **Model Lifespan** — token-budgeted context, drift detection, rolling summary, RAG memory
 - **Live patching** — drop a `patch.json` and the game ships rooms/books/texts/graphics without restarting
+- **Self-test harness** — `--selftest` runs 16 automated checks (world, books,
+  teleporters, agents, crystals, KG, font, editor, bloom, invert-Y, map,
+  chat, mouse turn radius, room personality, finesse) and exits 0/1
 
 ---
 
@@ -158,6 +178,7 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
 | Flag | Effect |
 |------|--------|
 | `--autodrive <dir>` | Scripted walkthrough that captures PNG frames to `<dir>` (lets an agent SEE the world) |
+| `--selftest` | Run 16 automated checks headlessly, print PASS/FAIL, exit 0/1 (CI gate) |
 
 ---
 
@@ -168,8 +189,9 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
 | WASD | Move |
 | Mouse | Look around |
 | Space | Jump |
-| Enter | Open door / exit room |
-| Left Click | Click book to open editor |
+| Enter | Open door / exit room / send chat |
+| Left Click | Click book to open editor / click plant for a fact |
+| Tab | Toggle full-map overlay |
 | ESC | Toggle menu / close editor |
 | F1 | Help overlay |
 | F3 | Toggle noclip (free-fly: Space/Shift up/down, no collision) |
@@ -308,6 +330,9 @@ mindpalace/
 ├── pom.xml
 ├── README.md
 ├── ROADMAP.md
+├── BLUEPRINT.md            # architecture + ASCII data-flow charts
+├── BUILD_STRATEGY.md       # build/bloom/release recipe
+├── BLACKBOARD.md           # living phase plan
 ├── PATCHING.md
 ├── patches/
 │   └── patch.json          # live patch manifest
@@ -414,18 +439,31 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 
 ---
 
+## Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| `README.md` | This file — overview, quick start, controls, gameplay |
+| `BLUEPRINT.md` | Architecture + **ASCII data-flow charts** of the real code paths (model chat, book click, rendering, live patch, fog-of-war) + diagnosis of known problems with proposed fixes |
+| `ROADMAP.md` | Full phased plan (A–H) |
+| `BUILD_STRATEGY.md` | Exact build command, jar-lock rule, self-test gate, bloom testing, release-upload recipe |
+| `BLACKBOARD.md` | Living phase tracker |
+| `PATCHING.md` | Live-patch schema + graphics hot-tuning |
+
+---
+
 ## Roadmap
 
 See `ROADMAP.md` for the full phased plan. Highlights:
 
-- **Phase 2** — Book hover preview, more decor, player stats, elevator
-- **Phase 3** — Laboratory: create/fork repos, code microscope, CI/CD viz
-- **Phase 4** — Courtyard: fountain, bar, safe (AES-256)
-- **Phase 5** — The Outside: grass, sun, trees, lake, lakehouse, weather sync
-- **Phase 6** — Curie the Cat (separate repo)
-- **Phase 7** — Forge Room & 3D Creator (block building, texture import)
-- **Phase 8** — Multiplayer (UDP, position sync, collaborative editing)
-- **Phase 9** — Polish & Release (installer, auto-updater, real textures)
+- **Phase A** — Map overlay + immediate chat (DONE)
+- **Phase B** — 90s polygon avatars (DONE)
+- **Phase C** — Room personality + repo poster boards (DONE)
+- **Phase D** — Finesse: plant facts, telemetry panel (DONE)
+- **Phase E** — Procedural MIDI music + Beats StudioLab
+- **Phase F** — Outside world streaming (render small chunks at once)
+- **Phase G** — Teleporter graphics upgrade (particle swirl, glow, animated pad)
+- **Phase H** — Exe installer (jpackage native .exe)
 
 ---
 
