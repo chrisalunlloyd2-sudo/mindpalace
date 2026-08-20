@@ -165,6 +165,9 @@ public class AgentManager {
         StringBuilder sb = new StringBuilder();
         sb.append("Fog of war: ").append(discoveredRepos.size())
           .append(" repos discovered so far. Hidden repos remain unexplored.\n");
+        if (lastUserMessage != null && !lastUserMessage.isEmpty()) {
+            sb.append("Last player message: ").append(lastUserMessage).append("\n");
+        }
         if (currentRoom != null) {
             sb.append("Current room: ").append(currentRoom.getRepoName())
               .append(" (").append(currentRoom.getLanguage()).append(")")
@@ -177,8 +180,10 @@ public class AgentManager {
               .append(currentBook.getSizeBytes()).append(" bytes)\n");
             if (currentBook.getContent() != null && !currentBook.getContent().isEmpty()) {
                 String content = currentBook.getContent();
-                if (content.length() > 2000) content = content.substring(0, 2000) + "...";
-                sb.append("Book content:\n```\n").append(content).append("\n```\n");
+                // Truncate hard — a 2000-char excerpt ate ~25% of the small
+                // model's token budget before it even saw the question.
+                if (content.length() > 500) content = content.substring(0, 500) + "...";
+                sb.append("Book content (excerpt):\n```\n").append(content).append("\n```\n");
             }
         }
         return sb.toString();
