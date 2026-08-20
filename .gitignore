@@ -4,3 +4,6 @@ target/
 readtext.py
 patches/applied.json
 playtest*.log
+
+# model chat logs -> private repo (not public)
+chat_logs/
