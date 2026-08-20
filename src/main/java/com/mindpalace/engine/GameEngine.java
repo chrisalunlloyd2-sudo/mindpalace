@@ -108,6 +108,27 @@ public class GameEngine {
     private int tourPhase;          // which leg of the scripted tour
     private boolean selfTest;       // autonomous self-test mode
 
+    // Phase D — finesse: clickable plant fact + telemetry panel
+    private String factToast = "";
+    private double factToastTimer;
+    private static final String[] FACTS = {
+        "The first computer bug was a real moth, taped into a logbook in 1947.",
+        "Git was created by Linus Torvalds in 2005, in about 10 days.",
+        "The first 'Hello, World!' appeared in Kernighan & Ritchie's C book (1978).",
+        "A quine is a program that prints its own source code.",
+        "The term 'bug' predates computers — Edison used it in 1878.",
+        "There are more possible chess games than atoms in the observable universe.",
+        "The first website is still online at info.cern.ch.",
+        "Python is named after Monty Python, not the snake.",
+        "The QWERTY layout was designed to slow typists down (to avoid jams).",
+        "A 'commit' in Git is a snapshot, not a diff.",
+        "The first hard drive (1956) held 5MB and weighed over a ton.",
+        "Ada Lovelace wrote the first algorithm intended for a machine (1843).",
+        "The Apollo 11 guidance computer had less power than a modern calculator.",
+        "JavaScript was created in 10 days by Brendan Eich in 1995.",
+        "The '@' symbol was chosen for email because it was rarely used.",
+    };
+
     public void run() {
         init();
         if (selfTest) { runSelfTest(); cleanup(); return; }
@@ -434,6 +455,9 @@ public class GameEngine {
     private void update(double dt) {
         input.update(dt);
 
+        // Fact toast timer (Phase D)
+        if (factToastTimer > 0) factToastTimer -= dt;
+
         // Idle detection: mark activity on any input (non-draining — does NOT
         // consume mouse deltas, so Player still gets look left/right)
         if (idleDetector != null) {
@@ -597,6 +621,11 @@ public class GameEngine {
                     }
                     state = GameState.BOOK_VIEW;
                     input.setCursorCaptured(false);
+                } else if (lookingAtPlant(player.getCurrentRoom())) {
+                    // Phase D finesse — click the potted plant for a random fact
+                    factToast = FACTS[(int) (Math.random() * FACTS.length)];
+                    factToastTimer = 6.0;
+                    System.out.println("[CLICK] plant fact: " + factToast);
                 } else {
                     System.out.println("[CLICK] no book in sights (room "
                         + player.getCurrentRoom().getRepoName() + ", "
@@ -712,6 +741,23 @@ public class GameEngine {
         int n = 0;
         for (Book b : room.getBooks()) if (b.isPlaced()) n++;
         return n;
+    }
+
+    /** Is the player looking at the room's potted plant? (Phase D finesse). */
+    private boolean lookingAtPlant(Room room) {
+        Vector3f c = room.getRoomCenter();
+        float w = Room.ROOM_WIDTH, d = Room.ROOM_DEPTH, h = Room.ROOM_HEIGHT;
+        int side = room.getHallwaySide();
+        float floorY = c.y - h / 2f;
+        float plantX = c.x - w / 2f + 0.6f;
+        float plantZ = side == 0 ? c.z + d / 2f - 0.6f : c.z - d / 2f + 0.6f;
+        Vector3f plant = new Vector3f(plantX, floorY + 0.55f, plantZ);
+        Vector3f origin = player.getPosition();
+        Vector3f dir = player.getLookDirection();
+        // Forgiving: within 1.5m and roughly in front
+        if (origin.distance(plant) > 1.5f) return false;
+        Vector3f to = new Vector3f(plant).sub(origin).normalize();
+        return dir.dot(to) > 0.85f;
     }
 
     /** Handle the teleporter destination picker (up/down/enter/number keys). */
@@ -852,6 +898,8 @@ public class GameEngine {
             renderBookTooltip();
             renderBookHighlight();
             renderFloorSigns();
+            renderTelemetryPanel();
+            renderFactToast();
         }
 
         if (state == GameState.PLAYING) {
@@ -1215,6 +1263,58 @@ public class GameEngine {
             0.12f, color, proj, view, facing);
         fontRenderer.renderText(lang + "  " + stars, new Vector3f(c.x, posterY - 0.12f, posterZ),
             0.08f, new Vector3f(0.9f, 0.9f, 0.9f), proj, view, facing);
+    }
+
+    /** Phase D — side telemetry panel: clock, KG stats, model telemetry. */
+    private void renderTelemetryPanel() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
+
+        // Panel anchored to the left of the view, 2.5m out
+        Vector3f base = new Vector3f(camPos).add(
+            camFront.x * 2.5f - camRight.x * 1.4f,
+            camFront.y * 2.5f + 0.35f,
+            camFront.z * 2.5f - camRight.z * 1.4f);
+
+        // Clock
+        String clock = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
+        fontRenderer.renderBillboard(clock, base, 0.07f,
+            new Vector3f(0.9f, 0.9f, 0.9f), proj, view, camPos);
+
+        // KG stats
+        String kg = "KG " + (knowledgeGraph != null ? knowledgeGraph.nodeCount() : 0)
+            + " nodes / " + (knowledgeGraph != null ? knowledgeGraph.edgeCount() : 0) + " edges";
+        fontRenderer.renderBillboard(kg, new Vector3f(base.x, base.y - 0.12f, base.z), 0.04f,
+            new Vector3f(0.5f, 0.9f, 0.5f), proj, view, camPos);
+
+        // Model telemetry
+        if (agentManager != null && agentManager.getScheduler() != null) {
+            var s = agentManager.getScheduler();
+            String model = s.getLastModel().isEmpty() ? "idle" : s.getLastModel();
+            String tel = "model " + model + " | " + s.getTotalCalls() + " calls | "
+                + s.getAvgLatencyMs() + "ms avg | q" + s.getQueueDepth();
+            fontRenderer.renderBillboard(tel, new Vector3f(base.x, base.y - 0.24f, base.z), 0.04f,
+                new Vector3f(0.6f, 0.8f, 1.0f), proj, view, camPos);
+        }
+    }
+
+    /** Phase D — fact toast (from clicking the potted plant). */
+    private void renderFactToast() {
+        if (factToastTimer <= 0 || factToast.isEmpty()) return;
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+
+        Vector3f pos = new Vector3f(camPos).add(new Vector3f(camFront).mul(2.2f));
+        pos.y -= 0.3f;
+        fontRenderer.renderBillboard("\u2605 " + factToast, pos, 0.05f,
+            new Vector3f(1.0f, 0.9f, 0.4f), proj, view, camPos);
     }
 
     private void renderTeleportMenu() {
@@ -1858,6 +1958,12 @@ public class GameEngine {
         System.out.println((personalityOk ? "PASS" : "FAIL") + " room personality ("
             + tinted + "/" + world.getRooms().size() + " rooms tinted)");
         if (personalityOk) pass++; else fail++;
+
+        // 16. Phase D finesse — fact bank + plant click + telemetry panel present
+        boolean finesseOk = FACTS.length > 0 && knowledgeGraph != null;
+        System.out.println((finesseOk ? "PASS" : "FAIL") + " finesse ("
+            + FACTS.length + " facts, KG " + (knowledgeGraph != null ? knowledgeGraph.nodeCount() : 0) + " nodes)");
+        if (finesseOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);
