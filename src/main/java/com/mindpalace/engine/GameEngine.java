@@ -694,36 +694,21 @@ public class GameEngine {
     private Book findBookInSights(Room room) {
         Vector3f origin = player.getPosition();
         Vector3f dir = player.getLookDirection();
-        float bookW = 0.10f;
-        float bookD = 0.30f;
-        // Forgiving click target: books are tiny (10cm) and the user has poor
-        // vision — inflate the hitbox so a near-miss still opens the book.
-        float margin = 0.08f;
-        float caseHeight = Room.ROOM_HEIGHT - 0.2f;
-        float shelfSpacing = (caseHeight - 0.12f) / 3f; // matches WorldBuilder (pt = 0.06)
-        float bookH = shelfSpacing * 0.75f;
+        // Forgiving click cone: books are tiny (10cm) so a precise AABB raycast
+        // is nearly impossible to hit with a mouse (the old slab test only hit
+        // ~44% of books even when aimed dead-center). Use an angular cone with a
+        // nearest-book tiebreaker instead — robust for both hover and click.
+        final float COS_CONE = 0.9976f; // ~4° half-angle
         Book best = null;
-        float bestT = Float.MAX_VALUE;
+        float bestDist = Float.MAX_VALUE;
         for (Book book : room.getBooks()) {
             if (!book.isPlaced()) continue;
-            float bx = book.getWorldX(), by = book.getWorldY(), bz = book.getWorldZ();
-            // Books on side walls (wallDir ±1) are rotated 90°: width along Z,
-            // depth along X. The back wall (wallDir 0) is width along X, depth Z.
-            float minX, maxX, minZ, maxZ;
-            if (book.getWallDir() == 0) {
-                minX = bx - bookW / 2f - margin; maxX = bx + bookW / 2f + margin;
-                minZ = bz - bookD / 2f - margin; maxZ = bz + bookD / 2f + margin;
-            } else {
-                minX = bx - bookD / 2f - margin; maxX = bx + bookD / 2f + margin;
-                minZ = bz - bookW / 2f - margin; maxZ = bz + bookW / 2f + margin;
-            }
-            Vector3f hit = rayAABB(origin, dir,
-                minX, by - bookH / 2f - margin, minZ,
-                maxX, by + bookH / 2f + margin, maxZ);
-            if (hit != null) {
-                float t = hit.distance(origin);
-                if (t < bestT) { bestT = t; best = book; }
-            }
+            Vector3f to = new Vector3f(book.getWorldX(), book.getWorldY(), book.getWorldZ()).sub(origin);
+            float dist = to.length();
+            if (dist < 0.1f || dist > 10f) continue;
+            to.normalize();
+            if (dir.dot(to) < COS_CONE) continue;
+            if (dist < bestDist) { bestDist = dist; best = book; }
         }
         return best;
     }
@@ -1774,7 +1759,7 @@ public class GameEngine {
         for (Room room : world.getRooms()) {
             if (room.getDoorPosition() != null) world.getFogOfWar().reveal(room.getDoorPosition());
         }
-        int roomsWithBooks = 0, clickableRooms = 0, totalBooks = 0, clickableBooks = 0;
+        int roomsWithBooks = 0, clickableRooms = 0, totalBooks = 0, placedBooks = 0, clickableBooks = 0;
         for (Room room : world.getRooms()) {
             if (room.getBooks().isEmpty()) continue;
             roomsWithBooks++;
@@ -1786,6 +1771,7 @@ public class GameEngine {
             boolean anyHit = false;
             for (Book b : room.getBooks()) {
                 if (!b.isPlaced()) continue;
+                placedBooks++;
                 Vector3f o = player.getPosition();
                 Vector3f to = new Vector3f(b.getWorldX(), b.getWorldY(), b.getWorldZ()).sub(o);
                 if (to.lengthSquared() < 0.0001f) continue;
@@ -1797,9 +1783,13 @@ public class GameEngine {
             if (anyHit) clickableRooms++;
         }
         System.out.println((clickableRooms > 0 ? "PASS" : "FAIL")
-            + " books clickable: " + clickableBooks + "/" + totalBooks
-            + " books hit across " + clickableRooms + "/" + roomsWithBooks + " rooms");
-        if (clickableRooms > 0) pass++; else fail++;
+            + " books clickable: " + clickableBooks + "/" + placedBooks
+            + " placed books hit across " + clickableRooms + "/" + roomsWithBooks + " rooms");
+        // Require a HIGH hit rate against PLACED books — the old AABB raycast
+        // only hit ~44% even when aimed dead-center, which is why books "didn't
+        // click" in-game. The cone test should hit essentially every placed book.
+        float hitRate = placedBooks > 0 ? (float) clickableBooks / placedBooks : 0f;
+        if (clickableRooms > 0 && hitRate >= 0.9f) pass++; else fail++;
 
         // 3. Teleporter pads exist (one per floor except top)
         int pads = 0;
