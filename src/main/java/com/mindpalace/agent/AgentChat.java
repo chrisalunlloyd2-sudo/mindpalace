@@ -6,11 +6,17 @@ import com.mindpalace.render.Camera;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import java.util.*;
+import java.io.*;
+import java.nio.file.*;
 
 /**
  * Always-on chat feed — renders the agent conversation at the top of the screen.
  * Press Enter to open a typing cursor and chat back; Enter again to send.
  * Messages auto-prune to a rolling window (theta curve) so the feed never grows.
+ *
+ * Every message is also appended to a JSONL chat log on disk
+ * (chat_logs/chat.jsonl) so the model conversations can be backed up to a
+ * private repo — the "LLM model chats" archive.
  */
 public class AgentChat {
     private final List<String> messages = new ArrayList<>();
@@ -19,6 +25,9 @@ public class AgentChat {
 
     private boolean typing;          // cursor is up, capturing input
     private final StringBuilder input = new StringBuilder();
+
+    // Chat persistence — append-only JSONL, one line per message.
+    private static final Path CHAT_LOG = Paths.get("chat_logs", "chat.jsonl");
 
     public AgentChat() {}
 
@@ -33,6 +42,22 @@ public class AgentChat {
         messages.add(clean);
         while (messages.size() > MAX_MESSAGES) messages.remove(0);
         System.out.println("[AgentChat] " + msg);
+        persist(msg);
+    }
+
+    /** Append a message to the on-disk JSONL chat log (best-effort, never throws). */
+    private void persist(String msg) {
+        try {
+            Files.createDirectories(CHAT_LOG.getParent());
+            String ts = java.time.Instant.now().toString();
+            // Minimal JSON escaping for the message text.
+            String esc = msg.replace("\\", "\\\\").replace("\"", "\\\"");
+            Files.writeString(CHAT_LOG, "{\"ts\":\"" + ts + "\",\"msg\":\"" + esc + "\"}\n",
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            // Chat must never crash the game over a log write.
+            System.err.println("[AgentChat] log write failed: " + e.getMessage());
+        }
     }
 
     /** Toggle typing mode. */
