@@ -50,8 +50,24 @@ public class AgentChat {
         try {
             Files.createDirectories(CHAT_LOG.getParent());
             String ts = java.time.Instant.now().toString();
-            // Minimal JSON escaping for the message text.
-            String esc = msg.replace("\\", "\\\\").replace("\"", "\\\"");
+            // Full JSON string escaping — models emit literal newlines/tabs, so
+            // escape every control char, not just backslash and quote.
+            StringBuilder esc = new StringBuilder(msg.length() + 16);
+            for (int i = 0; i < msg.length(); i++) {
+                char c = msg.charAt(i);
+                switch (c) {
+                    case '"':  esc.append("\\\""); break;
+                    case '\\': esc.append("\\\\"); break;
+                    case '\n': esc.append("\\n");  break;
+                    case '\r': esc.append("\\r");  break;
+                    case '\t': esc.append("\\t");  break;
+                    case '\b': esc.append("\\b");  break;
+                    case '\f': esc.append("\\f");  break;
+                    default:
+                        if (c < 0x20) esc.append(String.format("\\u%04x", (int) c));
+                        else esc.append(c);
+                }
+            }
             Files.writeString(CHAT_LOG, "{\"ts\":\"" + ts + "\",\"msg\":\"" + esc + "\"}\n",
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
