@@ -17,6 +17,7 @@ import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.audio.AudioEngine;
+import com.mindpalace.audio.MusicEngine;
 import com.mindpalace.agent.AgentManager;
 import com.mindpalace.agent.AgentChat;
 import com.mindpalace.deploy.DeployManager;
@@ -56,6 +57,7 @@ public class GameEngine {
     private BookEditor bookEditor;
     private GitHubClient github;
     private AudioEngine audio;
+    private MusicEngine music;
     private AgentManager agentManager;
     private AgentChat agentChat;
     private DeployManager deployManager;
@@ -82,7 +84,8 @@ public class GameEngine {
     private boolean teleportMenu;   // teleporter destination picker is open
     private int teleportSel;        // selected destination index
     private int menuSel;            // selected option in the ESC menu
-    private int menuPage;           // 0=main, 1=video, 2=controls, 3=audio, 4=agents
+    private int menuPage;           // 0=main, 1=video, 2=controls, 3=audio, 4=music, 5=agents
+    private int moodIdx;            // Beats StudioLab mood preset cursor
 
     private double lastFrameTime;
     private double accumulator;
@@ -209,6 +212,7 @@ public class GameEngine {
         hud = new HUD();
         audio = new AudioEngine();
         player.setAudio(audio);
+        music = new MusicEngine();
 
         loadingText = "Scanning repositories...";
         loadingProgress = 0.3f;
@@ -315,6 +319,7 @@ public class GameEngine {
         loading = false;
         input.setCursorCaptured(true);
         audio.playAmbientStart();
+        music.start();
 
         lastFrameTime = GLFW.glfwGetTime();
         accumulator = 0.0;
@@ -794,11 +799,12 @@ public class GameEngine {
 
     private int menuOptionCount() {
         switch (menuPage) {
-            case 0: return 6;  // Resume, Video, Controls, Audio, Agents, Quit
+            case 0: return 7;  // Resume, Video, Controls, Audio, Music, Agents, Quit
             case 1: return 5;  // FOV, Sensitivity, Fullscreen, Bloom intensity, Bloom threshold
             case 2: return 1;  // Invert Y (rest is informational)
             case 3: return 2;  // Master volume, Sound on/off
-            case 4: return 2;  // Auto-cycle interval, agent models (info)
+            case 4: return 6;  // Music on/off, volume, tempo, beat, scale, mood
+            case 5: return 2;  // Auto-cycle interval, agent models (info)
             default: return 1;
         }
     }
@@ -819,7 +825,32 @@ public class GameEngine {
                 if (sel == 0) audio.setMasterVolume(clamp(audio.getMasterVolume() + dir * 0.1f, 0f, 1f));
                 if (sel == 1) audio.setEnabled(!audio.isEnabled());
                 break;
+            case 4: // music (Beats StudioLab)
+                if (sel == 0) music.setEnabled(!music.isEnabled());
+                if (sel == 1) music.setVolume(clamp(music.getVolume() + dir * 0.1f, 0f, 1f));
+                if (sel == 2) music.setTempo(music.getTempo() + dir * 4);
+                if (sel == 3) music.setBeat(!music.isBeat());
+                if (sel == 4) cycleScale(dir);
+                if (sel == 5) cycleMood(dir);
+                break;
         }
+    }
+
+    private static final String[] SCALES = {"minor", "major", "dorian", "lydian", "mixolydian"};
+    private static final String[] MOODS = {"calm", "mysterious", "energetic", "dreamy"};
+
+    private void cycleScale(int dir) {
+        String cur = music.getScale();
+        int idx = 0;
+        for (int i = 0; i < SCALES.length; i++) if (SCALES[i].equals(cur)) idx = i;
+        idx = Math.floorMod(idx + dir, SCALES.length);
+        music.setScale(SCALES[idx]);
+    }
+
+    private void cycleMood(int dir) {
+        // Moods are presets; cycle through them and apply.
+        moodIdx = Math.floorMod(moodIdx + dir, MOODS.length);
+        music.setMood(MOODS[moodIdx]);
     }
 
     private void activateMenuOption(int sel, Input input) {
@@ -831,7 +862,8 @@ public class GameEngine {
                     case 2: menuPage = 2; menuSel = 0; break;
                     case 3: menuPage = 3; menuSel = 0; break;
                     case 4: menuPage = 4; menuSel = 0; break;
-                    case 5: GLFW.glfwSetWindowShouldClose(window, true); break;
+                    case 5: menuPage = 5; menuSel = 0; break;
+                    case 6: GLFW.glfwSetWindowShouldClose(window, true); break;
                 }
                 break;
             default:
@@ -1369,6 +1401,7 @@ public class GameEngine {
                     "Video",
                     "Controls",
                     "Audio",
+                    "Music",
                     "Agents",
                     "Quit"
                 };
@@ -1400,6 +1433,17 @@ public class GameEngine {
                     "(Enter to go back)"
                 };
             case 4:
+                return new String[]{
+                    "=== MUSIC (Beats StudioLab) ===",
+                    "Music: " + (music.isEnabled() ? "ON" : "OFF"),
+                    "Volume: " + (int) (music.getVolume() * 100) + "%",
+                    "Tempo: " + music.getTempo() + " BPM",
+                    "Beat: " + (music.isBeat() ? "ON" : "OFF"),
+                    "Scale: " + music.getScale(),
+                    "Mood: " + MOODS[moodIdx],
+                    "(Enter to go back)"
+                };
+            case 5:
                 return new String[]{
                     "=== AGENTS ===",
                     com.mindpalace.agent.ModelConfig.TOOL_MODEL + " (tool) + "
@@ -1686,6 +1730,7 @@ public class GameEngine {
         if (liveUpdateManager != null) liveUpdateManager.stop();
         if (deployManager != null) deployManager.shutdown();
         audio.cleanup();
+        music.cleanup();
         renderer.cleanup();
         bloom.cleanup();
         GLFW.glfwDestroyWindow(window);
@@ -1857,7 +1902,7 @@ public class GameEngine {
         // 10. ESC menu: pages render, navigation wraps, settings adjust live
         boolean menuOk = true;
         state = GameState.MENU; menuPage = 0; menuSel = 0;
-        if (menuOptionCount() != 6) menuOk = false;
+        if (menuOptionCount() != 7) menuOk = false;
         float fovBefore = player.getCamera().getFov();
         menuPage = 1; menuSel = 0;
         adjustMenuValue(0, 1); // FOV +5
@@ -1954,6 +1999,21 @@ public class GameEngine {
         System.out.println((finesseOk ? "PASS" : "FAIL") + " finesse ("
             + FACTS.length + " facts, KG " + (knowledgeGraph != null ? knowledgeGraph.nodeCount() : 0) + " nodes)");
         if (finesseOk) pass++; else fail++;
+
+        // 17. Phase E music — procedural engine present, live-tunable, mood presets
+        boolean musicOk = music != null;
+        if (musicOk) {
+            int tempoBefore = music.getTempo();
+            music.setTempo(tempoBefore + 4);
+            if (music.getTempo() != tempoBefore + 4) musicOk = false;
+            music.setTempo(tempoBefore);
+            music.setMood("energetic");
+            if (!music.isBeat()) musicOk = false; // energetic mood enables the beat
+            music.setMood("calm");
+            if (music.isBeat()) musicOk = false;  // calm mood disables the beat
+        }
+        System.out.println((musicOk ? "PASS" : "FAIL") + " music (procedural engine + live tuning + moods)");
+        if (musicOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);
