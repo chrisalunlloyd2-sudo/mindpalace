@@ -28,7 +28,40 @@
 
 ---
 
-## Phase 2 — Options Panel & Interactivity (NEXT)
+## Phase E — Procedural Music & Beats StudioLab (DONE)
+
+- [x] Procedural music engine (`MusicEngine`) — endless ambient soundtrack, no audio files
+- [x] Step-sequencer: pad (chord tones + LFO), arpeggio, bass line, optional beat (kick + hat)
+- [x] Live-tunable: key, tempo (BPM), scale (minor/major/dorian/lydian/mixolydian), beat on/off, volume
+- [x] Mood presets (calm / mysterious / energetic / dreamy) — one call sets tempo+scale+beat
+- [x] Beats StudioLab menu page (ESC → Music) — tune everything live in-game
+- [x] Self-test check 17 (procedural engine + live tuning + moods)
+
+---
+
+## Phase F — Outside World Streaming (NEXT)
+
+- [ ] Render the outside world in small chunks at once (streaming, not all-at-once)
+- [ ] Diablo/Zelda-style top-down view (low overhead)
+- [ ] Trees (Fibonacci), water, lake, sun, sunset, moon, day/night cycle
+- [ ] Local weather sync (real weather → in-game weather)
+
+---
+
+## Phase G — Teleporter Graphics Upgrade
+
+- [ ] Particle swirl, glow, animated pad
+
+---
+
+## Phase H — Exe Installer
+
+- [ ] jpackage native .exe installer
+- [ ] Auto-updater
+
+---
+
+## Phase 2 — Options Panel & Interactivity (partial — see below)
 
 ### 2.1 Exhaustive Options Panel (ESC)
 - [ ] Look sensitivity, invert Y, rebindable keys
