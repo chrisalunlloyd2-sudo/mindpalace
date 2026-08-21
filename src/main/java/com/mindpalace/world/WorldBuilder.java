@@ -266,24 +266,53 @@ public class WorldBuilder {
     }
 
     /**
-     * Teleporter — a pulsing cyan portal pad with a rising light beam.
-     * Replaces the old stairwell (which poked through the floor above and
-     * looked like a "block in the middle of the hall").
+     * Teleporter — a pulsing cyan portal pad with a rising light beam, a
+     * rotating glow ring, and a swirling particle column (Phase G upgrade).
+     * Replaces the old stairwell.
      */
     private void renderTeleporter(Renderer r, float floorY, float padZ) {
         float pulse = 0.5f + 0.5f * (float) Math.sin(time * 3.0f);
         float padY = floorY + 0.06f;
 
-        // Base ring (amber)
+        // Base ring (amber) — slightly larger so the glow ring sits on top
         r.drawCube(new Vector3f(0, padY, padZ), new Vector3f(2.0f, 0.08f, 2.0f), Renderer.TEX_NEON_AMBER);
-        // Inner pad (cyan, pulses)
+        // Inner pad (cyan, pulses) — concentric animated rings
         r.drawCube(new Vector3f(0, padY + 0.04f, padZ),
             new Vector3f(1.5f + pulse * 0.3f, 0.06f, 1.5f + pulse * 0.3f), Renderer.TEX_NEON_CYAN);
+        // Inner bright core (white-hot center)
+        r.drawCube(new Vector3f(0, padY + 0.07f, padZ),
+            new Vector3f(0.7f + pulse * 0.2f, 0.05f, 0.7f + pulse * 0.2f), Renderer.TEX_WHITE);
+
         // Rising light beam (vertical column, pulses upward)
         float beamH = 1.5f + pulse * 1.5f;
         r.drawCube(new Vector3f(0, padY + 0.1f + beamH / 2f, padZ),
             new Vector3f(0.5f, beamH, 0.5f), Renderer.TEX_NEON_CYAN);
-        // Floating sparkle orbs around the beam
+
+        // Rotating glow ring (two thin bars sweeping around the beam)
+        for (int ring = 0; ring < 2; ring++) {
+            float ang = time * 1.5f + ring * (float) Math.PI;
+            float ox = (float) Math.cos(ang) * 1.4f;
+            float oz = (float) Math.sin(ang) * 1.4f;
+            r.drawCube(new Vector3f(ox, padY + 0.9f + ring * 0.4f, padZ + oz),
+                new Vector3f(0.25f, 0.06f, 0.25f), Renderer.TEX_NEON_GREEN);
+        }
+
+        // Swirling particle column — spiral of rising orbs
+        for (int i = 0; i < 10; i++) {
+            float phase = time * 2.5f + i * 0.62f;          // swirl rate + spacing
+            float spiralAng = phase;
+            float radius = 0.9f * (1.0f - (i / 10f));        // taper inward with height
+            float ox = (float) Math.cos(spiralAng) * radius;
+            float oz = (float) Math.sin(spiralAng) * radius;
+            float oy = padY + 0.3f + (i / 10f) * 2.2f;       // rise with index
+            // Alternate cyan/white/green for a shimmer
+            int tex = (i % 3 == 0) ? Renderer.TEX_NEON_GREEN
+                    : (i % 3 == 1) ? Renderer.TEX_NEON_CYAN : Renderer.TEX_WHITE;
+            float sz = 0.10f + 0.06f * (float) Math.sin(time * 5f + i);
+            r.drawCube(new Vector3f(ox, oy, padZ + oz), new Vector3f(sz, sz, sz), tex);
+        }
+
+        // Floating sparkle orbs around the beam (legacy — kept for density)
         for (int i = 0; i < 4; i++) {
             float ang = time * 2.0f + i * (float) Math.PI / 2f;
             float ox = (float) Math.cos(ang) * 1.2f;
@@ -444,9 +473,30 @@ public class WorldBuilder {
         // Grass ground
         r.drawCube(new Vector3f(cx, floorY - 0.1f, cz), new Vector3f(ow, 0.2f, od), Renderer.TEX_GRASS);
 
-        // Sun (yellow sphere approximation — large flat disc on back wall)
-        r.drawCube(new Vector3f(cx, floorY + 8f, cz + od / 2f - 0.1f),
-            new Vector3f(3f, 3f, 0.1f), Renderer.TEX_NEON_AMBER);
+        // Day/night cycle — driven by the real clock hour (Phase F).
+        int hour = java.time.LocalTime.now().getHour();
+        boolean night = hour < 6 || hour >= 20;          // 8pm–6am = night
+        boolean dusk = hour >= 18 && hour < 20;           // 6pm–8pm = sunset
+
+        if (night) {
+            // Moon (pale disc) + a few stars
+            r.drawCube(new Vector3f(cx - 6f, floorY + 8f, cz + od / 2f - 0.1f),
+                new Vector3f(2.5f, 2.5f, 0.1f), Renderer.TEX_WHITE);
+            float[][] stars = {{-12, 6}, {-8, 10}, {-4, 7}, {6, 9}, {11, 6}, {14, 11}, {-14, 12}};
+            for (float[] st : stars)
+                r.drawCube(new Vector3f(st[0], floorY + 7f + st[1] * 0.3f, cz + od / 2f - 0.2f),
+                    new Vector3f(0.08f, 0.08f, 0.05f), Renderer.TEX_WHITE);
+        } else if (dusk) {
+            // Sunset sun (deep amber, lower on the horizon)
+            r.drawCube(new Vector3f(cx, floorY + 5.5f, cz + od / 2f - 0.1f),
+                new Vector3f(3.5f, 3.5f, 0.1f), Renderer.TEX_NEON_PINK);
+            r.drawCube(new Vector3f(cx, floorY + 5.5f, cz + od / 2f - 0.15f),
+                new Vector3f(2.2f, 2.2f, 0.05f), Renderer.TEX_NEON_AMBER);
+        } else {
+            // Sun (yellow disc on back wall)
+            r.drawCube(new Vector3f(cx, floorY + 8f, cz + od / 2f - 0.1f),
+                new Vector3f(3f, 3f, 0.1f), Renderer.TEX_NEON_AMBER);
+        }
 
         // Trees (trunk + canopy)
         float[][] treePos = {{-10, 5}, {-6, 12}, {8, 8}, {12, 15}, {-12, 18}, {10, 20}};

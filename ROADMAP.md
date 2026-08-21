@@ -39,8 +39,9 @@
 
 ---
 
-## Phase F — Outside World Streaming (NEXT)
+## Phase F — Outside World Streaming (PARTIAL)
 
+- [x] Day/night cycle — sun (day), sunset (dusk), moon + stars (night), driven by the real clock hour
 - [ ] Render the outside world in small chunks at once (streaming, not all-at-once)
 - [ ] Diablo/Zelda-style top-down view (low overhead)
 - [ ] Trees (Fibonacci), water, lake, sun, sunset, moon, day/night cycle
@@ -48,9 +49,12 @@
 
 ---
 
-## Phase G — Teleporter Graphics Upgrade
+## Phase G — Teleporter Graphics Upgrade (DONE)
 
-- [ ] Particle swirl, glow, animated pad
+- [x] Particle swirl — 10-orb spiral column rising and tapering
+- [x] Rotating glow ring — two sweeping bars
+- [x] Animated pad — concentric rings + white-hot core
+- [x] Shimmer — alternating cyan/white/green orbs
 
 ---
 
