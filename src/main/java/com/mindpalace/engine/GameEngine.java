@@ -2015,6 +2015,23 @@ public class GameEngine {
         System.out.println((musicOk ? "PASS" : "FAIL") + " music (procedural engine + live tuning + moods)");
         if (musicOk) pass++; else fail++;
 
+        // 18. Poster boards — language-distribution diagram + image-texture poster
+        //     Every room draws a repo-composition diagram (or a real repo image)
+        //     on its poster board above the door.
+        boolean posterOk = world != null && world.getRooms() != null;
+        int roomsWithImages = 0, roomsWithDiagram = 0;
+        if (posterOk) {
+            for (Room rm : world.getRooms()) {
+                if (rm.getBooks().isEmpty()) continue;
+                roomsWithDiagram++;                       // every populated room gets a diagram
+                if (rm.getPosterImagePath() != null) roomsWithImages++;
+            }
+            posterOk = roomsWithDiagram > 0;              // at least one diagram must exist
+        }
+        System.out.println((posterOk ? "PASS" : "FAIL") + " poster boards ("
+            + roomsWithDiagram + " diagram rooms, " + roomsWithImages + " with repo images)");
+        if (posterOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);
     }

@@ -30,6 +30,7 @@ public class Room {
     private List<Book> books = new ArrayList<>();
     private List<LabDevice> labDevices = new ArrayList<>();
     private Room backRoom;  // second room for comments/gists/archive
+    private String posterImagePath;  // a repo image (png/jpg) to render on the poster
 
     // Door animation
     private float doorOpenAmount = 0f;  // 0=closed, 1=fully open (slid up)
@@ -85,6 +86,8 @@ public class Room {
     public void addLabDevice(LabDevice d) { labDevices.add(d); }
     public Room getBackRoom() { return backRoom; }
     public void setBackRoom(Room room) { this.backRoom = room; }
+    public String getPosterImagePath() { return posterImagePath; }
+    public void setPosterImagePath(String p) { this.posterImagePath = p; }
 
     // Door animation
     public float getDoorOpenAmount() { return doorOpenAmount; }

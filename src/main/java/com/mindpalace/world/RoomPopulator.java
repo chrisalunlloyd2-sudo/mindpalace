@@ -47,11 +47,22 @@ public class RoomPopulator {
                             LabDevice.guessStatus(p.getFileName().toString()));
                         room.addLabDevice(dev);
                     }
+
+                    // First image file → poster image (rendered on the room poster)
+                    if (room.getPosterImagePath() == null && isImageFile(p.getFileName().toString())) {
+                        room.setPosterImagePath(p.toAbsolutePath().toString());
+                    }
                 });
         } catch (IOException e) {
             System.err.println("[RoomPopulator] Error scanning " + path + ": " + e.getMessage());
         }
 
         System.out.println("[RoomPopulator] " + room.getRepoName() + ": " + room.getBooks().size() + " books");
+    }
+
+    private static boolean isImageFile(String name) {
+        String n = name.toLowerCase();
+        return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg")
+            || n.endsWith(".gif") || n.endsWith(".bmp");
     }
 }

@@ -143,6 +143,20 @@ public class Renderer {
         drawMesh(getCubeMesh(), model, texId);
     }
 
+    /**
+     * Draw a flat textured quad (an image poster) facing a given yaw.
+     * Binds the supplied Texture directly (not the solid-color atlas), so real
+     * repo images render on the wall posters. yaw=0 faces +Z, yaw=π faces -Z.
+     */
+    public void drawImageQuad(Texture tex, Vector3f center, float w, float h, float yaw) {
+        if (tex == null) return;
+        basicShader.setUniform("model", new Matrix4f()
+            .translate(center).rotateY(yaw).scale(w, h, 1f));
+        tex.bind(0);
+        basicShader.setUniform("useTexture", 1);
+        getQuadMesh().render();
+    }
+
     /** Laser aim dot — small bright cube at fixed distance in front of camera. */
     public void drawLaserDot(Camera camera) {
         Vector3f pos = new Vector3f(camera.getPosition())
@@ -154,6 +168,22 @@ public class Renderer {
     private Mesh getCubeMesh() {
         if (cubeMesh == null) cubeMesh = createCubeMesh();
         return cubeMesh;
+    }
+
+    private Mesh quadMesh;
+    private Mesh getQuadMesh() {
+        if (quadMesh == null) quadMesh = createQuadMesh();
+        return quadMesh;
+    }
+
+    /** A flat quad in the XY plane (normal +Z), unit size, centered at origin. */
+    private Mesh createQuadMesh() {
+        float s = 0.5f;
+        float[] verts = {
+            -s,-s, 0,  0,0,1,  0,1,   s,-s, 0,  0,0,1,  1,1,   s, s, 0,  0,0,1,  1,0,  -s, s, 0,  0,0,1,  0,0,
+        };
+        int[] indices = {0,1,2, 0,2,3};
+        return new Mesh(verts, indices);
     }
 
     private Mesh createCubeMesh() {
@@ -187,6 +217,7 @@ public class Renderer {
     public void cleanup() {
         basicShader.cleanup();
         if (cubeMesh != null) cubeMesh.cleanup();
+        if (quadMesh != null) quadMesh.cleanup();
         for (Texture t : textures) if (t != null) t.cleanup();
     }
 }

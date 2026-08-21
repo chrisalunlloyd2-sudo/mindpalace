@@ -2,6 +2,7 @@ package com.mindpalace.world;
 
 import com.mindpalace.render.Camera;
 import com.mindpalace.render.Renderer;
+import com.mindpalace.render.Texture;
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.github.RepoScanner;
 import org.joml.Vector3f;
@@ -28,6 +29,11 @@ public class WorldBuilder {
     private RepoMapper repoMapper;
     private RoomPopulator populator;
     private FogOfWar fogOfWar;
+
+    // Lazily-loaded repo poster images (path -> GPU texture). Loaded on first
+    // render of each room's poster; falls back to the diagram when absent.
+    private final Map<String, Texture> posterTextures = new HashMap<>();
+    private final Set<String> posterLoadFailed = new HashSet<>();
 
     // Global animation clock (seconds) — drives pulsing teleporters, neon, etc.
     public float time = 0f;
@@ -653,6 +659,21 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x, posterY, posterZ),
             new Vector3f(2.2f, 0.7f, 0.04f), Renderer.TEX_CEILING);
 
+        // Language-distribution diagram — a histogram of the repo's real file
+        // languages, drawn as colored bars (each bar's height = its share of
+        // files, color = the language's book-spine color). This is the poster
+        // "diagram": it visualizes the repo's actual composition at a glance.
+        // If the repo ships a real image (screenshot/diagram/logo), render that
+        // instead on the poster — the diagram is the fallback.
+        Texture posterTex = getPosterTexture(room);
+        float posterFacingYaw = side == 0 ? (float) Math.PI : 0f;
+        if (posterTex != null) {
+            r.drawImageQuad(posterTex, new Vector3f(c.x, posterY, posterZ),
+                1.9f, 0.6f, posterFacingYaw);
+        } else {
+            renderPosterDiagram(r, room, c.x, posterY, posterZ, side);
+        }
+
         // Doorknob
         float knobX = c.x + dh - 0.1f;
         float knobY = c.y - h / 2f + dw / 2f;
@@ -674,6 +695,70 @@ public class WorldBuilder {
         renderBookcase(r, room, 1);
 
         r.setTint(1.0f, 1.0f, 1.0f); // reset to neutral
+    }
+
+    /**
+     * Draw a language-distribution histogram on the repo poster board.
+     * Each bar represents a language present in the repo's files; bar height
+     * is that language's share of the total, and color is its book-spine color.
+     * This is the poster's "diagram" — a live visualization of the repo's
+     * composition derived from the real files that populate the room.
+     */
+    private void renderPosterDiagram(Renderer r, Room room, float cx, float posterY, float posterZ, int side) {
+        // Count files per language from the room's books (the real files).
+        Map<String, Integer> langCount = new LinkedHashMap<>();
+        for (Book b : room.getBooks()) {
+            String lang = b.getLanguage() != null ? b.getLanguage() : "Other";
+            langCount.merge(lang, 1, Integer::sum);
+        }
+        if (langCount.isEmpty()) return;
+
+        // Sort languages by count (largest first) — the dominant language leads.
+        List<Map.Entry<String, Integer>> sorted = new ArrayList<>(langCount.entrySet());
+        sorted.sort((a, b) -> b.getValue() - a.getValue());
+        int top = Math.min(sorted.size(), 6);
+        int maxCount = sorted.get(0).getValue();
+
+        float boardW = 2.2f, boardH = 0.7f;
+        float barGap = 0.03f;
+        float barW = (boardW - 0.15f - barGap * (top - 1)) / top;
+        float startX = cx - boardW / 2f + 0.08f + barW / 2f;
+        float baseY = posterY - boardH / 2f + 0.05f;   // bottom of the chart area
+        float maxBarH = boardH - 0.16f;                // leave headroom for the title
+
+        for (int i = 0; i < top; i++) {
+            Map.Entry<String, Integer> e = sorted.get(i);
+            int texId = Book.textureIdForLanguage(e.getKey());
+            float frac = (float) e.getValue() / maxCount;
+            float barH = Math.max(0.02f, maxBarH * frac);
+            float bx = startX + i * (barW + barGap);
+            float by = baseY + barH / 2f;
+            // The poster faces into the room; offset the bars a hair in front of
+            // the backing plate so they don't z-fight.
+            float bz = side == 0 ? posterZ + 0.03f : posterZ - 0.03f;
+            r.drawCube(new Vector3f(bx, by, bz), new Vector3f(barW, barH, 0.03f), texId);
+        }
+    }
+
+    /**
+     * Lazily load (and cache) a repo's poster image texture. Returns null if the
+     * repo has no image or the image failed to load (then the diagram is used).
+     */
+    private Texture getPosterTexture(Room room) {
+        String path = room.getPosterImagePath();
+        if (path == null) return null;
+        Texture tex = posterTextures.get(path);
+        if (tex != null) return tex;
+        if (posterLoadFailed.contains(path)) return null;
+        try {
+            tex = new Texture(path);
+            posterTextures.put(path, tex);
+            return tex;
+        } catch (Exception e) {
+            posterLoadFailed.add(path);
+            System.err.println("[Poster] image load failed: " + path + " — " + e.getMessage());
+            return null;
+        }
     }
 
     private void renderLabDevices(Renderer r, Room room, Vector3f c, float w, float d, float h, int side) {

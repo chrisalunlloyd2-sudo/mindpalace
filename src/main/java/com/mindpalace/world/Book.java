@@ -57,6 +57,11 @@ public class Book {
 
     /** Texture ID based on language for colored book spines. */
     public int getTextureId() {
+        return textureIdForLanguage(language);
+    }
+
+    /** Static language → book-color texture map (shared by the poster diagram). */
+    public static int textureIdForLanguage(String language) {
         if (language == null) return 5; // TEX_BOOK (green default)
         switch (language) {
             case "Java":       return 5;  // green
