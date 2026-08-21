@@ -45,8 +45,12 @@ public class ModelScheduler {
         final ModelLifespan lifespan; // may be null (stateless)
         final CompletableFuture<String> future;
         final boolean immediate;      // skip the 5-min spacing gate (user chat)
+        final Runnable toolRound;     // raw tool-calling round (runs in drain loop)
         Job(String m, String p, ModelLifespan l, CompletableFuture<String> f, boolean imm) {
-            model = m; prompt = p; lifespan = l; future = f; immediate = imm;
+            model = m; prompt = p; lifespan = l; future = f; immediate = imm; toolRound = null;
+        }
+        Job(Runnable round) {
+            model = null; prompt = null; lifespan = null; future = null; immediate = false; toolRound = round;
         }
     }
 
@@ -58,6 +62,16 @@ public class ModelScheduler {
     /** Submit a chat request. Returns a future that completes when it runs. */
     public CompletableFuture<String> submit(String model, String prompt, ModelLifespan lifespan) {
         return enqueue(model, prompt, lifespan, false);
+    }
+
+    /**
+     * Submit a raw tool-calling round to run on the single worker thread (so it
+     * never overlaps another model call). The Runnable is executed in the drain
+     * loop; it should call ollama.chatWithTools itself and handle the result.
+     */
+    public void submitToolRound(Runnable round) {
+        queue.add(new Job(round));
+        queueDepth.set(queue.size());
     }
 
     /**
@@ -93,6 +107,19 @@ public class ModelScheduler {
                     long wait = spacingMs - sinceLast;
                     lastStatus = "spacing " + (wait / 1000) + "s";
                     Thread.sleep(wait);
+                }
+
+                // Tool-calling round: run the raw round directly (it manages its
+                // own ollama.chatWithTools call + result handling).
+                if (job.toolRound != null) {
+                    lastStatus = "tool round";
+                    long t0 = System.currentTimeMillis();
+                    job.toolRound.run();
+                    totalCalls.incrementAndGet();
+                    totalLatencyMs.addAndGet(System.currentTimeMillis() - t0);
+                    lastCallAt.set(System.currentTimeMillis());
+                    lastStatus = "idle";
+                    continue;
                 }
 
                 // Run the call (through lifespan if provided, else raw)

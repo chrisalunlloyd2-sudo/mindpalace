@@ -231,6 +231,7 @@ public class GameEngine {
         // Start LLM agents from SIMS1337
         agentManager = new AgentManager();
         agentChat = new AgentChat();
+        agentManager.setGitHubClient(github);  // hook in tool execution
         agentManager.setCallbacks(
             msg -> agentChat.addMessage(msg),
             msg -> agentChat.addMessage(msg),

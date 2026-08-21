@@ -36,6 +36,11 @@ public class AgentManager {
     private String lastUserMessage;
     private final Set<String> discoveredRepos = new HashSet<>();
 
+    // Tool execution — the missing half of the tool loop. The tool agent can now
+    // actually read/edit/create/delete files in the current room's repo via the
+    // GitHub client (and the local checkout), not just "propose" text.
+    private com.mindpalace.github.GitHubClient github;
+
     // Callbacks for tool execution
     private Consumer<String> onToolMessage;
     private Consumer<String> onCriticMessage;
@@ -104,6 +109,11 @@ public class AgentManager {
         this.onConsoleLog = console;
     }
 
+    /** Inject the GitHub client so the tool agent can actually execute tools. */
+    public void setGitHubClient(com.mindpalace.github.GitHubClient github) {
+        this.github = github;
+    }
+
     // ── User chat ──
 
     /** User sends a message — the guide replies directly (immediate, no 5-min wait). */
@@ -140,23 +150,130 @@ public class AgentManager {
 
         log("[AgentManager] Auto-cycle — agents discussing " + (currentRoom != null ? currentRoom.getRepoName() : "?"));
 
-        // Tool agent proposes an action (serialized through scheduler)
-        String toolPrompt = context + "\n\nIt's time for your 5-minute review. What should we do? Propose one concrete action.";
-        modelScheduler.submit(TOOL_MODEL, toolPrompt, toolLifespan)
-            .thenAccept(toolResp -> {
-                if (toolResp != null && !toolResp.isEmpty()) {
-                    emit(onToolMessage, "[Auto] " + toolResp);
+        // Tool agent now runs a REAL tool-calling loop: it can read/edit/create/
+        // delete files in the current repo, not just emit text. The critic still
+        // reviews the outcome afterward.
+        runToolLoop();
+
+        // Critic reviews the tool agent's work (scheduler spaces it 5 min)
+        String criticPrompt = "The tool agent just acted on the current room. Evaluate its work. Should we proceed? What risks or improvements?";
+        modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
+            .thenAccept(criticResp -> {
+                if (criticResp != null && !criticResp.isEmpty()) {
+                    emit(onCriticMessage, "[Auto] " + criticResp);
                 }
-                // Critic reviews AFTER tool completes (scheduler spaces it 5 min)
-                String criticPrompt = "The tool agent proposes: " + (toolResp != null ? toolResp : "(nothing)")
-                    + "\nEvaluate this proposal. Should we proceed? What risks or improvements?";
-                modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
-                    .thenAccept(criticResp -> {
-                        if (criticResp != null && !criticResp.isEmpty()) {
-                            emit(onCriticMessage, "[Auto] " + criticResp);
-                        }
-                    });
             });
+    }
+
+    /**
+     * Run the tool agent through a full tool-calling loop: ask it to act on the
+     * current room/book, execute any tool_calls it requests (read/edit/create/
+     * delete), feed the results back, and let it produce a final summary. This
+     * is the "hooked in" engine — the tool agent now does real work, not just
+     * text. Runs on the scheduler's single worker so it never overlaps another
+     * model call.
+     */
+    public void runToolLoop() {
+        if (!available || !running || currentRoom == null) return;
+        String context = buildContext();
+        if (context.isEmpty()) return;
+
+        // Run the tool round on the scheduler's single worker thread so it never
+        // overlaps another model call. The round does its own chatWithTools call.
+        modelScheduler.submitToolRound(() -> executeToolRound(context));
+    }
+
+    /** One tool round-trip: model → tool_calls → execute → feed back → final text. */
+    private void executeToolRound(String context) {
+        try {
+            List<Map<String, String>> msgs = new ArrayList<>();
+            msgs.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT));
+            msgs.add(Map.of("role", "user", "content", context + "\n\nTake ONE concrete action using your tools."));
+
+            OllamaClient.ToolResult tr = ollama.chatWithTools(TOOL_MODEL, msgs, TOOLS);
+            if (tr == null || tr.toolCalls.isEmpty()) {
+                if (tr != null && tr.content != null && !tr.content.isEmpty()) {
+                    emit(onToolMessage, "[Tool] " + tr.content);
+                }
+                return;
+            }
+
+            // Execute each requested tool call
+            for (OllamaClient.ToolCall call : tr.toolCalls) {
+                String result = executeTool(call);
+                emit(onToolMessage, "[Tool] " + call.name + " → " + result);
+            }
+        } catch (Exception e) {
+            log("[AgentManager] tool loop error: " + e.getMessage());
+        }
+    }
+
+    /** Execute a single tool call against the current room's repo. */
+    private String executeTool(OllamaClient.ToolCall call) {
+        if (currentRoom == null) return "no room context";
+        String repo = currentRoom.getRepoName();
+        try {
+            JsonObject args = gson.fromJson(call.arguments, JsonObject.class);
+            String filename = args.has("filename") ? args.get("filename").getAsString() : null;
+            if (filename == null) return "missing filename";
+
+            switch (call.name) {
+                case "read_file": {
+                    if (github != null && github.isAuthenticated()) {
+                        String content = github.fetchFileContent(repo, filename);
+                        return content != null ? "read " + filename + " (" + content.length() + " chars)" : "read failed";
+                    }
+                    // Local fallback
+                    if (currentRoom.getLocalPath() != null) {
+                        java.nio.file.Path fp = java.nio.file.Path.of(currentRoom.getLocalPath(), filename);
+                        if (java.nio.file.Files.exists(fp)) {
+                            String c = java.nio.file.Files.readString(fp);
+                            return "read " + filename + " (" + c.length() + " chars)";
+                        }
+                    }
+                    return "read failed (no auth/local path)";
+                }
+                case "edit_file": {
+                    String content = args.has("content") ? args.get("content").getAsString() : "";
+                    if (github != null && github.isAuthenticated()) {
+                        boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent edit: " + filename, null);
+                        return ok ? "edited " + filename : "edit failed";
+                    }
+                    if (currentRoom.getLocalPath() != null) {
+                        java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), content);
+                        return "edited " + filename + " (local)";
+                    }
+                    return "edit failed (no auth/local path)";
+                }
+                case "create_file": {
+                    String content = args.has("content") ? args.get("content").getAsString() : "";
+                    if (github != null && github.isAuthenticated()) {
+                        boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent create: " + filename, null);
+                        return ok ? "created " + filename : "create failed";
+                    }
+                    if (currentRoom.getLocalPath() != null) {
+                        java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), content);
+                        return "created " + filename + " (local)";
+                    }
+                    return "create failed (no auth/local path)";
+                }
+                case "delete_file": {
+                    if (github != null && github.isAuthenticated()) {
+                        boolean ok = github.deleteFile(repo, filename, null, "MindPalace agent delete: " + filename);
+                        return ok ? "deleted " + filename : "delete failed";
+                    }
+                    if (currentRoom.getLocalPath() != null) {
+                        java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(currentRoom.getLocalPath(), filename));
+                        return "deleted " + filename + " (local)";
+                    }
+                    return "delete failed (no auth/local path)";
+                }
+                default:
+                    return "unknown tool: " + call.name;
+            }
+        } catch (Exception e) {
+            return "tool error: " + e.getMessage();
+        }
     }
 
     // ── Helpers ──

@@ -103,6 +103,76 @@ public class OllamaClient {
     }
 
     /**
+     * A single tool-calling round-trip. Returns the assistant's text reply AND
+     * any tool_calls it requested (name + JSON arguments). This is the missing
+     * half of the tool loop — `chat()` only ever read `message.content` and
+     * silently dropped `message.tool_calls`, so the tool agent could propose
+     * but never actually invoke read_file/edit_file/create_file/delete_file.
+     */
+    public ToolResult chatWithTools(String model, List<Map<String, String>> messages, List<JsonObject> tools) {
+        JsonObject body = new JsonObject();
+        body.addProperty("model", model);
+        body.addProperty("stream", false);
+
+        JsonArray msgs = new JsonArray();
+        for (Map<String, String> m : messages) {
+            JsonObject msg = new JsonObject();
+            msg.addProperty("role", m.get("role"));
+            msg.addProperty("content", m.get("content"));
+            msgs.add(msg);
+        }
+        body.add("messages", msgs);
+
+        if (tools != null && !tools.isEmpty()) {
+            JsonArray tarr = new JsonArray();
+            for (JsonObject t : tools) tarr.add(t);
+            body.add("tools", tarr);
+        }
+
+        try {
+            Request r = new Request.Builder()
+                .url(BASE + "/chat")
+                .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+                .build();
+            try (Response resp = http.newCall(r).execute()) {
+                if (!resp.isSuccessful() || resp.body() == null) return new ToolResult(null, List.of());
+                JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
+                JsonObject msg = result.getAsJsonObject("message");
+                String content = msg.has("content") ? msg.get("content").getAsString() : "";
+                List<ToolCall> calls = new ArrayList<>();
+                if (msg.has("tool_calls")) {
+                    for (JsonElement el : msg.getAsJsonArray("tool_calls")) {
+                        JsonObject tc = el.getAsJsonObject();
+                        JsonObject fn = tc.getAsJsonObject("function");
+                        String name = fn.get("name").getAsString();
+                        String args = fn.has("arguments") ? fn.get("arguments").getAsString() : "{}";
+                        calls.add(new ToolCall(name, args));
+                    }
+                }
+                return new ToolResult(content, calls);
+            }
+        } catch (IOException e) {
+            return new ToolResult(null, List.of());
+        }
+    }
+
+    /** A tool call the model requested: a function name + JSON arguments. */
+    public static class ToolCall {
+        public final String name;
+        public final String arguments;
+        public ToolCall(String name, String arguments) { this.name = name; this.arguments = arguments; }
+    }
+
+    /** Result of a tool-calling round: text reply + requested tool calls. */
+    public static class ToolResult {
+        public final String content;
+        public final List<ToolCall> toolCalls;
+        public ToolResult(String content, List<ToolCall> toolCalls) {
+            this.content = content; this.toolCalls = toolCalls;
+        }
+    }
+
+    /**
      * Generate an embedding vector for a text (for drift detection / retrieval).
      * Uses nomic-embed-text. Returns null on failure.
      */
