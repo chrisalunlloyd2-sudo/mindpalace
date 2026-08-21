@@ -20,6 +20,7 @@ import com.mindpalace.audio.AudioEngine;
 import com.mindpalace.audio.MusicEngine;
 import com.mindpalace.agent.AgentManager;
 import com.mindpalace.agent.AgentChat;
+import com.mindpalace.agent.sims.*;
 import com.mindpalace.deploy.DeployManager;
 import com.mindpalace.deploy.AnimationSystem;
 import com.mindpalace.deploy.LiveUpdateManager;
@@ -2032,6 +2033,34 @@ public class GameEngine {
         System.out.println((posterOk ? "PASS" : "FAIL") + " poster boards ("
             + roomsWithDiagram + " diagram rooms, " + roomsWithImages + " with repo images)");
         if (posterOk) pass++; else fail++;
+
+        // 19. SIMS1337 parity — ModelRouter + LoRASwitcher + WeightedQuorumVote + FOWGate
+        boolean simsOk = agentManager != null;
+        if (simsOk) {
+            // Router: complexity → tier mapping is deterministic.
+            simsOk = agentManager.getRouter().select(Complexity.LOW).equals("qwen2.5:0.5b")
+                  && agentManager.getRouter().select(Complexity.CRITICAL).equals("phi3:mini");
+            // LoRA: switch to CODE and back, verify current type + switch count.
+            if (simsOk) {
+                agentManager.getLora().switchAdapter(AdapterType.CODE);
+                simsOk = agentManager.getLora().currentType() == AdapterType.CODE
+                      && agentManager.getLora().getSwitchCount() >= 1;
+            }
+            // Quorum: register a proposal, auto-vote, verify a result is produced.
+            if (simsOk) {
+                String pid = "selftest-" + System.currentTimeMillis();
+                agentManager.getQuorum().registerProposal(pid, "selftest", new HexCoord(0, 0));
+                agentManager.getQuorum().autoVoteAll();
+                simsOk = agentManager.getQuorum().calculateQuorum(pid) != null;
+            }
+            // FOW: two agents pinned, two models assigned.
+            if (simsOk) {
+                simsOk = agentManager.getFow().agentCount() == 2
+                      && agentManager.getFow().modelCount() == 2;
+            }
+        }
+        System.out.println((simsOk ? "PASS" : "FAIL") + " SIMS1337 parity (router + LoRA + quorum + FOW)");
+        if (simsOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);

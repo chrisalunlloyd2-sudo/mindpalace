@@ -1,6 +1,7 @@
 package com.mindpalace.agent;
 
 import com.google.gson.*;
+import com.mindpalace.agent.sims.*;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import java.util.*;
@@ -40,6 +41,18 @@ public class AgentManager {
     // actually read/edit/create/delete files in the current room's repo via the
     // GitHub client (and the local checkout), not just "propose" text.
     private com.mindpalace.github.GitHubClient github;
+
+    // ── SIMS1337 parity ────────────────────────────────────────────────
+    // The four pillars of the SIMS1337 headless architecture, ported in:
+    //   ModelRouter        — complexity-based model tier selection
+    //   LoRASwitcher      — <100ms LoRA adapter weight switching
+    //   WeightedQuorumVote — FOW-gated quorum voting with time pulse
+    //   FOWGate           — fog-of-war visibility (agent→hex, model→agent)
+    private final ModelRouter router = new ModelRouter();
+    private final LoRASwitcher lora = new LoRASwitcher();
+    private final WeightedQuorumVote quorum = new WeightedQuorumVote();
+    private final FOWGate fow = new FOWGate();
+    private volatile String routedModel = TOOL_MODEL; // set by the router each cycle
 
     // Callbacks for tool execution
     private Consumer<String> onToolMessage;
@@ -81,8 +94,30 @@ public class AgentManager {
         criticLifespan.setSystemPrompt(CRITIC_SYSTEM_PROMPT);
         chatLifespan.setSystemPrompt(CHAT_SYSTEM_PROMPT);
 
+        // Initialize SIMS1337 parity: pin agents to hexes, assign models, seed
+        // the voting schema with the two agents as voters.
+        initSimsParity();
+
         // Start autonomous cycle
         scheduler.scheduleWithFixedDelay(this::autonomousCycle, 30, CYCLE_MS / 1000, TimeUnit.SECONDS);
+    }
+
+    /** Wire the SIMS1337 pillars: FOW positions, quorum voters, LoRA context. */
+    private void initSimsParity() {
+        // FOW: pin the two agents to adjacent hexes, assign models to agents.
+        fow.pinAgent("tool", new HexCoord(0, 0));
+        fow.pinAgent("critic", new HexCoord(1, 0));
+        fow.assignModel(TOOL_MODEL, "tool");
+        fow.assignModel(CRITIC_MODEL, "critic");
+
+        // Quorum: register both models as voters at their hex positions.
+        quorum.setModelPosition(TOOL_MODEL, 0, 0);
+        quorum.setModelPosition(CRITIC_MODEL, 1, 0);
+
+        // LoRA: start on CODE (the tool agent's primary domain).
+        lora.switchAdapter(AdapterType.CODE);
+
+        log("[AgentManager] SIMS1337 parity wired — router + LoRA + quorum + FOW");
     }
 
     public void stop() {
@@ -150,6 +185,12 @@ public class AgentManager {
 
         log("[AgentManager] Auto-cycle — agents discussing " + (currentRoom != null ? currentRoom.getRepoName() : "?"));
 
+        // Route the tool agent's model by task complexity (SIMS1337 ModelRouter).
+        Complexity cx = Complexity.estimate(context);
+        routedModel = router.select(cx);
+        lora.switchAdapter(AdapterType.CODE);
+        log("[AgentManager] routed " + cx + " → " + routedModel + " (" + router.reason(cx) + ")");
+
         // Tool agent now runs a REAL tool-calling loop: it can read/edit/create/
         // delete files in the current repo, not just emit text. The critic still
         // reviews the outcome afterward.
@@ -163,6 +204,25 @@ public class AgentManager {
                     emit(onCriticMessage, "[Auto] " + criticResp);
                 }
             });
+
+        // Quorum vote: register the cycle's proposal and let both models vote
+        // (FOW-gated). The result is logged as the "voting schema" heartbeat.
+        runQuorumVote(context);
+    }
+
+    /** Run a FOW-gated quorum vote on the current cycle's proposal. */
+    private void runQuorumVote(String context) {
+        try {
+            String id = "cycle-" + System.currentTimeMillis();
+            String text = "Act on " + (currentRoom != null ? currentRoom.getRepoName() : "?");
+            quorum.registerProposal(id, text, new HexCoord(0, 0));
+            quorum.advanceTimePulse(0.1);
+            quorum.autoVoteAll();
+            WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
+            if (r != null) log("[AgentManager] quorum: " + r);
+        } catch (Exception e) {
+            log("[AgentManager] quorum error: " + e.getMessage());
+        }
     }
 
     /**
@@ -190,7 +250,7 @@ public class AgentManager {
             msgs.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT));
             msgs.add(Map.of("role", "user", "content", context + "\n\nTake ONE concrete action using your tools."));
 
-            OllamaClient.ToolResult tr = ollama.chatWithTools(TOOL_MODEL, msgs, TOOLS);
+            OllamaClient.ToolResult tr = ollama.chatWithTools(routedModel, msgs, TOOLS);
             if (tr == null || tr.toolCalls.isEmpty()) {
                 if (tr != null && tr.content != null && !tr.content.isEmpty()) {
                     emit(onToolMessage, "[Tool] " + tr.content);
@@ -430,4 +490,11 @@ public class AgentManager {
     public ModelLifespan getToolLifespan() { return toolLifespan; }
     public ModelLifespan getCriticLifespan() { return criticLifespan; }
     public ModelScheduler getScheduler() { return modelScheduler; }
+
+    // ── SIMS1337 parity getters (for self-test + telemetry) ──
+    public ModelRouter getRouter() { return router; }
+    public LoRASwitcher getLora() { return lora; }
+    public WeightedQuorumVote getQuorum() { return quorum; }
+    public FOWGate getFow() { return fow; }
+    public String getRoutedModel() { return routedModel; }
 }
