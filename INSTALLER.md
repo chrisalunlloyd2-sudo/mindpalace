@@ -1,43 +1,45 @@
 # MindPalace — Windows Installer (Phase H)
 
-## What's done now
+## Two installers, two tiers
 
-`build-installer.sh` produces a **working native .exe installer** via `jpackage`
-(JDK 17 ships it). It gives you, out of the box:
+| | `build-installer.sh` | `build-warm-installer.sh` |
+|---|---|---|
+| Tool | jpackage + WiX | jpackage + Inno Setup |
+| Output | `MindPalace-1.0.0.exe` | `MindPalace-Setup-1.0.0.exe` |
+| Look | plain | **warm, branded welcome page** |
+| File-location chooser | yes (`--win-dir-chooser`) | yes (default `{autopf}\MindPalace`) |
+| Accessory picker (Ollama + models) | no | **yes** (opt-in tasks) |
+| Start Menu + desktop shortcut | Start Menu only | **both** |
+| Uninstaller | yes | yes |
 
-- Installs to `C:\Program Files\MindPalace` (or a user-chosen dir via `--win-dir-chooser`)
-- Start Menu shortcut + menu group (`--win-shortcut --win-menu`)
-- Bundled JRE — the target machine needs **no Java installed**
-- Uninstaller + Add/Remove Programs entry (jpackage generates it automatically)
-- Per-user install (no admin prompt) via `--win-per-user-install`
-- The game's tuned JVM flags baked in (`-Dprism.order=sw`, G1GC, 256m–768m heap)
+## The warm installer (recommended)
 
-Run it:
+`build-warm-installer.sh` runs the full pipeline:
+
+1. **jar** — Maven build (if missing)
+2. **app-image** — jpackage bundles a JRE + launcher (no Java needed on target)
+3. **wizard banner** — `gen-wizard-bmp.py` renders a warm gradient + "MIND PALACE" title
+4. **Inno Setup** — `MindPalace.iss` produces the branded `.exe`
+
+The `.iss` script adds:
+- a warm welcome page (gradient banner + title)
+- a file-location chooser (defaults to `C:\Program Files\MindPalace`)
+- an **accessory picker**: optional Ollama install (`winget`) + the 4 MindPalace
+  models (`llama3.2:1b`, `qwen2.5:0.5b`, `llama3.2:3b`, `nomic-embed-text`)
+- Start Menu + desktop shortcuts, uninstaller, "launch now" checkbox
+
+Build it:
 
 ```bash
-bash build-installer.sh
-# → installer/MindPalace-1.0.0.exe
+bash build-warm-installer.sh
+# → installer/MindPalace-Setup-1.0.0.exe
 ```
-
-## What's still TBD (the "warm welcoming GUI")
-
-jpackage's installer is functional but plain. The **warm, welcoming GUI** with a
-file-location chooser, an accessory picker (Ollama + models), and a branded
-welcome screen needs a richer installer toolkit. Two options:
-
-1. **Inno Setup** (recommended, free) — `iscc` script with a custom wizard page
-   that offers to install Ollama + pull the 4 MindPalace models as "accessories".
-2. **WiX Toolset** — MSI with a custom UI, more control, steeper learning curve.
-
-Neither is installed on this host yet (`iscc`/`candle` not found). To finish the
-warm GUI I'd install Inno Setup and write the `.iss` script — say the word and
-I'll do it.
 
 ## Accessories (Ollama + models)
 
-The installer should optionally:
-- Detect/install Ollama (`winget install Ollama.Ollama`)
-- Pull the 4 MindPalace models: `llama3.2:1b`, `qwen2.5:0.5b`, `llama3.2:3b`, `nomic-embed-text`
+The installer's post-install step runs only if the user ticks the boxes:
+- `winget install --id Ollama.Ollama` (silent)
+- `ollama pull` for each of the 4 models (~4.8 GB total)
 
 ## Intro / options screens
 
