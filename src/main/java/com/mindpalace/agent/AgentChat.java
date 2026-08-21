@@ -26,8 +26,11 @@ public class AgentChat {
     private boolean typing;          // cursor is up, capturing input
     private final StringBuilder input = new StringBuilder();
 
-    // Chat persistence — append-only JSONL, one line per message.
-    private static final Path CHAT_LOG = Paths.get("chat_logs", "chat.jsonl");
+    // Chat persistence — append-only JSONL, one line per message, one FILE per
+    // day (chat_logs/chat-YYYY-MM-DD.jsonl). The per-day split is Architect's
+    // spec: "save all chats in texts and new file for every day uploaded to
+    // github". The legacy single chat.jsonl is kept for backward-compat reads.
+    private static final Path CHAT_LOG_DIR = Paths.get("chat_logs");
 
     public AgentChat() {}
 
@@ -45,10 +48,16 @@ public class AgentChat {
         persist(msg);
     }
 
+    /** Per-day log file name, e.g. chat-2026-08-20.jsonl. */
+    private static Path todayLog() {
+        String day = java.time.LocalDate.now().toString();
+        return CHAT_LOG_DIR.resolve("chat-" + day + ".jsonl");
+    }
+
     /** Append a message to the on-disk JSONL chat log (best-effort, never throws). */
     private void persist(String msg) {
         try {
-            Files.createDirectories(CHAT_LOG.getParent());
+            Files.createDirectories(CHAT_LOG_DIR);
             String ts = java.time.Instant.now().toString();
             // Full JSON string escaping — models emit literal newlines/tabs, so
             // escape every control char, not just backslash and quote.
@@ -68,7 +77,7 @@ public class AgentChat {
                         else esc.append(c);
                 }
             }
-            Files.writeString(CHAT_LOG, "{\"ts\":\"" + ts + "\",\"msg\":\"" + esc + "\"}\n",
+            Files.writeString(todayLog(), "{\"ts\":\"" + ts + "\",\"msg\":\"" + esc + "\"}\n",
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
             // Chat must never crash the game over a log write.

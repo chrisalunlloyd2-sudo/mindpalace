@@ -215,7 +215,9 @@ public class Player {
     private void exitRoom() {
         if (currentRoom == null) return;
         Room room = currentRoom;
-        room.closeDoor();
+        // Doors open on Enter and STAY open — no auto-close cycle (Architect's
+        // spec: "the doors don't need to cycle open and closed, just open when
+        // I press enter"). So we deliberately do NOT call room.closeDoor() here.
         currentRoom = null;
         Vector3f dp = room.getDoorPosition();
         float ex = room.getHallwaySide() == 0 ? dp.x + 1.2f : dp.x - 1.2f;
