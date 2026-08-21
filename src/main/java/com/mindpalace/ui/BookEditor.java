@@ -2,6 +2,10 @@ package com.mindpalace.ui;
 
 import com.mindpalace.agent.ModelConfig;
 import com.mindpalace.agent.OllamaClient;
+import com.mindpalace.agent.KnowledgeGraph;
+import com.mindpalace.agent.sims.AdapterType;
+import com.mindpalace.agent.sims.LanguageRegistry;
+import com.mindpalace.agent.sims.LoRASwitcher;
 import com.mindpalace.render.Camera;
 import com.mindpalace.render.FontRenderer;
 import com.mindpalace.render.Renderer;
@@ -35,6 +39,11 @@ public class BookEditor {
     private OllamaClient ollama;
     private List<String> suggestions = new ArrayList<>();
 
+    // ── SIMS1337 parity: language toggle + LoRA + KG ──────────────────
+    private LoRASwitcher lora;          // active LoRA adapter (switches with language)
+    private KnowledgeGraph knowledgeGraph; // KG nodes for language/repo tracking
+    private String activeLanguage = "Java"; // current editor language (toggleable)
+
     // Panel position in 3D
     private Vector3f panelPos = new Vector3f();
     private static final float PANEL_WIDTH = 3.0f;
@@ -44,6 +53,12 @@ public class BookEditor {
     public BookEditor(GitHubClient github) {
         this.github = github;
         this.ollama = new OllamaClient();
+    }
+
+    /** Inject the LoRA switcher + KG so the editor can toggle language weights. */
+    public void setSims(LoRASwitcher lora, KnowledgeGraph knowledgeGraph) {
+        this.lora = lora;
+        this.knowledgeGraph = knowledgeGraph;
     }
 
     public void open(Book book, Room room, Vector3f playerPos, Vector3f lookDir) {
@@ -238,7 +253,22 @@ public class BookEditor {
             case ":n": actionCreate(); break;
             case ":d": actionDelete(); break;
             case ":s": actionSuggest(); break;
+            case ":l": toggleLanguage(); break;
             case ":q": close(); break;
+        }
+    }
+
+    /** Toggle the editor's active language (cycles the ~20-language registry). */
+    private void toggleLanguage() {
+        activeLanguage = LanguageRegistry.next(activeLanguage);
+        LanguageRegistry.Lang lang = LanguageRegistry.byName(activeLanguage);
+        if (lang != null && lora != null) {
+            lora.switchAdapter(lang.adapter);
+        }
+        println("[LANG] " + activeLanguage
+            + (lang != null ? " (LoRA: " + lang.adapter + ")" : ""));
+        if (knowledgeGraph != null && currentRoom != null) {
+            println("[KG] " + currentRoom.getRepoName() + " → " + activeLanguage);
         }
     }
 
@@ -446,7 +476,7 @@ public class BookEditor {
         println("");
         println("╔══════════════════════════════════════════╗");
         println("║  :e=Edit  :n=New  :d=Delete  :s=Suggest║");
-        println("║  :q=Close                               ║");
+        println("║  :l=Lang(" + padRight(activeLanguage, 8) + ")  :q=Close        ║");
         println("╚══════════════════════════════════════════╝");
     }
 
@@ -523,4 +553,5 @@ public class BookEditor {
     public String getTerminal() { return terminal.toString(); }
     public boolean isDirty() { return dirty; }
     public void clearDirty() { dirty = false; }
+    public String getActiveLanguage() { return activeLanguage; }
 }

@@ -243,6 +243,9 @@ public class GameEngine {
         // Build the knowledge graph + spawn agent NPCs (bodies in the world)
         knowledgeGraph = new KnowledgeGraph();
         knowledgeGraph.build(world.getRooms());
+
+        // Wire the editor's language toggle to the shared LoRA switcher + KG.
+        bookEditor.setSims(agentManager.getLora(), knowledgeGraph);
         spawnNPCs();
         spawnCrystals();
         System.out.println("[NPC] " + npcs.size() + " agents spawned, "
@@ -2061,6 +2064,20 @@ public class GameEngine {
         }
         System.out.println((simsOk ? "PASS" : "FAIL") + " SIMS1337 parity (router + LoRA + quorum + FOW)");
         if (simsOk) pass++; else fail++;
+
+        // 20. Code editor language toggle — ~20-language registry + LoRA switch
+        boolean langOk = LanguageRegistry.count() >= 20;
+        if (langOk) {
+            // Toggle cycles deterministically and maps to a LoRA adapter.
+            String next = LanguageRegistry.next("Java");
+            langOk = next.equals("Python")
+                  && LanguageRegistry.byName("Rust") != null
+                  && LanguageRegistry.byName("Rust").adapter == AdapterType.CODE
+                  && LanguageRegistry.byExtension(".py") != null;
+        }
+        System.out.println((langOk ? "PASS" : "FAIL") + " code editor language toggle ("
+            + LanguageRegistry.count() + " languages + LoRA mapping)");
+        if (langOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);
