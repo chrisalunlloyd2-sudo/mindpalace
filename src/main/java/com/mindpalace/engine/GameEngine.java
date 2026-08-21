@@ -644,8 +644,9 @@ public class GameEngine {
                 }
             }
 
-            // Enter toggles chat typing (cursor pops up, type, Enter to send)
-            if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && agentChat != null && !bookEditor.isOpen() && !teleportMenu) {
+            // T toggles chat typing (cursor pops up, type, Enter to send).
+            // Enter is reserved for DOORS — it must never open the chat box.
+            if (input.wasKeyPressed(GLFW.GLFW_KEY_T) && agentChat != null && !bookEditor.isOpen() && !teleportMenu) {
                 if (agentChat.isTyping()) {
                     String msg = agentChat.commitInput();
                     if (msg != null && agentManager != null) {
@@ -659,11 +660,19 @@ public class GameEngine {
                 }
             }
 
-            // While typing, capture characters + backspace
+            // While typing, capture characters + backspace; Enter sends.
             if (agentChat != null && agentChat.isTyping()) {
                 String typed = input.drainTypedChars();
                 if (!typed.isEmpty()) agentChat.appendInput(typed);
                 if (input.wasKeyPressed(GLFW.GLFW_KEY_BACKSPACE)) agentChat.backspace();
+                if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER)) {
+                    String msg = agentChat.commitInput();
+                    if (msg != null && agentManager != null) {
+                        agentChat.addMessage("[You] " + msg);
+                        agentManager.onUserChat(msg);
+                    }
+                    input.setCursorCaptured(true);
+                }
             }
 
             // / toggles search mode
@@ -1426,7 +1435,7 @@ public class GameEngine {
                     "Invert Y: " + (player.getCamera().isInvertY() ? "ON" : "OFF"),
                     "WASD: Move   Mouse: Look   Shift: Sprint",
                     "Enter: Door   Space: Jump   Click: Book",
-                    "/: Search   Tab: Chat   F1: Help",
+                    "/: Search   T: Chat   F1: Help",
                     "F3: Noclip   F11: Fullscreen   F12: Screenshot",
                     "(Enter to go back)"
                 };

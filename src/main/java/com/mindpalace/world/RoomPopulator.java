@@ -21,6 +21,7 @@ public class RoomPopulator {
         if (!dir.exists()) return;
 
         try (Stream<Path> stream = Files.walk(dir.toPath(), 3)) {
+            final int[] idx = {0};
             stream
                 .filter(Files::isRegularFile)
                 .filter(p -> !p.toString().contains(".git" + File.separator))
@@ -32,6 +33,10 @@ public class RoomPopulator {
                     String relPath = dir.toPath().relativize(p).toString();
                     Book book = new Book(p.getFileName().toString(), relPath);
                     book.setLanguage(Book.detectLanguage(relPath));
+                    // Round-robin across the 3 bookcase walls so each book is
+                    // placed exactly once (back/left/right) and its clickable
+                    // position matches where it's drawn.
+                    book.setWallIndex(idx[0]++ % 3);
 
                     try {
                         book.setSizeBytes(Files.size(p));

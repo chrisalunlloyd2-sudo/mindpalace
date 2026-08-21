@@ -609,12 +609,12 @@ public class WorldBuilder {
 
     /**
      * Glowing neon door frame — a thin emissive trim around each doorway so
-     * doors read as portals, not just holes in the wall. Pulses gently.
+     * doors read as portals, not just holes in the wall. Static (no pulse):
+     * the Architect wants doors to sit still, not "breathe".
      */
     private void renderDoorFrame(Renderer r, float wallX, float floorY, float doorZ, Room room) {
         float dw = Room.DOOR_WIDTH, dh = Room.DOOR_HEIGHT;
         float offsetX = wallX > 0 ? -0.12f : 0.12f;
-        float pulse = 0.6f + 0.4f * (float) Math.sin(time * 2.0f + doorZ);
         int color = room.isPrivate() ? Renderer.TEX_NEON_PINK : Renderer.TEX_NEON_CYAN;
         float t = 0.06f; // trim thickness
 
@@ -626,9 +626,9 @@ public class WorldBuilder {
         // Top lintel
         r.drawCube(new Vector3f(wallX + offsetX, floorY + dh, doorZ),
             new Vector3f(t, t, dw), color);
-        // Soft glow halo (pulses) behind the trim
+        // Soft glow halo (static) behind the trim
         r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.02f : 0.02f), floorY + dh / 2f, doorZ),
-            new Vector3f(0.02f, (dh + 0.2f) * pulse, (dw + 0.2f) * pulse), Renderer.TEX_NEON_AMBER);
+            new Vector3f(0.02f, dh + 0.2f, dw + 0.2f), Renderer.TEX_NEON_AMBER);
     }
 
     private void renderPosters(Renderer r, Vector3f s, Hallway hw) {
@@ -922,7 +922,12 @@ public class WorldBuilder {
             r.drawCube(new Vector3f(caseX, caseTop, caseZ), new Vector3f(caseDepth, pt, caseWidth), Renderer.TEX_DOOR);
         }
 
-        // Books grouped by language
+        // Books grouped by language, then partitioned across the 3 walls so
+        // each book is placed exactly once. (Previously every wall re-placed
+        // ALL books, so a book's clickable position ended up on the LAST wall
+        // drawn — the right wall — regardless of where it was visible. That's
+        // why clicks on back/left-wall books missed.)
+        int wallIndex = wallDir == 0 ? 0 : (wallDir == -1 ? 1 : 2);
         List<Book> allBooks = room.getBooks();
         Map<String, List<Book>> byLang = new LinkedHashMap<>();
         for (Book bk : allBooks) {
@@ -965,6 +970,10 @@ public class WorldBuilder {
                     placed++; continue;
                 }
                 Book book = currentGroup.get(bookInGroup);
+                // Assign this book to a wall on first touch; only place it here
+                // if it belongs to THIS wall.
+                if (book.getWallIndex() < 0) book.setWallIndex(wallIndex);
+                if (book.getWallIndex() != wallIndex) { bookInGroup++; continue; }
                 float offset = -usableWidth / 2f + placed * (bookW + bookGap) + bookW / 2f;
                 if (wallDir == 0) {
                     r.drawCube(new Vector3f(caseX + offset, sy, caseZ), new Vector3f(bookW, bookH, bookD), book.getTextureId());

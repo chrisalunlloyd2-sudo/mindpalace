@@ -187,17 +187,19 @@ public class Player {
     }
 
     private Room findDoor(WorldBuilder world) {
-        Vector3f look = camera.getFront();
+        // Nearest door within reach — no aim requirement. Doors sit on the side
+        // walls while the player walks facing +Z, so requiring a precise look
+        // angle made most doors unopenable ("some rooms work, most don't").
         Vector3f origin = camera.getPosition();
+        Room best = null;
+        float bestDist = 3.0f;
         for (Room room : world.getRooms()) {
             Vector3f dp = room.getDoorPosition();
             if (dp == null) continue;
-            if (origin.distance(dp) < 2.5f) {
-                Vector3f to = new Vector3f(dp).sub(origin).normalize();
-                if (look.dot(to) > 0.7f) return room;
-            }
+            float d = origin.distance(dp);
+            if (d < bestDist) { bestDist = d; best = room; }
         }
-        return null;
+        return best;
     }
 
     private void enterRoom(Room room) {
