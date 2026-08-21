@@ -30,6 +30,17 @@ public class ModelScheduler {
     // Dynamic spacing — widened when the user is actively playing (idle detector)
     private volatile long spacingMs = MIN_SPACING_MS;
 
+    // ── Resource fencing ────────────────────────────────────────────────
+    // Guards against the local models weighing down the system. Before each
+    // call we check free heap + free disk; if either is below its floor, the
+    // call is deferred (re-queued) until the system recovers. This is the
+    // "memory/HDD fencing" — the models never starve the host.
+    private static final long MIN_FREE_HEAP_BYTES = 64L * 1024 * 1024;   // 64 MB
+    private static final long MIN_FREE_DISK_BYTES = 256L * 1024 * 1024;   // 256 MB
+    private static final long FENCE_RECHECK_MS = 30_000;                 // 30s backoff
+    private final AtomicLong fencedCount = new AtomicLong();
+    private final AtomicLong lastFenceAt = new AtomicLong(0);
+
     // Telemetry
     private final AtomicLong totalCalls = new AtomicLong();
     private final AtomicLong totalLatencyMs = new AtomicLong();
@@ -109,6 +120,17 @@ public class ModelScheduler {
                     Thread.sleep(wait);
                 }
 
+                // Resource fence: if the system is low on heap or disk, defer the
+                // call (re-queue it) and back off. The models never starve the host.
+                if (!resourcesAvailable()) {
+                    fencedCount.incrementAndGet();
+                    lastFenceAt.set(System.currentTimeMillis());
+                    lastStatus = "fenced (low resources)";
+                    queue.add(job);          // re-queue for later
+                    Thread.sleep(FENCE_RECHECK_MS);
+                    continue;
+                }
+
                 // Tool-calling round: run the raw round directly (it manages its
                 // own ollama.chatWithTools call + result handling).
                 if (job.toolRound != null) {
@@ -169,4 +191,27 @@ public class ModelScheduler {
     /** Set dynamic spacing (idle detector: slow when playing, never below 5 min). */
     public void setSpacingMs(long ms) { this.spacingMs = Math.max(MIN_SPACING_MS, ms); }
     public long getSpacingMs() { return spacingMs; }
+
+    // ── Resource fencing ────────────────────────────────────────────────
+
+    /** True when the host has enough free heap AND disk to run a model call. */
+    private boolean resourcesAvailable() {
+        Runtime rt = Runtime.getRuntime();
+        long freeHeap = rt.maxMemory() - (rt.totalMemory() - rt.freeMemory());
+        if (freeHeap < MIN_FREE_HEAP_BYTES) return false;
+        // Disk: check the working directory's usable space.
+        try {
+            java.io.File cwd = new java.io.File(".").getAbsoluteFile();
+            long freeDisk = cwd.getUsableSpace();
+            return freeDisk >= MIN_FREE_DISK_BYTES;
+        } catch (Exception e) {
+            return true; // can't stat disk — don't block on it
+        }
+    }
+
+    public long getFencedCount() { return fencedCount.get(); }
+    public long getSecondsSinceLastFence() {
+        long last = lastFenceAt.get();
+        return last == 0 ? -1 : (System.currentTimeMillis() - last) / 1000;
+    }
 }
