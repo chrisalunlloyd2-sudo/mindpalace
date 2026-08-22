@@ -44,6 +44,26 @@ public class WorldBuilder {
 
     private static final float ROOM_CULL_DISTANCE = 30.0f;
 
+    // ── Phase F: outside-world chunked streaming ──
+    // The outside world is divided into square chunks (CHUNK meters). Only
+    // chunks within OUTSIDE_RENDER_DISTANCE of the camera are drawn, so the
+    // forest/lake/lakehouse decorations stream in small pieces instead of
+    // being rendered all-at-once every frame. This is the perf win on the
+    // Intel HD 510 (the outside scene alone was ~1200 cubes drawn every frame
+    // regardless of where the player stood).
+    private static final float OUTSIDE_CHUNK = 8f;          // chunk cell size (m)
+    private static final float OUTSIDE_RENDER_DIST = 22f;   // draw within this radius
+    private float camX, camZ;                               // camera pos (set each render)
+
+    /** True if the chunk containing (x,z) is within the streaming radius. */
+    private boolean chunkVisible(float x, float z) {
+        // Chunk the world into OUTSIDE_CHUNK cells and cull by cell center distance.
+        float cx = (float) Math.floor(x / OUTSIDE_CHUNK) * OUTSIDE_CHUNK + OUTSIDE_CHUNK / 2f;
+        float cz = (float) Math.floor(z / OUTSIDE_CHUNK) * OUTSIDE_CHUNK + OUTSIDE_CHUNK / 2f;
+        float dx = cx - camX, dz = cz - camZ;
+        return (dx * dx + dz * dz) <= OUTSIDE_RENDER_DIST * OUTSIDE_RENDER_DIST;
+    }
+
     // ── Planet (open world) ──
     // A small sphere the player can walk around in ~1 minute. Radial gravity
     // pulls toward the center; the surface is the planet radius. The palace
@@ -219,6 +239,8 @@ public class WorldBuilder {
     public void render(Renderer r, Camera camera) {
         Vector3f camPos = camera.getPosition();
         Vector3f camFront = camera.getFront();
+        this.camX = camPos.x;
+        this.camZ = camPos.z;
 
         // Planet — always render when active (it's the open world)
         if (planetActive) renderPlanet(r, camPos);
@@ -631,6 +653,8 @@ public class WorldBuilder {
             // Keep trees inside the grass patch
             if (Math.abs(tx) > ow / 2f - 1.5f) continue;
             if (tz < outZ + 1f || tz > outZ + od - 2f) continue;
+            // Phase F: stream only trees whose chunk is near the camera.
+            if (!chunkVisible(tx, tz)) continue;
             float trunkH = 2.2f + (ti % 4) * 0.5f;   // height variety
             // Trunk (bark) + bark ridges for texture
             r.drawCube(new Vector3f(tx, floorY + trunkH / 2f, tz),
@@ -684,6 +708,8 @@ public class WorldBuilder {
             for (int gz = 0; gz < gd; gz++) {
                 float wx = cx - 6f + (gx + 0.5f) * (lakeW / gw);
                 float wz = lz - lakeD / 2f + (gz + 0.5f) * (lakeD / gd);
+                // Phase F: stream only lake tiles whose chunk is near the camera.
+                if (!chunkVisible(wx, wz)) continue;
                 // Two traveling waves → gentle chop
                 float h = 0.06f * (float) Math.cos(wx * 1.2f + time * 1.5f)
                         + 0.05f * (float) Math.cos(wz * 1.7f - time * 1.1f);
