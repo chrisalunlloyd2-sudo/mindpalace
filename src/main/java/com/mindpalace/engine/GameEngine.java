@@ -20,7 +20,9 @@ import com.mindpalace.audio.AudioEngine;
 import com.mindpalace.audio.MusicEngine;
 import com.mindpalace.agent.AgentManager;
 import com.mindpalace.agent.AgentChat;
+import com.mindpalace.agent.LexicalAnalyzer;
 import com.mindpalace.agent.sims.*;
+import com.mindpalace.world.LegacyRepoClassifier;
 import com.mindpalace.deploy.DeployManager;
 import com.mindpalace.deploy.AnimationSystem;
 import com.mindpalace.deploy.LiveUpdateManager;
@@ -238,6 +240,24 @@ public class GameEngine {
             msg -> agentChat.addMessage(msg),
             msg -> System.out.println("[Agent] " + msg)
         );
+        // Lexical bridge → spawn a TODO crystal per issue found in non-legacy repos
+        agentManager.setIssuesCallback(issues -> {
+            for (AgentManager.Issue issue : issues) {
+                if (crystals.size() >= 60) break; // hard cap
+                TodoCrystal c = new TodoCrystal(issue.text, issue.repo, issue.file);
+                // Place near the room for that repo if it exists, else at origin
+                Room r = world.getRooms().stream()
+                    .filter(rm -> rm.getRepoName().equalsIgnoreCase(issue.repo))
+                    .findFirst().orElse(null);
+                if (r != null && r.getRoomCenter() != null) {
+                    c.setPosition(new Vector3f(r.getRoomCenter()).add(0, 0.3f, 0));
+                } else {
+                    c.setPosition(new Vector3f(0, 1.0f, 0));
+                }
+                crystals.add(c);
+                System.out.println("[Lexical] TODO crystal: " + issue);
+            }
+        });
         agentManager.start();
 
         // Build the knowledge graph + spawn agent NPCs (bodies in the world)
@@ -2100,6 +2120,31 @@ public class GameEngine {
         System.out.println((langOk ? "PASS" : "FAIL") + " code editor language toggle ("
             + LanguageRegistry.count() + " languages + LoRA mapping)");
         if (langOk) pass++; else fail++;
+
+        // 21. Lexical bridge — chat logs → lexical vectors → quorum → TODO issues
+        boolean lexicalOk = true;
+        // LexicalAnalyzer: tokenize + vectorize + cosine are deterministic.
+        LexicalAnalyzer.Vector va = LexicalAnalyzer.vectorize("fix the null pointer bug in the parser");
+        LexicalAnalyzer.Vector vb = LexicalAnalyzer.vectorize("fix null pointer bug parser");
+        float cos = LexicalAnalyzer.cosine(va, vb);
+        if (va.isEmpty() || vb.isEmpty() || cos < 0.5f) lexicalOk = false;
+        // LegacyRepoClassifier: backup/ref/test/duplicate names are legacy.
+        List<String> names = List.of("SIMS1337", "SIMS1337-BACKEND", "sims-backup-20260722",
+            "Plane2d-ref", "RandomTestProject", "mindpalace");
+        if (!LegacyRepoClassifier.isLegacy("sims-backup-20260722", names)) lexicalOk = false;
+        if (!LegacyRepoClassifier.isLegacy("Plane2d-ref", names)) lexicalOk = false;
+        if (!LegacyRepoClassifier.isLegacy("RandomTestProject", names)) lexicalOk = false;
+        if (LegacyRepoClassifier.isLegacy("mindpalace", names)) lexicalOk = false; // active
+        // Bridge: runLexicalBridge is wired and returns a (possibly empty) list.
+        if (agentManager != null) {
+            try {
+                agentManager.runLexicalBridge(); // must not throw
+            } catch (Exception e) {
+                lexicalOk = false;
+            }
+        }
+        System.out.println((lexicalOk ? "PASS" : "FAIL") + " lexical bridge (vectors + legacy classifier + quorum)");
+        if (lexicalOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);

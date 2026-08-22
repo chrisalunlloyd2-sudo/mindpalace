@@ -4,9 +4,13 @@ import com.google.gson.*;
 import com.mindpalace.agent.sims.*;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
+import com.mindpalace.world.LegacyRepoClassifier;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import java.nio.file.*;
+import java.io.IOException;
+import java.util.stream.Stream;
 
 /**
  * Manages two LLM agents from SIMS1337:
@@ -54,10 +58,25 @@ public class AgentManager {
     private final FOWGate fow = new FOWGate();
     private volatile String routedModel = TOOL_MODEL; // set by the router each cycle
 
+    // ── Chat → quorum → TODO bridge ────────────────────────────────────
+    // The user's spec: "check chat logs, extract lexical vectors to quorum
+    // voting, then trigger TODOs — they should get inputs from my git FOW or
+    // try to find and solve issues in all new non-legacy repos."
+    //
+    //   chat logs (JSONL) → LexicalAnalyzer (term-frequency vectors)
+    //     → dominant topics → quorum proposals → FOW-gated vote
+    //     → APPROVED topics → scan non-legacy repos for matching TODO/FIXME
+    //     → spawn/activate TODO crystals → tool agent solves (quorum-gated)
+    private final List<String> approvedTopics = new ArrayList<>();  // topics the quorum approved
+    private long lastLexicalScan = 0;                                // throttle chat-log reads
+    private static final long LEXICAL_SCAN_MS = 60_000;              // re-scan chat logs every 60s
+    private static final Path CHAT_LOG_DIR = Paths.get("chat_logs");
+
     // Callbacks for tool execution
     private Consumer<String> onToolMessage;
     private Consumer<String> onCriticMessage;
     private Consumer<String> onConsoleLog;
+    private Consumer<List<Issue>> onIssues;   // fired when the lexical bridge finds issues
 
     // State
     private boolean running;
@@ -144,6 +163,11 @@ public class AgentManager {
         this.onConsoleLog = console;
     }
 
+    /** Inject a callback for issues found by the lexical bridge (spawn crystals). */
+    public void setIssuesCallback(Consumer<List<Issue>> cb) {
+        this.onIssues = cb;
+    }
+
     /** Inject the GitHub client so the tool agent can actually execute tools. */
     public void setGitHubClient(com.mindpalace.github.GitHubClient github) {
         this.github = github;
@@ -208,6 +232,19 @@ public class AgentManager {
         // Quorum vote: register the cycle's proposal and let both models vote
         // (FOW-gated). The result is logged as the "voting schema" heartbeat.
         runQuorumVote(context);
+
+        // Lexical bridge: chat logs → lexical vectors → quorum → TODO issues.
+        // Runs on the same cycle; throttled internally to 60s. Approved topics
+        // surface matching TODO/FIXME comments in non-legacy repos as issues.
+        try {
+            List<Issue> issues = runLexicalBridge();
+            if (!issues.isEmpty() && onIssues != null) {
+                log("[AgentManager] lexical bridge found " + issues.size() + " issues");
+                onIssues.accept(issues);
+            }
+        } catch (Exception e) {
+            log("[AgentManager] lexical bridge error: " + e.getMessage());
+        }
     }
 
     /** Run a FOW-gated quorum vote on the current cycle's proposal. */
@@ -224,6 +261,177 @@ public class AgentManager {
             log("[AgentManager] quorum error: " + e.getMessage());
         }
     }
+
+    // ── Chat → quorum → TODO bridge ─────────────────────────────────────
+
+    /**
+     * The full lexical pipeline, run from the autonomous cycle:
+     *   1. Read the per-day chat logs (JSONL) and extract their text.
+     *   2. LexicalAnalyzer turns each message into a term-frequency vector and
+     *      clusters them into topical threads.
+     *   3. Each cluster's dominant topic becomes a quorum proposal; the models
+     *      vote (FOW-gated). APPROVED topics are recorded.
+     *   4. For each approved topic, scan non-legacy repos for TODO/FIXME/HACK
+     *      comments whose text lexically matches the topic, and surface them
+     *      as actionable issues (returned to the caller to spawn crystals).
+     *
+     * Returns the list of matched issues (repo + file + TODO text) so the
+     * engine can spawn/activate crystals. Empty if nothing approved or matched.
+     */
+    public List<Issue> runLexicalBridge() {
+        List<Issue> issues = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        if (now - lastLexicalScan < LEXICAL_SCAN_MS) return issues; // throttle
+        lastLexicalScan = now;
+
+        List<String> messages = readChatLogs();
+        if (messages.isEmpty()) return issues;
+
+        // Cluster messages into topical threads, then extract each thread's
+        // dominant topic as a quorum proposal.
+        List<List<Integer>> clusters = LexicalAnalyzer.cluster(messages, 0.25f);
+        int proposals = 0;
+        for (List<Integer> cluster : clusters) {
+            List<String> thread = new ArrayList<>();
+            for (int idx : cluster) thread.add(messages.get(idx));
+            String topic = LexicalAnalyzer.dominantTopic(thread, 5);
+            if (topic.isEmpty()) continue;
+
+            String id = "lex-" + System.currentTimeMillis() + "-" + (proposals++);
+            quorum.registerProposal(id, topic, new HexCoord(0, 0));
+            quorum.advanceTimePulse(0.05);
+            quorum.autoVoteAll();
+            WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
+            if (r != null && "APPROVED".equals(r.status)) {
+                approvedTopics.add(topic);
+                log("[AgentManager] lexical topic APPROVED: \"" + topic + "\"");
+            }
+        }
+
+        // For each approved topic, find matching TODO/FIXME/HACK comments in
+        // non-legacy repos (the "find issues in new non-legacy repos" half).
+        if (!approvedTopics.isEmpty()) {
+            issues.addAll(findIssuesForTopics(approvedTopics));
+        }
+        return issues;
+    }
+
+    /** Read all per-day chat logs and return their message texts. */
+    private List<String> readChatLogs() {
+        List<String> out = new ArrayList<>();
+        if (!Files.isDirectory(CHAT_LOG_DIR)) return out;
+        try (Stream<Path> files = Files.list(CHAT_LOG_DIR)) {
+            files.filter(p -> p.toString().endsWith(".jsonl"))
+                 .sorted()
+                 .forEach(p -> {
+                     try {
+                         for (String line : Files.readAllLines(p)) {
+                             if (line.isBlank()) continue;
+                             // Each line is {"ts":...,"msg":"..."} — extract msg.
+                             int i = line.indexOf("\"msg\":\"");
+                             if (i < 0) continue;
+                             int start = i + 7;
+                             int end = line.indexOf('"', start);
+                             // msg may contain escaped quotes; find the closing
+                             // quote that is not escaped.
+                             while (end > 0 && end < line.length() - 1 && line.charAt(end - 1) == '\\') {
+                                 end = line.indexOf('"', end + 1);
+                             }
+                             if (end < 0) continue;
+                             String msg = line.substring(start, end)
+                                 .replace("\\n", " ").replace("\\t", " ")
+                                 .replace("\\\"", "\"").replace("\\\\", "\\");
+                             if (!msg.isBlank()) out.add(msg);
+                         }
+                     } catch (IOException ignored) {}
+                 });
+        } catch (IOException ignored) {}
+        return out;
+    }
+
+    /**
+     * Scan non-legacy repos for TODO/FIXME/HACK comments whose text lexically
+     * matches an approved topic. Returns actionable issues (repo + file + text).
+     */
+    private List<Issue> findIssuesForTopics(List<String> topics) {
+        List<Issue> issues = new ArrayList<>();
+        // Build the set of non-legacy repo names from the discovered repos.
+        Set<String> allNames = new HashSet<>(discoveredRepos);
+        // Also include any room names the engine knows (broader coverage).
+        if (currentRoom != null) allNames.add(currentRoom.getRepoName());
+
+        for (String repo : allNames) {
+            if (LegacyRepoClassifier.isLegacy(repo, allNames)) continue;
+            // Find the local path for this repo (via the room list is not
+            // available here; use the standard AIGEN_SYS path).
+            Path repoDir = Paths.get("C:/Users/viper/AIGEN_SYS/repos", repo);
+            if (!Files.isDirectory(repoDir)) continue;
+            scanRepoForIssues(repoDir, repo, topics, issues);
+        }
+        return issues;
+    }
+
+    /** Recursively scan a repo for TODO/FIXME/HACK comments matching topics. */
+    private void scanRepoForIssues(Path dir, String repo, List<String> topics, List<Issue> issues) {
+        try (Stream<Path> walk = Files.walk(dir)) {
+            walk.filter(Files::isRegularFile)
+                .filter(p -> isCodeFile(p))
+                .limit(500) // cap per repo to bound scan cost
+                .forEach(p -> {
+                    try {
+                        String content = Files.readString(p);
+                        if (content.length() > 200_000) return;
+                        String upper = content.toUpperCase();
+                        int idx = upper.indexOf("TODO");
+                        if (idx < 0) idx = upper.indexOf("FIXME");
+                        if (idx < 0) idx = upper.indexOf("HACK");
+                        if (idx < 0) return;
+                        int end = content.indexOf('\n', idx);
+                        if (end < 0) end = Math.min(content.length(), idx + 80);
+                        String text = content.substring(idx, Math.min(end, idx + 80)).trim();
+                        // Lexical match: does the TODO text overlap any topic?
+                        if (matchesAnyTopic(text, topics)) {
+                            issues.add(new Issue(repo, dir.relativize(p).toString(), text));
+                        }
+                    } catch (IOException ignored) {}
+                });
+        } catch (IOException ignored) {}
+    }
+
+    private boolean isCodeFile(Path p) {
+        String n = p.getFileName().toString().toLowerCase();
+        return n.endsWith(".java") || n.endsWith(".py") || n.endsWith(".js")
+            || n.endsWith(".ts") || n.endsWith(".go") || n.endsWith(".rs")
+            || n.endsWith(".c") || n.endsWith(".cpp") || n.endsWith(".cs")
+            || n.endsWith(".kt") || n.endsWith(".rb") || n.endsWith(".php")
+            || n.endsWith(".swift") || n.endsWith(".sh");
+    }
+
+    private boolean matchesAnyTopic(String text, List<String> topics) {
+        LexicalAnalyzer.Vector tv = LexicalAnalyzer.vectorize(text);
+        if (tv.isEmpty()) return false;
+        for (String topic : topics) {
+            LexicalAnalyzer.Vector topicV = LexicalAnalyzer.vectorize(topic);
+            if (LexicalAnalyzer.cosine(tv, topicV) >= 0.2f) return true;
+        }
+        return false;
+    }
+
+    /** An actionable issue found in a non-legacy repo. */
+    public static final class Issue {
+        public final String repo;
+        public final String file;
+        public final String text;
+        public Issue(String repo, String file, String text) {
+            this.repo = repo; this.file = file; this.text = text;
+        }
+        @Override public String toString() {
+            return repo + "/" + file + ": " + text;
+        }
+    }
+
+    /** The topics the quorum has approved (for telemetry + self-test). */
+    public List<String> getApprovedTopics() { return approvedTopics; }
 
     /**
      * Run the tool agent through a full tool-calling loop: ask it to act on the
