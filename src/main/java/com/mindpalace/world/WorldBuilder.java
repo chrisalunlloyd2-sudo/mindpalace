@@ -478,58 +478,121 @@ public class WorldBuilder {
         boolean night = hour < 6 || hour >= 20;          // 8pm–6am = night
         boolean dusk = hour >= 18 && hour < 20;           // 6pm–8pm = sunset
 
-        if (night) {
-            // Moon (pale disc) + a few stars
-            r.drawCube(new Vector3f(cx - 6f, floorY + 8f, cz + od / 2f - 0.1f),
-                new Vector3f(2.5f, 2.5f, 0.1f), Renderer.TEX_WHITE);
-            float[][] stars = {{-12, 6}, {-8, 10}, {-4, 7}, {6, 9}, {11, 6}, {14, 11}, {-14, 12}};
-            for (float[] st : stars)
-                r.drawCube(new Vector3f(st[0], floorY + 7f + st[1] * 0.3f, cz + od / 2f - 0.2f),
-                    new Vector3f(0.08f, 0.08f, 0.05f), Renderer.TEX_WHITE);
-        } else if (dusk) {
-            // Sunset sun (deep amber, lower on the horizon)
-            r.drawCube(new Vector3f(cx, floorY + 5.5f, cz + od / 2f - 0.1f),
-                new Vector3f(3.5f, 3.5f, 0.1f), Renderer.TEX_NEON_PINK);
-            r.drawCube(new Vector3f(cx, floorY + 5.5f, cz + od / 2f - 0.15f),
-                new Vector3f(2.2f, 2.2f, 0.05f), Renderer.TEX_NEON_AMBER);
-        } else {
-            // Sun (yellow disc on back wall)
-            r.drawCube(new Vector3f(cx, floorY + 8f, cz + od / 2f - 0.1f),
-                new Vector3f(3f, 3f, 0.1f), Renderer.TEX_NEON_AMBER);
+        // ── Sky: cosine-interpolated vertical gradient (back wall backdrop) ──
+        // The sky is a stack of thin horizontal bands whose colors are sampled
+        // from a cosine ramp between top/mid/horizon palette stops. This gives
+        // a smooth, faint gradient with zero texture cost.
+        float skyTop = floorY + 9f, skyBot = floorY + 0.5f;
+        int bands = 18;
+        float bandH = (skyTop - skyBot) / bands;
+        float backZ = cz + od / 2f - 0.15f;
+        for (int i = 0; i < bands; i++) {
+            float t = i / (float) (bands - 1);           // 0 = top, 1 = horizon
+            float[] col = skyColor(t, night, dusk);
+            float by = skyTop - bandH * (i + 0.5f);
+            r.drawCubeColor(new Vector3f(cx, by, backZ),
+                new Vector3f(ow, bandH + 0.02f, 0.05f), col[0], col[1], col[2]);
         }
 
-        // Trees (trunk + canopy)
+        // ── Sun / moon with a cosine glow falloff (concentric rings) ──
+        float sunY = dusk ? floorY + 5.5f : floorY + 8f;
+        float sunX = cx, sunZ = backZ + 0.02f;
+        if (night) {
+            // Moon: pale disc + faint cosine halo
+            r.drawCubeColor(new Vector3f(cx - 6f, floorY + 8f, sunZ),
+                new Vector3f(2.2f, 2.2f, 0.05f), 0.85f, 0.88f, 0.95f);
+            for (int ring = 1; ring <= 3; ring++) {
+                float a = 0.25f * (float) Math.cos(ring * 0.9f) + 0.25f;
+                float s = 2.2f + ring * 0.9f;
+                r.drawCubeColor(new Vector3f(cx - 6f, floorY + 8f, sunZ - 0.01f * ring),
+                    new Vector3f(s, s, 0.03f), 0.85f * a, 0.88f * a, 0.95f * a);
+            }
+            // Stars — cosine twinkle (brightness varies with a slow sine)
+            float[][] stars = {{-12, 6}, {-8, 10}, {-4, 7}, {6, 9}, {11, 6}, {14, 11}, {-14, 12}, {3, 12}, {-9, 13}, {13, 8}};
+            for (int si = 0; si < stars.length; si++) {
+                float tw = 0.5f + 0.5f * (float) Math.cos(time * 1.5f + si * 1.7f);
+                r.drawCubeColor(new Vector3f(stars[si][0], floorY + 7f + stars[si][1] * 0.3f, backZ + 0.02f),
+                    new Vector3f(0.09f, 0.09f, 0.05f), tw, tw, tw);
+            }
+        } else {
+            // Sun: warm core + cosine glow rings (day = amber, dusk = pink→amber)
+            float[] core = dusk ? new float[]{1.0f, 0.55f, 0.30f} : new float[]{1.0f, 0.85f, 0.35f};
+            r.drawCubeColor(new Vector3f(sunX, sunY, sunZ), new Vector3f(2.6f, 2.6f, 0.05f), core[0], core[1], core[2]);
+            for (int ring = 1; ring <= 4; ring++) {
+                float a = 0.5f * (float) Math.cos(ring * 0.7f) + 0.5f;   // cosine falloff
+                float s = 2.6f + ring * 1.1f;
+                r.drawCubeColor(new Vector3f(sunX, sunY, sunZ - 0.01f * ring),
+                    new Vector3f(s, s, 0.03f), core[0] * a, core[1] * a, core[2] * a);
+            }
+        }
+
+        // ── Trees: Fibonacci phyllotaxis canopies ──
+        // Each tree's canopy is a spiral of leaf-cubes placed by the golden
+        // angle (137.5°), radius ∝ √n — the same pattern sunflowers use. This
+        // yields a natural, organic crown from a handful of cubes.
         float[][] treePos = {{-10, 5}, {-6, 12}, {8, 8}, {12, 15}, {-12, 18}, {10, 20}};
         for (float[] tp : treePos) {
             float tx = tp[0], tz = outZ + tp[1];
-            // Trunk
-            r.drawCube(new Vector3f(tx, floorY + 1.5f, tz), new Vector3f(0.3f, 3f, 0.3f), Renderer.TEX_WOOD);
-            // Canopy (3 layers)
-            r.drawCube(new Vector3f(tx, floorY + 3.5f, tz), new Vector3f(2.5f, 1.5f, 2.5f), Renderer.TEX_GRASS);
-            r.drawCube(new Vector3f(tx, floorY + 4.5f, tz), new Vector3f(1.8f, 1.2f, 1.8f), Renderer.TEX_GRASS);
-            r.drawCube(new Vector3f(tx, floorY + 5.3f, tz), new Vector3f(1.0f, 0.8f, 1.0f), Renderer.TEX_GRASS);
+            float trunkH = 2.2f + (tp[1] % 3) * 0.4f;   // slight height variety
+            r.drawCube(new Vector3f(tx, floorY + trunkH / 2f, tz),
+                new Vector3f(0.28f, trunkH, 0.28f), Renderer.TEX_WOOD);
+            // Phyllotaxis canopy
+            float golden = 2.399963f;                    // golden angle in radians
+            int leaves = 26;
+            float baseY = floorY + trunkH + 0.4f;
+            for (int n = 0; n < leaves; n++) {
+                float ang = n * golden;
+                float rad = 0.35f * (float) Math.sqrt(n + 1);
+                float lx = tx + rad * (float) Math.cos(ang);
+                float lz = tz + rad * (float) Math.sin(ang);
+                float ly = baseY + 0.9f * (1f - (float) n / leaves);  // taper upward
+                float ls = 0.34f * (1f - 0.5f * (float) n / leaves);  // shrink toward top
+                r.drawCubeColor(new Vector3f(lx, ly, lz),
+                    new Vector3f(ls, ls, ls), 0.10f, 0.45f + 0.1f * (n % 3), 0.12f);
+            }
         }
 
-        // Lake
+        // ── Lake: cosine water shimmer (animated ripples) ──
         float lz = outZ + od - 3f;
         r.drawCube(new Vector3f(cx - 5f, floorY + 0.05f, lz), new Vector3f(10f, 0.1f, 6f), Renderer.TEX_WATER);
+        for (int i = 0; i < 6; i++) {
+            float ph = time * 1.2f + i * 1.1f;
+            float a = 0.5f + 0.5f * (float) Math.cos(ph);
+            float rx = cx - 5f + (i % 3) * 3.2f - 3.2f;
+            float rz = lz - 2f + (i / 3) * 3.5f;
+            r.drawCubeColor(new Vector3f(rx, floorY + 0.11f, rz),
+                new Vector3f(1.6f, 0.02f, 0.5f), 0.5f * a, 0.75f * a, 0.95f * a);
+        }
 
-        // Lakehouse
+        // ── Lakehouse ──
         float lhx = cx + 8f, lhz = outZ + od - 6f;
-        // Floor
         r.drawCube(new Vector3f(lhx, floorY + 0.1f, lhz), new Vector3f(5f, 0.15f, 4f), Renderer.TEX_WOOD);
-        // Walls
         r.drawCube(new Vector3f(lhx, floorY + 1.5f, lhz - 2f), new Vector3f(5f, 3f, 0.2f), Renderer.TEX_WOOD);
         r.drawCube(new Vector3f(lhx, floorY + 1.5f, lhz + 2f), new Vector3f(5f, 3f, 0.2f), Renderer.TEX_WOOD);
         r.drawCube(new Vector3f(lhx - 2.5f, floorY + 1.5f, lhz), new Vector3f(0.2f, 3f, 4f), Renderer.TEX_WOOD);
         r.drawCube(new Vector3f(lhx + 2.5f, floorY + 1.5f, lhz), new Vector3f(0.2f, 3f, 4f), Renderer.TEX_WOOD);
-        // Roof (A-frame)
         r.drawCube(new Vector3f(lhx, floorY + 3.2f, lhz), new Vector3f(5.5f, 0.15f, 4.5f), Renderer.TEX_DOOR);
-        // Door
         r.drawCube(new Vector3f(lhx, floorY + 1.0f, lhz - 2.1f), new Vector3f(1.2f, 2f, 0.1f), Renderer.TEX_DOOR);
-        // Windows
-        r.drawCube(new Vector3f(lhx - 1.5f, floorY + 1.8f, lhz - 2.1f), new Vector3f(0.8f, 0.8f, 0.05f), Renderer.TEX_NEON_CYAN);
-        r.drawCube(new Vector3f(lhx + 1.5f, floorY + 1.8f, lhz - 2.1f), new Vector3f(0.8f, 0.8f, 0.05f), Renderer.TEX_NEON_CYAN);
+        // Windows glow warm at night, cool cyan by day
+        int winTex = night ? Renderer.TEX_NEON_AMBER : Renderer.TEX_NEON_CYAN;
+        r.drawCube(new Vector3f(lhx - 1.5f, floorY + 1.8f, lhz - 2.1f), new Vector3f(0.8f, 0.8f, 0.05f), winTex);
+        r.drawCube(new Vector3f(lhx + 1.5f, floorY + 1.8f, lhz - 2.1f), new Vector3f(0.8f, 0.8f, 0.05f), winTex);
+    }
+
+    /** Cosine-interpolated sky color at height t (0=top, 1=horizon). */
+    private float[] skyColor(float t, boolean night, boolean dusk) {
+        // Smooth cosine ramp between palette stops.
+        float c = 0.5f - 0.5f * (float) Math.cos(t * (float) Math.PI); // 0→1 ease
+        float[] top, mid, low;
+        if (night)      { top = new float[]{0.02f,0.03f,0.10f}; mid = new float[]{0.04f,0.06f,0.16f}; low = new float[]{0.06f,0.08f,0.20f}; }
+        else if (dusk)  { top = new float[]{0.20f,0.15f,0.40f}; mid = new float[]{0.55f,0.30f,0.55f}; low = new float[]{0.95f,0.55f,0.30f}; }
+        else            { top = new float[]{0.10f,0.25f,0.55f}; mid = new float[]{0.35f,0.60f,0.85f}; low = new float[]{0.75f,0.85f,0.95f}; }
+        float[] a = c < 0.5f ? lerp(top, mid, c * 2f) : lerp(mid, low, (c - 0.5f) * 2f);
+        return a;
+    }
+
+    private float[] lerp(float[] a, float[] b, float t) {
+        return new float[]{ a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t };
     }
 
     private void renderWallWithDoors(Renderer r, Vector3f s, Hallway hw, int side) {

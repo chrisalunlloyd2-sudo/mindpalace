@@ -143,6 +143,23 @@ public class Renderer {
         drawMesh(getCubeMesh(), model, texId);
     }
 
+    // Cache of solid-color textures keyed by quantized RGB, so gradient bands
+    // (cosine-interpolated sky, water shimmer) can paint arbitrary colors
+    // without a texture per shade.
+    private final java.util.Map<Integer, Texture> colorCache = new java.util.HashMap<>();
+
+    /** Draw a cube with an arbitrary RGB color (cached 1x1 texture). */
+    public void drawCubeColor(Vector3f position, Vector3f size, float r, float g, float b) {
+        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(b*255);
+        Texture tex = colorCache.get(key);
+        if (tex == null) { tex = new Texture(r, g, b); colorCache.put(key, tex); }
+        Matrix4f model = new Matrix4f().translate(position).scale(size);
+        basicShader.setUniform("model", model);
+        tex.bind(0);
+        basicShader.setUniform("useTexture", 1);
+        getCubeMesh().render();
+    }
+
     /**
      * Draw a flat textured quad (an image poster) facing a given yaw.
      * Binds the supplied Texture directly (not the solid-color atlas), so real
