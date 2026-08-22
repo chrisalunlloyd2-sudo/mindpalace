@@ -8,6 +8,7 @@ import com.mindpalace.world.Hallway;
 import com.mindpalace.audio.AudioEngine;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
+import java.util.List;
 
 /**
  * Player — FPS controller with acceleration, wall collision, door interaction.
@@ -302,6 +303,22 @@ public class Player {
         teleportCooldown = 1.0;
         if (audio != null) audio.playDoorOpen();
         System.out.println("[TELEPORT] -> Floor " + (floor + 1));
+    }
+
+    /** Teleport onto a specific teleporter pad (exact pad position). */
+    public void teleportToPad(int padIndex, WorldBuilder world) {
+        List<Vector3f> pads = world.getTeleporterPads();
+        if (padIndex < 0 || padIndex >= pads.size()) return;
+        Vector3f pad = pads.get(padIndex);
+        currentRoom = null;
+        camera.setPosition(pad.x, pad.y + EYE_HEIGHT, pad.z);
+        camera.setYaw(0);
+        camera.setPitch(0);
+        velocity.set(0, 0, 0);
+        onGround = true;
+        teleportCooldown = 1.0;
+        if (audio != null) audio.playDoorOpen();
+        System.out.println("[TELEPORT] -> Pad " + (padIndex + 1) + " (floor " + (padIndex + 1) + ")");
     }
 
     /** Teleport to the outside area (floor 0, in front of the palace). */

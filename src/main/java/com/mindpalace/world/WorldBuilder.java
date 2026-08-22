@@ -57,6 +57,21 @@ public class WorldBuilder {
     public boolean isPlanetActive() { return planetActive; }
     public void setPlanetActive(boolean a) { planetActive = a; }
 
+    /**
+     * Teleporter pads — one per floor (except the top floor, which has no
+     * "up" pad). Each pad is a distinct destination in the teleporter
+     * network. Pads are returned in floor order, so index i == floor i.
+     */
+    public List<Vector3f> getTeleporterPads() {
+        List<Vector3f> pads = new ArrayList<>();
+        for (Hallway hw : hallways) {
+            if (hw.getFloor() >= hallways.size() - 1) continue; // no pad on top floor
+            float padZ = hw.getEnd().z - 1.0f;
+            pads.add(new Vector3f(0f, hw.getStart().y, padZ));
+        }
+        return pads;
+    }
+
     public WorldBuilder() {
         repoMapper = new RepoMapper();
         populator = new RoomPopulator();

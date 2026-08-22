@@ -766,8 +766,8 @@ public class GameEngine {
 
     /** Handle the teleporter destination picker (up/down/enter/number keys). */
     private void handleTeleportMenu(Input input) {
-        int floors = world.getHallways().size();
-        int options = floors + 2; // floors + "Outside" + "Planet"
+        int pads = world.getTeleporterPads().size();
+        int options = pads + 2; // each pad + "Outside" + "Planet"
         if (input.wasKeyPressed(GLFW.GLFW_KEY_UP) || input.wasKeyPressed(GLFW.GLFW_KEY_W)) {
             teleportSel = (teleportSel - 1 + options) % options;
         }
@@ -784,9 +784,9 @@ public class GameEngine {
         if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER)) {
             teleportMenu = false;
             input.setCursorCaptured(true);
-            if (teleportSel < floors) {
-                player.teleportToFloor(teleportSel, world);
-            } else if (teleportSel == floors) {
+            if (teleportSel < pads) {
+                player.teleportToPad(teleportSel, world);
+            } else if (teleportSel == pads) {
                 player.teleportOutside(world);
             } else {
                 player.teleportToPlanet(world);
@@ -1365,8 +1365,8 @@ public class GameEngine {
         Vector3f center = new Vector3f(camPos).add(
             camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
 
-        int floors = world.getHallways().size();
-        int options = floors + 2;
+        int pads = world.getTeleporterPads().size();
+        int options = pads + 2;
         float lineH = 0.12f;
         float startY = center.y + (options * lineH) / 2f;
 
@@ -1375,8 +1375,8 @@ public class GameEngine {
 
         for (int i = 0; i < options; i++) {
             String label;
-            if (i < floors) label = (i + 1) + ". Floor " + (i + 1);
-            else if (i == floors) label = (i + 1) + ". Outside";
+            if (i < pads) label = (i + 1) + ". Teleporter " + (i + 1) + " (Floor " + (i + 1) + ")";
+            else if (i == pads) label = (i + 1) + ". Outside";
             else label = (i + 1) + ". Planet";
             if (i == teleportSel) label = "> " + label + " <";
             Vector3f pos = new Vector3f(center.x, startY - i * lineH, center.z);
