@@ -18,6 +18,7 @@ import com.mindpalace.ui.BookEditor;
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.audio.AudioEngine;
 import com.mindpalace.audio.MusicEngine;
+import com.mindpalace.audio.StepSequencer;
 import com.mindpalace.agent.AgentManager;
 import com.mindpalace.agent.AgentChat;
 import com.mindpalace.agent.LexicalAnalyzer;
@@ -61,6 +62,7 @@ public class GameEngine {
     private GitHubClient github;
     private AudioEngine audio;
     private MusicEngine music;
+    private StepSequencer sequencer;   // 16-step drum/bass machine (StudioLab)
     private AgentManager agentManager;
     private AgentChat agentChat;
     private DeployManager deployManager;
@@ -89,6 +91,9 @@ public class GameEngine {
     private int menuSel;            // selected option in the ESC menu
     private int menuPage;           // 0=main, 1=video, 2=controls, 3=audio, 4=music, 5=agents
     private int moodIdx;            // Beats StudioLab mood preset cursor
+    private int seqSelRow;          // sequencer grid cursor (channel row)
+    private int seqSelCol;          // sequencer grid cursor (step column)
+    private boolean seqEditing;     // true when the grid is the active menu
 
     private double lastFrameTime;
     private double accumulator;
@@ -216,6 +221,7 @@ public class GameEngine {
         audio = new AudioEngine();
         player.setAudio(audio);
         music = new MusicEngine();
+        sequencer = new StepSequencer();
 
         loadingText = "Scanning repositories...";
         loadingProgress = 0.3f;
@@ -345,6 +351,7 @@ public class GameEngine {
         input.setCursorCaptured(true);
         audio.playAmbientStart();
         music.start();
+        sequencer.start();
 
         lastFrameTime = GLFW.glfwGetTime();
         accumulator = 0.0;
@@ -544,7 +551,7 @@ public class GameEngine {
                 bookEditor.close();
                 input.setCursorCaptured(true);
                 state = GameState.PLAYING;
-            } else if (state == GameState.MENU) {
+            } else if (state == GameState.MENU && !seqEditing) {
                 state = GameState.PLAYING;
                 menuPage = 0;
                 input.setCursorCaptured(true);
@@ -820,6 +827,11 @@ public class GameEngine {
 
     /** ESC menu — navigate pages, adjust settings live. */
     private void handleMenu(Input input) {
+        // Sequencer grid editing takes over when the StudioLab grid is open.
+        if (seqEditing) {
+            handleSequencer(input);
+            return;
+        }
         int count = menuOptionCount();
         if (input.wasKeyPressed(GLFW.GLFW_KEY_UP) || input.wasKeyPressed(GLFW.GLFW_KEY_W)) {
             menuSel = (menuSel - 1 + count) % count;
@@ -837,13 +849,40 @@ public class GameEngine {
         }
     }
 
+    /** Sequencer grid — arrow keys move the cursor, Enter/Space toggles a cell. */
+    private void handleSequencer(Input input) {
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_UP) || input.wasKeyPressed(GLFW.GLFW_KEY_W)) {
+            seqSelRow = Math.max(0, seqSelRow - 1);
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_DOWN) || input.wasKeyPressed(GLFW.GLFW_KEY_S)) {
+            seqSelRow = Math.min(StepSequencer.CHANNELS - 1, seqSelRow + 1);
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_LEFT) || input.wasKeyPressed(GLFW.GLFW_KEY_A)) {
+            seqSelCol = Math.max(0, seqSelCol - 1);
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_RIGHT) || input.wasKeyPressed(GLFW.GLFW_KEY_D)) {
+            seqSelCol = Math.min(StepSequencer.STEPS - 1, seqSelCol + 1);
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) || input.wasKeyPressed(GLFW.GLFW_KEY_SPACE)) {
+            sequencer.toggle(seqSelRow, seqSelCol);
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_C)) {
+            sequencer.clear();
+        }
+        // Escape or Backspace exits the grid back to the music page.
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_ESCAPE) || input.wasKeyPressed(GLFW.GLFW_KEY_BACKSPACE)) {
+            seqEditing = false;
+            menuPage = 4; menuSel = 6;
+        }
+    }
+
     private int menuOptionCount() {
         switch (menuPage) {
             case 0: return 7;  // Resume, Video, Controls, Audio, Music, Agents, Quit
             case 1: return 5;  // FOV, Sensitivity, Fullscreen, Bloom intensity, Bloom threshold
             case 2: return 1;  // Invert Y (rest is informational)
             case 3: return 2;  // Master volume, Sound on/off
-            case 4: return 6;  // Music on/off, volume, tempo, beat, scale, mood
+            case 4: return 7;  // Music on/off, volume, tempo, beat, scale, mood, sequencer
             case 5: return 2;  // Auto-cycle interval, agent models (info)
             default: return 1;
         }
@@ -868,10 +907,11 @@ public class GameEngine {
             case 4: // music (Beats StudioLab)
                 if (sel == 0) music.setEnabled(!music.isEnabled());
                 if (sel == 1) music.setVolume(clamp(music.getVolume() + dir * 0.1f, 0f, 1f));
-                if (sel == 2) music.setTempo(music.getTempo() + dir * 4);
+                if (sel == 2) { music.setTempo(music.getTempo() + dir * 4); sequencer.setTempo(music.getTempo()); }
                 if (sel == 3) music.setBeat(!music.isBeat());
                 if (sel == 4) cycleScale(dir);
                 if (sel == 5) cycleMood(dir);
+                if (sel == 6) { sequencer.setEnabled(!sequencer.isEnabled()); }
                 break;
         }
     }
@@ -904,6 +944,15 @@ public class GameEngine {
                     case 4: menuPage = 4; menuSel = 0; break;
                     case 5: menuPage = 5; menuSel = 0; break;
                     case 6: GLFW.glfwSetWindowShouldClose(window, true); break;
+                }
+                break;
+            case 4: // music — entering "Sequencer" opens the step grid
+                if (sel == 6) {
+                    seqEditing = true;
+                    seqSelRow = 0;
+                    seqSelCol = 0;
+                } else {
+                    menuPage = 0; menuSel = 0; // back to main
                 }
                 break;
             default:
@@ -1422,6 +1471,12 @@ public class GameEngine {
         Vector3f center = new Vector3f(camPos).add(
             camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
 
+        // Sequencer grid takes over the menu when editing.
+        if (seqEditing) {
+            renderSequencerGrid(center, proj, view, camPos, camFront);
+            return;
+        }
+
         String[] lines = menuLines();
         float lineH = 0.12f;
         float startY = center.y + (lines.length * lineH) / 2f;
@@ -1437,6 +1492,74 @@ public class GameEngine {
                 : (i == 0 ? new Vector3f(0.2f, 1.0f, 0.9f) : new Vector3f(0.7f, 0.7f, 0.7f));
             fontRenderer.renderBillboard(label, pos, 0.05f, col, proj, view, camPos);
         }
+    }
+
+    /** Draw the 16×4 step-sequencer grid as a billboarded block matrix. */
+    private void renderSequencerGrid(Vector3f center, Matrix4f proj, Matrix4f view,
+                                     Vector3f camPos, Vector3f camFront) {
+        float cell = 0.14f;         // cell size
+        float gap = 0.02f;
+        float gridW = StepSequencer.STEPS * (cell + gap);
+        float gridH = StepSequencer.CHANNELS * (cell + gap);
+        float originX = center.x - gridW / 2f + cell / 2f;
+        float originY = center.y + gridH / 2f - cell / 2f;
+
+        // Per-channel accent colors (kick=amber, snare=red, hat=cyan, bass=green)
+        float[][] channelCol = {
+            {1.0f, 0.70f, 0.20f},
+            {1.0f, 0.35f, 0.35f},
+            {0.35f, 0.85f, 1.0f},
+            {0.40f, 0.90f, 0.40f}
+        };
+
+        int playhead = sequencer.getPlayhead();
+        for (int r = 0; r < StepSequencer.CHANNELS; r++) {
+            for (int c = 0; c < StepSequencer.STEPS; c++) {
+                float px = originX + c * (cell + gap);
+                float py = originY - r * (cell + gap);
+                Vector3f pos = new Vector3f(px, py, center.z);
+
+                boolean active = sequencer.get(r, c);
+                boolean cursor = (r == seqSelRow && c == seqSelCol);
+                boolean isPlayhead = (c == playhead);
+
+                // Base cell: dim gray if off, bright channel color if on.
+                float[] col = active ? channelCol[r] : new float[]{0.25f, 0.25f, 0.25f};
+                // Playhead column gets a brightening pulse.
+                if (isPlayhead) {
+                    col = new float[]{
+                        Math.min(1f, col[0] + 0.25f),
+                        Math.min(1f, col[1] + 0.25f),
+                        Math.min(1f, col[2] + 0.25f)
+                    };
+                }
+                renderer.drawCubeColor(pos, new Vector3f(cell, cell, 0.03f), col[0], col[1], col[2]);
+
+                // Cursor highlight ring (slightly larger, translucent frame)
+                if (cursor) {
+                    renderer.drawCubeColor(pos, new Vector3f(cell + 0.04f, cell + 0.04f, 0.01f),
+                        1.0f, 1.0f, 0.9f);
+                }
+            }
+        }
+
+        // Row labels (channel names)
+        for (int r = 0; r < StepSequencer.CHANNELS; r++) {
+            float py = originY - r * (cell + gap);
+            Vector3f labelPos = new Vector3f(center.x - gridW / 2f - 0.8f, py, center.z);
+            fontRenderer.renderBillboard(StepSequencer.CHANNEL_NAMES[r], labelPos, 0.05f,
+                new Vector3f(channelCol[r][0], channelCol[r][1], channelCol[r][2]), proj, view, camPos);
+        }
+
+        // Header
+        Vector3f hdr = new Vector3f(center.x, center.y + gridH / 2f + 0.5f, center.z);
+        fontRenderer.renderBillboard("=== STEP SEQUENCER ===", hdr, 0.06f,
+            new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
+
+        // Footer help
+        Vector3f ft = new Vector3f(center.x, center.y - gridH / 2f - 0.5f, center.z);
+        fontRenderer.renderBillboard("Arrows: move   Enter/Space: toggle   C: clear   Esc: back",
+            ft, 0.04f, new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
     }
 
     private String[] menuLines() {
@@ -1488,7 +1611,7 @@ public class GameEngine {
                     "Beat: " + (music.isBeat() ? "ON" : "OFF"),
                     "Scale: " + music.getScale(),
                     "Mood: " + MOODS[moodIdx],
-                    "(Enter to go back)"
+                    "Sequencer: " + (sequencer.isEnabled() ? "ON" : "OFF") + " (Enter to edit grid)"
                 };
             case 5:
                 return new String[]{
@@ -2061,6 +2184,30 @@ public class GameEngine {
         }
         System.out.println((musicOk ? "PASS" : "FAIL") + " music (procedural engine + live tuning + moods)");
         if (musicOk) pass++; else fail++;
+
+        // 17b. StepSequencer — 16×4 grid, toggle/clear/tempo, live playhead.
+        boolean seqOk = sequencer != null;
+        if (seqOk) {
+            int tempo = sequencer.getTempo();
+            sequencer.setTempo(tempo + 8);
+            if (sequencer.getTempo() != tempo + 8) seqOk = false;
+            sequencer.setTempo(tempo);
+            // Toggle a cell on, verify it flipped, then off.
+            boolean before = sequencer.get(0, 0);
+            sequencer.toggle(0, 0);
+            if (sequencer.get(0, 0) == before) seqOk = false;
+            sequencer.toggle(0, 0);
+            if (sequencer.get(0, 0) != before) seqOk = false;
+            // Clear wipes the grid; re-seed the default pattern for the user.
+            sequencer.clear();
+            boolean allClear = true;
+            for (int r = 0; r < StepSequencer.CHANNELS; r++)
+                for (int c = 0; c < StepSequencer.STEPS; c++)
+                    if (sequencer.get(r, c)) allClear = false;
+            if (!allClear) seqOk = false;
+        }
+        System.out.println((seqOk ? "PASS" : "FAIL") + " step sequencer (grid + toggle + tempo + clear)");
+        if (seqOk) pass++; else fail++;
 
         // 18. Poster boards — language-distribution diagram + image-texture poster
         //     Every room draws a repo-composition diagram (or a real repo image)
