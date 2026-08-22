@@ -2309,7 +2309,41 @@ public class GameEngine {
         System.out.println((solveOk ? "PASS" : "FAIL") + " solve loop (quorum-gated, no-op on empty/ghost)");
         if (solveOk) pass++; else fail++;
 
-        System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
+        // 23. Teleporter BEHAVIOR — Enter on a pad opens the destination LIST,
+        // does NOT auto-teleport; a second Enter confirms the selection. Drives
+        // the real input→picker→confirm path (not a direct teleportTo* call).
+        // Mirrors real play: stand on the pad for one tick (padFloor detected in
+        // player.update), THEN press Enter.
+        boolean teleportBehaviorOk = false;
+        try {
+            teleportMenu = false;
+            state = GameState.PLAYING;
+            List<Vector3f> tpads = world.getTeleporterPads();
+            if (!tpads.isEmpty()) {
+                Vector3f p0 = tpads.get(0);
+                player.getCamera().setPosition(p0.x, p0.y + 1.6f, p0.z);
+            }
+            update(1.5);   // tick 1: decay teleportCooldown (1.0→0) + detect pad
+            boolean onPad = player.getPadFloor() >= 0;
+            input.injectKeyPress(GLFW.GLFW_KEY_ENTER);
+            update(0.0);   // tick 2: Enter opens the picker
+            boolean openedPicker = teleportMenu;
+            update(0.0);   // release tick: resets keysPrev so the next Enter edges
+            if (onPad && openedPicker) {
+                teleportSel = 0;
+                input.injectKeyPress(GLFW.GLFW_KEY_ENTER);
+                update(0.0);   // tick 3: Enter confirms → picker closes
+                teleportBehaviorOk = !teleportMenu;
+            }
+        } catch (Exception e) {
+            teleportBehaviorOk = false;
+            System.err.println("[SelfTest] teleporter behavior threw: " + e);
+        }
+        System.out.println((teleportBehaviorOk ? "PASS" : "FAIL")
+            + " teleporter behavior (Enter opens list, second Enter confirms)");
+        if (teleportBehaviorOk) pass++; else fail++;
+
+        System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
     }
 

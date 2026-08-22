@@ -33,8 +33,8 @@ public class StepSequencer {
     private final AtomicInteger volumePct = new AtomicInteger(50);
 
     private volatile int playhead;                    // current step (read by UI)
-    private Thread thread;
-    private SourceDataLine line;
+    private volatile Thread thread;
+    private volatile SourceDataLine line;
 
     public StepSequencer() {
         // Seed a sensible default pattern so it sounds alive out of the box:
@@ -139,9 +139,12 @@ public class StepSequencer {
                 buf[i] = (byte) (sample & 0xFF);
                 buf[i + 1] = (byte) ((sample >> 8) & 0xFF);
             }
-            line.write(buf, 0, buf.length);
+            SourceDataLine l = line;
+            if (l == null) break;   // stop() tore down the line mid-loop
+            l.write(buf, 0, buf.length);
         }
-        if (line != null) { line.close(); line = null; }
+        SourceDataLine closing = line;
+        if (closing != null) { closing.close(); line = null; }
     }
 
     /** A single channel's synthesized sample at time dt since trigger. */

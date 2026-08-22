@@ -27,8 +27,8 @@ public class MusicEngine {
     private volatile String scale = "minor";
     private volatile int[] progression = {0, 5, 2, 6}; // i–VI–III–VII (minor)
 
-    private Thread thread;
-    private SourceDataLine line;
+    private volatile Thread thread;
+    private volatile SourceDataLine line;
 
     // ── Scale definitions (semitone offsets from root) ──
     private static final int[] MAJOR     = {0, 2, 4, 5, 7, 9, 11};
@@ -187,9 +187,15 @@ public class MusicEngine {
                 buf[i + 1] = (byte) ((sample >> 8) & 0xFF);
                 step++;
             }
-            line.write(buf, 0, buf.length);
+            // Null-guard: stop() closes/nulls `line` from another thread, so a
+            // mid-write teardown would otherwise NPE (the "mindpalace-music"
+            // daemon-thread race seen on --selftest shutdown).
+            SourceDataLine l = line;
+            if (l == null) break;
+            l.write(buf, 0, buf.length);
         }
-        if (line != null) { line.close(); line = null; }
+        SourceDataLine closing = line;
+        if (closing != null) { closing.close(); line = null; }
     }
 
     public void cleanup() { stop(); }

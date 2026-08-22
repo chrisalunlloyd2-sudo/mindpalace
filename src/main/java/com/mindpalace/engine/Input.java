@@ -10,6 +10,7 @@ public class Input {
     private final long window;
     private final boolean[] keys = new boolean[GLFW.GLFW_KEY_LAST + 1];
     private final boolean[] keysPrev = new boolean[GLFW.GLFW_KEY_LAST + 1];
+    private final boolean[] synthPress = new boolean[GLFW.GLFW_KEY_LAST + 1];
 
     private double lastX, lastY;
     private double accumDX, accumDY;
@@ -85,7 +86,18 @@ public class Input {
 
         for (int i = 32; i <= GLFW.GLFW_KEY_LAST; i++)
             keys[i] = GLFW.glfwGetKey(window, i) == GLFW.GLFW_PRESS;
+
+        // Merge synthetic (scripted) presses into the current frame so the
+        // behavioral tester can drive real key paths through wasKeyPressed().
+        for (int i = 32; i <= GLFW.GLFW_KEY_LAST; i++) {
+            if (synthPress[i]) { keys[i] = true; synthPress[i] = false; }
+        }
     }
+
+    /** Script a single-frame key press (behavioral tester / agent driver). */
+    public void injectKeyPress(int key) { synthPress[key] = true; }
+    /** Script a single-frame left-click (behavioral tester / agent driver). */
+    public void injectLeftClick() { leftClickJust = true; }
 
     public void setCursorCaptured(boolean cap) {
         captured = cap;
