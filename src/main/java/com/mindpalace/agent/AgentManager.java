@@ -238,9 +238,12 @@ public class AgentManager {
         // surface matching TODO/FIXME comments in non-legacy repos as issues.
         try {
             List<Issue> issues = runLexicalBridge();
-            if (!issues.isEmpty() && onIssues != null) {
+            if (!issues.isEmpty()) {
                 log("[AgentManager] lexical bridge found " + issues.size() + " issues");
-                onIssues.accept(issues);
+                if (onIssues != null) onIssues.accept(issues);
+                // Solve loop: quorum-gated read → fix → apply on the local tree.
+                int solved = solveIssues(issues);
+                if (solved > 0) log("[AgentManager] solved " + solved + " issues");
             }
         } catch (Exception e) {
             log("[AgentManager] lexical bridge error: " + e.getMessage());
@@ -432,6 +435,84 @@ public class AgentManager {
 
     /** The topics the quorum has approved (for telemetry + self-test). */
     public List<String> getApprovedTopics() { return approvedTopics; }
+
+    // ── Solve loop ─────────────────────────────────────────────────────
+
+    /**
+     * Solve issues the lexical bridge found — quorum-gated. Each issue is put
+     * to a FOW-gated vote; only APPROVED issues are acted on. The action is a
+     * read → propose-fix → apply cycle against the LOCAL checkout (never GitHub
+     * push — the agent edits the working tree, the human/CI commits). This is
+     * the "find AND solve issues in new non-legacy repos" half of the spec.
+     *
+     * Returns the number of issues actually solved (edited).
+     */
+    public int solveIssues(List<Issue> issues) {
+        if (issues == null || issues.isEmpty() || !available || !running) return 0;
+        int solved = 0;
+        for (Issue issue : issues) {
+            // Quorum gate: only solve if the models approve this specific issue.
+            String id = "solve-" + System.currentTimeMillis() + "-" + issue.repo.hashCode();
+            quorum.registerProposal(id, "Solve: " + issue.text, new HexCoord(0, 0));
+            quorum.advanceTimePulse(0.05);
+            quorum.autoVoteAll();
+            WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
+            if (r == null || !"APPROVED".equals(r.status)) {
+                log("[AgentManager] solve REJECTED: " + issue);
+                continue;
+            }
+            if (solveOne(issue)) solved++;
+        }
+        return solved;
+    }
+
+    /** Read → propose-fix → apply for a single issue (local checkout only). */
+    private boolean solveOne(Issue issue) {
+        Path repoDir = Paths.get("C:/Users/viper/AIGEN_SYS/repos", issue.repo);
+        Path file = repoDir.resolve(issue.file);
+        if (!Files.isRegularFile(file)) return false;
+
+        try {
+            String content = Files.readString(file);
+            if (content.length() > 200_000) return false; // too big to safely edit
+
+            // Ask the tool model for a targeted fix (single round, no tool loop —
+            // the fix is a text edit, not a multi-step tool sequence).
+            String prompt = "You are fixing a TODO/FIXME in a code file.\n\n"
+                + "File: " + issue.file + "\n"
+                + "Issue: " + issue.text + "\n\n"
+                + "Return ONLY the corrected full file content. Do not add commentary.\n\n"
+                + "```\n" + content + "\n```";
+            String fixed = ollama.chat(routedModel, prompt, "");
+            if (fixed == null || fixed.isEmpty() || fixed.equals(content)) return false;
+
+            // Strip any markdown fence the model may have wrapped the output in.
+            fixed = stripFence(fixed);
+            if (fixed.equals(content)) return false;
+
+            // Apply the fix to the local working tree (no push — human/CI commits).
+            Files.writeString(file, fixed);
+            log("[AgentManager] SOLVED " + issue.repo + "/" + issue.file
+                + " (" + content.length() + " → " + fixed.length() + " chars)");
+            return true;
+        } catch (IOException e) {
+            log("[AgentManager] solve error on " + issue + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    /** Strip a leading/trailing ``` fence the model may have added. */
+    private static String stripFence(String s) {
+        String t = s.trim();
+        if (t.startsWith("```")) {
+            int nl = t.indexOf('\n');
+            if (nl >= 0) t = t.substring(nl + 1);
+        }
+        if (t.endsWith("```")) {
+            t = t.substring(0, t.length() - 3).trim();
+        }
+        return t;
+    }
 
     /**
      * Run the tool agent through a full tool-calling loop: ask it to act on the

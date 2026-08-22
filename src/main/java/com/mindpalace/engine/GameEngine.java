@@ -2146,6 +2146,22 @@ public class GameEngine {
         System.out.println((lexicalOk ? "PASS" : "FAIL") + " lexical bridge (vectors + legacy classifier + quorum)");
         if (lexicalOk) pass++; else fail++;
 
+        // 22. Solve loop — quorum-gated, safe (no real file edits in self-test).
+        boolean solveOk = agentManager != null;
+        if (solveOk) {
+            try {
+                // Empty input → 0 solved, no throw.
+                if (agentManager.solveIssues(List.of()) != 0) solveOk = false;
+                // A non-existent issue → 0 solved (file not found), no throw.
+                AgentManager.Issue ghost = new AgentManager.Issue("__nonexistent__", "no/such/file.java", "TODO nothing");
+                if (agentManager.solveIssues(List.of(ghost)) != 0) solveOk = false;
+            } catch (Exception e) {
+                solveOk = false;
+            }
+        }
+        System.out.println((solveOk ? "PASS" : "FAIL") + " solve loop (quorum-gated, no-op on empty/ghost)");
+        if (solveOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed =====");
         if (fail > 0) System.exit(1);
     }
