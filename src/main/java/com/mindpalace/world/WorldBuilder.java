@@ -526,18 +526,42 @@ public class WorldBuilder {
             }
         }
 
-        // ── Trees: Fibonacci phyllotaxis canopies ──
+        // ── Trees: Fibonacci phyllotaxis canopies + recursive branches ──
         // Each tree's canopy is a spiral of leaf-cubes placed by the golden
-        // angle (137.5°), radius ∝ √n — the same pattern sunflowers use. This
-        // yields a natural, organic crown from a handful of cubes.
+        // angle (137.5°), radius ∝ √n — the same pattern sunflowers use. The
+        // trunk sprouts branches that themselves fork by the golden angle.
         float[][] treePos = {{-10, 5}, {-6, 12}, {8, 8}, {12, 15}, {-12, 18}, {10, 20}};
         for (float[] tp : treePos) {
             float tx = tp[0], tz = outZ + tp[1];
             float trunkH = 2.2f + (tp[1] % 3) * 0.4f;   // slight height variety
+            // Trunk (bark) + a few bark ridges for texture
             r.drawCube(new Vector3f(tx, floorY + trunkH / 2f, tz),
-                new Vector3f(0.28f, trunkH, 0.28f), Renderer.TEX_WOOD);
-            // Phyllotaxis canopy
+                new Vector3f(0.30f, trunkH, 0.30f), Renderer.TEX_BARK);
+            for (int ridge = 0; ridge < 3; ridge++) {
+                float ry = floorY + 0.4f + ridge * (trunkH * 0.3f);
+                r.drawCube(new Vector3f(tx, ry, tz),
+                    new Vector3f(0.34f, 0.06f, 0.34f), Renderer.TEX_WOOD);
+            }
+            // Branches — recursive golden-angle forks off the trunk
             float golden = 2.399963f;                    // golden angle in radians
+            int branchCount = 3;
+            for (int b = 0; b < branchCount; b++) {
+                float by = floorY + trunkH * (0.55f + 0.15f * b);
+                float bAng = b * golden + tp[1];         // vary per tree
+                float bLen = 1.1f - 0.25f * b;
+                float bdx = (float) Math.cos(bAng) * bLen;
+                float bdz = (float) Math.sin(bAng) * bLen;
+                // Branch limb (bark), angled outward
+                r.drawCube(new Vector3f(tx + bdx * 0.5f, by + 0.25f, tz + bdz * 0.5f),
+                    new Vector3f(0.12f, 0.12f, bLen), Renderer.TEX_BARK);
+                // Sub-branch fork (smaller, higher)
+                float sAng = bAng + golden;
+                float sLen = bLen * 0.6f;
+                r.drawCube(new Vector3f(tx + bdx + (float) Math.cos(sAng) * sLen * 0.5f,
+                        by + 0.55f, tz + bdz + (float) Math.sin(sAng) * sLen * 0.5f),
+                    new Vector3f(0.08f, 0.08f, sLen), Renderer.TEX_BARK);
+            }
+            // Phyllotaxis canopy
             int leaves = 26;
             float baseY = floorY + trunkH + 0.4f;
             for (int n = 0; n < leaves; n++) {
@@ -552,16 +576,25 @@ public class WorldBuilder {
             }
         }
 
-        // ── Lake: cosine water shimmer (animated ripples) ──
+        // ── Lake: traveling cosine waves ──
+        // A grid of small surface tiles whose height follows a traveling
+        // cosine wave (sum of two incommensurate directions), so the water
+        // visibly undulates instead of sitting flat.
         float lz = outZ + od - 3f;
         r.drawCube(new Vector3f(cx - 5f, floorY + 0.05f, lz), new Vector3f(10f, 0.1f, 6f), Renderer.TEX_WATER);
-        for (int i = 0; i < 6; i++) {
-            float ph = time * 1.2f + i * 1.1f;
-            float a = 0.5f + 0.5f * (float) Math.cos(ph);
-            float rx = cx - 5f + (i % 3) * 3.2f - 3.2f;
-            float rz = lz - 2f + (i / 3) * 3.5f;
-            r.drawCubeColor(new Vector3f(rx, floorY + 0.11f, rz),
-                new Vector3f(1.6f, 0.02f, 0.5f), 0.5f * a, 0.75f * a, 0.95f * a);
+        int gw = 8, gd = 5;
+        for (int gx = 0; gx < gw; gx++) {
+            for (int gz = 0; gz < gd; gz++) {
+                float wx = cx - 5f + (gx + 0.5f) * (10f / gw);
+                float wz = lz - 3f + (gz + 0.5f) * (6f / gd);
+                // Two traveling waves → gentle chop
+                float h = 0.06f * (float) Math.cos(wx * 1.2f + time * 1.5f)
+                        + 0.05f * (float) Math.cos(wz * 1.7f - time * 1.1f);
+                float a = 0.5f + 0.5f * (float) Math.cos(wx * 0.8f + wz * 0.6f + time * 1.3f);
+                r.drawCubeColor(new Vector3f(wx, floorY + 0.10f + h, wz),
+                    new Vector3f(10f / gw + 0.02f, 0.05f, 6f / gd + 0.02f),
+                    0.10f, 0.35f + 0.25f * a, 0.75f + 0.2f * a);
+            }
         }
 
         // ── Lakehouse ──

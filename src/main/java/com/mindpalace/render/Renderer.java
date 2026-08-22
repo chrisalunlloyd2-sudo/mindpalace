@@ -47,7 +47,8 @@ public class Renderer {
     public static final int TEX_GRASS = 23;
     public static final int TEX_WATER = 24;
     public static final int TEX_WOOD = 25;
-    private static final int TEX_COUNT = 26;
+    public static final int TEX_BARK = 26;
+    private static final int TEX_COUNT = 27;
 
     private Texture[] textures = new Texture[TEX_COUNT];
 
@@ -87,9 +88,10 @@ public class Renderer {
         textures[TEX_WALLPAPER] = new Texture(0.28f, 0.24f, 0.30f);
         textures[TEX_METAL] = new Texture(0.45f, 0.45f, 0.48f);
         textures[TEX_CONCRETE] = new Texture(0.35f, 0.33f, 0.30f);
-        textures[TEX_GRASS] = new Texture(0.15f, 0.55f, 0.15f);
+        textures[TEX_GRASS] = Texture.grass(128);   // procedural sine-wave turf
         textures[TEX_WATER] = new Texture(0.1f, 0.3f, 0.7f);
         textures[TEX_WOOD] = new Texture(0.4f, 0.25f, 0.12f);
+        textures[TEX_BARK] = new Texture(0.30f, 0.20f, 0.12f); // darker, rougher trunk
 
         projectionMatrix = new Matrix4f();
     }

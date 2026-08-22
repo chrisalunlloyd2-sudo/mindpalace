@@ -15,6 +15,9 @@ public class Texture {
     private int id;
     private int width, height;
 
+    /** Private no-arg constructor for static factory methods (grass, etc.). */
+    private Texture() {}
+
     public Texture(String path) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             IntBuffer w = stack.mallocInt(1);
@@ -117,6 +120,47 @@ public class Texture {
     public void bind(int unit) {
         GL30.glActiveTexture(GL30.GL_TEXTURE0 + unit);
         GL30.glBindTexture(GL30.GL_TEXTURE_2D, id);
+    }
+
+    /**
+     * Procedural grass polytexture — a mathematical blade pattern built from
+     * layered sine waves (no image asset). Each texel's green is modulated by
+     * a few incommensurate sines so the ground reads as textured turf, not a
+     * flat color. Cheap: generated once at startup.
+     */
+    public static Texture grass(int size) {
+        int id = GL30.glGenTextures();
+        GL30.glBindTexture(GL30.GL_TEXTURE_2D, id);
+        ByteBuffer data = MemoryUtil.memAlloc(size * size * 4);
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                float u = x / (float) size, v = y / (float) size;
+                // Layered sines → organic mottling (incommensurate frequencies)
+                float n = (float) (Math.sin(u * 40.0) * Math.sin(v * 40.0)
+                    + 0.5 * Math.sin((u + v) * 70.0)
+                    + 0.3 * Math.sin(u * 130.0 - v * 90.0));
+                n = 0.5f + 0.5f * n / 1.8f;   // normalize to ~0..1
+                float g = 0.35f + 0.30f * n;  // green varies
+                float r = 0.10f + 0.08f * n;
+                float b = 0.08f + 0.06f * n;
+                data.put((byte) (r * 255));
+                data.put((byte) (g * 255));
+                data.put((byte) (b * 255));
+                data.put((byte) 255);
+            }
+        }
+        data.flip();
+        GL30.glTexParameteri(GL30.GL_TEXTURE_2D, GL30.GL_TEXTURE_WRAP_S, GL30.GL_REPEAT);
+        GL30.glTexParameteri(GL30.GL_TEXTURE_2D, GL30.GL_TEXTURE_WRAP_T, GL30.GL_REPEAT);
+        GL30.glTexParameteri(GL30.GL_TEXTURE_2D, GL30.GL_TEXTURE_MIN_FILTER, GL30.GL_LINEAR_MIPMAP_LINEAR);
+        GL30.glTexParameteri(GL30.GL_TEXTURE_2D, GL30.GL_TEXTURE_MAG_FILTER, GL30.GL_LINEAR);
+        GL30.glTexImage2D(GL30.GL_TEXTURE_2D, 0, GL30.GL_RGBA, size, size, 0,
+            GL30.GL_RGBA, GL30.GL_UNSIGNED_BYTE, data);
+        GL30.glGenerateMipmap(GL30.GL_TEXTURE_2D);
+        MemoryUtil.memFree(data);
+        Texture t = new Texture();
+        t.id = id; t.width = size; t.height = size;
+        return t;
     }
 
     public void cleanup() {
