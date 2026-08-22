@@ -2343,6 +2343,19 @@ public class GameEngine {
             + " teleporter behavior (Enter opens list, second Enter confirms)");
         if (teleportBehaviorOk) pass++; else fail++;
 
+        // 24. Outside-world chunked streaming — near chunks render, far chunks
+        // cull (Phase F). Verifies the distance-based cull that keeps the ~1200
+        // cube outside scene off the Intel HD 510 when the player is far away.
+        boolean chunkOk =
+               WorldBuilder.chunkVisibleAt(0f, 0f, 0f, 0f)        // same chunk → visible
+            && WorldBuilder.chunkVisibleAt(10f, 10f, 10f, 10f)    // coincident → visible
+            && WorldBuilder.chunkVisibleAt(15f, 0f, 0f, 0f)       // ~15m → within 22m → visible
+            && !WorldBuilder.chunkVisibleAt(80f, 80f, 0f, 0f)     // far → culled
+            && !WorldBuilder.chunkVisibleAt(30f, 0f, 0f, 0f);     // 30m > 22m → culled
+        System.out.println((chunkOk ? "PASS" : "FAIL")
+            + " outside chunk streaming (near visible, far culled)");
+        if (chunkOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
     }

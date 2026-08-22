@@ -57,7 +57,11 @@ public class WorldBuilder {
 
     /** True if the chunk containing (x,z) is within the streaming radius. */
     private boolean chunkVisible(float x, float z) {
-        // Chunk the world into OUTSIDE_CHUNK cells and cull by cell center distance.
+        return chunkVisibleAt(x, z, camX, camZ);
+    }
+
+    /** Pure chunk culling: is the chunk at (x,z) within radius of (camX,camZ)? */
+    public static boolean chunkVisibleAt(float x, float z, float camX, float camZ) {
         float cx = (float) Math.floor(x / OUTSIDE_CHUNK) * OUTSIDE_CHUNK + OUTSIDE_CHUNK / 2f;
         float cz = (float) Math.floor(z / OUTSIDE_CHUNK) * OUTSIDE_CHUNK + OUTSIDE_CHUNK / 2f;
         float dx = cx - camX, dz = cz - camZ;
