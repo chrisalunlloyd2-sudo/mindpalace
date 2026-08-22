@@ -23,7 +23,7 @@ APP_VERSION="1.0.0"
 MAIN_CLASS="com.mindpalace.Main"
 OUT_DIR="$REPO/installer"
 OUT_DIR_WIN="C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\installer"
-ICON="$REPO/src/main/resources/icon.ico"
+ICON="$REPO/installer/MindPalace/MindPalace.ico"
 
 cd "$REPO"
 
