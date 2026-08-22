@@ -11,6 +11,7 @@ import com.mindpalace.world.Room;
 import com.mindpalace.world.Hallway;
 import com.mindpalace.entity.Player;
 import com.mindpalace.entity.AgentNPC;
+import com.mindpalace.economy.DePIN;
 import com.mindpalace.agent.KnowledgeGraph;
 import com.mindpalace.world.TodoCrystal;
 import com.mindpalace.ui.HUD;
@@ -64,6 +65,7 @@ public class GameEngine {
     private MusicEngine music;
     private StepSequencer sequencer;   // 16-step drum/bass machine (StudioLab)
     private AgentManager agentManager;
+    private DePIN depin;   // Phase 5.3 economy — wallets, blackboard jobs, skill loop
     private AgentChat agentChat;
     private DeployManager deployManager;
     private AnimationSystem animationSystem;
@@ -274,6 +276,7 @@ public class GameEngine {
         bookEditor.setSims(agentManager.getLora(), knowledgeGraph);
         spawnNPCs();
         spawnCrystals();
+        initDePIN();
         System.out.println("[NPC] " + npcs.size() + " agents spawned, "
             + crystals.size() + " TODO crystals, KG: "
             + knowledgeGraph.nodeCount() + " nodes / " + knowledgeGraph.edgeCount() + " edges");
@@ -418,7 +421,21 @@ public class GameEngine {
         }
     }
 
-    /** Read a book's file content directly from disk (content is lazily loaded). */
+    /** Seed the DePIN economy — player + agent wallets, job board, skill loop. */
+    private void initDePIN() {
+        depin = new DePIN();
+        depin.register("Explorer", 50.0);
+        depin.register("Critic", 50.0);
+        // Seed jobs from the actual repo names — each is a maintainable "topic".
+        List<String> topics = new ArrayList<>();
+        for (Room room : world.getRooms()) {
+            if (topics.size() >= 24) break;
+            topics.add("repo/" + room.getRepoName());
+        }
+        depin.seedJobs(topics);
+        System.out.println("[DePIN] economy seeded — " + depin.board().totalCount()
+            + " jobs, " + depin.participants().size() + " wallets");
+    }
     private String readBookContent(Room room, Book book) {
         String localPath = room.getLocalPath();
         if (localPath == null || book.getFilePath() == null) return null;
@@ -2355,6 +2372,35 @@ public class GameEngine {
         System.out.println((chunkOk ? "PASS" : "FAIL")
             + " outside chunk streaming (near visible, far culled)");
         if (chunkOk) pass++; else fail++;
+
+        // 25. DePIN economy — wallets, blackboard jobs, skill gate, pay-for-work.
+        boolean depinOk = depin != null;
+        if (depinOk) {
+            depinOk = depin.participant("player") != null
+                   && depin.participant("Explorer") != null
+                   && depin.participant("Critic") != null;
+            // Claim + complete a difficulty-1 job as Explorer (tier 1 can do diff 1).
+            if (depinOk) {
+                List<com.mindpalace.economy.Blackboard.Job> open = depin.board().openJobs();
+                depinOk = !open.isEmpty();
+                if (depinOk) {
+                    long jid = open.get(0).id;
+                    double before = depin.participant("Explorer").wallet.getBalance();
+                    depinOk = depin.claim(jid, "Explorer")
+                           && depin.complete(jid) > 0
+                           && depin.participant("Explorer").wallet.getBalance() > before
+                           && depin.participant("Explorer").skill.get() >= 1;
+                }
+            }
+            // Skill gate: a tier-1 agent can't claim a difficulty-5 job.
+            if (depinOk) {
+                com.mindpalace.economy.Blackboard.Job hard = depin.post("Hard job", "repo/hard", 50.0, 5);
+                depinOk = !depin.claim(hard.id, "Critic"); // Critic is still tier 1
+            }
+        }
+        System.out.println((depinOk ? "PASS" : "FAIL")
+            + " DePIN economy (wallets + blackboard + skill gate + pay-for-work)");
+        if (depinOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
