@@ -541,15 +541,17 @@ public class GameEngine {
             handleMenu(input);
         }
 
-        // Teleporter destination picker — open when standing on a pad
+        // Teleporter destination picker — open on Enter OR left-click while
+        // standing on a pad (Diablo town-portal style: explicit interact).
         if (teleportMenu) {
             handleTeleportMenu(input);
-        } else if (state == GameState.PLAYING && player.getPadFloor() >= 0) {
+        } else if (state == GameState.PLAYING
+                && (player.getPadFloor() >= 0 || player.isOnPlanetPad())
+                && (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) || input.isLeftClick())) {
             teleportMenu = true;
             teleportSel = 0;
             input.setCursorCaptured(false);
-            System.out.println("[TELEPORT] Destination picker open (pad on floor "
-                + (player.getPadFloor() + 1) + ")");
+            System.out.println("[TELEPORT] Destination picker open");
         }
 
         // Live patches — poll manifest, play the loading cinematic, ship content
@@ -767,7 +769,7 @@ public class GameEngine {
     /** Handle the teleporter destination picker (up/down/enter/number keys). */
     private void handleTeleportMenu(Input input) {
         int pads = world.getTeleporterPads().size();
-        int options = pads + 2; // each pad + "Outside" + "Planet"
+        int options = pads + 3; // each pad + "Outside" + "Planet" + "Palace"
         if (input.wasKeyPressed(GLFW.GLFW_KEY_UP) || input.wasKeyPressed(GLFW.GLFW_KEY_W)) {
             teleportSel = (teleportSel - 1 + options) % options;
         }
@@ -788,8 +790,10 @@ public class GameEngine {
                 player.teleportToPad(teleportSel, world);
             } else if (teleportSel == pads) {
                 player.teleportOutside(world);
-            } else {
+            } else if (teleportSel == pads + 1) {
                 player.teleportToPlanet(world);
+            } else {
+                player.teleportToPalace(world);
             }
         }
     }
@@ -1366,7 +1370,7 @@ public class GameEngine {
             camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
 
         int pads = world.getTeleporterPads().size();
-        int options = pads + 2;
+        int options = pads + 3;
         float lineH = 0.12f;
         float startY = center.y + (options * lineH) / 2f;
 
@@ -1377,7 +1381,8 @@ public class GameEngine {
             String label;
             if (i < pads) label = (i + 1) + ". Teleporter " + (i + 1) + " (Floor " + (i + 1) + ")";
             else if (i == pads) label = (i + 1) + ". Outside";
-            else label = (i + 1) + ". Planet";
+            else if (i == pads + 1) label = (i + 1) + ". Planet";
+            else label = (i + 1) + ". Palace (return)";
             if (i == teleportSel) label = "> " + label + " <";
             Vector3f pos = new Vector3f(center.x, startY - i * lineH, center.z);
             Vector3f col = (i == teleportSel)

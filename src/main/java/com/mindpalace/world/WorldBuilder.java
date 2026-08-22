@@ -72,6 +72,11 @@ public class WorldBuilder {
         return pads;
     }
 
+    /** The planet's teleporter pad — the +Y pole surface point (return portal). */
+    public Vector3f getPlanetPad() {
+        return new Vector3f(planetCenter.x, planetCenter.y + PLANET_RADIUS, planetCenter.z);
+    }
+
     public WorldBuilder() {
         repoMapper = new RepoMapper();
         populator = new RoomPopulator();
@@ -269,6 +274,10 @@ public class WorldBuilder {
                 r.drawCubeColor(pos, new Vector3f(0.3f, 0.2f, 0.3f), 0.12f, 0.5f, 0.14f);
             }
         }
+
+        // Return teleporter pad at the +Y pole — the way back to the palace.
+        Vector3f pad = getPlanetPad();
+        renderTeleporter(r, pad.y, pad.z);
     }
 
     /** A tree standing on the planet surface, oriented along the local normal. */
@@ -607,15 +616,23 @@ public class WorldBuilder {
             }
         }
 
-        // ── Trees: Fibonacci phyllotaxis canopies + recursive branches ──
-        // Each tree's canopy is a spiral of leaf-cubes placed by the golden
-        // angle (137.5°), radius ∝ √n — the same pattern sunflowers use. The
-        // trunk sprouts branches that themselves fork by the golden angle.
-        float[][] treePos = {{-10, 5}, {-6, 12}, {8, 8}, {12, 15}, {-12, 18}, {10, 20}};
-        for (float[] tp : treePos) {
-            float tx = tp[0], tz = outZ + tp[1];
-            float trunkH = 2.2f + (tp[1] % 3) * 0.4f;   // slight height variety
-            // Trunk (bark) + a few bark ridges for texture
+        // ── Forest: Fibonacci phyllotaxis canopies + recursive branches ──
+        // A dense forest of trees placed on a golden-angle spiral so they
+        // spread naturally (no grid, no clustering). Each tree's canopy is a
+        // spiral of leaf-cubes (golden angle 137.5°, radius ∝ √n); the trunk
+        // sprouts branches that fork by the golden angle.
+        int forestCount = 34;
+        for (int ti = 0; ti < forestCount; ti++) {
+            // Golden-angle spiral over the ground plane → natural scatter
+            float ang = ti * 2.399963f;
+            float rad = 2.5f + 1.6f * (float) Math.sqrt(ti);
+            float tx = (float) Math.cos(ang) * rad * 1.6f;
+            float tz = outZ + 8f + (float) Math.sin(ang) * rad;
+            // Keep trees inside the grass patch
+            if (Math.abs(tx) > ow / 2f - 1.5f) continue;
+            if (tz < outZ + 1f || tz > outZ + od - 2f) continue;
+            float trunkH = 2.2f + (ti % 4) * 0.5f;   // height variety
+            // Trunk (bark) + bark ridges for texture
             r.drawCube(new Vector3f(tx, floorY + trunkH / 2f, tz),
                 new Vector3f(0.30f, trunkH, 0.30f), Renderer.TEX_BARK);
             for (int ridge = 0; ridge < 3; ridge++) {
@@ -624,19 +641,17 @@ public class WorldBuilder {
                     new Vector3f(0.34f, 0.06f, 0.34f), Renderer.TEX_WOOD);
             }
             // Branches — recursive golden-angle forks off the trunk
-            float golden = 2.399963f;                    // golden angle in radians
             int branchCount = 3;
             for (int b = 0; b < branchCount; b++) {
                 float by = floorY + trunkH * (0.55f + 0.15f * b);
-                float bAng = b * golden + tp[1];         // vary per tree
+                float bAng = b * 2.399963f + ti;      // vary per tree
                 float bLen = 1.1f - 0.25f * b;
                 float bdx = (float) Math.cos(bAng) * bLen;
                 float bdz = (float) Math.sin(bAng) * bLen;
-                // Branch limb (bark), angled outward
                 r.drawCube(new Vector3f(tx + bdx * 0.5f, by + 0.25f, tz + bdz * 0.5f),
                     new Vector3f(0.12f, 0.12f, bLen), Renderer.TEX_BARK);
                 // Sub-branch fork (smaller, higher)
-                float sAng = bAng + golden;
+                float sAng = bAng + 2.399963f;
                 float sLen = bLen * 0.6f;
                 r.drawCube(new Vector3f(tx + bdx + (float) Math.cos(sAng) * sLen * 0.5f,
                         by + 0.55f, tz + bdz + (float) Math.sin(sAng) * sLen * 0.5f),
@@ -646,12 +661,12 @@ public class WorldBuilder {
             int leaves = 26;
             float baseY = floorY + trunkH + 0.4f;
             for (int n = 0; n < leaves; n++) {
-                float ang = n * golden;
-                float rad = 0.35f * (float) Math.sqrt(n + 1);
-                float lx = tx + rad * (float) Math.cos(ang);
-                float lz = tz + rad * (float) Math.sin(ang);
-                float ly = baseY + 0.9f * (1f - (float) n / leaves);  // taper upward
-                float ls = 0.34f * (1f - 0.5f * (float) n / leaves);  // shrink toward top
+                float lang = n * 2.399963f;
+                float lrad = 0.35f * (float) Math.sqrt(n + 1);
+                float lx = tx + lrad * (float) Math.cos(lang);
+                float lz = tz + lrad * (float) Math.sin(lang);
+                float ly = baseY + 0.9f * (1f - (float) n / leaves);
+                float ls = 0.34f * (1f - 0.5f * (float) n / leaves);
                 r.drawCubeColor(new Vector3f(lx, ly, lz),
                     new Vector3f(ls, ls, ls), 0.10f, 0.45f + 0.1f * (n % 3), 0.12f);
             }
@@ -661,36 +676,46 @@ public class WorldBuilder {
         // A grid of small surface tiles whose height follows a traveling
         // cosine wave (sum of two incommensurate directions), so the water
         // visibly undulates instead of sitting flat.
-        float lz = outZ + od - 3f;
-        r.drawCube(new Vector3f(cx - 5f, floorY + 0.05f, lz), new Vector3f(10f, 0.1f, 6f), Renderer.TEX_WATER);
-        int gw = 8, gd = 5;
+        float lz = outZ + od - 4f;
+        float lakeW = 16f, lakeD = 9f;
+        r.drawCube(new Vector3f(cx - 6f, floorY + 0.05f, lz), new Vector3f(lakeW, 0.1f, lakeD), Renderer.TEX_WATER);
+        int gw = 12, gd = 7;
         for (int gx = 0; gx < gw; gx++) {
             for (int gz = 0; gz < gd; gz++) {
-                float wx = cx - 5f + (gx + 0.5f) * (10f / gw);
-                float wz = lz - 3f + (gz + 0.5f) * (6f / gd);
+                float wx = cx - 6f + (gx + 0.5f) * (lakeW / gw);
+                float wz = lz - lakeD / 2f + (gz + 0.5f) * (lakeD / gd);
                 // Two traveling waves → gentle chop
                 float h = 0.06f * (float) Math.cos(wx * 1.2f + time * 1.5f)
                         + 0.05f * (float) Math.cos(wz * 1.7f - time * 1.1f);
                 float a = 0.5f + 0.5f * (float) Math.cos(wx * 0.8f + wz * 0.6f + time * 1.3f);
                 r.drawCubeColor(new Vector3f(wx, floorY + 0.10f + h, wz),
-                    new Vector3f(10f / gw + 0.02f, 0.05f, 6f / gd + 0.02f),
+                    new Vector3f(lakeW / gw + 0.02f, 0.05f, lakeD / gd + 0.02f),
                     0.10f, 0.35f + 0.25f * a, 0.75f + 0.2f * a);
             }
         }
 
-        // ── Lakehouse ──
-        float lhx = cx + 8f, lhz = outZ + od - 6f;
-        r.drawCube(new Vector3f(lhx, floorY + 0.1f, lhz), new Vector3f(5f, 0.15f, 4f), Renderer.TEX_WOOD);
-        r.drawCube(new Vector3f(lhx, floorY + 1.5f, lhz - 2f), new Vector3f(5f, 3f, 0.2f), Renderer.TEX_WOOD);
-        r.drawCube(new Vector3f(lhx, floorY + 1.5f, lhz + 2f), new Vector3f(5f, 3f, 0.2f), Renderer.TEX_WOOD);
-        r.drawCube(new Vector3f(lhx - 2.5f, floorY + 1.5f, lhz), new Vector3f(0.2f, 3f, 4f), Renderer.TEX_WOOD);
-        r.drawCube(new Vector3f(lhx + 2.5f, floorY + 1.5f, lhz), new Vector3f(0.2f, 3f, 4f), Renderer.TEX_WOOD);
-        r.drawCube(new Vector3f(lhx, floorY + 3.2f, lhz), new Vector3f(5.5f, 0.15f, 4.5f), Renderer.TEX_DOOR);
-        r.drawCube(new Vector3f(lhx, floorY + 1.0f, lhz - 2.1f), new Vector3f(1.2f, 2f, 0.1f), Renderer.TEX_DOOR);
+        // ── Lakehouse (on the shore, with a dock) ──
+        float lhx = cx + 9f, lhz = outZ + od - 8f;
+        // Dock — wooden planks jutting into the lake
+        r.drawCube(new Vector3f(lhx - 3f, floorY + 0.12f, lhz + 2.5f), new Vector3f(2f, 0.1f, 3f), Renderer.TEX_WOOD);
+        // Foundation + walls
+        r.drawCube(new Vector3f(lhx, floorY + 0.1f, lhz), new Vector3f(6f, 0.15f, 5f), Renderer.TEX_WOOD);
+        r.drawCube(new Vector3f(lhx, floorY + 1.6f, lhz - 2.5f), new Vector3f(6f, 3.2f, 0.2f), Renderer.TEX_WOOD);
+        r.drawCube(new Vector3f(lhx, floorY + 1.6f, lhz + 2.5f), new Vector3f(6f, 3.2f, 0.2f), Renderer.TEX_WOOD);
+        r.drawCube(new Vector3f(lhx - 3f, floorY + 1.6f, lhz), new Vector3f(0.2f, 3.2f, 5f), Renderer.TEX_WOOD);
+        r.drawCube(new Vector3f(lhx + 3f, floorY + 1.6f, lhz), new Vector3f(0.2f, 3.2f, 5f), Renderer.TEX_WOOD);
+        // Roof — peaked (two sloped slabs)
+        r.drawCube(new Vector3f(lhx, floorY + 3.4f, lhz), new Vector3f(6.6f, 0.15f, 5.6f), Renderer.TEX_DOOR);
+        r.drawCube(new Vector3f(lhx, floorY + 3.9f, lhz), new Vector3f(4.5f, 0.15f, 4.0f), Renderer.TEX_DOOR);
+        // Door + chimney
+        r.drawCube(new Vector3f(lhx, floorY + 1.1f, lhz - 2.6f), new Vector3f(1.3f, 2.2f, 0.1f), Renderer.TEX_DOOR);
+        r.drawCube(new Vector3f(lhx + 2f, floorY + 4.2f, lhz + 1f), new Vector3f(0.5f, 1.2f, 0.5f), Renderer.TEX_WOOD);
         // Windows glow warm at night, cool cyan by day
         int winTex = night ? Renderer.TEX_NEON_AMBER : Renderer.TEX_NEON_CYAN;
-        r.drawCube(new Vector3f(lhx - 1.5f, floorY + 1.8f, lhz - 2.1f), new Vector3f(0.8f, 0.8f, 0.05f), winTex);
-        r.drawCube(new Vector3f(lhx + 1.5f, floorY + 1.8f, lhz - 2.1f), new Vector3f(0.8f, 0.8f, 0.05f), winTex);
+        r.drawCube(new Vector3f(lhx - 1.6f, floorY + 1.9f, lhz - 2.6f), new Vector3f(0.9f, 0.9f, 0.05f), winTex);
+        r.drawCube(new Vector3f(lhx + 1.6f, floorY + 1.9f, lhz - 2.6f), new Vector3f(0.9f, 0.9f, 0.05f), winTex);
+        r.drawCube(new Vector3f(lhx - 1.6f, floorY + 1.9f, lhz + 2.6f), new Vector3f(0.9f, 0.9f, 0.05f), winTex);
+        r.drawCube(new Vector3f(lhx + 1.6f, floorY + 1.9f, lhz + 2.6f), new Vector3f(0.9f, 0.9f, 0.05f), winTex);
     }
 
     /** Cosine-interpolated sky color at height t (0=top, 1=horizon). */

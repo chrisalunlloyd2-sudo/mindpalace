@@ -35,6 +35,7 @@ public class Player {
     private boolean chatTyping;  // suppress door interaction while typing in chat
     private double teleportCooldown; // prevent pad re-trigger bounce
     private int padFloor = -1;      // floor of the pad the player is standing on (-1 = none)
+    private boolean onPlanetPad = false; // standing on the planet's return pad
     private boolean noclip = false;  // free-fly (no collision, no gravity) for testing
 
     public Player() {
@@ -136,15 +137,26 @@ public class Player {
         // Teleport pad — detect standing on a pad (destination chosen in GameEngine)
         teleportCooldown -= dt;
         padFloor = -1;
-        if (currentRoom == null && teleportCooldown <= 0 && world.getHallways().size() > 1) {
+        onPlanetPad = false;
+        if (currentRoom == null && teleportCooldown <= 0) {
             Vector3f p = camera.getPosition();
-            for (Hallway hw : world.getHallways()) {
-                if (hw.getFloor() >= world.getHallways().size() - 1) continue; // no pad on top floor
-                float padZ = hw.getEnd().z - 1.0f;
-                if (Math.abs(p.x) < 1.05f && Math.abs(p.z - padZ) < 1.05f
-                        && Math.abs(p.y - (hw.getStart().y + EYE_HEIGHT)) < 0.75f) {
-                    padFloor = hw.getFloor();
-                    break;
+            // Planet return pad (the +Y pole)
+            if (world.isPlanetActive()) {
+                Vector3f pp = world.getPlanetPad();
+                if (p.distance(new Vector3f(pp.x, pp.y + EYE_HEIGHT, pp.z)) < 1.5f) {
+                    onPlanetPad = true;
+                }
+            }
+            // Palace floor pads
+            if (!onPlanetPad && world.getHallways().size() > 1) {
+                for (Hallway hw : world.getHallways()) {
+                    if (hw.getFloor() >= world.getHallways().size() - 1) continue; // no pad on top floor
+                    float padZ = hw.getEnd().z - 1.0f;
+                    if (Math.abs(p.x) < 1.05f && Math.abs(p.z - padZ) < 1.05f
+                            && Math.abs(p.y - (hw.getStart().y + EYE_HEIGHT)) < 0.75f) {
+                        padFloor = hw.getFloor();
+                        break;
+                    }
                 }
             }
         }
@@ -289,6 +301,8 @@ public class Player {
 
     /** Floor of the teleporter pad the player is standing on, or -1. */
     public int getPadFloor() { return padFloor; }
+    /** True if standing on the planet's return teleporter pad. */
+    public boolean isOnPlanetPad() { return onPlanetPad; }
 
     /** Teleport to a hallway floor (teleporter destination). */
     public void teleportToFloor(int floor, WorldBuilder world) {
