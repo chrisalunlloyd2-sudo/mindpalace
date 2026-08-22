@@ -74,6 +74,46 @@ public class Texture {
         height = 1;
     }
 
+    /**
+     * Create a vertical gradient texture (top color → bottom color), cosine-
+     * interpolated. Used for the sky dome so the horizon fades smoothly.
+     * v=0 is the top row, v=1 the bottom row.
+     */
+    public Texture(float[] top, float[] bottom, int h) {
+        id = GL30.glGenTextures();
+        GL30.glBindTexture(GL30.GL_TEXTURE_2D, id);
+
+        int w = 4; // gradient is vertical; width can be tiny
+        ByteBuffer data = MemoryUtil.memAlloc(w * h * 4);
+        for (int y = 0; y < h; y++) {
+            float t = y / (float) (h - 1);
+            // cosine ease for a smooth, faint ramp
+            float c = 0.5f - 0.5f * (float) Math.cos(t * (float) Math.PI);
+            float r = top[0] + (bottom[0] - top[0]) * c;
+            float g = top[1] + (bottom[1] - top[1]) * c;
+            float b = top[2] + (bottom[2] - top[2]) * c;
+            for (int x = 0; x < w; x++) {
+                data.put((byte) (r * 255));
+                data.put((byte) (g * 255));
+                data.put((byte) (b * 255));
+                data.put((byte) 255);
+            }
+        }
+        data.flip();
+
+        GL30.glTexParameteri(GL30.GL_TEXTURE_2D, GL30.GL_TEXTURE_WRAP_S, GL30.GL_CLAMP_TO_EDGE);
+        GL30.glTexParameteri(GL30.GL_TEXTURE_2D, GL30.GL_TEXTURE_WRAP_T, GL30.GL_CLAMP_TO_EDGE);
+        GL30.glTexParameteri(GL30.GL_TEXTURE_2D, GL30.GL_TEXTURE_MIN_FILTER, GL30.GL_LINEAR);
+        GL30.glTexParameteri(GL30.GL_TEXTURE_2D, GL30.GL_TEXTURE_MAG_FILTER, GL30.GL_LINEAR);
+
+        GL30.glTexImage2D(GL30.GL_TEXTURE_2D, 0, GL30.GL_RGBA, w, h, 0,
+            GL30.GL_RGBA, GL30.GL_UNSIGNED_BYTE, data);
+        MemoryUtil.memFree(data);
+
+        width = w;
+        height = h;
+    }
+
     public void bind(int unit) {
         GL30.glActiveTexture(GL30.GL_TEXTURE0 + unit);
         GL30.glBindTexture(GL30.GL_TEXTURE_2D, id);

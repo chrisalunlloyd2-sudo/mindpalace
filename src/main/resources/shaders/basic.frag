@@ -13,6 +13,7 @@ uniform float ambientStrength;
 uniform sampler2D textureSampler;
 uniform int useTexture;
 uniform vec3 tintColor;
+uniform float fogEnabled;
 
 void main() {
     // Ambient
@@ -46,7 +47,7 @@ void main() {
     float dist = length(viewPos - FragPos);
     float fogFactor = clamp((dist - 20.0) / 60.0, 0.0, 0.85);
     vec3 fogColor = vec3(0.10, 0.08, 0.12); // deep violet haze
-    result = mix(result, fogColor, fogFactor);
+    result = mix(result, fogColor, fogFactor * fogEnabled);
 
     FragColor = vec4(result, 1.0);
 }

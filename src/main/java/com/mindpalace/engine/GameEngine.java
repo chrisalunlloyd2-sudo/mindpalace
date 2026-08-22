@@ -913,6 +913,11 @@ public class GameEngine {
         bloom.begin();
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
         renderer.beginFrame(player.getCamera());
+        // Sky dome — full gradient sphere so the sky is never black, even
+        // looking straight up or sideways. Phase follows the real clock.
+        int hour = java.time.LocalTime.now().getHour();
+        int skyPhase = (hour < 6 || hour >= 20) ? 2 : (hour >= 18 ? 1 : 0);
+        renderer.drawSkyDome(player.getCamera().getPosition(), skyPhase);
         world.render(renderer, player.getCamera());
 
         // Render agent NPCs (bodies) + TODO crystals
