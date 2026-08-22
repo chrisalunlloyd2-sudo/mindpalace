@@ -767,7 +767,7 @@ public class GameEngine {
     /** Handle the teleporter destination picker (up/down/enter/number keys). */
     private void handleTeleportMenu(Input input) {
         int floors = world.getHallways().size();
-        int options = floors + 1; // floors + "Outside"
+        int options = floors + 2; // floors + "Outside" + "Planet"
         if (input.wasKeyPressed(GLFW.GLFW_KEY_UP) || input.wasKeyPressed(GLFW.GLFW_KEY_W)) {
             teleportSel = (teleportSel - 1 + options) % options;
         }
@@ -786,8 +786,10 @@ public class GameEngine {
             input.setCursorCaptured(true);
             if (teleportSel < floors) {
                 player.teleportToFloor(teleportSel, world);
-            } else {
+            } else if (teleportSel == floors) {
                 player.teleportOutside(world);
+            } else {
+                player.teleportToPlanet(world);
             }
         }
     }
@@ -1364,7 +1366,7 @@ public class GameEngine {
             camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
 
         int floors = world.getHallways().size();
-        int options = floors + 1;
+        int options = floors + 2;
         float lineH = 0.12f;
         float startY = center.y + (options * lineH) / 2f;
 
@@ -1374,7 +1376,8 @@ public class GameEngine {
         for (int i = 0; i < options; i++) {
             String label;
             if (i < floors) label = (i + 1) + ". Floor " + (i + 1);
-            else label = (i + 1) + ". Outside";
+            else if (i == floors) label = (i + 1) + ". Outside";
+            else label = (i + 1) + ". Planet";
             if (i == teleportSel) label = "> " + label + " <";
             Vector3f pos = new Vector3f(center.x, startY - i * lineH, center.z);
             Vector3f col = (i == teleportSel)

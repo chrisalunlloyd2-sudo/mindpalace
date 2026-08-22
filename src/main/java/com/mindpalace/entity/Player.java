@@ -90,8 +90,9 @@ public class Player {
             if (Math.abs(velocity.z) < 0.01f) velocity.z = 0;
         }
 
-        // Gravity
-        if (!onGround && !noclip) velocity.y += GRAVITY * dtf;
+        // Gravity (flat world only — planet mode applies radial gravity in
+        // planetPhysics, since "down" points toward the planet center)
+        if (!onGround && !noclip && !world.isPlanetActive()) velocity.y += GRAVITY * dtf;
 
         // Jump
         if (input.wasKeyPressed(GLFW.GLFW_KEY_SPACE) && onGround && !noclip) {
@@ -114,14 +115,18 @@ public class Player {
         newPos.z += velocity.z * dtf;
 
         if (!noclip) {
-            newPos = collide(pos, newPos, world);
+            if (world.isPlanetActive()) {
+                newPos = planetPhysics(pos, newPos, world, dtf);
+            } else {
+                newPos = collide(pos, newPos, world);
 
-            // Ground — use the world's ground height (walkable stairs between floors)
-            float groundY = world.getGroundHeight(newPos.x, newPos.z) + EYE_HEIGHT;
-            if (newPos.y <= groundY) {
-                newPos.y = groundY;
-                velocity.y = 0;
-                onGround = true;
+                // Ground — use the world's ground height (walkable stairs between floors)
+                float groundY = world.getGroundHeight(newPos.x, newPos.z) + EYE_HEIGHT;
+                if (newPos.y <= groundY) {
+                    newPos.y = groundY;
+                    velocity.y = 0;
+                    onGround = true;
+                }
             }
         }
 
@@ -183,6 +188,43 @@ public class Player {
             if (next.z < c.z - rd) next.z = c.z - rd;
             if (next.z > c.z + rd) next.z = c.z + rd;
         }
+        return next;
+    }
+
+    /**
+     * Planet physics — radial gravity. "Down" points toward the planet center,
+     * so the player sticks to the curved surface and can walk all the way
+     * around. The camera's up vector tracks the local surface normal.
+     */
+    private Vector3f planetPhysics(Vector3f old, Vector3f next, WorldBuilder world, float dtf) {
+        Vector3f c = world.getPlanetCenter();
+        float R = world.getPlanetRadius();
+
+        // Radial vector from planet center to the player
+        Vector3f radial = new Vector3f(next).sub(c);
+        float dist = radial.length();
+        if (dist < 0.001f) dist = 0.001f;
+        Vector3f normal = radial.div(dist, new Vector3f());  // outward unit normal
+
+        // Clamp to the surface (player eye sits EYE_HEIGHT above the ground)
+        float targetDist = R + EYE_HEIGHT;
+        if (dist < targetDist) {
+            // Below surface — push out and kill inward velocity
+            next.set(c).add(normal.mul(targetDist, new Vector3f()));
+            // Remove the inward component of velocity
+            float vn = velocity.dot(normal);
+            if (vn < 0) velocity.sub(normal.mul(vn, new Vector3f()));
+            onGround = true;
+        } else {
+            // Above surface — apply radial gravity toward the center
+            Vector3f grav = normal.mul(GRAVITY * dtf, new Vector3f());
+            velocity.add(grav);
+            onGround = false;
+        }
+
+        // Track the local up vector so the camera stays upright on the sphere
+        camera.setUpOverride(normal);
+
         return next;
     }
 
@@ -277,5 +319,31 @@ public class Player {
         teleportCooldown = 1.0;
         if (audio != null) audio.playDoorOpen();
         System.out.println("[TELEPORT] -> Outside");
+    }
+
+    /** Teleport onto the planet surface (radial gravity open world). */
+    public void teleportToPlanet(WorldBuilder world) {
+        currentRoom = null;
+        world.setPlanetActive(true);
+        Vector3f c = world.getPlanetCenter();
+        float R = world.getPlanetRadius();
+        // Land on the +Y pole (top of the planet), facing outward
+        Vector3f pos = new Vector3f(c.x, c.y + R + EYE_HEIGHT, c.z);
+        camera.setPosition(pos);
+        camera.setUpOverride(new Vector3f(0, 1, 0));
+        camera.setYaw(0);
+        camera.setPitch(0);
+        velocity.set(0, 0, 0);
+        onGround = true;
+        teleportCooldown = 1.0;
+        if (audio != null) audio.playDoorOpen();
+        System.out.println("[TELEPORT] -> Planet");
+    }
+
+    /** Return to the flat palace (clears planet gravity). */
+    public void teleportToPalace(WorldBuilder world) {
+        world.setPlanetActive(false);
+        camera.setUpOverride(null);
+        teleportToFloor(0, world);
     }
 }

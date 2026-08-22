@@ -16,6 +16,7 @@ public class Camera {
 
     private Vector3f front, up, right;
     private final Vector3f worldUp = new Vector3f(0, 1, 0);
+    private Vector3f upOverride;   // non-null = planet mode (radial "up")
     private Matrix4f viewMatrix = new Matrix4f();
     private Matrix4f projectionMatrix = new Matrix4f();
     private boolean dirty = true;
@@ -33,16 +34,45 @@ public class Camera {
     private void updateVectors() {
         float yr = (float) Math.toRadians(yaw);
         float pr = (float) Math.toRadians(pitch);
-        front.x = (float) (Math.sin(yr) * Math.cos(pr));
-        front.y = (float) Math.sin(pr);
-        front.z = (float) (Math.cos(yr) * Math.cos(pr));
-        front.normalize();
-        front.cross(worldUp, right);
-        right.normalize();
-        right.cross(front, up);
-        up.normalize();
+        if (upOverride == null) {
+            // Flat-world basis (yaw=0 → +Z, up = world up)
+            front.x = (float) (Math.sin(yr) * Math.cos(pr));
+            front.y = (float) Math.sin(pr);
+            front.z = (float) (Math.cos(yr) * Math.cos(pr));
+            front.normalize();
+            front.cross(worldUp, right);
+            right.normalize();
+            right.cross(front, up);
+            up.normalize();
+        } else {
+            // Planet basis: yaw rotates around the local "up" (surface normal),
+            // pitch tilts toward/away from it. Tangent basis t0,t1 ⊥ up.
+            Vector3f u = upOverride;
+            Vector3f t1 = new Vector3f();
+            if (Math.abs(u.y) < 0.99f) u.cross(worldUp, t1);
+            else u.cross(new Vector3f(1, 0, 0), t1);
+            t1.normalize();
+            Vector3f t0 = new Vector3f();
+            t1.cross(u, t0);
+            t0.normalize();
+            float cy = (float) Math.cos(yr), sy = (float) Math.sin(yr);
+            float cp = (float) Math.cos(pr), sp = (float) Math.sin(pr);
+            front.set(
+                (t0.x * cy + t1.x * sy) * cp + u.x * sp,
+                (t0.y * cy + t1.y * sy) * cp + u.y * sp,
+                (t0.z * cy + t1.z * sy) * cp + u.z * sp);
+            front.normalize();
+            front.cross(u, right);
+            right.normalize();
+            right.cross(front, up);
+            up.normalize();
+        }
         dirty = true;
     }
+
+    /** Set the local "up" (planet surface normal). null = flat world. */
+    public void setUpOverride(Vector3f u) { upOverride = u; updateVectors(); }
+    public Vector3f getUpOverride() { return upOverride; }
 
     public Matrix4f getViewMatrix() {
         if (dirty) {

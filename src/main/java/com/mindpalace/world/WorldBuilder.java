@@ -44,6 +44,19 @@ public class WorldBuilder {
 
     private static final float ROOM_CULL_DISTANCE = 30.0f;
 
+    // ── Planet (open world) ──
+    // A small sphere the player can walk around in ~1 minute. Radial gravity
+    // pulls toward the center; the surface is the planet radius. The palace
+    // stays flat; the teleporter drops you onto the planet.
+    public static final float PLANET_RADIUS = 35.0f;
+    private final Vector3f planetCenter = new Vector3f(0f, -PLANET_RADIUS - 20f, -120f);
+    private boolean planetActive = false;   // true once the player teleports there
+
+    public Vector3f getPlanetCenter() { return planetCenter; }
+    public float getPlanetRadius() { return PLANET_RADIUS; }
+    public boolean isPlanetActive() { return planetActive; }
+    public void setPlanetActive(boolean a) { planetActive = a; }
+
     public WorldBuilder() {
         repoMapper = new RepoMapper();
         populator = new RoomPopulator();
@@ -187,6 +200,9 @@ public class WorldBuilder {
         Vector3f camPos = camera.getPosition();
         Vector3f camFront = camera.getFront();
 
+        // Planet — always render when active (it's the open world)
+        if (planetActive) renderPlanet(r, camPos);
+
         for (Hallway hw : hallways) {
             if (isHallwayNear(hw, camPos)) renderHallway(r, hw);
         }
@@ -200,6 +216,56 @@ public class WorldBuilder {
             if (room.isFogged() && !fogOfWar.isRoomRevealed(room)) continue;
             renderRoom(r, room);
         }
+    }
+
+    /**
+     * The planet — a grass sphere with phyllotaxis trees, cosine water, and a
+     * populated surface. Rendered as a sphere mesh plus surface decorations
+     * placed by the golden angle so they spread evenly over the globe.
+     */
+    private void renderPlanet(Renderer r, Vector3f camPos) {
+        // Grass sphere (procedural turf texture)
+        r.drawSphere(planetCenter, new Vector3f(PLANET_RADIUS, PLANET_RADIUS, PLANET_RADIUS), Renderer.TEX_GRASS);
+
+        // Surface decorations — Fibonacci-sphere distribution (golden-angle
+        // spiral over the sphere) so trees/rocks spread evenly, no clustering.
+        float golden = 2.399963f;
+        int n = 60;
+        for (int i = 0; i < n; i++) {
+            // Evenly distribute points on the sphere via the golden spiral
+            float y = 1f - 2f * (i + 0.5f) / n;          // -1..1
+            float rad = (float) Math.sqrt(Math.max(0f, 1f - y * y));
+            float theta = golden * i;
+            float dx = rad * (float) Math.cos(theta);
+            float dz = rad * (float) Math.sin(theta);
+            Vector3f dir = new Vector3f(dx, y, dz);      // unit surface normal
+            Vector3f pos = new Vector3f(planetCenter).add(dir.mul(PLANET_RADIUS, new Vector3f()));
+
+            // Cull decorations behind the camera (cheap: dot with view dir)
+            Vector3f toCam = new Vector3f(camPos).sub(pos);
+            if (toCam.dot(dir) < 0) continue;
+
+            // Every 5th point is a tree; the rest are rocks/grass tufts
+            if (i % 5 == 0) {
+                renderPlanetTree(r, pos, dir);
+            } else if (i % 3 == 0) {
+                r.drawCubeColor(pos, new Vector3f(0.5f, 0.4f, 0.5f), 0.45f, 0.42f, 0.40f);
+            } else {
+                r.drawCubeColor(pos, new Vector3f(0.3f, 0.2f, 0.3f), 0.12f, 0.5f, 0.14f);
+            }
+        }
+    }
+
+    /** A tree standing on the planet surface, oriented along the local normal. */
+    private void renderPlanetTree(Renderer r, Vector3f base, Vector3f normal) {
+        // Trunk (bark) — a thin cube along the normal
+        Vector3f trunkMid = new Vector3f(base).add(normal.x * 1.2f, normal.y * 1.2f, normal.z * 1.2f);
+        r.drawCube(trunkMid, new Vector3f(0.3f, 2.4f, 0.3f), Renderer.TEX_BARK);
+        // Canopy — a few leaf cubes clustered at the top
+        Vector3f top = new Vector3f(base).add(normal.x * 2.6f, normal.y * 2.6f, normal.z * 2.6f);
+        r.drawCubeColor(top, new Vector3f(1.6f, 1.6f, 1.6f), 0.10f, 0.45f, 0.12f);
+        r.drawCubeColor(new Vector3f(top).add(normal.x * 0.5f, normal.y * 0.5f, normal.z * 0.5f),
+            new Vector3f(1.1f, 1.1f, 1.1f), 0.12f, 0.5f, 0.14f);
     }
 
     private boolean isHallwayNear(Hallway hw, Vector3f camPos) {
