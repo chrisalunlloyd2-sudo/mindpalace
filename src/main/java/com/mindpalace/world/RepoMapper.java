@@ -38,7 +38,7 @@ public class RepoMapper {
         File notesDir = new File(notesPath);
         if (notesDir.exists()) {
             Room notesRoom = new Room("ViperAI_Notes");
-            notesRoom.setLocalPath(VIPER_NOTES);
+            notesRoom.setLocalPath(notesPath);
             notesRoom.setLanguage("Markdown");
             notesRoom.setPrivate(true);
             notesRoom.setRepoDescription("Personal AI notes and knowledge base");
@@ -104,23 +104,39 @@ public class RepoMapper {
             // No commits yet
         }
 
-        // Detect primary language by file extensions
-        File[] files = repoDir.listFiles();
-        if (files != null) {
-            int py = 0, java = 0, js = 0, html = 0, md = 0;
-            for (File f : files) {
-                String name = f.getName().toLowerCase();
-                if (name.endsWith(".py")) py++;
-                else if (name.endsWith(".java")) java++;
-                else if (name.endsWith(".js")) js++;
-                else if (name.endsWith(".html")) html++;
-                else if (name.endsWith(".md")) md++;
+        // Detect primary language by file extensions (recursive, bounded depth + file
+        // cap). A top-level-only scan mislabels most repos as "Markdown" — README.md
+        // is often the only recognized file at the root, while the real source lives
+        // in src/main/java, src/main/python, etc.
+        int[] c = new int[6];  // py, java, js, html, md, totalScanned
+        countExtensions(repoDir, 5, c);
+        int py = c[0], java = c[1], js = c[2], html = c[3], md = c[4];
+        if (java > py && java > js) room.setLanguage("Java");
+        else if (py > js) room.setLanguage("Python");
+        else if (js > 0) room.setLanguage("JavaScript");
+        else if (html > 0) room.setLanguage("HTML");
+        else if (md > 0) room.setLanguage("Markdown");
+    }
+
+    /** Recursively count file extensions (bounded depth + file cap), skipping VCS/build dirs. */
+    private void countExtensions(File dir, int depth, int[] c) {
+        if (depth < 0 || c[5] > 500) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                String n = f.getName();
+                if (n.equals(".git") || n.equals("node_modules") || n.equals("target") || n.equals("__pycache__")) continue;
+                countExtensions(f, depth - 1, c);
+                continue;
             }
-            if (java > py && java > js) room.setLanguage("Java");
-            else if (py > js) room.setLanguage("Python");
-            else if (js > 0) room.setLanguage("JavaScript");
-            else if (html > 0) room.setLanguage("HTML");
-            else if (md > 0) room.setLanguage("Markdown");
+            c[5]++;
+            String name = f.getName().toLowerCase();
+            if (name.endsWith(".py")) c[0]++;
+            else if (name.endsWith(".java")) c[1]++;
+            else if (name.endsWith(".js")) c[2]++;
+            else if (name.endsWith(".html")) c[3]++;
+            else if (name.endsWith(".md")) c[4]++;
         }
     }
 }

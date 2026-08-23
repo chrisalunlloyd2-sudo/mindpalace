@@ -24,6 +24,7 @@ public class BackupManager {
     private volatile long filesBackedUp;
     private volatile long bytesBackedUp;
     private volatile boolean running;
+    private volatile long backupErrors;
 
     public BackupManager(String backupRoot) {
         this.backupRoot = Path.of(backupRoot);
@@ -58,7 +59,7 @@ public class BackupManager {
             crawl(root);
         }
         System.out.println("[Backup] Full crawl done: " + filesBackedUp + " files, "
-            + formatBytes(bytesBackedUp));
+            + formatBytes(bytesBackedUp) + (backupErrors > 0 ? ", " + backupErrors + " errors" : ""));
     }
 
     private void incrementalCrawl() {
@@ -75,7 +76,10 @@ public class BackupManager {
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                     try {
                         mirror(file);
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        backupErrors++;
+                        if (backupErrors <= 5) System.err.println("[Backup] mirror failed: " + file + ": " + e.getMessage());
+                    }
                     return FileVisitResult.CONTINUE;
                 }
                 @Override
@@ -111,7 +115,10 @@ public class BackupManager {
             contentHash.put(src.toString(), hash);
             filesBackedUp++;
             bytesBackedUp += Files.size(src);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            backupErrors++;
+            if (backupErrors <= 5) System.err.println("[Backup] mirror failed: " + src + ": " + e.getMessage());
+        }
     }
 
     private Path relativize(Path src) {
@@ -148,4 +155,5 @@ public class BackupManager {
 
     public long getFilesBackedUp() { return filesBackedUp; }
     public long getBytesBackedUp() { return bytesBackedUp; }
+    public long getBackupErrors() { return backupErrors; }
 }
