@@ -95,9 +95,9 @@ public class ModelScheduler {
     /**
      * Submit a chat request that BYPASSES the 5-minute spacing gate. Used for
      * user-initiated chat so a reply arrives promptly instead of sitting in the
-     * queue for up to 5 minutes (which made chat look dead). Still serialized
-     * on the single worker thread, so it never runs concurrently with another
-     * model call — it just skips the artificial spacing sleep.
+     * queue for up to 5 minutes (which made chat look dead). Runs on its OWN
+     * dedicated userWorker thread — the ONE exception to "one model at a time",
+     * so a reply is never queued behind a slow autonomous/tool call.
      */
     public CompletableFuture<String> submitImmediate(String model, String prompt, ModelLifespan lifespan) {
         CompletableFuture<String> f = new CompletableFuture<>();

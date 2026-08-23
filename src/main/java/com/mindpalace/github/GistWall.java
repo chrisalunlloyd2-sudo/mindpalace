@@ -58,7 +58,11 @@ public class GistWall {
      * actual network work happens on a daemon thread and only fires every 60s.
      */
     public synchronized void refresh() {
-        if (token == null || token.length() < 20) return;
+        if (token == null || token.length() < 20) {
+            // No token — show an offline hint instead of a blank wall (matches javadoc).
+            if (lines.isEmpty()) lines = java.util.Collections.singletonList("[gist wall: no token]");
+            return;
+        }
         long now = System.currentTimeMillis();
         if (now - lastFetchMs < COOLDOWN_MS || fetching) return;
         lastFetchMs = now;
