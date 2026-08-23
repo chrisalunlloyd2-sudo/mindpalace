@@ -147,8 +147,8 @@ problems. `[chat]` "sims1337 will be the backend with the players and chat."
 FOWGate + LanguageRegistry PORTED from SIMS1337 into `agent/sims/`.
 
 **Still open (`[BP]` problems + `[UB]` items):**
-- `[BP]` P1: user chat waits behind autonomous calls (single drainLoop thread) →
-  give user chat its own worker / priority queue.
+- `[BP]` P1: ✅ FIXED (`340dd2e`) — dedicated user-chat worker (`userWorker` +
+  `drainImmediateLoop()`) so a reply never serializes behind a tool/agent call.
 - `[BP]` P2: `lastUserMessage` dead field → use it to seed next autonomous cycle.
 - `[BP]` P3: guide reply routed via `onToolMessage` → add dedicated `onChatMessage`.
 - `[BP]` P5: book-content bloat (2000 chars every prompt) → truncate to ~500.
@@ -161,9 +161,10 @@ FOWGate + LanguageRegistry PORTED from SIMS1337 into `agent/sims/`.
 
 **Ask:** the tool agent must actually read/write files (not just propose).
 
-**Status:** `STUB` — `AgentManager.buildTools()` defines read_file/edit_file/
-create_file/delete_file, but there is no `tool_calls` parsing, no `executeTool()`,
-no tool-result loop, no critic→tool→execute cycle.
+**Status:** `DONE` (verified 2026-08-23, wired by local agent) — `AgentManager`
+has `executeToolRound()` + `executeTool()` (read_file/edit_file/create_file/delete_file
+with GitHub + local-path fallback), driven by `modelScheduler.submitToolRound()` inside
+`autonomousCycle()`. The earlier "no executeTool()" note was STALE.
 
 **Next action:** implement `executeTool()` + tool-call parsing + result loop. This
 is the biggest "not hooked in" gap (`[UB]` priority #2).
@@ -269,9 +270,10 @@ game fully functional offline.
 
 **Ask:** surface the fleet gist + word-library success paths as an in-game wall.
 
-**Status:** `NOT-STARTED` — no in-game gist-wall UI. `Room` has a "back room for
-comments/gists/archive" concept only. The fleet gist (`04debe0724a26fdee12a9e6d82c4eb56`)
-and the private BDI_FSM_DAGs `word_library/success.jsonl` exist off-game.
+**Status:** `DONE` — commit `380c49c` — `com.mindpalace.github.GistWall` (OkHttp,
+background daemon fetch, 60s cooldown) surfaces fleet_status.jsonl + workflow_logits.jsonl
++ word_library/success.jsonl as a right-side screen panel (`renderGistWall()`). Auth via
+Credential Manager PAT or `MIND_PALACE_GITHUB_TOKEN`.
 
 **Next action:** add a "Gist Wall" room/panel that reads the fleet gist
 (`fleet_status.jsonl` + `workflow_logits.jsonl`) and word-library success paths, and
