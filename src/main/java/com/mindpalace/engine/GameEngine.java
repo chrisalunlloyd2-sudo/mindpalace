@@ -128,6 +128,9 @@ public class GameEngine {
     private String tocToast = "";
     private double tocToastTimer;
     private double tocCooldown;
+    // Mansion interior — Enter at the mansion door toggles inside/outside.
+    private boolean inMansion = false;
+    private double mansionCooldown;
     private static final String[] FACTS = {
         "The first computer bug was a real moth, taped into a logbook in 1947.",
         "Git was created by Linus Torvalds in 2005, in about 10 days.",
@@ -545,6 +548,28 @@ public class GameEngine {
                 tocToastTimer = 8.0;
                 tocCooldown = 3.0;
                 System.out.println("[TOC] " + tocToast);
+            }
+        }
+
+        // Mansion interior — Enter at the mansion door toggles inside/outside.
+        mansionCooldown -= dt;
+        if (mansionCooldown <= 0 && player.getCurrentRoom() == null
+                && input.wasKeyPressed(GLFW.GLFW_KEY_ENTER)) {
+            Vector3f m = world.getOutsideWorld().getMansionPos();
+            Vector3f p = player.getPosition();
+            // Door is on the -Z face of the mansion; stand just in front of it.
+            if (Math.abs(p.x - m.x) < 3f && Math.abs(p.z - (m.z - 9f)) < 3f) {
+                inMansion = !inMansion;
+                mansionCooldown = 0.5;
+                if (inMansion) {
+                    player.getCamera().setPosition(m.x, m.y + 1.6f, m.z + 2f);
+                    player.getCamera().setYaw(180); // face the door (back toward -Z)
+                    System.out.println("[MANSION] Entered the mansion");
+                } else {
+                    player.getCamera().setPosition(m.x, m.y + 1.6f, m.z - 10f);
+                    player.getCamera().setYaw(0);
+                    System.out.println("[MANSION] Left the mansion");
+                }
             }
         }
 
@@ -1047,6 +1072,7 @@ public class GameEngine {
         int skyPhase = (hour < 6 || hour >= 20) ? 2 : (hour >= 18 ? 1 : 0);
         renderer.drawSkyDome(player.getCamera().getPosition(), skyPhase);
         world.render(renderer, player.getCamera());
+        if (inMansion) renderMansionInterior();
 
         // Render agent NPCs (bodies) + TODO crystals
         renderNPCs();
@@ -1526,6 +1552,83 @@ public class GameEngine {
         pos.y -= 0.5f;
         fontRenderer.renderBillboard("\u2726 " + tocToast, pos, 0.05f,
             new Vector3f(0.4f, 1.0f, 0.6f), proj, view, camPos);
+    }
+
+    /**
+     * Mansion interior — the player's home, with a room for everything. Rendered
+     * when inMansion is true (Enter at the mansion door). A grand hall with a
+     * crystal vault, a war-room (quorum votes), a library (KG), a workshop
+     * (program factory console), and a bedroom. All built from the same cube
+     * primitives as the rest of the world.
+     */
+    private void renderMansionInterior() {
+        Vector3f m = world.getOutsideWorld().getMansionPos();
+        float y = m.y;                 // ground Y
+        float w = 22f, d = 16f, h = 7f; // matches the exterior shell
+        float cx = m.x, cz = m.z;
+        float t = 0.3f;
+
+        // Floor + ceiling (interior)
+        renderer.drawCube(new Vector3f(cx, y + 0.05f, cz), new Vector3f(w, 0.1f, d), Renderer.TEX_HARDWOOD);
+        renderer.drawCube(new Vector3f(cx, y + h, cz), new Vector3f(w, 0.15f, d), Renderer.TEX_CEILING);
+        // Interior walls (wallpaper) — the player is inside, so draw inward faces
+        renderer.drawCube(new Vector3f(cx, y + h / 2f, cz - d / 2f), new Vector3f(w, h, t), Renderer.TEX_WALLPAPER);
+        renderer.drawCube(new Vector3f(cx, y + h / 2f, cz + d / 2f), new Vector3f(w, h, t), Renderer.TEX_WALLPAPER);
+        renderer.drawCube(new Vector3f(cx - w / 2f, y + h / 2f, cz), new Vector3f(t, h, d), Renderer.TEX_WALLPAPER);
+        renderer.drawCube(new Vector3f(cx + w / 2f, y + h / 2f, cz), new Vector3f(t, h, d), Renderer.TEX_WALLPAPER);
+
+        // ── Grand hall: chandelier + rug ──
+        renderer.drawCube(new Vector3f(cx, y + h - 0.6f, cz), new Vector3f(1.5f, 0.2f, 1.5f), Renderer.TEX_NEON_AMBER);
+        renderer.drawCube(new Vector3f(cx, y + h - 1.2f, cz), new Vector3f(0.15f, 1.0f, 0.15f), Renderer.TEX_METAL);
+        renderer.drawCube(new Vector3f(cx, y + 0.06f, cz), new Vector3f(6f, 0.02f, 4f), Renderer.TEX_BOOK_RED);
+
+        // ── Crystal vault (back-left): the player's TODO crystals ──
+        float vx = cx - 7f, vz = cz + 4f;
+        renderer.drawCube(new Vector3f(vx, y + 1.2f, vz), new Vector3f(4f, 2.4f, 4f), Renderer.TEX_METAL);
+        renderer.drawCube(new Vector3f(vx, y + 1.2f, vz + 2.05f), new Vector3f(3.4f, 1.8f, 0.1f), Renderer.TEX_NEON_CYAN);
+        // A few glowing crystals inside the vault
+        for (int i = 0; i < 3; i++) {
+            renderer.drawCube(new Vector3f(vx - 1f + i * 1f, y + 1.4f, vz + 1.5f),
+                new Vector3f(0.3f, 0.6f, 0.3f), Renderer.TEX_NEON_GREEN);
+        }
+
+        // ── War-room (back-right): quorum vote table ──
+        float wx = cx + 7f, wz = cz + 4f;
+        renderer.drawCube(new Vector3f(wx, y + 0.8f, wz), new Vector3f(4f, 0.1f, 3f), Renderer.TEX_DOOR);
+        for (int i = 0; i < 4; i++) {
+            float sx = wx - 1.5f + (i % 2) * 3f;
+            float sz = wz - 1f + (i / 2) * 2f;
+            renderer.drawCube(new Vector3f(sx, y + 0.4f, sz), new Vector3f(0.4f, 0.8f, 0.4f), Renderer.TEX_METAL);
+        }
+        // Vote tally board (glowing)
+        renderer.drawCube(new Vector3f(wx, y + 2.2f, wz + 1.6f), new Vector3f(3f, 1.2f, 0.1f), Renderer.TEX_NEON_AMBER);
+
+        // ── Library (left wall): KG bookshelves ──
+        for (int i = 0; i < 4; i++) {
+            float sx = cx - w / 2f + 1.5f + i * 1.6f;
+            renderer.drawCube(new Vector3f(sx, y + 1.5f, cz - 3f), new Vector3f(1.4f, 3f, 0.4f), Renderer.TEX_SHELF);
+            // Book spines
+            for (int b = 0; b < 3; b++) {
+                renderer.drawCube(new Vector3f(sx - 0.4f + b * 0.4f, y + 0.8f + b * 0.7f, cz - 3.2f),
+                    new Vector3f(0.3f, 0.6f, 0.1f), Renderer.TEX_BOOK_BLUE + (b % 3));
+            }
+        }
+
+        // ── Workshop (right wall): program factory console ──
+        float fcx = cx + w / 2f - 2f, fcz = cz - 3f;
+        renderer.drawCube(new Vector3f(fcx, y + 0.9f, fcz), new Vector3f(3f, 0.1f, 1.5f), Renderer.TEX_METAL);
+        renderer.drawCube(new Vector3f(fcx, y + 1.4f, fcz - 0.5f), new Vector3f(1.5f, 0.8f, 0.15f), Renderer.TEX_NEON_CYAN);
+        renderer.drawCube(new Vector3f(fcx, y + 0.95f, fcz + 0.4f), new Vector3f(0.8f, 0.05f, 0.3f), Renderer.TEX_WHITE);
+
+        // ── Bedroom (back wall, center): bed + nightstand ──
+        float bx = cx, bz = cz + d / 2f - 2f;
+        renderer.drawCube(new Vector3f(bx, y + 0.4f, bz), new Vector3f(3f, 0.5f, 2f), Renderer.TEX_BOOK_WHITE);
+        renderer.drawCube(new Vector3f(bx, y + 0.7f, bz - 1.1f), new Vector3f(3f, 0.3f, 0.4f), Renderer.TEX_BOOK_BLUE);
+        renderer.drawCube(new Vector3f(bx + 1.8f, y + 0.5f, bz + 1.2f), new Vector3f(0.6f, 0.6f, 0.6f), Renderer.TEX_WOOD);
+        renderer.drawCube(new Vector3f(bx + 1.8f, y + 0.85f, bz + 1.2f), new Vector3f(0.2f, 0.1f, 0.2f), Renderer.TEX_NEON_AMBER);
+
+        // ── Grand entrance door (interior face, -Z) ──
+        renderer.drawCube(new Vector3f(cx, y + 1.6f, cz - d / 2f + 0.05f), new Vector3f(2.2f, 3.2f, 0.1f), Renderer.TEX_DOOR);
     }
 
     private void renderTeleportMenu() {
