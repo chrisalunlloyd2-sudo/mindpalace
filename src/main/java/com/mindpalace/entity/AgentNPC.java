@@ -304,9 +304,26 @@ public class AgentNPC {
     public float getBobPhase() { return bobPhase; }
     public Vector3f getFacing() { return facing; }
 
-    /** Body color — Explorer cyan, Critic amber. */
+    /** Distinct per-agent body color palette (bright + a few muted) — B3. */
+    private static final int[] BODY_PALETTE = {
+        com.mindpalace.render.Renderer.TEX_NEON_CYAN,
+        com.mindpalace.render.Renderer.TEX_NEON_PINK,
+        com.mindpalace.render.Renderer.TEX_NEON_GREEN,
+        com.mindpalace.render.Renderer.TEX_NEON_AMBER,
+        com.mindpalace.render.Renderer.TEX_BOOK_BLUE,
+        com.mindpalace.render.Renderer.TEX_BOOK_YELLOW,
+        com.mindpalace.render.Renderer.TEX_BOOK_ORANGE,
+        com.mindpalace.render.Renderer.TEX_BOOK_RED,
+    };
+
+    /** Distinct per-agent body color — deterministic hash of the name (B3). */
     public int getBodyTexture() {
+        return BODY_PALETTE[Math.floorMod(name.hashCode(), BODY_PALETTE.length)];
+    }
+
+    /** Role accent (visor + label): Explorer cyan, Critic amber. */
+    public int getRoleTexture() {
         return role == Role.EXPLORER ? com.mindpalace.render.Renderer.TEX_NEON_CYAN
-                                    : com.mindpalace.render.Renderer.TEX_NEON_AMBER;
+                                     : com.mindpalace.render.Renderer.TEX_NEON_AMBER;
     }
 }

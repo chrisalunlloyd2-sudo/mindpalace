@@ -1018,7 +1018,7 @@ public class GameEngine {
 
             int tex = npc.getBodyTexture();
             int limbTex = Renderer.TEX_METAL;   // dark limbs
-            int headTex = Renderer.TEX_WHITE;
+            int headTex = tex;   // head matches the per-agent body color (B3)
 
             // Feet on the ground; body rises from there.
             float footY = p.y + bob;
@@ -1061,7 +1061,7 @@ public class GameEngine {
             float fz = p.z + npc.getFacing().z * 0.13f;
             renderer.drawCubeYaw(
                 new Vector3f(fx, headY, fz),
-                new Vector3f(0.16f, 0.12f, 0.02f), yaw, tex);
+                new Vector3f(0.16f, 0.12f, 0.02f), yaw, npc.getRoleTexture());
 
             // Carried crystal (if any) floats above head
             if (npc.getCarriedCrystal() != null) {
