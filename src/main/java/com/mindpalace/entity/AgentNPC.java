@@ -25,9 +25,11 @@ import java.util.*;
 public class AgentNPC {
     public enum Role { EXPLORER, CRITIC }
     public enum State { IDLE, WALKING, READING, PLACING, CARRYING, MARKING, GOSSIPING }
+    public enum Sex { MALE, FEMALE }
 
     private final String name;
     private final Role role;
+    private final Sex sex;
     private final KVTree kv;
     private final KnowledgeGraph kg;
     private final Random rand;
@@ -52,6 +54,8 @@ public class AgentNPC {
     public AgentNPC(String name, Role role, long seed, KnowledgeGraph kg) {
         this.name = name;
         this.role = role;
+        // Explorer = the sexy Cortana female, Critic = the male (deterministic).
+        this.sex = (role == Role.EXPLORER) ? Sex.FEMALE : Sex.MALE;
         this.kv = new KVTree(role.name(), seed);
         this.kg = kg;
         this.rand = new Random(seed);
@@ -294,6 +298,7 @@ public class AgentNPC {
     // ── Getters ──
     public String getName() { return name; }
     public Role getRole() { return role; }
+    public Sex getSex() { return sex; }
     public KVTree getKV() { return kv; }
     public Vector3f getPosition() { return position; }
     public void setPosition(Vector3f p) { this.position = new Vector3f(p); }

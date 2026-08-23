@@ -12,6 +12,9 @@ import org.lwjgl.opengl.GL13;
 public class Renderer {
     private Shader basicShader;
     private Matrix4f projectionMatrix;
+    private Matrix4f viewMatrix = new Matrix4f();
+    private Vector3f viewPos = new Vector3f();
+    private Shader hologramShader;
     private int width, height;
 
     // Live-tunable lighting (hot-applied by PatchManager without a restart)
@@ -63,6 +66,7 @@ public class Renderer {
         GL11.glClearColor(0.02f, 0.02f, 0.05f, 1.0f);
 
         basicShader = new Shader("shaders/basic.vert", "shaders/basic.frag");
+        hologramShader = new Shader("shaders/hologram.vert", "shaders/hologram.frag");
 
         // Create distinct solid-color textures for each surface
         textures[TEX_WALL]   = new Texture(0.55f, 0.40f, 0.28f);  // warm stone
@@ -100,11 +104,13 @@ public class Renderer {
         basicShader.bind();
         float aspect = (float) width / height;
         projectionMatrix = camera.getProjectionMatrix(aspect);
+        viewMatrix.set(camera.getViewMatrix());
         basicShader.setUniform("projection", projectionMatrix);
         basicShader.setUniform("view", camera.getViewMatrix());
         // Headlamp: light follows the player so upper floors aren't pitch black
         // (the old fixed light at y=10 sat BELOW floors 1+ and left them dark).
         Vector3f camPos = camera.getPosition();
+        viewPos.set(camPos);
         basicShader.setUniform("lightPos", new Vector3f(camPos).add(lightOffset));
         basicShader.setUniform("lightColor", lightColor);
         basicShader.setUniform("ambientStrength", ambientStrength);
@@ -144,6 +150,31 @@ public class Renderer {
     public void drawCubeYaw(Vector3f position, Vector3f size, float yaw, int texId) {
         Matrix4f model = new Matrix4f().translate(position).rotateY(yaw).scale(size);
         drawMesh(getCubeMesh(), model, texId);
+    }
+
+    /** Draw a cube with an arbitrary RGB color, rotated around Y (for clothing layers). */
+    public void drawCubeColorYaw(Vector3f position, Vector3f size, float yaw, float r, float g, float b) {
+        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(b*255);
+        Texture tex = colorCache.get(key);
+        if (tex == null) { tex = new Texture(r, g, b); colorCache.put(key, tex); }
+        Matrix4f model = new Matrix4f().translate(position).rotateY(yaw).scale(size);
+        basicShader.setUniform("model", model);
+        tex.bind(0);
+        basicShader.setUniform("useTexture", 1);
+        getCubeMesh().render();
+    }
+
+    /** Draw a cube with the Cortana hologram shader — fresnel rim + scanlines + data lines. */
+    public void drawHologramCube(Vector3f position, Vector3f size, float yaw, Vector3f tint, float time) {
+        hologramShader.bind();
+        hologramShader.setUniform("projection", projectionMatrix);
+        hologramShader.setUniform("view", viewMatrix);
+        hologramShader.setUniform("model", new Matrix4f().translate(position).rotateY(yaw).scale(size));
+        hologramShader.setUniform("viewPos", viewPos);
+        hologramShader.setUniform("tint", tint);
+        hologramShader.setUniform("time", time);
+        getCubeMesh().render();
+        basicShader.bind();  // restore the default shader for subsequent draws
     }
 
     // Cache of solid-color textures keyed by quantized RGB, so gradient bands

@@ -1004,63 +1004,83 @@ public class GameEngine {
 
     private void renderNPCs() {
         Camera cam = player.getCamera();
+        float time = (float) GLFW.glfwGetTime();
         for (AgentNPC npc : npcs) {
             Vector3f p = npc.getPosition();
             if (cam.getPosition().distance(p) > 30f) continue;
 
-            // 90s polygon avatar: geometric head + torso + limbs, oriented to
-            // movement, with a walk-cycle arm/leg swing and idle bob.
+            // Gait: walk-cycle swing + idle bob (B2)
             float bob = (float) Math.sin(npc.getBobPhase()) * 0.05f;
             boolean walking = npc.getState() == AgentNPC.State.WALKING
                            || npc.getState() == AgentNPC.State.CARRYING;
             float swing = walking ? (float) Math.sin(npc.getBobPhase()) * 0.5f : 0f;
             float yaw = (float) Math.atan2(npc.getFacing().x, npc.getFacing().z);
 
-            int tex = npc.getBodyTexture();
-            int limbTex = Renderer.TEX_METAL;   // dark limbs
-            int headTex = tex;   // head matches the per-agent body color (B3)
+            boolean female = npc.getSex() == AgentNPC.Sex.FEMALE;
 
-            // Feet on the ground; body rises from there.
+            // Anthropometric proportions (B1) — the box-renderer analog of bone scaling.
+            float shoulderW = female ? 0.30f : 0.44f;   // biacromial width
+            float hipW      = female ? 0.38f : 0.28f;   // intertrochanteric width
+            float legLen    = female ? 0.58f : 0.55f;   // elongated limbs
+            float armLen    = female ? 0.44f : 0.42f;
+
+            // Cortana hologram tint — cyan (female) / deeper blue (male)
+            Vector3f holoTint = female
+                ? new Vector3f(0.05f, 0.80f, 1.00f)
+                : new Vector3f(0.10f, 0.55f, 1.00f);
+
+            // Tight-fit clothing = material layer (no extra geometry):
+            //   female → yoga pants (dark) + bra (magenta); male → trousers (dark)
+            float pantsR = 0.07f, pantsG = 0.07f, pantsB = 0.11f;
+            float braR = 0.92f, braG = 0.18f, braB = 0.45f;
+
             float footY = p.y + bob;
-            float hipY = footY + 0.55f;          // leg length
-            float shoulderY = hipY + 0.55f;      // torso length
-            float headY = shoulderY + 0.22f;    // neck + head
+            float hipY = footY + legLen;
+            float waistY = hipY + 0.26f;      // pelvis (hips) top
+            float shoulderY = waistY + 0.30f; // chest top
+            float headY = shoulderY + 0.22f;
 
-            // Legs — two thin vertical cubes, swinging forward/back while walking
+            // Legs — yoga pants (female) / trousers (male): solid dark, swinging
             float legSwing = swing * 0.25f;
-            renderer.drawCubeYaw(
-                new Vector3f(p.x - 0.10f, hipY - 0.27f, p.z + legSwing),
-                new Vector3f(0.10f, 0.55f, 0.10f), yaw, limbTex);
-            renderer.drawCubeYaw(
-                new Vector3f(p.x + 0.10f, hipY - 0.27f, p.z - legSwing),
-                new Vector3f(0.10f, 0.55f, 0.10f), yaw, limbTex);
+            renderer.drawCubeColorYaw(new Vector3f(p.x - 0.10f, hipY - legLen * 0.5f, p.z + legSwing),
+                new Vector3f(0.10f, legLen, 0.10f), yaw, pantsR, pantsG, pantsB);
+            renderer.drawCubeColorYaw(new Vector3f(p.x + 0.10f, hipY - legLen * 0.5f, p.z - legSwing),
+                new Vector3f(0.10f, legLen, 0.10f), yaw, pantsR, pantsG, pantsB);
 
-            // Torso — a tapered look via two stacked cubes (chest + pelvis)
-            renderer.drawCubeYaw(
-                new Vector3f(p.x, hipY + 0.15f, p.z),
-                new Vector3f(0.34f, 0.30f, 0.20f), yaw, tex);
-            renderer.drawCubeYaw(
-                new Vector3f(p.x, shoulderY - 0.10f, p.z),
-                new Vector3f(0.42f, 0.30f, 0.24f), yaw, tex);
+            // Pelvis / hips — female: wide hips (yoga pants); male: narrow (trousers)
+            renderer.drawCubeColorYaw(new Vector3f(p.x, hipY + 0.13f, p.z),
+                new Vector3f(hipW, 0.26f, 0.20f), yaw, pantsR, pantsG, pantsB);
 
-            // Arms — swing opposite to legs
+            // Chest — female: bra (solid accent + bust); male: bare hologram chest
+            if (female) {
+                // bust (bra cups) — two small accent boxes
+                renderer.drawCubeColorYaw(new Vector3f(p.x - 0.09f, shoulderY - 0.06f, p.z),
+                    new Vector3f(0.12f, 0.10f, 0.10f), yaw, braR, braG, braB);
+                renderer.drawCubeColorYaw(new Vector3f(p.x + 0.09f, shoulderY - 0.06f, p.z),
+                    new Vector3f(0.12f, 0.10f, 0.10f), yaw, braR, braG, braB);
+                // bra band (torso)
+                renderer.drawCubeColorYaw(new Vector3f(p.x, shoulderY - 0.10f, p.z),
+                    new Vector3f(shoulderW, 0.22f, 0.20f), yaw, braR, braG, braB);
+            } else {
+                renderer.drawHologramCube(new Vector3f(p.x, shoulderY - 0.10f, p.z),
+                    new Vector3f(shoulderW, 0.30f, 0.24f), yaw, holoTint, time);
+            }
+
+            // Arms — bare hologram, swing opposite legs
             float armSwing = -swing * 0.30f;
-            renderer.drawCubeYaw(
-                new Vector3f(p.x - 0.26f, shoulderY - 0.12f, p.z + armSwing),
-                new Vector3f(0.09f, 0.42f, 0.09f), yaw, limbTex);
-            renderer.drawCubeYaw(
-                new Vector3f(p.x + 0.26f, shoulderY - 0.12f, p.z - armSwing),
-                new Vector3f(0.09f, 0.42f, 0.09f), yaw, limbTex);
+            renderer.drawHologramCube(new Vector3f(p.x - 0.24f, shoulderY - 0.12f, p.z + armSwing),
+                new Vector3f(0.09f, armLen, 0.09f), yaw, holoTint, time);
+            renderer.drawHologramCube(new Vector3f(p.x + 0.24f, shoulderY - 0.12f, p.z - armSwing),
+                new Vector3f(0.09f, armLen, 0.09f), yaw, holoTint, time);
 
-            // Head — a cube with a "visor" (role-colored face plate)
-            renderer.drawCubeYaw(
-                new Vector3f(p.x, headY, p.z),
-                new Vector3f(0.24f, 0.24f, 0.24f), yaw, headTex);
-            // Face plate (role color) on the front of the head
+            // Head — hologram
+            renderer.drawHologramCube(new Vector3f(p.x, headY, p.z),
+                new Vector3f(0.24f, 0.24f, 0.24f), yaw, holoTint, time);
+
+            // Face plate (role color) — keeps Explorer/Critic readable
             float fx = p.x + npc.getFacing().x * 0.13f;
             float fz = p.z + npc.getFacing().z * 0.13f;
-            renderer.drawCubeYaw(
-                new Vector3f(fx, headY, fz),
+            renderer.drawCubeYaw(new Vector3f(fx, headY, fz),
                 new Vector3f(0.16f, 0.12f, 0.02f), yaw, npc.getRoleTexture());
 
             // Carried crystal (if any) floats above head
@@ -1082,6 +1102,7 @@ public class GameEngine {
             }
         }
     }
+
 
     private void renderCrystals() {
         Camera cam = player.getCamera();
