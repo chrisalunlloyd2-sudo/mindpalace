@@ -124,6 +124,10 @@ public class GameEngine {
     // Phase D — finesse: clickable plant fact + telemetry panel
     private String factToast = "";
     private double factToastTimer;
+    // TOC tree of knowledge — walk up to retrieve real system data (KG DB)
+    private String tocToast = "";
+    private double tocToastTimer;
+    private double tocCooldown;
     private static final String[] FACTS = {
         "The first computer bug was a real moth, taped into a logbook in 1947.",
         "Git was created by Linus Torvalds in 2005, in about 10 days.",
@@ -231,6 +235,9 @@ public class GameEngine {
 
         world = new WorldBuilder();
         world.build();
+
+        // Start the day at the mansion (player home) in the outside world.
+        player.teleportToMansion(world);
 
         loadingText = "Populating bookshelves...";
         loadingProgress = 0.7f;
@@ -419,6 +426,21 @@ public class GameEngine {
                 crystals.add(c);
             }
         }
+        // Morning briefing crystals at the mansion — the player starts the day
+        // here, so a few TODO crystals are placed at the mansion spawn so the
+        // day's work is visible right away.
+        Vector3f mansion = world.getOutsideWorld().getMansionPos();
+        String[] briefing = {
+            "TODO: review the day's quorum votes",
+            "TODO: check the TOC tree for system data",
+            "TODO: visit the program factory",
+            "TODO: spend DePIN credits at the model shops"
+        };
+        for (int i = 0; i < briefing.length; i++) {
+            TodoCrystal c = new TodoCrystal(briefing[i], "mansion", "briefing");
+            c.setPosition(new Vector3f(mansion.x - 3f + i * 2f, mansion.y + 0.4f, mansion.z - 6f));
+            crystals.add(c);
+        }
     }
 
     /** Seed the DePIN economy — player + agent wallets, job board, skill loop. */
@@ -511,6 +533,20 @@ public class GameEngine {
 
         // Fact toast timer (Phase D)
         if (factToastTimer > 0) factToastTimer -= dt;
+        if (tocToastTimer > 0) tocToastTimer -= dt;
+        if (tocCooldown > 0) tocCooldown -= dt;
+
+        // TOC tree of knowledge — walk up to retrieve real system data
+        if (tocCooldown <= 0 && player.getCurrentRoom() == null) {
+            Vector3f tree = world.getOutsideWorld().getTocTreePos();
+            Vector3f p = player.getPosition();
+            if (Math.abs(p.x - tree.x) < 6f && Math.abs(p.z - tree.z) < 6f) {
+                tocToast = queryTocData();
+                tocToastTimer = 8.0;
+                tocCooldown = 3.0;
+                System.out.println("[TOC] " + tocToast);
+            }
+        }
 
         // Idle detection: mark activity on any input (non-draining — does NOT
         // consume mouse deltas, so Player still gets look left/right)
@@ -1028,6 +1064,7 @@ public class GameEngine {
             renderFloorSigns();
             renderTelemetryPanel();
             renderFactToast();
+            renderTocToast();
         }
 
         if (state == GameState.PLAYING) {
@@ -1443,6 +1480,52 @@ public class GameEngine {
         pos.y -= 0.3f;
         fontRenderer.renderBillboard("\u2605 " + factToast, pos, 0.05f,
             new Vector3f(1.0f, 0.9f, 0.4f), proj, view, camPos);
+    }
+
+    /** TOC tree of knowledge — read real system data from the KG database. */
+    private String queryTocData() {
+        // The Aegis knowledge graph lives at AIGEN_SYS/db/kg_graph.db. Read a
+        // real TODO/BUG/HACK from github_todos (or a symbol from nodes) so the
+        // tree "retrieves system data for real", not a canned string.
+        String dbPath = System.getProperty("user.home") + "/AIGEN_SYS/db/kg_graph.db";
+        try (java.sql.Connection c = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+             java.sql.Statement st = c.createStatement()) {
+            try (java.sql.ResultSet rs = st.executeQuery(
+                    "SELECT repo, todo_type, content FROM github_todos "
+                    + "WHERE status='open' ORDER BY priority_score DESC LIMIT 1")) {
+                if (rs.next()) {
+                    String repo = rs.getString(1), type = rs.getString(2), content = rs.getString(3);
+                    String c2 = content == null ? "" : content;
+                    if (c2.length() > 40) c2 = c2.substring(0, 38) + "..";
+                    return "TOC \u2192 " + repo + " [" + type + "] " + c2;
+                }
+            }
+            // Fallback: a class/function symbol from the KG
+            try (java.sql.ResultSet rs = st.executeQuery(
+                    "SELECT node_type, name, repo FROM nodes LIMIT 1")) {
+                if (rs.next()) {
+                    return "TOC \u2192 " + rs.getString(3) + " :: " + rs.getString(1)
+                        + " " + rs.getString(2);
+                }
+            }
+        } catch (Exception e) {
+            return "TOC \u2192 KG offline (" + e.getMessage() + ")";
+        }
+        return "TOC \u2192 no data yet";
+    }
+
+    /** TOC toast — billboarded near the tree when the player retrieves data. */
+    private void renderTocToast() {
+        if (tocToastTimer <= 0 || tocToast.isEmpty()) return;
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f pos = new Vector3f(camPos).add(new Vector3f(camFront).mul(2.2f));
+        pos.y -= 0.5f;
+        fontRenderer.renderBillboard("\u2726 " + tocToast, pos, 0.05f,
+            new Vector3f(0.4f, 1.0f, 0.6f), proj, view, camPos);
     }
 
     private void renderTeleportMenu() {

@@ -3,6 +3,7 @@ package com.mindpalace.entity;
 import com.mindpalace.engine.Input;
 import com.mindpalace.render.Camera;
 import com.mindpalace.world.WorldBuilder;
+import com.mindpalace.world.OutsideWorld;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Hallway;
 import com.mindpalace.audio.AudioEngine;
@@ -177,6 +178,16 @@ public class Player {
         float hw = WorldBuilder.HALLWAY_WIDTH / 2f - 0.1f;
 
         if (currentRoom == null) {
+            // Open world: free roam within the big outside bounds (no corridor
+            // clamp). The player can walk the full 300×250m world.
+            if (world.isInOpenWorld(next.x, next.z)) {
+                if (next.x < -OutsideWorld.HALF_W + r) next.x = -OutsideWorld.HALF_W + r;
+                if (next.x > OutsideWorld.HALF_W - r) next.x = OutsideWorld.HALF_W - r;
+                if (next.z < OutsideWorld.MIN_Z + r) next.z = OutsideWorld.MIN_Z + r;
+                if (next.z > -30f - r) next.z = -30f - r;
+                return next;
+            }
+            // Palace corridor: clamp to hallway width
             if (next.x < -hw + r) next.x = -hw + r;
             if (next.x > hw - r) next.x = hw - r;
             // Walkable in front of the palace (outside area) down to -55.
@@ -333,6 +344,20 @@ public class Player {
         teleportCooldown = 1.0;
         if (audio != null) audio.playDoorOpen();
         System.out.println("[TELEPORT] -> Pad " + (padIndex + 1) + " (floor " + (padIndex + 1) + ")");
+    }
+
+    /** Teleport to the mansion (player home) in the outside world. */
+    public void teleportToMansion(WorldBuilder world) {
+        Vector3f m = world.getOutsideWorld().getMansionPos();
+        currentRoom = null;
+        camera.setPosition(m.x, m.y + EYE_HEIGHT, m.z + 8f);
+        camera.setYaw(0);
+        camera.setPitch(0);
+        velocity.set(0, 0, 0);
+        onGround = true;
+        teleportCooldown = 1.0;
+        if (audio != null) audio.playDoorOpen();
+        System.out.println("[TELEPORT] -> Mansion");
     }
 
     /** Teleport to the outside area (floor 0, in front of the palace). */
