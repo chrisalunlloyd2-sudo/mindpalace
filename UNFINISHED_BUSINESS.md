@@ -52,14 +52,14 @@ Fix path: install himalaya → configure account (needs Architect's email creds)
 ═══════════════════════════════════════════════════════════════════════
 4. GAME ENGINE — features defined but NOT hooked in
 ═══════════════════════════════════════════════════════════════════════
-[STUB]  TOOLS (read_file/edit_file/create_file/delete_file) are DEFINED in
-        AgentManager.buildTools() but NEVER EXECUTED. There is no tool_calls
-        parsing, no executeTool(), no tool-result loop. The tool agent can
-        "propose" but cannot actually read/write/delete a file.
+[DONE]  TOOLS (read_file/edit_file/create_file/delete_file) — now fully wired:
+        AgentManager.executeToolRound() -> OllamaClient.chatWithTools() ->
+        executeTool() -> submitToolRound() (AgentManager.java:230-272). The tool
+        agent can now read/edit/create/delete a file end-to-end.
 [STUB]  rayAABB() is dead code (left in place per "never delete, only merge").
 [STUB]  SettingsMenu.musicVolume field was dead (noted earlier).
-[STUB]  AgentManager autonomous cycle only emits text — it never acts on the
-        tool agent's proposal (no critic→tool→execute loop).
+[DONE]  AgentManager autonomous cycle now acts on tool proposals via the
+        critic→tool→execute loop (executeToolRound).
 
 ═══════════════════════════════════════════════════════════════════════
 5. DOORS — cycling vs. open-on-Enter
