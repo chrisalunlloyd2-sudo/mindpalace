@@ -334,3 +334,36 @@ slice (later; Java port where feasible, worker-offload the heavy math).**
 
 *This file is ADD-only. When a step ships, mark it DONE with a commit hash — never
 erase a past line. Kernel + local agent both update this single index.*
+
+---
+
+## 20. Architecture — "byte-code sectors as blocks" (Lego assembly)
+
+**Directive (`[chat]` 2026-08-23):** "that's how bloom works — we keep byte code
+sectors as blocks, then add the blocks like Lego on request. Soon we get enough
+blocks we can populate anything in the game in real time and be like Neo."
+
+**Meaning:** every effect / geometry / room / book / portal is a self-contained
+**BLOCK** (a "byte-code sector") = stable id + definition + payload. The world is
+assembled from blocks at runtime, never hardcoded. The bloom effect is already ONE
+such block (scene FBO → bright pass → blur H/V ping-pong → composite). The more
+blocks in the registry, the more the game populates in real time — no restart.
+
+**Maps to existing code:**
+- **Bloom** = the canonical seed block (`render/BloomEffect.java`).
+- **LiveUpdateManager** = the existing "add a block on request" loop (rooms/books/repos).
+- **Phase 10 (Live Everything)** = the bytecode/scripting path (GraalVM/JS) so *logic*
+  blocks hot-reload — Java can't hot-swap classes, so scripting is the real path.
+- **Phase 5.2 (block building, Lego-like)** = attribute-driven blocks morphing into materials.
+- **`wip/effectmodule` branch** = my earlier proto-block system (`EffectManager` +
+  pluggable `EffectModule`: Bloom/DistrictExpansion/TemporalDistortion) — the Update
+  Method pattern, which is exactly "blocks assembled on request". Kept on a branch so
+  it's not lost, not force-merged over the agent's `render/BloomEffect.java`.
+
+**Concrete next step (proposed):** a `Block` interface + `BlockRegistry` +
+`BlockAssembler`. Each block = { id, definition, payload }. Registry accumulates;
+assembler composes into the world. Seed with 3 real blocks: **bloom** (render
+sector), **portal** (teleporter sector), **text** (font sector). Then grow the
+registry toward "enough blocks to populate anything."
+
+**Status:** `NOT-STARTED` (vision only; bloom + live-add are the two existing seeds).
