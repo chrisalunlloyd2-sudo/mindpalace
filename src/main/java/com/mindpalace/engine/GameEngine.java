@@ -46,6 +46,7 @@ public class GameEngine {
     private int width = 1920;
     private int height = 1080;
     private boolean fullscreen = false;
+    private boolean twoDTextMode = false;   // F4: VR 3D text <-> 2D readable text
     private boolean running = true;
 
     private Renderer renderer;
@@ -574,6 +575,13 @@ public class GameEngine {
             System.out.println("[MAP] " + (showMap ? "ON" : "OFF"));
         }
 
+        // F4 — toggle 2D readable text mode (VR 3D text <-> 2D screen-pinned text).
+        // "Doubles for the toggle": the 3D path is never deleted, only gated.
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F4)) {
+            twoDTextMode = !twoDTextMode;
+            System.out.println("[2D-TEXT] " + (twoDTextMode ? "ON" : "OFF"));
+        }
+
         if (state == GameState.PLAYING) {
             world.tick((float) dt);
             // Freeze the player while the teleporter picker is open — otherwise
@@ -932,14 +940,20 @@ public class GameEngine {
 
         // Render neon sign text
         if (fontRenderer != null && fontRenderer.isReady()) {
-            renderNeonSignText();
-            renderFloorMap();
+            if (!twoDTextMode) {
+                // 3D world text (signs/spines/posters/floor labels) — the VR path.
+                renderNeonSignText();
+                renderFloorMap();
+                renderBookSpineText();
+                renderRoomPoster();
+                renderFloorSigns();
+            } else {
+                // 2D read mode — pin the key world text into a fixed screen panel.
+                renderTwoDTextPanel();
+            }
             renderScreenHUD();
-            renderBookSpineText();
-            renderRoomPoster();
             renderBookTooltip();
             renderBookHighlight();
-            renderFloorSigns();
             renderTelemetryPanel();
             renderFactToast();
         }
@@ -1080,6 +1094,57 @@ public class GameEngine {
         }
     }
 
+    /**
+     * 2D read mode — the "2D" half of the VR<->2D text toggle. Pins the key world
+     * text (current room + the book under the crosshair + its preview) into a fixed
+     * screen-space panel so it is always readable no matter where the camera faces.
+     * World graphics stay identical; only the text is pinned to the screen.
+     */
+    private void renderTwoDTextPanel() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f base = new Vector3f(camPos).add(new Vector3f(camFront).mul(3f));
+
+        fontRenderer.renderBillboard("2D READ MODE  (F4 back to 3D)",
+            new Vector3f(base.x, base.y + 0.55f, base.z), 0.09f,
+            new Vector3f(1.0f, 1.0f, 0.3f), proj, view, camPos);
+
+        Room room = player.getCurrentRoom();
+        if (room != null) {
+            fontRenderer.renderBillboard(room.getDisplayLabel(),
+                new Vector3f(base.x, base.y + 0.38f, base.z), 0.07f,
+                new Vector3f(0.0f, 0.9f, 1.0f), proj, view, camPos);
+
+            String meta = room.getLanguage() + "  " + room.getStarCount() + " \u2605";
+            fontRenderer.renderBillboard(meta,
+                new Vector3f(base.x, base.y + 0.26f, base.z), 0.05f,
+                new Vector3f(0.8f, 0.8f, 0.8f), proj, view, camPos);
+
+            Book looked = findBookInSights(room);
+            if (looked != null) {
+                String tip = looked.getFilename() + " | " + looked.getLanguage()
+                    + " | " + formatSize(looked.getSizeBytes());
+                fontRenderer.renderBillboard(tip,
+                    new Vector3f(base.x, base.y + 0.14f, base.z), 0.06f,
+                    new Vector3f(0.5f, 1.0f, 0.6f), proj, view, camPos);
+
+                String preview = previewLine(looked, room);
+                if (preview != null) {
+                    fontRenderer.renderBillboard(preview,
+                        new Vector3f(base.x, base.y + 0.02f, base.z), 0.05f,
+                        new Vector3f(0.9f, 0.9f, 0.9f), proj, view, camPos);
+                }
+            }
+        } else {
+            fontRenderer.renderBillboard("MindPalace — no room",
+                new Vector3f(base.x, base.y + 0.38f, base.z), 0.07f,
+                new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
+        }
+    }
+
     private void renderNeonSignText() {
         Camera cam = player.getCamera();
         Matrix4f proj = cam.getProjectionMatrix((float) width / height);
@@ -1163,7 +1228,7 @@ public class GameEngine {
             camFront.y * 3f - 0.6f,
             camFront.z * 3f - camRight.z * 0f);
 
-        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  ESC:Menu  F11:Fullscreen";
+        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  F4:2D  ESC:Menu  F11:Fullscreen";
         fontRenderer.renderBillboard(hotkeys, hudCenter, 0.06f,
             new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
 
