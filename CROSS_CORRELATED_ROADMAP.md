@@ -41,7 +41,7 @@ right-to-left = **mirrored/backwards**. A pure Y-rotation cannot simultaneously 
 the camera AND keep left-to-right reading when the camera is behind — it needs the
 camera's screen-right vector.
 
-**Status:** `NOT-STARTED` (FontRenderer still uses `rotateY(atan2)`; no mirror guard).
+**Status:** `DONE` — commit `0a96fa3` (cylindrical billboard: glyph +X follows the camera screen-right from the view matrix, so text reads left-to-right from every angle).
 
 **Next action (minimal, no delete):**
 1. Add a proper billboard matrix that aligns text `+X` with the camera's
@@ -312,8 +312,8 @@ slice (later; Java port where feasible, worker-offload the heavy math).**
 
 ## Consolidated priority order (nothing deleted — everything above is the backlog)
 
-1. §1 backwards text (billboard mirror fix) — **unblocks ALL readability**
-2. §2 VR ↔ 2D toggle (doubles) — **unblocks "test without VR"**
+1. ~~§1 backwards text~~ ✅ DONE (`0a96fa3`)
+2. ~~§2 VR ↔ 2D toggle~~ ✅ DONE (`160b4b9`)
 3. §18 gist wall + new entries — **explicit ask**
 4. §4 avatars (Phase B1→B2→B3)
 5. §8 engine TOOLS execution loop — **biggest "not hooked in" gap**
