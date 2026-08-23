@@ -15,6 +15,7 @@ import com.mindpalace.agent.KnowledgeGraph;
 import com.mindpalace.world.TodoCrystal;
 import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
+import com.mindpalace.ui.DressingRoom;
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.github.GistWall;
 import com.mindpalace.audio.AudioEngine;
@@ -56,6 +57,7 @@ public class GameEngine {
     private BloomEffect bloom;
     private WorldBuilder world;
     private Player player;
+    private DressingRoom dressingRoom;   // F7: avatar dressing room (360° orbit editor)
     private Input input;
     private HUD hud;
     private BookEditor bookEditor;
@@ -213,6 +215,8 @@ public class GameEngine {
         bloom = new BloomEffect(width, height);
         fontRenderer = new FontRenderer();
         player = new Player();
+        // Dressing room owns the player avatar — Cortana preset as the starting point.
+        dressingRoom = new DressingRoom(com.mindpalace.avatar.AvatarLibrary.preset("cortana"));
         hud = new HUD();
         audio = new AudioEngine();
         player.setAudio(audio);
@@ -480,6 +484,16 @@ public class GameEngine {
 
     private void update(double dt) {
         input.update(dt);
+
+        // F7: toggle the dressing room (always available, so it can open AND close).
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F7)) {
+            if (dressingRoom != null) dressingRoom.toggle();
+        }
+        // While open, the dressing room owns ALL input (orbit/select/adjust).
+        if (dressingRoom != null && dressingRoom.isOpen()) {
+            dressingRoom.handleInput(input);
+            return;
+        }
 
         // Fact toast timer (Phase D)
         if (factToastTimer > 0) factToastTimer -= dt;
@@ -941,6 +955,18 @@ public class GameEngine {
     private void render(double alpha) {
         bloom.begin();
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+
+        // Dressing room mode: orbit camera + avatar editor replaces the world view.
+        if (dressingRoom != null && dressingRoom.isOpen()) {
+            dressingRoom.positionCamera(player.getCamera());
+            renderer.beginFrame(player.getCamera());
+            dressingRoom.render(renderer, fontRenderer, player.getCamera(),
+                (float) width / height, (float) GLFW.glfwGetTime());
+            bloom.end();
+            GLFW.glfwSwapBuffers(window);
+            return;
+        }
+
         renderer.beginFrame(player.getCamera());
         // Sky dome — full gradient sphere so the sky is never black, even
         // looking straight up or sideways. Phase follows the real clock.
