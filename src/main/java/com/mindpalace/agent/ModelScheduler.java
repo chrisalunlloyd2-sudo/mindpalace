@@ -8,7 +8,9 @@ import java.util.concurrent.atomic.*;
  * Global model scheduler — the single gate through which EVERY Ollama call
  * flows. Enforces the hard rules:
  *
- *   1. NEVER two models/nodes at once — one worker thread, serialized.
+ *   1. Autonomous calls: NEVER two models/nodes at once — one worker, serialized.
+ *      User chat is the ONE exception: its own dedicated worker (submitImmediate),
+ *      so a reply is never queued behind a slow tool/agent call.
  *   2. ONE chat every 5 minutes MAX — a spacing gate between calls.
  *   3. Slow-paced, low resources — no burst, no concurrency.
  *   4. Telemetry — every call is logged (model, latency, queue depth, drift).
@@ -26,6 +28,10 @@ public class ModelScheduler {
     private final OllamaClient ollama;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final BlockingQueue<Job> queue = new LinkedBlockingQueue<>();
+    // Dedicated user-chat worker — exempt from the "one model at a time" rule.
+    // A user reply must never serialize behind a 10-30s tool/agent call.
+    private final ExecutorService userWorker = Executors.newSingleThreadExecutor();
+    private final BlockingQueue<Job> userQueue = new LinkedBlockingQueue<>();
 
     // Dynamic spacing — widened when the user is actively playing (idle detector)
     private volatile long spacingMs = MIN_SPACING_MS;
@@ -68,6 +74,7 @@ public class ModelScheduler {
     public ModelScheduler(OllamaClient ollama) {
         this.ollama = ollama;
         worker.submit(this::drainLoop);
+        userWorker.submit(this::drainImmediateLoop);
     }
 
     /** Submit a chat request. Returns a future that completes when it runs. */
@@ -93,7 +100,9 @@ public class ModelScheduler {
      * model call — it just skips the artificial spacing sleep.
      */
     public CompletableFuture<String> submitImmediate(String model, String prompt, ModelLifespan lifespan) {
-        return enqueue(model, prompt, lifespan, true);
+        CompletableFuture<String> f = new CompletableFuture<>();
+        userQueue.add(new Job(model, prompt, lifespan, f, true));
+        return f;
     }
 
     private CompletableFuture<String> enqueue(String model, String prompt, ModelLifespan lifespan, boolean immediate) {
@@ -101,6 +110,48 @@ public class ModelScheduler {
         queue.add(new Job(model, prompt, lifespan, f, immediate));
         queueDepth.set(queue.size());
         return f;
+    }
+
+    /**
+     * User-chat drain loop — runs immediate jobs on their OWN worker thread so a
+     * user reply is never queued behind a slow autonomous call. No 5-min spacing
+     * (the user is here NOW), but still resource-fenced and still single-threaded
+     * (one user reply at a time).
+     */
+    private void drainImmediateLoop() {
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                Job job = userQueue.take();
+                if (!resourcesAvailable()) {
+                    fencedCount.incrementAndGet();
+                    lastFenceAt.set(System.currentTimeMillis());
+                    lastStatus = "fenced (user chat)";
+                    userQueue.add(job);          // re-queue for later
+                    Thread.sleep(FENCE_RECHECK_MS);
+                    continue;
+                }
+                lastModel = job.model;
+                lastStatus = "chat " + job.model;
+                long t0 = System.currentTimeMillis();
+                String resp;
+                if (job.lifespan != null) {
+                    resp = job.lifespan.chat(job.prompt);
+                } else {
+                    resp = ollama.chat(job.model, job.prompt, "");
+                }
+                long latency = System.currentTimeMillis() - t0;
+                totalCalls.incrementAndGet();
+                totalLatencyMs.addAndGet(latency);
+                lastCallAt.set(System.currentTimeMillis());
+                lastStatus = "idle";
+                job.future.complete(resp);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                lastStatus = "error: " + e.getMessage();
+            }
+        }
     }
 
     /** The single drain loop — one call at a time, spaced 5 min apart (unless immediate). */
@@ -186,7 +237,7 @@ public class ModelScheduler {
     public long getDriftEvents() { return driftEvents.get(); }
     public void recordDrift() { driftEvents.incrementAndGet(); }
 
-    public void shutdown() { worker.shutdownNow(); }
+    public void shutdown() { worker.shutdownNow(); userWorker.shutdownNow(); }
 
     /** Set dynamic spacing (idle detector: slow when playing, never below 5 min). */
     public void setSpacingMs(long ms) { this.spacingMs = Math.max(MIN_SPACING_MS, ms); }
