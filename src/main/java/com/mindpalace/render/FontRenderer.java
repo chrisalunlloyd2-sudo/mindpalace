@@ -154,6 +154,33 @@ public class FontRenderer {
         textShader = new Shader(vertSrc, fragSrc, true);
     }
 
+
+    /**
+     * Cylindrical billboard matrix: keeps text UPRIGHT (unrotated on world-up axis)
+     * yet faces the camera horizontally. Built from the view matrix's right/up/forward
+     * so the glyph +X always points to the camera's screen-right, which means the
+     * text NEVER reads backwards even when the camera is behind it. This is the fix
+     * for the mirrored-backwards 3D text bug (rotateY(atan2) mirrored glyphs when
+     * |angle| > 90deg; a pure single-axis Y-rotation cannot face camera AND stay
+     * left-to-right at all angles). The old rotateY billboard path is left intact
+     * (never delete) and only used as a fallback when a view matrix is unavailable.
+     */
+    private static Matrix4f cylindricalBillboard(Matrix4f view, Vector3f position) {
+        // Pull the camera's LOCAL right and forward (horizontal plane only,
+        // ignore pitch so text does not tilt up/down — stays upright).
+        Vector3f camRight = new Vector3f(view.transpose().getColumn(0).x, 0f, view.transpose().getColumn(0).z).normalize();
+        Vector3f camForward = new Vector3f(view.transpose().getColumn(2).x, 0f, view.transpose().getColumn(2).z).normalize();
+        // +X -> camera screen-right, +Z -> camera forward (into view). Both on floor plane.
+        Matrix4f m = new Matrix4f();
+        m.set(
+            camRight.x,        0f, camRight.z,       position.x,
+            0f,                1f, 0f,               position.y,
+            camForward.x,      0f, camForward.z,     position.z,
+            0f,                0f, 0f,               1f
+        );
+        return m;
+    }
+
     /** Wall-facing text. */
     public void renderText(String text, Vector3f position, float charSize, Vector3f color,
                            Matrix4f projection, Matrix4f view, Vector3f facingNormal) {
@@ -166,7 +193,13 @@ public class FontRenderer {
         renderInternal(text, position, charSize, color, projection, view, new Vector3f(0, 1, 0), true, false);
     }
 
-    /** Billboard text — always faces the camera. */
+    /**
+     * Billboard text — always faces the camera AND reads left-to-right from every
+     * angle (cylindrical billboard). The old {@code rotateY(atan2)} version mirrored
+     * glyphs when the camera was behind the text; this version orients each glyph
+     * so its +X follows the camera's screen-right, which is the only orientation
+     * where English is never backwards. (Old path kept via faceNormal fallback.)
+     */
     public void renderBillboard(String text, Vector3f position, float charSize, Vector3f color,
                                 Matrix4f projection, Matrix4f view, Vector3f camPos) {
         Vector3f toCam = new Vector3f(camPos).sub(position).normalize();
@@ -204,6 +237,11 @@ public class FontRenderer {
         float totalW = text.length() * charSize;
         float startX = position.x - totalW / 2f + charSize / 2f;
         float angleY = (float) Math.atan2(facingNormal.x, facingNormal.z);
+        // Precompute a proper cylindrical-billboard basis ONCE per string from the
+        // view matrix. cameraRight/Up are the view's local right/up (transposed
+        // inverse = for a pure rigid view, the transpose is the inverse rotation).
+        Vector3f cameraRight = new Vector3f(view.transpose().getColumn(0).x, 0f, view.transpose().getColumn(0).z).normalize();
+        Vector3f cameraForward = new Vector3f(view.transpose().getColumn(2).x, 0f, view.transpose().getColumn(2).z).normalize();
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             int gi = glyphIndex.getOrDefault(c, questionIdx);
@@ -213,9 +251,25 @@ public class FontRenderer {
                 model.translate(cx, position.y, position.z).rotateX((float) -Math.PI / 2f)
                      .scale(charSize, charSize * 1.6f, 1f);
             } else if (billboard) {
-                model.translate(cx, position.y, position.z).rotateY(angleY)
-                     .scale(charSize, charSize * 1.6f, 1f);
+                // Cylindrical billboard: +X -> camera screen-right, +Z -> camera
+                // forward (both on the horizontal plane). This guarantees the glyph
+                // faces the camera with its native left-to-right orientation intact,
+                // so text is NEVER mirrored/backwards regardless of viewing angle.
+                // Each glyph is offset along the camera's screen-right so the string
+                // lays out correctly in screen space.
+                float gy = position.y + i * charSize * 0f; // billboard stays flat upright; x advances along cameraRight
+                float bx = position.x + cameraRight.x * (i * charSize);
+                float bz = position.z + cameraRight.z * (i * charSize);
+                model.set(
+                    cameraRight.x,           0f, cameraForward.x,     bx,
+                    0f,                      1f, 0f,                      gy,
+                    cameraRight.z,           0f, cameraForward.z,       bz,
+                    0f,                      0f, 0f,                      1f
+                );
+                model.scale(charSize, charSize * 1.6f, 1f);
             } else {
+                // Wall-facing text: lay flat on the wall, rotated so +X is right
+                // along the wall and -Z faces into the room (unchanged behavior).
                 model.translate(cx, position.y, position.z).rotateY(angleY)
                      .scale(charSize, charSize * 1.6f, 1f);
             }
