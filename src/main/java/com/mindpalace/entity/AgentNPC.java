@@ -5,6 +5,7 @@ import com.mindpalace.agent.KnowledgeGraph;
 import com.mindpalace.agent.BehaviorTree;
 import com.mindpalace.agent.OllamaClient;
 import com.mindpalace.agent.ModelConfig;
+import com.mindpalace.avatar.AvatarDescriptor;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.TodoCrystal;
@@ -50,6 +51,7 @@ public class AgentNPC {
 
     // Visual
     private float bobPhase;
+    private AvatarDescriptor avatar;   // optional dressing-room avatar (null = hardcoded sex dims)
 
     public AgentNPC(String name, Role role, long seed, KnowledgeGraph kg) {
         this.name = name;
@@ -299,6 +301,8 @@ public class AgentNPC {
     public String getName() { return name; }
     public Role getRole() { return role; }
     public Sex getSex() { return sex; }
+    public AvatarDescriptor getAvatar() { return avatar; }
+    public void setAvatar(AvatarDescriptor a) { this.avatar = a; }
     public KVTree getKV() { return kv; }
     public Vector3f getPosition() { return position; }
     public void setPosition(Vector3f p) { this.position = new Vector3f(p); }

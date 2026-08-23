@@ -346,6 +346,10 @@ public class GameEngine {
         // Explorer = tool agent (phi3:mini), Critic = critic agent (tinyllama:1.1b)
         AgentNPC explorer = new AgentNPC("Explorer", AgentNPC.Role.EXPLORER, 42L, knowledgeGraph);
         AgentNPC critic = new AgentNPC("Critic", AgentNPC.Role.CRITIC, 1337L, knowledgeGraph);
+        // Dressing-room avatars — Explorer is the faithful Cortana preset, Critic is a
+        // deterministic procedural avatar (seeded 90s math). Remove with setAvatar(null).
+        explorer.setAvatar(com.mindpalace.avatar.AvatarLibrary.preset("cortana"));
+        critic.setAvatar(com.mindpalace.avatar.AvatarLibrary.random(1337L));
 
         // Attach real SLM brains, gated by the SHARED scheduler (one call at a time)
         com.mindpalace.agent.OllamaClient ollama = new com.mindpalace.agent.OllamaClient();
@@ -1018,13 +1022,21 @@ public class GameEngine {
 
             boolean female = npc.getSex() == AgentNPC.Sex.FEMALE;
 
+            // Dressing-room avatar: when an NPC carries an AvatarDescriptor it drives
+            // sex + skin + clothing + proportions (the box-renderer reads the parametric
+            // model directly). Absent a descriptor, the hardcoded sex dims below apply.
+            com.mindpalace.avatar.AvatarDescriptor av = npc.getAvatar();
+            if (av != null) {
+                female = av.sex == com.mindpalace.avatar.AvatarDescriptor.Sex.FEMALE;
+            }
+
             // Anthropometric proportions (B1) — the box-renderer analog of bone scaling.
             float shoulderW = female ? 0.30f : 0.44f;   // biacromial width
             float hipW      = female ? 0.38f : 0.28f;   // intertrochanteric width
             float legLen    = female ? 0.58f : 0.55f;   // elongated limbs
             float armLen    = female ? 0.44f : 0.42f;
 
-            // Cortana hologram tint — cyan (female) / deeper blue (male)
+            // Cortana hologram tint — cyan (female) / deeper blue (male); avatar skin wins.
             Vector3f holoTint = female
                 ? new Vector3f(0.05f, 0.80f, 1.00f)
                 : new Vector3f(0.10f, 0.55f, 1.00f);
@@ -1033,6 +1045,17 @@ public class GameEngine {
             //   female → yoga pants (dark) + bra (magenta); male → trousers (dark)
             float pantsR = 0.07f, pantsG = 0.07f, pantsB = 0.11f;
             float braR = 0.92f, braG = 0.18f, braB = 0.45f;
+
+            // Avatar overrides — skin tint, clothing color, and pull/push proportions.
+            if (av != null) {
+                shoulderW *= av.getProportion(com.mindpalace.avatar.AvatarDescriptor.BodyPart.SHOULDERS);
+                hipW      *= av.getProportion(com.mindpalace.avatar.AvatarDescriptor.BodyPart.HIPS);
+                legLen    *= av.getProportion(com.mindpalace.avatar.AvatarDescriptor.BodyPart.LEGS);
+                armLen    *= av.getProportion(com.mindpalace.avatar.AvatarDescriptor.BodyPart.ARMS);
+                holoTint = new Vector3f(av.skinR, av.skinG, av.skinB);
+                pantsR = av.bottomR; pantsG = av.bottomG; pantsB = av.bottomB;
+                braR = av.topR; braG = av.topG; braB = av.topB;
+            }
 
             float footY = p.y + bob;
             float hipY = footY + legLen;
@@ -1076,6 +1099,12 @@ public class GameEngine {
             // Head — hologram
             renderer.drawHologramCube(new Vector3f(p.x, headY, p.z),
                 new Vector3f(0.24f, 0.24f, 0.24f), yaw, holoTint, time);
+
+            // Hair — solid cap (avatar style/color; skipped when style is NONE)
+            if (av != null && av.hairStyle != com.mindpalace.avatar.AvatarDescriptor.HairStyle.NONE) {
+                renderer.drawCubeColorYaw(new Vector3f(p.x, headY + 0.14f, p.z),
+                    new Vector3f(0.26f, 0.10f, 0.26f), yaw, av.hairR, av.hairG, av.hairB);
+            }
 
             // Face plate (role color) — keeps Explorer/Critic readable
             float fx = p.x + npc.getFacing().x * 0.13f;
