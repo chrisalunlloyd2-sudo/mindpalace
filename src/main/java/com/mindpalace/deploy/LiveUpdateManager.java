@@ -24,8 +24,8 @@ public class LiveUpdateManager {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final GitHubClient github;
     private final WorldBuilder world;
-    private final Set<String> knownRepos = new HashSet<>();
-    private final Set<String> knownBooks = new HashSet<>();
+    private final Set<String> knownRepos = ConcurrentHashMap.newKeySet();
+    private final Set<String> knownBooks = ConcurrentHashMap.newKeySet();
     private volatile boolean running;
 
     /** Callback fired when a new module is ready to be animated into view. */
@@ -54,9 +54,9 @@ public class LiveUpdateManager {
 
     public void start() {
         running = true;
-        // Poll every 15 seconds for new repos/files
-        scheduler.scheduleAtFixedRate(this::poll, 15, 15, TimeUnit.SECONDS);
-        System.out.println("[LiveUpdate] Watching for new repos/files (15s poll)");
+        // Poll every 60 seconds for new repos/files (was 15s — a rate-limit magnet)
+        scheduler.scheduleAtFixedRate(this::poll, 15, 60, TimeUnit.SECONDS);
+        System.out.println("[LiveUpdate] Watching for new repos/files (60s poll)");
     }
 
     public void stop() {
@@ -104,7 +104,9 @@ public class LiveUpdateManager {
                 }
             }
         } catch (Exception e) {
-            // Network hiccup — ignore, retry next poll
+            // Never swallow silently — a JSON/auth/runtime error here would otherwise
+            // make new repos stop appearing with zero signal.
+            System.err.println("[LiveUpdate] checkNewRepos failed: " + e);
         }
     }
 

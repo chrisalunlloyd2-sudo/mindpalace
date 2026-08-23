@@ -104,15 +104,24 @@ public class DeployManager {
 
     private void runBuild(String repoPath) throws Exception {
         File f = new File(repoPath);
-        if (new File(f, "build.sh").exists()) {
-            Process p = new ProcessBuilder("bash", "build.sh").directory(f).redirectErrorStream(true).start();
-            p.waitFor(30, TimeUnit.SECONDS);
-        } else if (new File(f, "pom.xml").exists()) {
-            Process p = new ProcessBuilder("mvn", "compile", "-q").directory(f).redirectErrorStream(true).start();
-            p.waitFor(60, TimeUnit.SECONDS);
-        } else if (new File(f, "package.json").exists()) {
-            Process p = new ProcessBuilder("npm", "run", "build").directory(f).redirectErrorStream(true).start();
-            p.waitFor(60, TimeUnit.SECONDS);
+        String[] cmd;
+        long timeoutSec;
+        if (new File(f, "build.sh").exists())          { cmd = new String[]{"bash", "build.sh"}; timeoutSec = 30; }
+        else if (new File(f, "pom.xml").exists())      { cmd = new String[]{"mvn", "compile", "-q"}; timeoutSec = 60; }
+        else if (new File(f, "package.json").exists()) { cmd = new String[]{"npm", "run", "build"}; timeoutSec = 60; }
+        else return;
+
+        ProcessBuilder pb = new ProcessBuilder(cmd).directory(f).redirectErrorStream(true);
+        // Drain output to a log file so the pipe never fills (fixes the 64KB deadlock),
+        // then check the exit code so a failed build is never reported as DEPLOYED.
+        pb.redirectOutput(new File(f, "build-output.log"));
+        Process p = pb.start();
+        if (!p.waitFor(timeoutSec, TimeUnit.SECONDS)) {
+            p.destroyForcibly();
+            throw new RuntimeException("build timed out after " + timeoutSec + "s (see build-output.log)");
+        }
+        if (p.exitValue() != 0) {
+            throw new RuntimeException("build failed with exit " + p.exitValue() + " (see build-output.log)");
         }
     }
 
