@@ -2,6 +2,7 @@ package com.mindpalace.world;
 
 import java.io.File;
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Scans local repos and GitHub API to build the room list.
@@ -70,38 +71,23 @@ public class RepoMapper {
     }
 
     private void detectRepoMeta(Room room, File repoDir) {
-        // Try to read git remote
-        try {
-            ProcessBuilder pb = new ProcessBuilder("git", "-C", repoDir.getAbsolutePath(), "remote", "get-url", "origin");
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            String url = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
-            if (!url.isEmpty() && p.waitFor() == 0) {
-                room.setRemoteUrl(url);
-                // Extract the REAL GitHub repo name from the remote URL — this is
-                // the canonical name (fixes local-folder case/hyphen/underscore
-                // variants like sims1337backend vs SIMS1337-BACKEND).
-                String realName = extractRepoName(url);
-                if (realName != null && !realName.isEmpty()) {
-                    room.setRepoName(realName);
-                }
+        // Try to read git remote (bounded timeout — never hang the scan on a stall)
+        String url = runGit(repoDir, "remote", "get-url", "origin");
+        if (url != null && !url.isEmpty()) {
+            room.setRemoteUrl(url);
+            // Extract the REAL GitHub repo name from the remote URL — this is
+            // the canonical name (fixes local-folder case/hyphen/underscore
+            // variants like sims1337backend vs SIMS1337-BACKEND).
+            String realName = extractRepoName(url);
+            if (realName != null && !realName.isEmpty()) {
+                room.setRepoName(realName);
             }
-        } catch (Exception e) {
-            // No remote — local only
         }
 
-        // Get last commit
-        try {
-            ProcessBuilder pb = new ProcessBuilder("git", "-C", repoDir.getAbsolutePath(),
-                "log", "-1", "--format=%s (%ar)");
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            String msg = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
-            if (!msg.isEmpty() && p.waitFor() == 0) {
-                room.setLastCommit(msg);
-            }
-        } catch (Exception e) {
-            // No commits yet
+        // Get last commit (bounded timeout)
+        String msg = runGit(repoDir, "log", "-1", "--format=%s (%ar)");
+        if (msg != null && !msg.isEmpty()) {
+            room.setLastCommit(msg);
         }
 
         // Detect primary language by file extensions (recursive, bounded depth + file
@@ -116,6 +102,31 @@ public class RepoMapper {
         else if (js > 0) room.setLanguage("JavaScript");
         else if (html > 0) room.setLanguage("HTML");
         else if (md > 0) room.setLanguage("Markdown");
+    }
+
+    /** Run a git command with a bounded timeout; returns trimmed stdout, or null on
+     *  failure/timeout — never hangs the room scan on a stalled git or a credential
+     *  prompt (the classic readAllBytes-without-waitFor deadlock). */
+    private String runGit(File repoDir, String... args) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder();
+            List<String> cmd = new ArrayList<>();
+            cmd.add("git");
+            cmd.add("-C");
+            cmd.add(repoDir.getAbsolutePath());
+            for (String a : args) cmd.add(a);
+            pb.command(cmd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            if (!p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return null;   // timed out
+            }
+            if (p.exitValue() != 0) return null;
+            return new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** Recursively count file extensions (bounded depth + file cap), skipping VCS/build dirs. */
