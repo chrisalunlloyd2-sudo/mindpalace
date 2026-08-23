@@ -16,6 +16,7 @@ import com.mindpalace.world.TodoCrystal;
 import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
 import com.mindpalace.github.GitHubClient;
+import com.mindpalace.github.GistWall;
 import com.mindpalace.audio.AudioEngine;
 import com.mindpalace.audio.MusicEngine;
 import com.mindpalace.agent.AgentManager;
@@ -47,6 +48,7 @@ public class GameEngine {
     private int height = 1080;
     private boolean fullscreen = false;
     private boolean twoDTextMode = false;   // F4: VR 3D text <-> 2D readable text
+    private GistWall gistWall;               // fleet gist wall data source
     private boolean running = true;
 
     private Renderer renderer;
@@ -228,7 +230,16 @@ public class GameEngine {
         renderLoadingFrame();
 
         github = new GitHubClient();
+        // Auto-auth from Windows Credential Manager (env-var fallback) so the
+        // in-game GitHub surfaces (gist wall, editor, agents, live updates) work
+        // without a manual PAT entry. WorldBuilder already does the same.
+        if (!github.loadTokenFromCredentialManager()) {
+            String envTok = System.getenv("MIND_PALACE_GITHUB_TOKEN");
+            if (envTok != null && envTok.length() >= 20) github.setToken(envTok);
+        }
         bookEditor = new BookEditor(github);
+        gistWall = new GistWall();
+        gistWall.setToken(github.getToken());
 
         // Start LLM agents from SIMS1337
         agentManager = new AgentManager();
@@ -955,6 +966,7 @@ public class GameEngine {
             renderBookTooltip();
             renderBookHighlight();
             renderTelemetryPanel();
+            renderGistWall();
             renderFactToast();
         }
 
@@ -1410,6 +1422,43 @@ public class GameEngine {
     }
 
     /** Phase D — fact toast (from clicking the potted plant). */
+    /**
+     * Fleet gist wall — right-side screen panel (mirror of the telemetry panel on
+     * the left) surfacing the live fleet status + workflow logits + word-library
+     * success paths. Text is billboard-rendered so it is always readable.
+     */
+    private void renderGistWall() {
+        if (gistWall == null) return;
+        gistWall.refresh();
+        java.util.List<String> lines = gistWall.getLines();
+        if (lines.isEmpty()) return;
+
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
+
+        // Anchored to the RIGHT of the view, 2.5m out (mirror of telemetry on left)
+        Vector3f base = new Vector3f(camPos).add(
+            camFront.x * 2.5f + camRight.x * 1.4f,
+            camFront.y * 2.5f + 0.55f,
+            camFront.z * 2.5f + camRight.z * 1.4f);
+
+        float step = 0.09f;
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            boolean header = line.startsWith("==");
+            float size = header ? 0.055f : 0.045f;
+            Vector3f color = header
+                ? new Vector3f(1.0f, 0.8f, 0.3f)
+                : new Vector3f(0.6f, 0.9f, 0.6f);
+            Vector3f p = new Vector3f(base.x, base.y - i * step, base.z);
+            fontRenderer.renderBillboard(line, p, size, color, proj, view, camPos);
+        }
+    }
+
     private void renderFactToast() {
         if (factToastTimer <= 0 || factToast.isEmpty()) return;
         Camera cam = player.getCamera();

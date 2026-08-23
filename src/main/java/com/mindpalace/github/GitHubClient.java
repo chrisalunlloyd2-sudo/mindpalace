@@ -68,6 +68,7 @@ public class GitHubClient {
     }
 
     public boolean isAuthenticated() { return authenticated; }
+    public String getToken() { return token; }
 
     /**
      * Fetch all repos for the authenticated user.
