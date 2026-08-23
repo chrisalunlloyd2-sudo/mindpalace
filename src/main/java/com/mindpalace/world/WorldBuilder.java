@@ -53,7 +53,7 @@ public class WorldBuilder {
     // Intel HD 510 (the outside scene alone was ~1200 cubes drawn every frame
     // regardless of where the player stood).
     private static final float OUTSIDE_CHUNK = 8f;          // chunk cell size (m)
-    private static final float OUTSIDE_RENDER_DIST = 22f;   // draw within this radius
+    private static final float OUTSIDE_RENDER_DIST = 55f;   // draw within this radius (matches fog start ~60m)
     private float camX, camZ;                               // camera pos (set each render)
 
     /** True if the chunk containing (x,z) is within the streaming radius. */

@@ -2449,9 +2449,9 @@ public class GameEngine {
         boolean chunkOk =
                WorldBuilder.chunkVisibleAt(0f, 0f, 0f, 0f)        // same chunk → visible
             && WorldBuilder.chunkVisibleAt(10f, 10f, 10f, 10f)    // coincident → visible
-            && WorldBuilder.chunkVisibleAt(15f, 0f, 0f, 0f)       // ~15m → within 22m → visible
-            && !WorldBuilder.chunkVisibleAt(80f, 80f, 0f, 0f)     // far → culled
-            && !WorldBuilder.chunkVisibleAt(30f, 0f, 0f, 0f);     // 30m > 22m → culled
+            && WorldBuilder.chunkVisibleAt(40f, 0f, 0f, 0f)       // ~40m → within 55m → visible
+            && !WorldBuilder.chunkVisibleAt(120f, 120f, 0f, 0f)   // far → culled
+            && !WorldBuilder.chunkVisibleAt(70f, 0f, 0f, 0f);     // 70m > 55m → culled
         System.out.println((chunkOk ? "PASS" : "FAIL")
             + " outside chunk streaming (near visible, far culled)");
         if (chunkOk) pass++; else fail++;

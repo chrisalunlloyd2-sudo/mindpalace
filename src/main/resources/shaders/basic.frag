@@ -43,10 +43,13 @@ void main() {
 
     vec3 result = (ambient + diffuse + specular) * baseColor;
 
-    // Distance fog — soft atmospheric depth (fades to a warm haze)
+    // Distance fog — soft atmospheric depth. Tuned for the 300×250m open
+    // world: starts at 60m and fully fades by ~260m, so the horizon recedes
+    // instead of dissolving into a violet void 20m out (the old "lost in
+    // space" bug). Fog color is a pale sky haze, not deep violet.
     float dist = length(viewPos - FragPos);
-    float fogFactor = clamp((dist - 20.0) / 60.0, 0.0, 0.85);
-    vec3 fogColor = vec3(0.10, 0.08, 0.12); // deep violet haze
+    float fogFactor = clamp((dist - 60.0) / 200.0, 0.0, 0.85);
+    vec3 fogColor = vec3(0.55, 0.65, 0.78); // pale sky haze
     result = mix(result, fogColor, fogFactor * fogEnabled);
 
     FragColor = vec4(result, 1.0);
