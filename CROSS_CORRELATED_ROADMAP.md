@@ -95,8 +95,15 @@ aesthetic: low-poly limbs/head/arms, walk/arm-swing, idle bob, per-agent
 color/role silhouette) + `[SPEC]` I-5 (Keplerian micro-particles), IV-40 (haptic
 cursor).
 
-**Status:** `PARTIAL` — AgentNPC (Explorer + Critic) exist with SLM brains + state
-machines + KV personalities, but `[BB]` B1/B2/B3 bodies are "awaiting Architect OK".
+**Status:** `DONE` — commit `f93243e` — B1/B2/B3 shipped: `AgentNPC.Sex` (Explorer→
+FEMALE, Critic→MALE) + sex-dimorphic proportions (female: narrow shoulders 0.30 /
+wide hips 0.38 / elongated legs 0.58; male: broad shoulders 0.44 / narrow hips 0.28);
+walk/arm-swing + idle bob (B2, pre-existing); per-agent color (B3, `c922b16`); plus a
+Cortana hologram material (`Renderer.drawHologramCube` + `shaders/hologram.*` — fresnel
+rim + scrolling data-lines + scanlines) and tight-fit clothing as material layers
+(`drawCubeColorYaw`): female = magenta bra (bust cups + band) + dark yoga pants on
+legs/pelvis; male = bare hologram chest + dark trousers. Arms/head bare hologram; role
+stays on the visor + label.
 
 **Next action:** `[BB]` B1 → B2 → B3 in order: geometric polygon bodies, walk/arm
 swing + idle bob, per-agent color/role silhouette. Keep first-person for player;
