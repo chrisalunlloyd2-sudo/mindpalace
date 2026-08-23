@@ -10,19 +10,38 @@ public final class AvatarLibrary {
 
     private AvatarLibrary() {}
 
+    /** The "ideal" hourglass ratio — 36-24-36 in (90-60-90 cm): bust:waist:hips = 3:2:3.
+     *  Waist = 2/3 of bust/hips; shoulders balanced with hips. */
+    public static final float HOURGLASS_WAIST_RATIO = 2f / 3f;
+
+    /** Set the feminine hourglass proportions (36-24-36) on a descriptor. */
+    public static void setHourglass(AvatarDescriptor a) {
+        a.proportions.put(AvatarDescriptor.BodyPart.SHOULDERS, 1.00f);
+        a.proportions.put(AvatarDescriptor.BodyPart.CHEST,    1.00f);               // 36" bust
+        a.proportions.put(AvatarDescriptor.BodyPart.WAIST,    HOURGLASS_WAIST_RATIO); // 24" waist
+        a.proportions.put(AvatarDescriptor.BodyPart.HIPS,     1.00f);               // 36" hips
+    }
+
     /** A named starting point (Cortana, Alien, Athlete, ...). */
     public static AvatarDescriptor preset(String name) {
         switch (name.toLowerCase()) {
             case "cortana": {
                 AvatarDescriptor a = new AvatarDescriptor();
                 a.name = "Cortana"; a.sex = AvatarDescriptor.Sex.FEMALE;
-                a.skinR = 0.55f; a.skinG = 0.75f; a.skinB = 0.95f;  // blue skin
-                a.skinTexture = 3;                                   // circuit
-                a.hairStyle = AvatarDescriptor.HairStyle.SHORT;
-                a.hairR = 0.2f; a.hairG = 0.4f; a.hairB = 0.9f;
-                a.eyeR = 0.3f; a.eyeG = 0.9f; a.eyeB = 1.0f;
-                a.top = "bra"; a.topR = 0.1f; a.topG = 0.4f; a.topB = 0.9f;
-                a.bottom = "yogapants"; a.bottomR = 0.05f; a.bottomG = 0.1f; a.bottomB = 0.25f;
+                setHourglass(a);                          // 36-24-36 (90-60-90) hourglass
+                // Glowing holographic skin — luminous blue/cyan + faint circuit/data-stream texture
+                a.skinR = 0.30f; a.skinG = 0.62f; a.skinB = 1.00f;
+                a.skinTexture = 3;                        // circuit
+                // Sleek chin-length angled bob with bangs — dark indigo
+                a.hairStyle = AvatarDescriptor.HairStyle.ANGLED_BOB;
+                a.hairR = 0.14f; a.hairG = 0.10f; a.hairB = 0.48f;   // indigo
+                // Glowing cyan eyes
+                a.eyeShape = AvatarDescriptor.EyeShape.ALMOND;
+                a.eyeR = 0.0f; a.eyeG = 0.9f; a.eyeB = 1.0f;
+                // Holographic bodysuit — form-fitting, emissive cyan with digital pulse
+                a.top = "bodysuit"; a.topR = 0.0f; a.topG = 0.85f; a.topB = 1.0f;
+                a.bottom = "bodysuit"; a.bottomR = 0.0f; a.bottomG = 0.65f; a.bottomB = 1.0f;
+                a.footwear = "none";
                 return a;
             }
             case "alien": {

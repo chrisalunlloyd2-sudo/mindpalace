@@ -14,7 +14,7 @@ import java.util.*;
 public class AvatarDescriptor {
 
     public enum Sex { MALE, FEMALE }
-    public enum HairStyle { NONE, BUZZ, SHORT, BOB, LONG, PONYTAIL, MOHAWK, CURLY, AFRO, TWIN_TAILS }
+    public enum HairStyle { NONE, BUZZ, SHORT, BOB, ANGLED_BOB, LONG, PONYTAIL, MOHAWK, CURLY, AFRO, TWIN_TAILS }
     public enum EyeShape { ROUND, ALMOND, NARROW, UPTURNED }
     public enum BodyPart { HEAD, NECK, SHOULDERS, CHEST, WAIST, HIPS, ARMS, LEGS, FEET, HANDS }
 
