@@ -296,6 +296,11 @@ public class GameEngine {
         agentManager = new AgentManager();
         agentChat = new AgentChat();
         agentManager.setGitHubClient(github);  // hook in tool execution
+        // Add-only issue stream: agents raise GitHub issues, never close/delete.
+        if (github.isAuthenticated()) {
+            agentManager.setIssueStream(new com.mindpalace.github.GitHubIssueStream(
+                github.getToken(), "chrisalunlloyd2-sudo", 30_000L));
+        }
         agentManager.setCallbacks(
             msg -> agentChat.addMessage(msg),
             msg -> agentChat.addMessage(msg),
@@ -3306,6 +3311,36 @@ public class GameEngine {
         System.out.println((ctlOk ? "PASS" : "FAIL")
             + " control channel (CLI file → apply → ack)");
         if (ctlOk) pass++; else fail++;
+
+        // 33. GitHub issue stream — ADD-ONLY semantics (raise only, never mutate).
+        boolean issueStreamOk = false;
+        try {
+            // The stream exposes ONLY raise() + listOpen() — no close/delete/edit
+            // methods exist on the type, so add-only is enforced by construction.
+            // Verify the type has no mutating methods via reflection.
+            Class<?> is = com.mindpalace.github.GitHubIssueStream.class;
+            boolean hasDelete = false, hasClose = false, hasEdit = false;
+            for (java.lang.reflect.Method m : is.getDeclaredMethods()) {
+                String n = m.getName().toLowerCase();
+                if (n.contains("delete") || n.contains("close") || n.contains("edit")
+                    || n.contains("update") || n.contains("remove")) {
+                    hasDelete = true;
+                }
+            }
+            // Pacing: a second raise within the min interval returns -2 (paced),
+            // never hits the API. Construct with a huge interval to test this
+            // without network.
+            com.mindpalace.github.GitHubIssueStream stream =
+                new com.mindpalace.github.GitHubIssueStream("x".repeat(40), "test", 60_000L);
+            int first = stream.raise("repo", "t", "b");   // -1 (bad token) or -2
+            int second = stream.raise("repo", "t", "b");  // must be -2 (paced)
+            issueStreamOk = !hasDelete && second == -2;
+        } catch (Exception e) {
+            issueStreamOk = false;
+        }
+        System.out.println((issueStreamOk ? "PASS" : "FAIL")
+            + " issue stream (add-only + cellular pacing)");
+        if (issueStreamOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

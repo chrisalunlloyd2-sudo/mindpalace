@@ -182,6 +182,42 @@ public class AgentManager {
         this.github = github;
     }
 
+    // ── GitHub issue stream (ADD-ONLY) ─────────────────────────────────
+
+    private com.mindpalace.github.GitHubIssueStream issueStream;
+
+    /** Inject the add-only issue stream so approved topics become GitHub issues. */
+    public void setIssueStream(com.mindpalace.github.GitHubIssueStream stream) {
+        this.issueStream = stream;
+    }
+
+    /**
+     * Raise approved topics as GitHub issues (ADD-ONLY, quorum-gated).
+     * Each approved topic becomes one issue on the current room's repo. The
+     * stream enforces cellular pacing + add-only semantics; nothing is ever
+     * closed, edited, or deleted. Returns the number of issues raised.
+     */
+    public int raiseApprovedTopics() {
+        if (issueStream == null || approvedTopics.isEmpty()) return 0;
+        if (currentRoom == null) return 0;
+        String repo = currentRoom.getRepoName();
+        int raised = 0;
+        for (String topic : approvedTopics) {
+            int n = issueStream.raise(repo,
+                "Agent proposal: " + topic,
+                "Autonomously raised by the SLM agent swarm (quorum-approved topic).\n\n"
+                + "Topic: " + topic + "\n"
+                + "Source: lexical bridge → quorum vote → issue stream.\n"
+                + "This issue is ADD-ONLY: it will never be closed or deleted by the agents.",
+                "agent-proposal", "quorum-approved");
+            if (n > 0) {
+                raised++;
+                log("[AgentManager] raised issue #" + n + " on " + repo + ": " + topic);
+            }
+        }
+        return raised;
+    }
+
     // ── User chat ──
 
     /** User sends a message — the guide replies directly (immediate, no 5-min wait). */
@@ -258,6 +294,9 @@ public class AgentManager {
                 int solved = solveIssues(issues);
                 if (solved > 0) log("[AgentManager] solved " + solved + " issues");
             }
+            // Raise approved topics as GitHub issues (ADD-ONLY, paced).
+            int raised = raiseApprovedTopics();
+            if (raised > 0) log("[AgentManager] raised " + raised + " GitHub issues");
         } catch (Exception e) {
             log("[AgentManager] lexical bridge error: " + e.getMessage());
         }
