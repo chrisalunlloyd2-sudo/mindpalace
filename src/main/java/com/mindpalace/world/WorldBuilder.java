@@ -632,16 +632,9 @@ public class WorldBuilder {
                 r.drawCubeColor(new Vector3f(camX - 20f, skyY, backZ - 0.01f * ring),
                     new Vector3f(s, s, 0.03f), 0.85f * a, 0.88f * a, 0.95f * a);
             }
-            // Stars
-            for (int si = 0; si < 40; si++) {
-                float ang = si * 2.399963f;
-                float rad = 15f + (si % 5) * 8f;
-                float sx = camX + (float) Math.cos(ang) * rad;
-                float sy = skyY + (float) Math.sin(ang) * 8f;
-                float tw = 0.5f + 0.5f * (float) Math.cos(time * 1.5f + si * 1.7f);
-                r.drawCubeColor(new Vector3f(sx, sy, backZ + 0.02f),
-                    new Vector3f(0.12f, 0.12f, 0.05f), tw, tw, tw);
-            }
+            // Full star field + real named constellations (Big Dipper, Orion,
+            // Cassiopeia, Cygnus, Leo, Scorpius, Taurus, Lyra) with twinkle.
+            Constellation.render(r, camX, skyY, camZ, time);
         } else {
             float[] core = dusk ? new float[]{1.0f, 0.55f, 0.30f} : new float[]{1.0f, 0.85f, 0.35f};
             r.drawCubeColor(new Vector3f(camX, skyY, backZ),

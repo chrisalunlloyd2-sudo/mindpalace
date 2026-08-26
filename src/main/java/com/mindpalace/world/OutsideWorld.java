@@ -62,6 +62,51 @@ public class OutsideWorld {
     /** TOC tree of knowledge position — walk up to retrieve system data. */
     public Vector3f getTocTreePos() { return tocTreePos; }
 
+    // ── Model shops (linked to DePIN) ────────────────────────────────────────
+
+    /** A shop stall the player can interact with to spend DePIN credits. */
+    public static final class Shop {
+        public final String name;
+        public final String description;
+        public final double cost;
+        public final Vector3f pos;
+
+        Shop(String name, String description, double cost, Vector3f pos) {
+            this.name = name;
+            this.description = description;
+            this.cost = cost;
+            this.pos = pos;
+        }
+    }
+
+    /** The 5 model-upgrade shops positioned alongside the mansion. */
+    public Shop[] getShops() {
+        return new Shop[]{
+            new Shop("RAG",        "Retrieval-Augmented Generation — faster model recall", 15.0, new Vector3f(mansionPos.x - 20f + 0f * 8f, 0f, mansionPos.z + 14f)),
+            new Shop("KG Node",    "Knowledge Graph node — store facts the agents learn",  20.0, new Vector3f(mansionPos.x - 20f + 1f * 8f, 0f, mansionPos.z + 14f)),
+            new Shop("Deps",       "Dependency analysis — smarter code reviews",           10.0, new Vector3f(mansionPos.x - 20f + 2f * 8f, 0f, mansionPos.z + 14f)),
+            new Shop("LoRA",       "LoRA adapter slot — swappable skill weights",          30.0, new Vector3f(mansionPos.x - 20f + 3f * 8f, 0f, mansionPos.z + 14f)),
+            new Shop("Router",     "ModelRouter — complexity-based model tier routing",    25.0, new Vector3f(mansionPos.x - 20f + 4f * 8f, 0f, mansionPos.z + 14f))
+        };
+    }
+
+    /** Returns the nearest shop within range (meters), or -1 if none are close. */
+    public int nearestShopIndex(float px, float pz, float range) {
+        int best = -1;
+        float bestDist = range * range;
+        for (int i = 0; i < 5; i++) {
+            Shop s = getShops()[i];
+            float dx = px - s.pos.x;
+            float dz = pz - s.pos.z;
+            float d2 = dx * dx + dz * dz;
+            if (d2 < bestDist) {
+                bestDist = d2;
+                best = i;
+            }
+        }
+        return best;
+    }
+
     // Camera position (set each render) for chunk culling.
     private float camX, camZ;
 
@@ -181,41 +226,53 @@ public class OutsideWorld {
             if (near(tx, tz, tocTreePos, 20f)) continue;
             if (!chunkVisible(tx, tz)) continue;
 
+            // Distance-based LOD: near trees get full detail (branches + 34
+            // leaves), far trees collapse to a trunk + a few canopy blobs.
+            // This is the single biggest draw-call win on the Intel HD 510 —
+            // a full tree is ~46 cubes, a far tree is ~5.
+            float dx = tx - camX, dz = tz - camZ;
+            float dist2 = dx * dx + dz * dz;
+            int lod = dist2 < 12f * 12f ? 0 : dist2 < 28f * 28f ? 1 : 2;
+
             // Every 4th tree is an evergreen (conifer); rest deciduous
-            if (ti % 4 == 0) renderEvergreen(r, tx, floorY, tz, ti);
-            else renderDeciduous(r, tx, floorY, tz, ti, s);
+            if (ti % 4 == 0) renderEvergreen(r, tx, floorY, tz, ti, lod);
+            else renderDeciduous(r, tx, floorY, tz, ti, s, lod);
         }
     }
 
-    private void renderDeciduous(Renderer r, float tx, float floorY, float tz, int ti, Season s) {
+    private void renderDeciduous(Renderer r, float tx, float floorY, float tz, int ti, Season s, int lod) {
         float trunkH = 2.6f + (ti % 5) * 0.5f;
         // Trunk + bark ridges
         r.drawCube(new Vector3f(tx, floorY + trunkH / 2f, tz),
             new Vector3f(0.34f, trunkH, 0.34f), Renderer.TEX_BARK);
-        for (int ridge = 0; ridge < 3; ridge++) {
-            float ry = floorY + 0.5f + ridge * (trunkH * 0.3f);
-            r.drawCube(new Vector3f(tx, ry, tz), new Vector3f(0.38f, 0.07f, 0.38f), Renderer.TEX_WOOD);
+        if (lod == 0) {
+            for (int ridge = 0; ridge < 3; ridge++) {
+                float ry = floorY + 0.5f + ridge * (trunkH * 0.3f);
+                r.drawCube(new Vector3f(tx, ry, tz), new Vector3f(0.38f, 0.07f, 0.38f), Renderer.TEX_WOOD);
+            }
         }
-        // Visible branches — golden-angle forks, thicker and longer
-        int branchCount = 4;
-        for (int b = 0; b < branchCount; b++) {
-            float by = floorY + trunkH * (0.5f + 0.13f * b);
-            float bAng = b * GOLDEN + ti * 0.7f;
-            float bLen = 1.6f - 0.3f * b;
-            float bdx = (float) Math.cos(bAng) * bLen;
-            float bdz = (float) Math.sin(bAng) * bLen;
-            r.drawCube(new Vector3f(tx + bdx * 0.5f, by + 0.3f, tz + bdz * 0.5f),
-                new Vector3f(0.16f, 0.16f, bLen), Renderer.TEX_BARK);
-            // Sub-branch
-            float sAng = bAng + GOLDEN;
-            float sLen = bLen * 0.6f;
-            r.drawCube(new Vector3f(tx + bdx + (float) Math.cos(sAng) * sLen * 0.5f,
-                    by + 0.6f, tz + bdz + (float) Math.sin(sAng) * sLen * 0.5f),
-                new Vector3f(0.10f, 0.10f, sLen), Renderer.TEX_BARK);
+        // Visible branches — golden-angle forks, thicker and longer (near only)
+        if (lod == 0) {
+            int branchCount = 4;
+            for (int b = 0; b < branchCount; b++) {
+                float by = floorY + trunkH * (0.5f + 0.13f * b);
+                float bAng = b * GOLDEN + ti * 0.7f;
+                float bLen = 1.6f - 0.3f * b;
+                float bdx = (float) Math.cos(bAng) * bLen;
+                float bdz = (float) Math.sin(bAng) * bLen;
+                r.drawCube(new Vector3f(tx + bdx * 0.5f, by + 0.3f, tz + bdz * 0.5f),
+                    new Vector3f(0.16f, 0.16f, bLen), Renderer.TEX_BARK);
+                // Sub-branch
+                float sAng = bAng + GOLDEN;
+                float sLen = bLen * 0.6f;
+                r.drawCube(new Vector3f(tx + bdx + (float) Math.cos(sAng) * sLen * 0.5f,
+                        by + 0.6f, tz + bdz + (float) Math.sin(sAng) * sLen * 0.5f),
+                    new Vector3f(0.10f, 0.10f, sLen), Renderer.TEX_BARK);
+            }
         }
-        // Phyllotaxis canopy — leaf color follows season
+        // Phyllotaxis canopy — leaf color follows season. LOD scales leaf count.
         float[] leaf = leafColor(s);
-        int leaves = 34;
+        int leaves = lod == 0 ? 34 : lod == 1 ? 12 : 4;
         float baseY = floorY + trunkH + 0.5f;
         for (int n = 0; n < leaves; n++) {
             float lang = n * GOLDEN;
@@ -229,12 +286,12 @@ public class OutsideWorld {
         }
     }
 
-    private void renderEvergreen(Renderer r, float tx, float floorY, float tz, int ti) {
+    private void renderEvergreen(Renderer r, float tx, float floorY, float tz, int ti, int lod) {
         float trunkH = 3.0f + (ti % 3) * 0.6f;
         r.drawCube(new Vector3f(tx, floorY + trunkH / 2f, tz),
             new Vector3f(0.30f, trunkH, 0.30f), Renderer.TEX_BARK);
         // Conifer cone — stacked shrinking green discs (Fibonacci taper)
-        int tiers = 6;
+        int tiers = lod == 0 ? 6 : lod == 1 ? 3 : 2;
         for (int t = 0; t < tiers; t++) {
             float ty = floorY + trunkH * 0.4f + t * 0.55f;
             float frac = 1f - (float) t / tiers;

@@ -193,6 +193,26 @@ public class Renderer {
         getCubeMesh().render();
     }
 
+    /** Draw a thin colored line from a to b (a cube oriented along the segment). */
+    public void drawLine(Vector3f a, Vector3f b, float thickness, float r, float g, float bl) {
+        Vector3f mid = new Vector3f(a).add(b).mul(0.5f);
+        Vector3f dir = new Vector3f(b).sub(a);
+        float len = dir.length();
+        if (len < 1e-4f) return;
+        dir.normalize();
+        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(bl*255);
+        Texture tex = colorCache.get(key);
+        if (tex == null) { tex = new Texture(r, g, bl); colorCache.put(key, tex); }
+        // rotateTowards aligns the cube's +Z with dir (the long axis).
+        Matrix4f model = new Matrix4f().translate(mid)
+            .rotateTowards(dir, new Vector3f(0, 1, 0))
+            .scale(thickness, thickness, len);
+        basicShader.setUniform("model", model);
+        tex.bind(0);
+        basicShader.setUniform("useTexture", 1);
+        getCubeMesh().render();
+    }
+
     /**
      * Draw a flat textured quad (an image poster) facing a given yaw.
      * Binds the supplied Texture directly (not the solid-color atlas), so real

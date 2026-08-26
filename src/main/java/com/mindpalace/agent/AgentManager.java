@@ -168,6 +168,15 @@ public class AgentManager {
         this.onIssues = cb;
     }
 
+    // ── DePIN economy integration ──
+
+    private com.mindpalace.economy.DePIN depin;
+
+    /** Wire the DePIN economy so agents earn & spend credits autonomously. */
+    public void setDePIN(com.mindpalace.economy.DePIN depin) {
+        this.depin = depin;
+    }
+
     /** Inject the GitHub client so the tool agent can actually execute tools. */
     public void setGitHubClient(com.mindpalace.github.GitHubClient github) {
         this.github = github;
@@ -233,6 +242,10 @@ public class AgentManager {
         // (FOW-gated). The result is logged as the "voting schema" heartbeat.
         runQuorumVote(context);
 
+        // DePIN economy: agents autonomously claim + complete a job each cycle
+        // (skill = success = earnings). Single-threaded via the scheduler.
+        runDePINWork();
+
         // Lexical bridge: chat logs → lexical vectors → quorum → TODO issues.
         // Runs on the same cycle; throttled internally to 60s. Approved topics
         // surface matching TODO/FIXME comments in non-legacy repos as issues.
@@ -264,6 +277,36 @@ public class AgentManager {
             log("[AgentManager] quorum error: " + e.getMessage());
         }
     }
+
+    /** Agents autonomously claim and complete one DePIN job per cycle. */
+    private void runDePINWork() {
+        if (depin == null) return;
+        try {
+            List<com.mindpalace.economy.Blackboard.Job> open = depin.board().openJobs();
+            if (open.isEmpty()) return;
+            // Pick a random open job for each agent, biased toward the current room's topic.
+            for (String agent : new String[]{"Explorer", "Critic"}) {
+                com.mindpalace.economy.DePIN.Participant p = depin.participant(agent);
+                if (p == null) continue;
+                // Filter jobs the agent can actually claim (difficulty <= tier).
+                List<com.mindpalace.economy.Blackboard.Job> eligible = new java.util.ArrayList<>();
+                for (com.mindpalace.economy.Blackboard.Job j : open)
+                    if (j.isOpen() && j.difficulty <= p.tier()) eligible.add(j);
+                if (eligible.isEmpty()) continue;
+                com.mindpalace.economy.Blackboard.Job job = eligible.get((int)(Math.random() * eligible.size()));
+                if (depin.claim(job.id, agent)) {
+                    double earned = depin.complete(job.id);
+                    if (earned > 0) {
+                        log("[DePIN] " + agent + " completed \"" + job.title + "\" (+" + fmt(earned) + " credits, skill " + p.skill.get() + ")");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log("[AgentManager] DePIN work error: " + e.getMessage());
+        }
+    }
+
+    private static String fmt(double v) { return String.format("%.2f", v); }
 
     // ── Chat → quorum → TODO bridge ─────────────────────────────────────
 

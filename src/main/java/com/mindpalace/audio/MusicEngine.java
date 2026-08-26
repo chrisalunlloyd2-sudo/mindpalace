@@ -1,13 +1,20 @@
 package com.mindpalace.audio;
 
+import com.mindpalace.genetics.AudioGenome;
 import javax.sound.sampled.*;
 import java.util.concurrent.atomic.*;
 
 /**
  * Procedural music engine — generates an endless ambient soundtrack in real
  * time (no audio files, no MIDI assets). A step-sequencer drives a chord
- * progression with a soft pad, an arpeggio, a bass line, and an optional
+ * progression with a soft pad, a melody lead, a bass line, and an optional
  * beat. Key, scale, tempo, and mood are live-tunable from the Beats StudioLab.
+ *
+ * The engine is also the "phenotype" of the genetic-audio pipeline: an
+ * {@link AudioGenome} maps 1:1 onto the synth parameters, {@link #renderOffline}
+ * synthesizes a genome to a buffer for fitness scoring, and {@link #applyGenome}
+ * splices a genome into the live sound. This is what makes continuous evolution
+ * audible — the fittest patch each generation becomes the world's music.
  *
  * Synthesis is 16-bit / 44.1 kHz mono (higher fidelity than the 8-bit SFX
  * engine, since music is continuous and quality matters).
@@ -18,7 +25,7 @@ public class MusicEngine {
 
     // Live-tunable state (atomic so the audio thread reads a consistent view).
     private final AtomicInteger rootMidi = new AtomicInteger(57); // A3
-    private final AtomicInteger tempoBpm = new AtomicInteger(72);
+    private final AtomicInteger tempoBpm = new AtomicInteger(120);
     private final AtomicBoolean beatEnabled = new AtomicBoolean(false);
     private final AtomicBoolean playing = new AtomicBoolean(false);
     private final AtomicBoolean enabled = new AtomicBoolean(true);
@@ -26,6 +33,14 @@ public class MusicEngine {
 
     private volatile String scale = "minor";
     private volatile int[] progression = {0, 5, 2, 6}; // i–VI–III–VII (minor)
+
+    // Mix levels + envelope (genome genes 3..8). Defaults reproduce the
+    // original shipped sound exactly.
+    private volatile float padLevel = 0.07f;
+    private volatile float melodyLevel = 0.20f;
+    private volatile float bassLevel = 0.15f;
+    private volatile float attack = 0.5f;   // 0..1 → attack rate 1..7
+    private volatile float decay = 0.5f;    // 0..1 → decay rate 0.2..1.4
 
     private volatile Thread thread;
     private volatile SourceDataLine line;
@@ -36,9 +51,18 @@ public class MusicEngine {
     private static final int[] DORIAN    = {0, 2, 3, 5, 7, 9, 10};
     private static final int[] LYDIAN    = {0, 2, 4, 6, 7, 9, 11};
     private static final int[] MIXOLYDIAN= {0, 2, 4, 5, 7, 9, 10};
+    private static final String[] SCALE_NAMES = {"minor", "major", "dorian", "lydian", "mixolydian"};
+
+    // Melody — a slow, flowing 4-bar lead phrase. One scale-degree per BEAT
+    // (quarter note = 4 steps), so it breathes instead of buzzing. -1 = rest.
+    // Degrees index the scale (0=root, 7=octave). Transposes with the chord.
+    private static final int[] MELODY = {
+        0, 2, 4, 2,   0, -1, 3, 2,
+        0, 2, 4, 7,   4, 2, 0, -1,
+    };
 
     public MusicEngine() {
-        System.out.println("[Music] Procedural engine ready — key A minor, 72 BPM");
+        System.out.println("[Music] Procedural engine ready — key A minor, 120 BPM");
     }
 
     // ── Public API ──
@@ -64,7 +88,7 @@ public class MusicEngine {
     public void setKey(int midi) { rootMidi.set(midi); }
     public int getKey() { return rootMidi.get(); }
 
-    public void setTempo(int bpm) { tempoBpm.set(Math.max(40, Math.min(180, bpm))); }
+    public void setTempo(int bpm) { tempoBpm.set(Math.max(30, Math.min(240, bpm))); }
     public int getTempo() { return tempoBpm.get(); }
 
     public void setBeat(boolean b) { beatEnabled.set(b); }
@@ -86,11 +110,63 @@ public class MusicEngine {
     /** Mood preset — one call sets tempo + scale + beat for a coherent feel. */
     public void setMood(String mood) {
         switch (mood) {
-            case "calm":       setTempo(60); setScale("major");      setBeat(false); break;
-            case "mysterious": setTempo(66); setScale("minor");      setBeat(false); break;
-            case "energetic":  setTempo(120); setScale("dorian");    setBeat(true);  break;
-            case "dreamy":     setTempo(80); setScale("lydian");     setBeat(false); break;
+            case "calm":       setTempo(60);  setScale("major");      setBeat(false); break;
+            case "mysterious": setTempo(66);  setScale("minor");      setBeat(false); break;
+            case "energetic":  setTempo(120); setScale("dorian");     setBeat(true);  break;
+            case "dreamy":     setTempo(80);  setScale("lydian");     setBeat(false); break;
             default: break;
+        }
+    }
+
+    // ── Genetic-audio bridge ──
+
+    /** Splice a genome into the live synth (the "phenotype" of evolution). */
+    public void applyGenome(AudioGenome g) {
+        float[] x = g.genes;
+        setKey((int) x[0]);
+        setTempo((int) x[1]);
+        setScale(SCALE_NAMES[Math.max(0, Math.min(4, (int) x[2]))]);
+        padLevel = x[3];
+        melodyLevel = x[4];
+        bassLevel = x[5];
+        setBeat(x[6] >= 0.5f);
+        attack = x[7];
+        decay = x[8];
+    }
+
+    /** Synthesize a genome to a mono float[] buffer (offline, no audio line). */
+    public static float[] renderOffline(AudioGenome g, int sampleCount) {
+        float[] x = g.genes;
+        int root = (int) x[0];
+        int bpm = (int) x[1];
+        int[] sc = scaleForIndex((int) x[2]);
+        int[] prog = progressionForIndex((int) x[2]);
+        boolean beat = x[6] >= 0.5f;
+        float[] out = new float[sampleCount];
+        for (int i = 0; i < sampleCount; i++) {
+            out[i] = (float) synthSample(root, bpm, sc, prog, beat, 0.5f,
+                x[3], x[4], x[5], x[7], x[8], i);
+        }
+        return out;
+    }
+
+    private static int[] scaleForIndex(int idx) {
+        switch (Math.max(0, Math.min(4, idx))) {
+            case 1: return MAJOR;
+            case 2: return DORIAN;
+            case 3: return LYDIAN;
+            case 4: return MIXOLYDIAN;
+            default: return MINOR;
+        }
+    }
+
+    private static int[] progressionForIndex(int idx) {
+        switch (Math.max(0, Math.min(4, idx))) {
+            case 1: return new int[]{0, 4, 5, 3};
+            case 2: return new int[]{0, 3, 4, 1};
+            case 3: return new int[]{0, 4, 1, 3};
+            case 4: return new int[]{0, 3, 4, 0};
+            default: return new int[]{0, 5, 2, 6};
         }
     }
 
@@ -108,6 +184,66 @@ public class MusicEngine {
 
     private static double midiHz(int midi) { return 440.0 * Math.pow(2.0, (midi - 69) / 12.0); }
 
+    /**
+     * Pure per-sample synthesis — the single source of truth for both the live
+     * loop and the offline genome renderer. Returns a sample in [-1, 1].
+     */
+    private static double synthSample(int root, int bpm, int[] scale, int[] prog,
+                                      boolean beat, float vol, float padLvl, float melLvl,
+                                      float bassLvl, float attack, float decay, long step) {
+        double stepsPerSec = bpm / 60.0 * 4.0;
+        double t = step / stepsPerSec;
+        int bar = (int) (step / STEPS_PER_BAR);
+        int stepInBar = (int) (step % STEPS_PER_BAR);
+        int chordIdx = Math.floorMod(bar, prog.length);
+        int chordRoot = root + scale[prog[chordIdx]];
+
+        double s = 0.0;
+
+        // Pad — sustained chord tones (root, 3rd, 5th) with slow LFO.
+        for (int d = 0; d < 3; d++) {
+            int note = chordRoot + (d == 0 ? 0 : d == 1 ? scale[2] : scale[4]);
+            double hz = midiHz(note);
+            double lfo = 0.7 + 0.3 * Math.sin(2 * Math.PI * 0.1 * t + d);
+            s += Math.sin(2 * Math.PI * hz * t) * padLvl * lfo;
+        }
+
+        // Melody — a slow, flowing lead line, one scale-degree per beat.
+        int beatIdx = stepInBar / 4;
+        int melIdx = (bar % 2) * 8 + beatIdx;
+        int deg = MELODY[melIdx % MELODY.length];
+        if (deg >= 0) {
+            int melNote = chordRoot + (deg >= 7 ? scale[0] + 12 : scale[deg]);
+            double melHz = midiHz(melNote);
+            double beatPos = (stepInBar % 4) / 4.0;
+            double attackRate = 1.0 + attack * 6.0;   // 1..7
+            double decayRate = 0.2 + decay * 1.2;     // 0.2..1.4
+            double melEnv = Math.min(1.0, beatPos * attackRate) * Math.exp(-decayRate * beatPos);
+            s += Math.sin(2 * Math.PI * melHz * t) * melLvl * melEnv;
+        }
+
+        // Bass — root note an octave down, on the downbeats.
+        if (stepInBar % 4 == 0) {
+            double bassH = midiHz(chordRoot - 12);
+            double bassEnv = Math.exp(-1.5 * (stepInBar % 4) / 4.0);
+            s += Math.sin(2 * Math.PI * bassH * t) * bassLvl * bassEnv;
+        }
+
+        // Beat — kick on quarters, hat on off-beats.
+        if (beat) {
+            if (stepInBar % 4 == 0) {
+                double kickEnv = Math.exp(-18.0 * (stepInBar % 4) / 4.0);
+                s += Math.sin(2 * Math.PI * 55 * t) * 0.30 * kickEnv;
+            }
+            if (stepInBar % 4 == 2) {
+                double hatEnv = Math.exp(-40.0 * (stepInBar % 4) / 4.0);
+                s += (Math.random() - 0.5) * 0.10 * hatEnv;
+            }
+        }
+
+        return Math.max(-1.0, Math.min(1.0, s * vol));
+    }
+
     private void renderLoop() {
         try {
             AudioFormat fmt = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
@@ -121,8 +257,6 @@ public class MusicEngine {
             return;
         }
 
-        int[] scale = scaleOffsets();
-        double stepsPerSec = tempoBpm.get() / 60.0 * 4.0; // 16th notes per second
         long step = 0;
         byte[] buf = new byte[2048]; // 1024 samples * 2 bytes
 
@@ -130,59 +264,17 @@ public class MusicEngine {
             // Re-read live params each buffer (cheap, keeps changes instant).
             int root = rootMidi.get();
             int bpm = tempoBpm.get();
-            stepsPerSec = bpm / 60.0 * 4.0;
-            scale = scaleOffsets();
+            int[] sc = scaleOffsets();
             int[] prog = progression;
             boolean beat = beatEnabled.get();
             float vol = (enabled.get() ? volumePct.get() : 0) / 100f;
+            float padLvl = padLevel, melLvl = melodyLevel, bassLvl = bassLevel;
+            float atk = attack, dec = decay;
 
             for (int i = 0; i < buf.length; i += 2) {
-                double t = step / stepsPerSec; // seconds
-                int bar = (int) (step / STEPS_PER_BAR);
-                int stepInBar = (int) (step % STEPS_PER_BAR);
-                int chordIdx = Math.floorMod(bar, prog.length);
-                int chordRoot = root + scale[prog[chordIdx]];
-
-                double s = 0.0;
-
-                // Pad — sustained chord tones (root, 3rd, 5th) with slow LFO.
-                for (int d = 0; d < 3; d++) {
-                    int note = chordRoot + (d == 0 ? 0 : d == 1 ? scale[2] : scale[4]);
-                    double hz = midiHz(note);
-                    double lfo = 0.7 + 0.3 * Math.sin(2 * Math.PI * 0.1 * t + d);
-                    s += Math.sin(2 * Math.PI * hz * t) * 0.10 * lfo;
-                }
-
-                // Arpeggio — pluck chord tones in an up-down pattern.
-                int[] arpNotes = {chordRoot, chordRoot + scale[2], chordRoot + scale[4],
-                                  chordRoot + scale[2] + 12};
-                int arpIdx = stepInBar % arpNotes.length;
-                double arpH = midiHz(arpNotes[arpIdx]);
-                double arpEnv = Math.exp(-3.0 * (stepInBar % 4) / 4.0); // decay per 16th
-                s += Math.sin(2 * Math.PI * arpH * t) * 0.12 * arpEnv;
-
-                // Bass — root note an octave down, on the downbeats.
-                if (stepInBar % 4 == 0) {
-                    double bassH = midiHz(chordRoot - 12);
-                    double bassEnv = Math.exp(-2.0 * (stepInBar % 4) / 4.0);
-                    s += Math.sin(2 * Math.PI * bassH * t) * 0.18 * bassEnv;
-                }
-
-                // Beat — kick on quarters, hat on off-beats.
-                if (beat) {
-                    if (stepInBar % 4 == 0) {
-                        double kickEnv = Math.exp(-18.0 * (stepInBar % 4) / 4.0);
-                        s += Math.sin(2 * Math.PI * 55 * t) * 0.30 * kickEnv;
-                    }
-                    if (stepInBar % 4 == 2) {
-                        double hatEnv = Math.exp(-40.0 * (stepInBar % 4) / 4.0);
-                        s += (Math.random() - 0.5) * 0.10 * hatEnv;
-                    }
-                }
-
-                // Soft clip + scale to 16-bit.
-                double clamped = Math.max(-1.0, Math.min(1.0, s * vol));
-                short sample = (short) (clamped * 32767);
+                double s = synthSample(root, bpm, sc, prog, beat, vol,
+                    padLvl, melLvl, bassLvl, atk, dec, step);
+                short sample = (short) (s * 32767);
                 buf[i] = (byte) (sample & 0xFF);
                 buf[i + 1] = (byte) ((sample >> 8) & 0xFF);
                 step++;

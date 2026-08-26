@@ -14,6 +14,8 @@ import com.mindpalace.entity.AgentNPC;
 import com.mindpalace.economy.DePIN;
 import com.mindpalace.agent.KnowledgeGraph;
 import com.mindpalace.world.TodoCrystal;
+import com.mindpalace.world.OutsideWorld;
+import com.mindpalace.genetics.GeneticTimeline;
 import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
 import com.mindpalace.github.GitHubClient;
@@ -71,6 +73,23 @@ public class GameEngine {
     private AnimationSystem animationSystem;
     private LiveUpdateManager liveUpdateManager;
     private PatchManager patchManager;
+
+    // Continuous genetic-audio evolution (step 12): a background GA that
+    // evolves synth patches against real rendered sound and splices the
+    // fittest patch into the live music each generation.
+    private com.mindpalace.genetics.AudioEvolver audioEvolver;
+    private com.mindpalace.genetics.GenomeArchive genomeArchive;
+    private com.mindpalace.genetics.SonicFitness sonicFitness;
+    private com.mindpalace.genetics.GenomeControl genomeControl;
+    private double evolveTimer = 0.0;
+    private double refreshTimer = 0.0;
+    private static final double EVOLVE_INTERVAL = 30.0; // seconds per tick
+    private static final int EVOLVE_GENERATIONS_PER_TICK = 8; // GA loop iterations per tick
+    private static final double REFRESH_INTERVAL = 120.0; // seconds between population refreshes
+    private static final int REFRESH_COUNT = 3; // random newcomers per refresh
+    private String evolveToast = "";
+    private double evolveToastTimer = 0.0;
+
     private double patchPollTimer = 8.0;
     private boolean patchCinematic;
     private double patchTimer;
@@ -131,6 +150,14 @@ public class GameEngine {
     // Mansion interior — Enter at the mansion door toggles inside/outside.
     private boolean inMansion = false;
     private double mansionCooldown;
+    // Shop interaction — walk up to a model shop, Enter to buy with DePIN credits.
+    private boolean shopMenu;
+    private int shopIndex = -1;
+    private String shopToast = "";
+    private double shopToastTimer;
+    private double shopCooldown;
+    // Genetic enhancement — the player's persistent module timeline (genome).
+    private GeneticTimeline genome;
     private static final String[] FACTS = {
         "The first computer bug was a real moth, taped into a logbook in 1947.",
         "Git was created by Linus Torvalds in 2005, in about 10 days.",
@@ -276,6 +303,9 @@ public class GameEngine {
                 System.out.println("[Lexical] TODO crystal: " + issue);
             }
         });
+        // DePIN economy — seed wallets + jobs so agents can work autonomously.
+        initDePIN();
+        agentManager.setDePIN(depin);
         agentManager.start();
 
         // Build the knowledge graph + spawn agent NPCs (bodies in the world)
@@ -286,7 +316,6 @@ public class GameEngine {
         bookEditor.setSims(agentManager.getLora(), knowledgeGraph);
         spawnNPCs();
         spawnCrystals();
-        initDePIN();
         System.out.println("[NPC] " + npcs.size() + " agents spawned, "
             + crystals.size() + " TODO crystals, KG: "
             + knowledgeGraph.nodeCount() + " nodes / " + knowledgeGraph.edgeCount() + " edges");
@@ -351,6 +380,11 @@ public class GameEngine {
         memoryManager = new MemoryManager(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory");
         memoryManager.start();
 
+        // Genetic enhancement timeline — the player's persistent genome.
+        genome = new GeneticTimeline(java.nio.file.Path.of(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory"));
+        System.out.println("[Genome] timeline loaded — " + genome.moduleCount()
+            + " modules, " + genome.mutationCount() + " mutations");
+
         // Cold backup to D: — mirror everything (chats, logs, code, files)
         backupManager = new BackupManager("D:/mindpalace_backup");
         backupManager.start();
@@ -365,6 +399,21 @@ public class GameEngine {
         audio.playAmbientStart();
         music.start();
         sequencer.start();
+
+        // Continuous genetic-audio evolution: a background GA that renders real
+        // synth patches, scores them, and splices the fittest into the live
+        // music every EVOLVE_INTERVAL seconds. Seeded with the current patch.
+        com.mindpalace.genetics.SonicFitness sonicFit = new com.mindpalace.genetics.SonicFitness();
+        sonicFitness = sonicFit;
+        audioEvolver = new com.mindpalace.genetics.AudioEvolver(
+            new java.util.Random(), sonicFit,
+            g -> com.mindpalace.audio.MusicEngine.renderOffline(g, 4410), // 0.1s clip
+            12, 3, 0.15f, 0.2f);
+        genomeArchive = new com.mindpalace.genetics.GenomeArchive(
+            java.nio.file.Path.of(System.getProperty("user.home"), "AIGEN_SYS", "mindpalace_memory"));
+        genomeControl = new com.mindpalace.genetics.GenomeControl();
+        evolveTimer = EVOLVE_INTERVAL;
+        refreshTimer = REFRESH_INTERVAL;
 
         lastFrameTime = GLFW.glfwGetTime();
         accumulator = 0.0;
@@ -552,25 +601,47 @@ public class GameEngine {
         }
 
         // Mansion interior — Enter at the mansion door toggles inside/outside.
+        // Shop interaction — walk up to a model shop, Enter to buy with credits.
         mansionCooldown -= dt;
-        if (mansionCooldown <= 0 && player.getCurrentRoom() == null
-                && input.wasKeyPressed(GLFW.GLFW_KEY_ENTER)) {
-            Vector3f m = world.getOutsideWorld().getMansionPos();
+        shopCooldown -= dt;
+        if (shopToastTimer > 0) shopToastTimer -= dt;
+
+        boolean openWorldEnter = input.wasKeyPressed(GLFW.GLFW_KEY_ENTER)
+                && player.getCurrentRoom() == null && state == GameState.PLAYING
+                && !teleportMenu && !shopMenu;
+        if (openWorldEnter && shopCooldown <= 0) {
             Vector3f p = player.getPosition();
-            // Door is on the -Z face of the mansion; stand just in front of it.
-            if (Math.abs(p.x - m.x) < 3f && Math.abs(p.z - (m.z - 9f)) < 3f) {
-                inMansion = !inMansion;
-                mansionCooldown = 0.5;
-                if (inMansion) {
-                    player.getCamera().setPosition(m.x, m.y + 1.6f, m.z + 2f);
-                    player.getCamera().setYaw(180); // face the door (back toward -Z)
-                    System.out.println("[MANSION] Entered the mansion");
-                } else {
-                    player.getCamera().setPosition(m.x, m.y + 1.6f, m.z - 10f);
-                    player.getCamera().setYaw(0);
-                    System.out.println("[MANSION] Left the mansion");
+            // 1) Shops have priority — check nearest first.
+            int si = world.getOutsideWorld().nearestShopIndex(p.x, p.z, 5f);
+            if (si >= 0) {
+                shopIndex = si;
+                shopMenu = true;
+                shopCooldown = 0.5;
+                input.setCursorCaptured(false);
+                System.out.println("[SHOP] Browsing: " + world.getOutsideWorld().getShops()[si].name);
+            }
+            // 2) Mansion door (only if no shop is nearby).
+            else if (mansionCooldown <= 0) {
+                Vector3f m = world.getOutsideWorld().getMansionPos();
+                if (Math.abs(p.x - m.x) < 3f && Math.abs(p.z - (m.z - 9f)) < 3f) {
+                    inMansion = !inMansion;
+                    mansionCooldown = 0.5;
+                    if (inMansion) {
+                        player.getCamera().setPosition(m.x, m.y + 1.6f, m.z + 2f);
+                        player.getCamera().setYaw(180);
+                        System.out.println("[MANSION] Entered the mansion");
+                    } else {
+                        player.getCamera().setPosition(m.x, m.y + 1.6f, m.z - 10f);
+                        player.getCamera().setYaw(0);
+                        System.out.println("[MANSION] Left the mansion");
+                    }
                 }
             }
+        }
+
+        // Shop menu handler — Enter to buy, Escape to cancel.
+        if (shopMenu) {
+            handleShopMenu(input);
         }
 
         // Idle detection: mark activity on any input (non-draining — does NOT
@@ -661,6 +732,9 @@ public class GameEngine {
 
         // Live patches — poll manifest, play the loading cinematic, ship content
         updatePatches(dt);
+
+        // Continuous genetic-audio evolution — evolve the music in the background
+        updateEvolution(dt);
 
         // F12 — screenshot (agent "sees" the game)
         if (input.wasKeyPressed(GLFW.GLFW_KEY_F12)) {
@@ -903,6 +977,50 @@ public class GameEngine {
         }
     }
 
+    /** Model shop menu — Enter to buy an upgrade with DePIN credits. */
+    private void handleShopMenu(Input input) {
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_ESCAPE)) {
+            shopMenu = false;
+            shopIndex = -1;
+            input.setCursorCaptured(true);
+            return;
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_ENTER) && depin != null && shopIndex >= 0) {
+            OutsideWorld.Shop[] shops = world.getOutsideWorld().getShops();
+            OutsideWorld.Shop shop = shops[shopIndex];
+            double bal = depin.participant("player").wallet.getBalance();
+            if (depin.spend("player", shop.cost, "shop:" + shop.name)) {
+                // Splice the module into the player's genome — a dated mutation
+                // with a real in-game effect, recorded on the persistent timeline.
+                GeneticTimeline.Mutation m = genome.mutate(shop.name, shopEffect(shop.name), shop.cost);
+                shopToast = "Spliced " + shop.name + " Lv" + m.level + " into your genome! ("
+                    + shopEffect(shop.name) + ") Wallet: " + fmt(depin.participant("player").wallet.getBalance());
+                System.out.println("[GENOME] " + shop.name + " -> Lv" + m.level + " (" + GeneticTimeline.whenLabel(m.when) + "). Modules: " + genome.moduleCount());
+            } else {
+                shopToast = "Not enough credits! Need " + fmt(shop.cost) + ", have " + fmt(bal);
+                System.out.println("[SHOP] DENIED: " + shop.name + " costs " + fmt(shop.cost) + ", balance " + fmt(bal));
+            }
+            shopToastTimer = 5.0;
+            shopMenu = false;
+            shopIndex = -1;
+            input.setCursorCaptured(true);
+        }
+    }
+
+    private static String fmt(double v) { return String.format("%.2f", v); }
+
+    /** The in-game effect a shop module grants when spliced into the genome. */
+    private static String shopEffect(String module) {
+        return switch (module) {
+            case "RAG"     -> "faster model recall";
+            case "KG Node" -> "facts stored in the knowledge graph";
+            case "Deps"    -> "smarter dependency-aware code review";
+            case "LoRA"    -> "swappable skill adapter unlocked";
+            case "Router"  -> "complexity-based model routing";
+            default        -> "an upgrade";
+        };
+    }
+
     /** ESC menu — navigate pages, adjust settings live. */
     private void handleMenu(Input input) {
         // Sequencer grid editing takes over when the StudioLab grid is open.
@@ -956,12 +1074,13 @@ public class GameEngine {
 
     private int menuOptionCount() {
         switch (menuPage) {
-            case 0: return 7;  // Resume, Video, Controls, Audio, Music, Agents, Quit
+            case 0: return 8;  // Resume, Video, Controls, Audio, Music, Agents, Evolution, Quit
             case 1: return 5;  // FOV, Sensitivity, Fullscreen, Bloom intensity, Bloom threshold
             case 2: return 1;  // Invert Y (rest is informational)
             case 3: return 2;  // Master volume, Sound on/off
             case 4: return 7;  // Music on/off, volume, tempo, beat, scale, mood, sequencer
             case 5: return 2;  // Auto-cycle interval, agent models (info)
+            case 6: return 9;  // mutation rate, strength, 5 fitness weights, refresh, back
             default: return 1;
         }
     }
@@ -990,6 +1109,17 @@ public class GameEngine {
                 if (sel == 4) cycleScale(dir);
                 if (sel == 5) cycleMood(dir);
                 if (sel == 6) { sequencer.setEnabled(!sequencer.isEnabled()); }
+                break;
+            case 6: // evolution (genetic audio) — live GA controls
+                if (audioEvolver == null || sonicFitness == null) break;
+                if (sel == 0) audioEvolver.setMutationRate(clamp(audioEvolver.mutationRate() + dir * 0.05f, 0f, 1f));
+                if (sel == 1) audioEvolver.setMutationSigma(clamp(audioEvolver.mutationSigma() + dir * 0.05f, 0f, 1f));
+                if (sel == 2) sonicFitness.setLoudnessWeight(clamp(sonicFitness.loudnessWeight() + dir * 0.05f, 0f, 1f));
+                if (sel == 3) sonicFitness.setHarshnessWeight(clamp(sonicFitness.harshnessWeight() + dir * 0.05f, 0f, 1f));
+                if (sel == 4) sonicFitness.setSteadinessWeight(clamp(sonicFitness.steadinessWeight() + dir * 0.05f, 0f, 1f));
+                if (sel == 5) sonicFitness.setNoveltyWeight(clamp(sonicFitness.noveltyWeight() + dir * 0.05f, 0f, 1f));
+                if (sel == 6) sonicFitness.setTargetWeight(clamp(sonicFitness.targetWeight() + dir * 0.05f, 0f, 1f));
+                if (sel == 7) { audioEvolver.refreshPopulation(REFRESH_COUNT); System.out.println("[Evolve] manual population refresh"); }
                 break;
         }
     }
@@ -1021,7 +1151,8 @@ public class GameEngine {
                     case 3: menuPage = 3; menuSel = 0; break;
                     case 4: menuPage = 4; menuSel = 0; break;
                     case 5: menuPage = 5; menuSel = 0; break;
-                    case 6: GLFW.glfwSetWindowShouldClose(window, true); break;
+                    case 6: menuPage = 6; menuSel = 0; break; // Evolution
+                    case 7: GLFW.glfwSetWindowShouldClose(window, true); break;
                 }
                 break;
             case 4: // music — entering "Sequencer" opens the step grid
@@ -1103,6 +1234,23 @@ public class GameEngine {
         }
 
         if (teleportMenu) renderTeleportMenu();
+
+        // Shop menu — billboard showing what you can buy.
+        if (shopMenu && shopIndex >= 0) renderShopMenu();
+
+        // Shop toast — purchase/denial confirmation.
+        if (shopToastTimer > 0 && !shopToast.isEmpty()) {
+            Camera cam = player.getCamera();
+            Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+            Matrix4f view = cam.getViewMatrix();
+            Vector3f camPos = cam.getPosition();
+            Vector3f toastPos = new Vector3f(camPos)
+                .add(cam.getFront().x * 2.5f - cam.getRight().x * 1.2f,
+                     -0.6f,
+                     cam.getFront().z * 2.5f - cam.getRight().z * 1.2f);
+            fontRenderer.renderBillboard(shopToast, toastPos, 0.045f,
+                new Vector3f(1f, 1f, 0.5f), proj, view, camPos);
+        }
 
         if (state == GameState.MENU) renderMenu();
 
@@ -1324,6 +1472,18 @@ public class GameEngine {
             : "MindPalace — " + world.getRooms().size() + " rooms";
         fontRenderer.renderBillboard(roomInfo, hudTop, 0.08f,
             new Vector3f(0.0f, 0.9f, 1.0f), proj, view, camPos);
+
+        // Wallet balance (DePIN credits)
+        if (depin != null) {
+            Vector3f walletPos = new Vector3f(camPos).add(
+                camFront.x * 3f - camRight.x * 0.5f,
+                camFront.y * 3f + 0.85f,
+                camFront.z * 3f - camRight.z * 0.5f);
+            double bal = depin.participant("player").wallet.getBalance();
+            String walletLine = String.format("Credits: %.0f", bal);
+            fontRenderer.renderBillboard(walletLine, walletPos, 0.05f,
+                new Vector3f(1f, 0.85f, 0.3f), proj, view, camPos);
+        }
 
         // Minimap — top-right corner
         renderMinimap(cam, proj, view, camPos, camFront, camRight);
@@ -1629,6 +1789,49 @@ public class GameEngine {
 
         // ── Grand entrance door (interior face, -Z) ──
         renderer.drawCube(new Vector3f(cx, y + 1.6f, cz - d / 2f + 0.05f), new Vector3f(2.2f, 3.2f, 0.1f), Renderer.TEX_DOOR);
+
+        // ── Genome wall (back wall, center): the player's module timeline ──
+        renderGenomeWall(cx, y, cz);
+    }
+
+    /** The player's genetic timeline — a wall of dated module mutations. */
+    private void renderGenomeWall(float cx, float y, float cz) {
+        if (genome == null) return;
+        java.util.List<GeneticTimeline.Mutation> all = genome.all();
+        float d = 16f;
+        float gx = cx;                       // center of the back wall
+        float gz = cz + d / 2f - 0.35f;       // just in front of the back wall
+        float gy = y + 5.5f;                  // upper wall
+
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        // Back wall is at +Z, so the text must face INTO the room (-Z).
+        Vector3f facing = new Vector3f(0, 0, -1);
+
+        // Backing plate (dark)
+        renderer.drawCube(new Vector3f(gx, y + 3.0f, cz + d / 2f - 0.15f), new Vector3f(14f, 4.5f, 0.1f), Renderer.TEX_CEILING);
+
+        // Header
+        fontRenderer.renderText("GENOME - MODULE TIMELINE",
+            new Vector3f(gx, gy, gz), 0.16f, new Vector3f(0.3f, 1f, 0.6f), proj, view, facing);
+
+        if (all.isEmpty()) {
+            fontRenderer.renderText("(no modules yet - visit the model shops)",
+                new Vector3f(gx, gy - 0.5f, gz), 0.10f, new Vector3f(0.7f, 0.7f, 0.7f), proj, view, facing);
+            return;
+        }
+
+        // Show up to the most recent 8 mutations, newest at the top.
+        int n = Math.min(all.size(), 8);
+        for (int i = 0; i < n; i++) {
+            GeneticTimeline.Mutation m = all.get(all.size() - 1 - i);
+            String line = GeneticTimeline.whenLabel(m.when) + "  " + m.module
+                + " Lv" + m.level + "  (" + m.effect + ")";
+            Vector3f pos = new Vector3f(gx, gy - 0.5f - i * 0.42f, gz);
+            Vector3f col = new Vector3f(0.6f, 0.9f, 1.0f);
+            fontRenderer.renderText(line, pos, 0.09f, col, proj, view, facing);
+        }
     }
 
     private void renderTeleportMenu() {
@@ -1661,6 +1864,44 @@ public class GameEngine {
                 ? new Vector3f(1.0f, 0.9f, 0.3f)
                 : new Vector3f(0.7f, 0.7f, 0.7f);
             fontRenderer.renderBillboard(label, pos, 0.06f, col, proj, view, camPos);
+        }
+    }
+
+    /** Model shop billboard — show shop name, description, cost, player balance. */
+    private void renderShopMenu() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+
+        Vector3f center = new Vector3f(camPos).add(
+            camFront.x * 2.5f, camFront.y * 0.5f, camFront.z * 2.5f);
+
+        OutsideWorld.Shop shop = world.getOutsideWorld().getShops()[shopIndex];
+        double bal = depin != null ? depin.participant("player").wallet.getBalance() : 0;
+        boolean canAfford = depin != null && depin.participant("player").wallet.canAfford(shop.cost);
+
+        String[] lines = {
+            shop.name + " SHOP",
+            "",
+            shop.description,
+            "",
+            "Cost: " + fmt(shop.cost) + " credits",
+            "Wallet: " + fmt(bal) + " credits",
+            "",
+            canAfford ? "[Enter] BUY" : "[Enter] (not enough credits)",
+            "[Esc] Cancel"
+        };
+
+        float lineH = 0.10f;
+        float startY = center.y + (lines.length * lineH) / 2f;
+        for (int i = 0; i < lines.length; i++) {
+            Vector3f pos = new Vector3f(center.x, startY - i * lineH, center.z);
+            Vector3f col = (i == 0) ? new Vector3f(0.3f, 1f, 1f)
+                       : (i == lines.length - 2 || i == lines.length - 1) ? new Vector3f(0.8f, 0.8f, 0.4f)
+                       : new Vector3f(0.9f, 0.9f, 0.9f);
+            fontRenderer.renderBillboard(lines[i], pos, 0.05f, col, proj, view, camPos);
         }
     }
 
@@ -1776,6 +2017,7 @@ public class GameEngine {
                     "Audio",
                     "Music",
                     "Agents",
+                    "Evolution",
                     "Quit"
                 };
             case 1:
@@ -1822,6 +2064,19 @@ public class GameEngine {
                     com.mindpalace.agent.ModelConfig.TOOL_MODEL + " (tool) + "
                         + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + " (critic)",
                     "Auto-cycle every 5 min",
+                    "(Enter to go back)"
+                };
+            case 6:
+                return new String[]{
+                    "=== EVOLUTION (genetic audio) ===",
+                    "Mutation rate: " + String.format("%.2f", audioEvolver != null ? audioEvolver.mutationRate() : 0f),
+                    "Mutation strength: " + String.format("%.2f", audioEvolver != null ? audioEvolver.mutationSigma() : 0f),
+                    "Loudness weight: " + String.format("%.2f", sonicFitness != null ? sonicFitness.loudnessWeight() : 0f),
+                    "Harshness weight: " + String.format("%.2f", sonicFitness != null ? sonicFitness.harshnessWeight() : 0f),
+                    "Steadiness weight: " + String.format("%.2f", sonicFitness != null ? sonicFitness.steadinessWeight() : 0f),
+                    "Novelty weight: " + String.format("%.2f", sonicFitness != null ? sonicFitness.noveltyWeight() : 0f),
+                    "Target weight: " + String.format("%.2f", sonicFitness != null ? sonicFitness.targetWeight() : 0f),
+                    "Refresh population now",
                     "(Enter to go back)"
                 };
             default:
@@ -2157,6 +2412,76 @@ public class GameEngine {
     }
 
     /**
+     * Continuous genetic-audio evolution (step 12). Every EVOLVE_INTERVAL
+     * seconds, run a BATCH of GA generations against real rendered synth
+     * patches and splice the fittest patch into the live music. Fully
+     * autonomous — no human rating, just the SonicFitness signal metrics.
+     */
+    private void updateEvolution(double dt) {
+        if (audioEvolver == null) return;
+
+        // Poll the external control file (CLI tweaks while the system runs).
+        if (genomeControl != null) {
+            com.google.gson.JsonObject ctl = genomeControl.read();
+            if (ctl != null) {
+                String applied = genomeControl.apply(ctl, audioEvolver, sonicFitness);
+                System.out.println("[Evolve] control applied: " + (applied.isEmpty() ? "(none)" : applied));
+                genomeControl.ack(audioEvolver.generation());
+            }
+        }
+
+        // Periodic population refresh — inject random newcomers to avoid
+        // stagnation (step 13). Elite set is never touched.
+        refreshTimer -= dt;
+        if (refreshTimer <= 0) {
+            refreshTimer = REFRESH_INTERVAL;
+            audioEvolver.refreshPopulation(REFRESH_COUNT);
+            System.out.println("[Evolve] population refreshed with " + REFRESH_COUNT + " newcomers");
+        }
+
+        evolveTimer -= dt;
+        if (evolveTimer > 0) return;
+        evolveTimer = EVOLVE_INTERVAL;
+
+        // Run many generations per tick (the GA loop, steps 6-10 repeated) so
+        // the population actually converges, then apply the fittest patch.
+        int genStart = audioEvolver.generation();
+        com.mindpalace.genetics.AudioGenome next = null;
+        for (int i = 0; i < EVOLVE_GENERATIONS_PER_TICK; i++) {
+            next = audioEvolver.step();
+        }
+        if (next != null) {
+            music.applyGenome(next);
+            float score = audioEvolver.bestScore();
+            float mean = audioEvolver.meanScore();
+            // Persist the champion genome + its rendered audio every tick.
+            if (genomeArchive != null) {
+                genomeArchive.save(audioEvolver.generation(), next, score,
+                    com.mindpalace.audio.MusicEngine.renderOffline(next, 4410));
+            }
+            evolveToast = "EVOLVED gen " + genStart + "→" + audioEvolver.generation()
+                + " — " + next + " (fit " + String.format("%.2f", score)
+                + ", mean " + String.format("%.2f", mean) + ")";
+            evolveToastTimer = 8.0;
+            // Log: generation, fitness stats, parameter values, archive path.
+            System.out.println("[Evolve] " + evolveToast);
+            System.out.println("[Evolve] log gen=" + audioEvolver.generation()
+                + " best=" + String.format("%.3f", score)
+                + " mean=" + String.format("%.3f", mean)
+                + " sigma=" + String.format("%.2f", audioEvolver.mutationSigma())
+                + " rate=" + String.format("%.2f", audioEvolver.mutationRate())
+                + " pop=" + audioEvolver.populationSize()
+                + " w[loud=" + String.format("%.2f", sonicFitness.loudnessWeight())
+                + ",harsh=" + String.format("%.2f", sonicFitness.harshnessWeight())
+                + ",steady=" + String.format("%.2f", sonicFitness.steadinessWeight())
+                + ",novel=" + String.format("%.2f", sonicFitness.noveltyWeight())
+                + ",target=" + String.format("%.2f", sonicFitness.targetWeight()) + "]"
+                + " archive=~/AIGEN_SYS/mindpalace_memory/evolution/gen-" + audioEvolver.generation() + ".wav");
+        }
+        if (evolveToastTimer > 0) evolveToastTimer -= dt;
+    }
+
+    /**
      * Autonomous self-test: exercises the REAL click path (findBookInSights)
      * against every room, plus teleporter/agent/world invariants, and prints
      * a PASS/FAIL report. No human driving — this is the definitive check.
@@ -2275,7 +2600,7 @@ public class GameEngine {
         // 10. ESC menu: pages render, navigation wraps, settings adjust live
         boolean menuOk = true;
         state = GameState.MENU; menuPage = 0; menuSel = 0;
-        if (menuOptionCount() != 7) menuOk = false;
+        if (menuOptionCount() != 8) menuOk = false;
         float fovBefore = player.getCamera().getFov();
         menuPage = 1; menuSel = 0;
         adjustMenuValue(0, 1); // FOV +5
@@ -2587,6 +2912,209 @@ public class GameEngine {
         System.out.println((depinOk ? "PASS" : "FAIL")
             + " DePIN economy (wallets + blackboard + skill gate + pay-for-work)");
         if (depinOk) pass++; else fail++;
+
+        // 26. Model shops — proximity detection + buy with credits.
+        boolean shopOk = depin != null && world.getOutsideWorld() != null;
+        if (shopOk) {
+            OutsideWorld.Shop[] shops = world.getOutsideWorld().getShops();
+            shopOk = shops != null && shops.length == 5;
+            // nearestShopIndex: player at mansion-pos(-20, -180-14) should match shop 0.
+            if (shopOk) {
+                int si = world.getOutsideWorld().nearestShopIndex(
+                    shops[0].pos.x, shops[0].pos.z, 5f);
+                shopOk = (si == 0);
+            }
+            // Buy: player has 100 credits, RAG costs 15; should succeed.
+            if (shopOk) {
+                double before = depin.participant("player").wallet.getBalance();
+                shopOk = depin.spend("player", shops[0].cost, "shop:" + shops[0].name)
+                    && depin.participant("player").wallet.getBalance() < before;
+            }
+            // Deny: LoRA costs 30; drain wallet then try buy → should fail.
+            if (shopOk) {
+                // Drain to < 30
+                while (depin.participant("player").wallet.getBalance() > 25) {
+                    depin.spend("player", 10, "drain");
+                }
+                shopOk = !depin.spend("player", shops[3].cost, "shop:" + shops[3].name);
+            }
+        }
+        System.out.println((shopOk ? "PASS" : "FAIL")
+            + " model shops (proximity + buy + deny)");
+        if (shopOk) pass++; else fail++;
+
+        // 27. Genetic enhancement — timeline mutate/level/persist round-trip
+        // against a TEMP genome (never the player's real genome.json).
+        boolean genomeOk = genome != null;
+        if (genomeOk) {
+            try {
+                java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("mp-genome-test");
+                GeneticTimeline g = new GeneticTimeline(tmp);
+                int before = g.mutationCount();
+                GeneticTimeline.Mutation m1 = g.mutate("RAG", "faster recall", 15.0);
+                GeneticTimeline.Mutation m2 = g.mutate("RAG", "faster recall", 15.0);
+                genomeOk = m1.level == 1 && m2.level == 2
+                    && g.levelOf("RAG") == 2
+                    && g.mutationCount() == before + 2
+                    && g.moduleCount() >= 1;
+                // Round-trip: reload from disk and confirm persistence.
+                GeneticTimeline reloaded = new GeneticTimeline(tmp);
+                genomeOk = genomeOk && reloaded.levelOf("RAG") == 2
+                    && reloaded.mutationCount() == g.mutationCount();
+            } catch (Exception e) {
+                genomeOk = false;
+            }
+        }
+        System.out.println((genomeOk ? "PASS" : "FAIL")
+            + " genetic timeline (mutate + level + persist)");
+        if (genomeOk) pass++; else fail++;
+
+        // 28. Genetic audio — genome/fitness/evolver round-trip (pure, no synth).
+        boolean gaOk = false;
+        try {
+            com.mindpalace.genetics.AudioGenome g0 = com.mindpalace.genetics.AudioGenome.defaultPatch();
+            com.mindpalace.genetics.SonicFitness fit = new com.mindpalace.genetics.SonicFitness();
+            // A smooth sine scores higher than a harsh buzz (the bug class).
+            float[] smooth = new float[2048];
+            float[] buzz = new float[2048];
+            for (int i = 0; i < 2048; i++) {
+                smooth[i] = (float) (0.15 * Math.sin(2 * Math.PI * 220 * i / 44100.0));
+                buzz[i] = (i % 2 == 0) ? 0.5f : -0.5f; // Nyquist square = max harshness
+            }
+            float smoothScore = fit.score(smooth);
+            float buzzScore = fit.score(buzz);
+            // Evolver: 3 generations should keep bestScore >= 0 and produce a best.
+            com.mindpalace.genetics.AudioEvolver ev = new com.mindpalace.genetics.AudioEvolver(
+                new java.util.Random(42), fit, g -> smooth, 8, 2, 0.1f, 0.2f);
+            for (int i = 0; i < 3; i++) ev.step();
+            // Elite set guarantees the best score is monotonic non-decreasing
+            // across generations (never regresses).
+            boolean monotonic = true;
+            java.util.List<Float> hist = ev.bestHistory();
+            for (int i = 1; i < hist.size(); i++) {
+                if (hist.get(i) < hist.get(i - 1) - 1e-6f) { monotonic = false; break; }
+            }
+            // Mutation rate: rate=0 must leave the genome unchanged (stability).
+            com.mindpalace.genetics.AudioGenome g1 = g0.mutate(new java.util.Random(1), 0.5f, 0f);
+            boolean rateZeroStable = java.util.Arrays.equals(g0.genes, g1.genes);
+            // Target matching: an identical buffer scores higher than a far one.
+            com.mindpalace.genetics.SonicFitness fitT = new com.mindpalace.genetics.SonicFitness(0f, 0f, 0f, 0f);
+            fitT.setTargetWeight(1.0f);
+            float[] target = smooth.clone();
+            float[] far = new float[2048];
+            for (int i = 0; i < 2048; i++) far[i] = (float) (0.15 * Math.sin(2 * Math.PI * 440 * i / 44100.0));
+            float targetScore = fitT.score(smooth, null, target);   // identical → ~1
+            float farScore = fitT.score(far, null, target);         // different → lower
+            boolean targetOk = targetScore > farScore;
+            gaOk = smoothScore > buzzScore && ev.best() != null && ev.bestScore() >= 0f
+                && rateZeroStable && monotonic && ev.generation() == 3 && targetOk;
+        } catch (Exception e) {
+            gaOk = false;
+        }
+        System.out.println((gaOk ? "PASS" : "FAIL")
+            + " genetic audio (genome + fitness + evolver)");
+        if (gaOk) pass++; else fail++;
+
+        // 29. Continuous evolution bridge — genome → real synth render + apply.
+        boolean bridgeOk = false;
+        try {
+            com.mindpalace.genetics.AudioGenome bg = com.mindpalace.genetics.AudioGenome.defaultPatch();
+            // renderOffline must produce a non-silent, non-NaN buffer.
+            float[] buf = com.mindpalace.audio.MusicEngine.renderOffline(bg, 4410);
+            boolean nonSilent = false;
+            for (float v : buf) { if (Math.abs(v) > 0.001f) { nonSilent = true; break; } }
+            boolean noNaN = true;
+            for (float v : buf) { if (Float.isNaN(v) || Float.isInfinite(v)) { noNaN = false; break; } }
+            // applyGenome must round-trip the genome's key/tempo/beat onto the engine.
+            music.applyGenome(bg);
+            boolean applied = music.getTempo() == (int) bg.genes[1]
+                && music.getKey() == (int) bg.genes[0]
+                && music.isBeat() == (bg.genes[6] >= 0.5f);
+            bridgeOk = nonSilent && noNaN && applied;
+        } catch (Exception e) {
+            bridgeOk = false;
+        }
+        System.out.println((bridgeOk ? "PASS" : "FAIL")
+            + " continuous evolution (genome → synth render + apply)");
+        if (bridgeOk) pass++; else fail++;
+
+        // 30. Genome archive — best genome + WAV persisted every generation.
+        boolean archiveOk = false;
+        try {
+            java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("mp-archive");
+            com.mindpalace.genetics.GenomeArchive arch = new com.mindpalace.genetics.GenomeArchive(tmp);
+            com.mindpalace.genetics.AudioGenome ag = com.mindpalace.genetics.AudioGenome.defaultPatch();
+            float[] clip = com.mindpalace.audio.MusicEngine.renderOffline(ag, 4410);
+            arch.save(1, ag, 0.5f, clip);
+            java.nio.file.Path json = tmp.resolve("evolution/gen-1.json");
+            java.nio.file.Path wav = tmp.resolve("evolution/gen-1.wav");
+            boolean jsonExists = java.nio.file.Files.exists(json);
+            boolean wavExists = java.nio.file.Files.exists(wav);
+            // WAV header sanity: "RIFF" + "WAVE" + "data" magic.
+            byte[] wavBytes = java.nio.file.Files.readAllBytes(wav);
+            boolean riff = wavBytes[0]=='R' && wavBytes[1]=='I' && wavBytes[2]=='F' && wavBytes[3]=='F';
+            boolean wave = wavBytes[8]=='W' && wavBytes[9]=='A' && wavBytes[10]=='V' && wavBytes[11]=='E';
+            boolean data = wavBytes[36]=='d' && wavBytes[37]=='a' && wavBytes[38]=='t' && wavBytes[39]=='a';
+            archiveOk = jsonExists && wavExists && riff && wave && data;
+            // cleanup temp dir
+            try { java.nio.file.Files.walk(tmp).sorted(java.util.Comparator.reverseOrder())
+                .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) {} }); } catch (Exception ignored) {}
+        } catch (Exception e) {
+            archiveOk = false;
+        }
+        System.out.println((archiveOk ? "PASS" : "FAIL")
+            + " genome archive (best genome + WAV per generation)");
+        if (archiveOk) pass++; else fail++;
+
+        // 31. Live controls — mutation rate/strength + fitness weights + refresh.
+        boolean controlsOk = false;
+        try {
+            com.mindpalace.genetics.SonicFitness cf = new com.mindpalace.genetics.SonicFitness();
+            com.mindpalace.genetics.AudioEvolver ce = new com.mindpalace.genetics.AudioEvolver(
+                new java.util.Random(7), cf, g -> new float[4410], 10, 2, 0.15f, 0.2f);
+            ce.setMutationRate(0.5f);
+            ce.setMutationSigma(0.3f);
+            cf.setLoudnessWeight(0.1f);
+            cf.setHarshnessWeight(0.2f);
+            cf.setSteadinessWeight(0.3f);
+            cf.setNoveltyWeight(0.4f);
+            cf.setTargetWeight(0.5f);
+            boolean settersOk = ce.mutationRate() == 0.5f && ce.mutationSigma() == 0.3f
+                && cf.loudnessWeight() == 0.1f && cf.harshnessWeight() == 0.2f
+                && cf.steadinessWeight() == 0.3f && cf.noveltyWeight() == 0.4f
+                && cf.targetWeight() == 0.5f;
+            // refreshPopulation must not throw and must keep population size.
+            ce.refreshPopulation(3);
+            controlsOk = settersOk && ce.populationSize() == 10;
+        } catch (Exception e) {
+            controlsOk = false;
+        }
+        System.out.println((controlsOk ? "PASS" : "FAIL")
+            + " live controls (mutation + fitness weights + refresh)");
+        if (controlsOk) pass++; else fail++;
+
+        // 32. Control channel — CLI file → apply → ack round-trip.
+        boolean ctlOk = false;
+        try {
+            com.mindpalace.genetics.GenomeControl gc = new com.mindpalace.genetics.GenomeControl();
+            com.mindpalace.genetics.SonicFitness cfit = new com.mindpalace.genetics.SonicFitness();
+            com.mindpalace.genetics.AudioEvolver cev = new com.mindpalace.genetics.AudioEvolver(
+                new java.util.Random(9), cfit, g -> new float[4410], 8, 2, 0.15f, 0.2f);
+            // Write a control request, apply it, verify the params changed.
+            com.google.gson.JsonObject req = new com.google.gson.JsonObject();
+            req.addProperty("mutationRate", 0.7f);
+            req.addProperty("harshness", 0.5f);
+            req.addProperty("refresh", 2);
+            String summary = gc.apply(req, cev, cfit);
+            boolean applied = cev.mutationRate() == 0.7f && cfit.harshnessWeight() == 0.5f;
+            ctlOk = applied && summary.contains("rate=0.70") && summary.contains("harsh=0.50")
+                && summary.contains("refresh=2");
+        } catch (Exception e) {
+            ctlOk = false;
+        }
+        System.out.println((ctlOk ? "PASS" : "FAIL")
+            + " control channel (CLI file → apply → ack)");
+        if (ctlOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
