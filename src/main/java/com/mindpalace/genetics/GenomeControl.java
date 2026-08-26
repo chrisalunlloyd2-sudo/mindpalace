@@ -13,7 +13,7 @@ import java.nio.file.*;
  *
  * Shape of control.json:
  *   { "mutationRate": 0.2, "mutationSigma": 0.1,
- *     "loudness": 0.3, "harshness": 0.35, "steadiness": 0.2,
+ *     "loudness": 0.3, "centroid": 0.35, "steadiness": 0.2,
  *     "novelty": 0.15, "target": 0.0, "refresh": 3 }
  *
  * Any field may be omitted (leave unchanged). "refresh" = inject N random
@@ -67,7 +67,7 @@ public final class GenomeControl {
             sb.append("sigma=").append(String.format("%.2f", ev.mutationSigma())).append(' ');
         }
         if (o.has("loudness")) { fit.setLoudnessWeight(o.get("loudness").getAsFloat()); sb.append("loud=").append(String.format("%.2f", fit.loudnessWeight())).append(' '); }
-        if (o.has("harshness")) { fit.setHarshnessWeight(o.get("harshness").getAsFloat()); sb.append("harsh=").append(String.format("%.2f", fit.harshnessWeight())).append(' '); }
+        if (o.has("centroid")) { fit.setCentroidWeight(o.get("centroid").getAsFloat()); sb.append("cent=").append(String.format("%.2f", fit.centroidWeight())).append(' '); }
         if (o.has("steadiness")) { fit.setSteadinessWeight(o.get("steadiness").getAsFloat()); sb.append("steady=").append(String.format("%.2f", fit.steadinessWeight())).append(' '); }
         if (o.has("novelty")) { fit.setNoveltyWeight(o.get("novelty").getAsFloat()); sb.append("novel=").append(String.format("%.2f", fit.noveltyWeight())).append(' '); }
         if (o.has("target")) { fit.setTargetWeight(o.get("target").getAsFloat()); sb.append("target=").append(String.format("%.2f", fit.targetWeight())).append(' '); }

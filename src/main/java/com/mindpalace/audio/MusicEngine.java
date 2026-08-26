@@ -1,6 +1,7 @@
 package com.mindpalace.audio;
 
 import com.mindpalace.genetics.AudioGenome;
+import com.mindpalace.genetics.PatchSynth;
 import javax.sound.sampled.*;
 import java.util.concurrent.atomic.*;
 
@@ -51,7 +52,6 @@ public class MusicEngine {
     private static final int[] DORIAN    = {0, 2, 3, 5, 7, 9, 10};
     private static final int[] LYDIAN    = {0, 2, 4, 6, 7, 9, 11};
     private static final int[] MIXOLYDIAN= {0, 2, 4, 5, 7, 9, 10};
-    private static final String[] SCALE_NAMES = {"minor", "major", "dorian", "lydian", "mixolydian"};
 
     // Melody — a slow, flowing 4-bar lead phrase. One scale-degree per BEAT
     // (quarter note = 4 steps), so it breathes instead of buzzing. -1 = rest.
@@ -120,54 +120,33 @@ public class MusicEngine {
 
     // ── Genetic-audio bridge ──
 
-    /** Splice a genome into the live synth (the "phenotype" of evolution). */
+    /**
+     * Splice a genome into the live synth (the "phenotype" of evolution).
+     * The 128-gene patch is rendered by PatchSynth; here we map its aggregate
+     * character onto the live engine's global params (key/scale/tempo stay
+     * fixed — the genome explores the patch space, not the tempo).
+     */
     public void applyGenome(AudioGenome g) {
-        float[] x = g.genes;
-        setKey((int) x[0]);
-        setTempo((int) x[1]);
-        setScale(SCALE_NAMES[Math.max(0, Math.min(4, (int) x[2]))]);
-        padLevel = x[3];
-        melodyLevel = x[4];
-        bassLevel = x[5];
-        setBeat(x[6] >= 0.5f);
-        attack = x[7];
-        decay = x[8];
+        // Derive a coarse "mood" from the patch: mean level → volume, mean
+        // cutoff → brightness (mapped to scale), active steps → beat density.
+        float lvl = 0f, cut = 0f; int active = 0;
+        for (int s = 0; s < AudioGenome.STEPS; s++) {
+            int b = s * AudioGenome.PARAMS_PER_STEP;
+            if (g.genes[b] >= 0.1f) active++;
+            lvl += g.genes[b + 7];
+            cut += g.genes[b + 2];
+        }
+        lvl /= AudioGenome.STEPS;
+        cut /= AudioGenome.STEPS;
+        setVolume(0.3f + lvl * 0.7f);
+        setBeat(active >= 12); // dense patch → add a beat
+        // Brightness → scale family (bright = major/lydian, dark = minor).
+        setScale(cut > 0.6f ? "lydian" : cut > 0.4f ? "major" : "minor");
     }
 
     /** Synthesize a genome to a mono float[] buffer (offline, no audio line). */
     public static float[] renderOffline(AudioGenome g, int sampleCount) {
-        float[] x = g.genes;
-        int root = (int) x[0];
-        int bpm = (int) x[1];
-        int[] sc = scaleForIndex((int) x[2]);
-        int[] prog = progressionForIndex((int) x[2]);
-        boolean beat = x[6] >= 0.5f;
-        float[] out = new float[sampleCount];
-        for (int i = 0; i < sampleCount; i++) {
-            out[i] = (float) synthSample(root, bpm, sc, prog, beat, 0.5f,
-                x[3], x[4], x[5], x[7], x[8], i);
-        }
-        return out;
-    }
-
-    private static int[] scaleForIndex(int idx) {
-        switch (Math.max(0, Math.min(4, idx))) {
-            case 1: return MAJOR;
-            case 2: return DORIAN;
-            case 3: return LYDIAN;
-            case 4: return MIXOLYDIAN;
-            default: return MINOR;
-        }
-    }
-
-    private static int[] progressionForIndex(int idx) {
-        switch (Math.max(0, Math.min(4, idx))) {
-            case 1: return new int[]{0, 4, 5, 3};
-            case 2: return new int[]{0, 3, 4, 1};
-            case 3: return new int[]{0, 4, 1, 3};
-            case 4: return new int[]{0, 3, 4, 0};
-            default: return new int[]{0, 5, 2, 6};
-        }
+        return PatchSynth.render(g, 8000, sampleCount);
     }
 
     // ── Synthesis ──

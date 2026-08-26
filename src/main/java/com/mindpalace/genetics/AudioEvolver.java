@@ -5,15 +5,15 @@ import java.util.*;
 /**
  * AudioEvolver — the genetic-algorithm loop over AudioGenome patches.
  *
- * Population of N genomes → render + score each → tournament selection with an
- * elite set → blend crossover + gaussian mutation → next generation. The
+ * Population of N genomes → render + score each → truncation selection (top-K
+ * parents) → blend crossover + gaussian mutation → next generation. The
  * "render" step is injected (a function from genome → float[] samples) so the
- * evolver stays decoupled from the MusicEngine; the game wires it to a real
- * synth render, tests wire it to a stub.
+ * evolver stays decoupled from the synth; the game wires it to PatchSynth,
+ * tests wire it to a stub.
  *
- * This is the engine that turns the agents' autonomous work loop into a
- * background GA: each 5-minute cycle = one generation, and the fittest patch
- * becomes the next DePIN shop inventory item.
+ * This is the "50 genomes, top-10 parents, 40 children" recipe: each
+ * generation keeps the top {@code parentCount} unchanged (elite) and breeds
+ * {@code populationSize - parentCount} children from random parent pairs.
  */
 public final class AudioEvolver {
 
@@ -26,9 +26,9 @@ public final class AudioEvolver {
     private final SonicFitness fitness;
     private final Renderer renderer;
     private final int populationSize;
-    private final int eliteCount;
-    private float mutationSigma;   // strength: how far a mutated gene jumps (mutable)
-    private float mutationRate;    // probability each gene mutates (mutable)
+    private final int parentCount;   // top-K kept as elite + breeding pool
+    private float mutationSigma;     // strength: how far a mutated gene jumps (mutable)
+    private float mutationRate;      // probability each gene mutates (mutable)
 
     private List<AudioGenome> population;
     private AudioGenome best;
@@ -38,12 +38,12 @@ public final class AudioEvolver {
     private final List<Float> bestHistory = new ArrayList<>(); // best score per generation
 
     public AudioEvolver(Random rng, SonicFitness fitness, Renderer renderer,
-                        int populationSize, int eliteCount, float mutationSigma, float mutationRate) {
+                        int populationSize, int parentCount, float mutationSigma, float mutationRate) {
         this.rng = rng;
         this.fitness = fitness;
         this.renderer = renderer;
         this.populationSize = populationSize;
-        this.eliteCount = Math.min(eliteCount, populationSize);
+        this.parentCount = Math.min(parentCount, populationSize);
         this.mutationSigma = mutationSigma;
         this.mutationRate = mutationRate;
         this.population = new ArrayList<>(populationSize);
@@ -55,6 +55,7 @@ public final class AudioEvolver {
     public float bestScore() { return bestScore; }
     public float meanScore() { return meanScore; }
     public int populationSize() { return populationSize; }
+    public int parentCount() { return parentCount; }
     public float mutationSigma() { return mutationSigma; }
     public float mutationRate() { return mutationRate; }
     /** Best fitness per generation (index 0 = gen 1). */
@@ -67,36 +68,22 @@ public final class AudioEvolver {
 
     /**
      * Refresh the population with random newcomers to avoid stagnation: replace
-     * the worst {@code count} genomes with fresh random ones (elite untouched).
+     * the worst {@code count} genomes with fresh random ones (parents untouched).
      */
     public void refreshPopulation(int count) {
         if (count <= 0) return;
-        // Sort current population by fitness (re-evaluate cheaply against best).
-        float[] scores = new float[population.size()];
-        float[] ref = best == null ? null : renderer.render(best);
-        for (int i = 0; i < population.size(); i++) {
-            scores[i] = fitness.score(renderer.render(population.get(i)), ref);
-        }
-        Integer[] order = new Integer[population.size()];
-        for (int i = 0; i < order.length; i++) order[i] = i;
-        Arrays.sort(order, (a, b) -> Float.compare(scores[b], scores[a]));
-        // Replace the worst `count` (from the end), never the elite.
-        int replace = Math.min(count, population.size() - eliteCount);
+        float[] scores = evaluate();
+        Integer[] order = sortDesc(scores);
+        int replace = Math.min(count, population.size() - parentCount);
         for (int i = 0; i < replace; i++) {
             int worstIdx = order[population.size() - 1 - i];
             population.set(worstIdx, AudioGenome.random(rng));
         }
     }
 
-    /** Run one generation: evaluate, select, breed. Returns the new best. */
+    /** Run one generation: evaluate, select top-K, breed. Returns the new best. */
     public AudioGenome step() {
-        // Evaluate.
-        float[] scores = new float[population.size()];
-        float[] ref = best == null ? null : renderer.render(best);
-        for (int i = 0; i < population.size(); i++) {
-            float[] buf = renderer.render(population.get(i));
-            scores[i] = fitness.score(buf, ref);
-        }
+        float[] scores = evaluate();
 
         // Track best (elite) + population mean.
         int bestIdx = 0;
@@ -112,18 +99,17 @@ public final class AudioEvolver {
         }
         bestHistory.add(bestScore);
 
-        // Sort by score descending; keep elite set.
-        Integer[] order = new Integer[population.size()];
-        for (int i = 0; i < order.length; i++) order[i] = i;
-        Arrays.sort(order, (a, b) -> Float.compare(scores[b], scores[a]));
+        // Truncation selection: sort descending, top-K are the parents.
+        Integer[] order = sortDesc(scores);
+        List<AudioGenome> parents = new ArrayList<>(parentCount);
+        for (int i = 0; i < parentCount; i++) parents.add(population.get(order[i]));
 
+        // New population = top-K elites + (N-K) children from random parent pairs.
         List<AudioGenome> next = new ArrayList<>(populationSize);
-        for (int i = 0; i < eliteCount; i++) next.add(population.get(order[i]));
-
-        // Breed the rest via tournament selection + crossover + mutation.
+        next.addAll(parents);
         while (next.size() < populationSize) {
-            AudioGenome pa = tournament(population, scores, order);
-            AudioGenome pb = tournament(population, scores, order);
+            AudioGenome pa = parents.get(rng.nextInt(parentCount));
+            AudioGenome pb = parents.get(rng.nextInt(parentCount));
             AudioGenome child = AudioGenome.crossover(pa, pb, rng).mutate(rng, mutationSigma, mutationRate);
             next.add(child);
         }
@@ -133,14 +119,20 @@ public final class AudioEvolver {
         return best;
     }
 
-    /** Tournament selection: pick the fittest of k random candidates. */
-    private AudioGenome tournament(List<AudioGenome> pop, float[] scores, Integer[] order) {
-        int k = 3;
-        int bestIdx = rng.nextInt(pop.size());
-        for (int i = 1; i < k; i++) {
-            int cand = rng.nextInt(pop.size());
-            if (scores[cand] > scores[bestIdx]) bestIdx = cand;
+    /** Render + score every genome against the current best (novelty ref). */
+    private float[] evaluate() {
+        float[] scores = new float[population.size()];
+        float[] ref = best == null ? null : renderer.render(best);
+        for (int i = 0; i < population.size(); i++) {
+            scores[i] = fitness.score(renderer.render(population.get(i)), ref);
         }
-        return pop.get(bestIdx);
+        return scores;
+    }
+
+    private Integer[] sortDesc(float[] scores) {
+        Integer[] order = new Integer[scores.length];
+        for (int i = 0; i < order.length; i++) order[i] = i;
+        Arrays.sort(order, (a, b) -> Float.compare(scores[b], scores[a]));
+        return order;
     }
 }

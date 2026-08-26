@@ -4,33 +4,39 @@ package com.mindpalace.genetics;
  * SonicFitness — scores a rendered audio buffer for "does it sound good".
  *
  * Pure signal metrics, no dependency on the synth engine. The score combines
- * several weighted terms into a single 0..1 fitness value (higher = better):
+ * weighted terms into a single 0..1 fitness value (higher = better):
  *
- *   + loudness   — RMS energy, but penalized if too quiet OR clipping.
- *   - harshness  — high-frequency energy ratio (spectral centroid proxy via
- *                  zero-crossing rate + peak slope). This is the term that
- *                  catches the "fast oscillating high-pitch buzz" bug class.
+ *   + loudness   — RMS energy, penalized if too quiet OR clipping.
+ *   - centroid   — spectral centroid (FFT). High centroid = harsh/buzzy
+ *                  high-frequency content; low = dull. Rewards a warm mid.
  *   + steadiness — low onset density (a flowing pad, not a machine-gun arp).
  *   + novelty    — distance from a reference buffer (novelty search).
  *   + target     — similarity to a desired target sound (target matching).
  *
- * The weights are tunable; defaults are tuned for "slow, flowing, melodic".
+ * The harshness term is now a real FFT spectral centroid (per the genetic-audio
+ * recipe) instead of the old zero-crossing proxy — it correctly penalizes the
+ * "fast oscillating high-pitch buzz" bug class AND the dull low-end collapse.
  */
 public final class SonicFitness {
 
     // Weights (sum to ~1.0 for a normalized score).
     private float wLoudness = 0.30f;
-    private float wHarshness = 0.35f;
+    private float wCentroid = 0.35f;
     private float wSteadiness = 0.20f;
     private float wNovelty = 0.15f;
     private float wTarget = 0.0f;   // 0 unless target matching is requested
 
+    /** Sample rate of the buffers being scored (for the FFT centroid). */
+    private int sampleRate = 8000;
+
     public SonicFitness() {}
 
-    public SonicFitness(float wLoud, float wHarsh, float wSteady, float wNovel) {
-        this.wLoudness = wLoud; this.wHarshness = wHarsh;
+    public SonicFitness(float wLoud, float wCentroid, float wSteady, float wNovel) {
+        this.wLoudness = wLoud; this.wCentroid = wCentroid;
         this.wSteadiness = wSteady; this.wNovelty = wNovel;
     }
+
+    public void setSampleRate(int sr) { this.sampleRate = sr; }
 
     /** Enable target matching with the given weight (0 disables it). */
     public void setTargetWeight(float w) { this.wTarget = w; }
@@ -38,11 +44,11 @@ public final class SonicFitness {
     // ── Live controls (step 13) ──
 
     public void setLoudnessWeight(float w) { this.wLoudness = w; }
-    public void setHarshnessWeight(float w) { this.wHarshness = w; }
+    public void setCentroidWeight(float w) { this.wCentroid = w; }
     public void setSteadinessWeight(float w) { this.wSteadiness = w; }
     public void setNoveltyWeight(float w) { this.wNovelty = w; }
     public float loudnessWeight() { return wLoudness; }
-    public float harshnessWeight() { return wHarshness; }
+    public float centroidWeight() { return wCentroid; }
     public float steadinessWeight() { return wSteadiness; }
     public float noveltyWeight() { return wNovelty; }
     public float targetWeight() { return wTarget; }
@@ -65,22 +71,17 @@ public final class SonicFitness {
             if (a > peak) peak = a;
         }
         double rms = Math.sqrt(sumSq / samples.length);
-        // Ideal RMS ~0.15; too quiet (<0.02) or clipping (>0.9) both bad.
         double loud = 1.0 - Math.abs(rms - 0.15) / 0.15;
         if (peak > 0.95) loud *= 0.3; // clipping penalty
         loud = clamp01(loud);
 
-        // ── Harshness: zero-crossing rate (high = buzzy/high-freq) ──
-        int zc = 0;
-        for (int i = 1; i < samples.length; i++) {
-            if ((samples[i - 1] < 0) != (samples[i] < 0)) zc++;
-        }
-        double zcr = (double) zc / samples.length; // 0..1 (1 = Nyquist buzz)
-        // A flowing pad sits low (~0.01-0.05); a buzz is >0.3.
-        double harsh = 1.0 - clamp01(zcr / 0.35);
+        // ── Centroid: FFT spectral centroid (warm mid = good, buzz = bad) ──
+        float centroid = FFT.centroid(samples, sampleRate);
+        // Ideal centroid ~800 Hz (warm, melodic). Buzz >3 kHz, dull <150 Hz.
+        double cent = 1.0 - Math.abs(centroid - 800.0) / 800.0;
+        cent = clamp01(cent);
 
         // ── Steadiness: onset density (how many sharp attacks per window) ──
-        // A sharp attack = large positive sample-to-sample jump.
         int onsets = 0;
         for (int i = 1; i < samples.length; i++) {
             if (samples[i] - samples[i - 1] > 0.25) onsets++;
@@ -99,7 +100,6 @@ public final class SonicFitness {
         }
 
         // ── Target similarity: reward being CLOSE to a desired sound ──
-        // 1 - normalized mean absolute difference (1 = identical, 0 = far).
         double targetSim = 0.0;
         if (target != null && target.length == samples.length) {
             double diff = 0.0;
@@ -110,7 +110,7 @@ public final class SonicFitness {
         }
 
         return (float) clamp01(
-            wLoudness * loud + wHarshness * harsh + wSteadiness * steady
+            wLoudness * loud + wCentroid * cent + wSteadiness * steady
             + wNovelty * novelty + wTarget * targetSim);
     }
 

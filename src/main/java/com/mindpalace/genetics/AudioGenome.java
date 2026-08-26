@@ -3,40 +3,36 @@ package com.mindpalace.genetics;
 import java.util.Random;
 
 /**
- * AudioGenome — a synth patch encoded as a float gene vector.
+ * AudioGenome — a synth patch encoded as a 128-float gene vector.
  *
- * Each gene is a live-tunable MusicEngine parameter with a [min,max] range.
- * The genome is the "genotype"; rendering it through the MusicEngine produces
- * the "phenotype" (audible sound). This is the parameter-based branch of the
- * genetic-audio pipeline — no neural model, no WAV files, real-time synthesis.
+ * The genome is a 16-step sequence; each step carries 8 parameters, so every
+ * float does real work (16 × 8 = 128). This is the "128-float vector
+ * controlling a synth" representation from the genetic-audio recipe — a proper
+ * high-dimensional patch space, not a handful of global knobs.
  *
- * Gene layout (index → meaning):
- *   0  root key (MIDI)      48..72
- *   1  tempo (BPM)          30..240
- *   2  scale index          0..4  (minor/major/dorian/lydian/mixolydian)
- *   3  pad level            0..1
- *   4  melody level         0..1
- *   5  bass level           0..1
- *   6  beat on/off          0..1  (>=0.5 = on)
- *   7  envelope attack      0..1
- *   8  envelope decay       0..1
+ * Per-step layout (index within a step → meaning, all genes 0..1):
+ *   0  note      — scale degree; <0.1 = rest, else floor(v*8) mod 8 (0..7)
+ *   1  octave    — 0..2 (adds 12*octave semitones)
+ *   2  cutoff    — one-pole lowpass cutoff (log 200..8000 Hz)
+ *   3  resonance — filter brightness / Q
+ *   4  attack    — 0.001..0.5 s
+ *   5  decay     — 0.05..2.0 s
+ *   6  detune    — 0..50 cents (second oscillator thickness)
+ *   7  level     — amplitude 0..0.5
+ *
+ * Global synth params (root key, scale, tempo) are NOT in the genome — they
+ * are fixed by the synth so the GA explores the patch space, not the tempo
+ * (which previously drifted to the 240 BPM ceiling). "Slow & flowing" is
+ * enforced by the fitness target instead.
  */
 public final class AudioGenome {
 
-    public static final int GENE_COUNT = 9;
+    public static final int STEPS = 16;
+    public static final int PARAMS_PER_STEP = 8;
+    public static final int GENE_COUNT = STEPS * PARAMS_PER_STEP; // 128
 
-    /** Per-gene [min,max] bounds. */
-    private static final float[][] RANGES = {
-        {48f, 72f},   // root key
-        {30f, 240f},  // tempo
-        {0f, 4f},     // scale index
-        {0f, 1f},     // pad
-        {0f, 1f},     // melody
-        {0f, 1f},     // bass
-        {0f, 1f},     // beat
-        {0f, 1f},     // attack
-        {0f, 1f},     // decay
-    };
+    /** All genes are 0..1. */
+    private static final float LO = 0f, HI = 1f;
 
     public final float[] genes;
 
@@ -45,43 +41,54 @@ public final class AudioGenome {
         this.genes = genes.clone();
     }
 
-    /** A sensible default patch (the current shipped sound). */
+    /** A sensible default patch: a slow, flowing minor arpeggio. */
     public static AudioGenome defaultPatch() {
-        return new AudioGenome(new float[]{57f, 120f, 0f, 0.07f, 0.20f, 0.15f, 0f, 0.5f, 0.5f});
-    }
-
-    /** A random genome within all bounds. */
-    public static AudioGenome random(Random rng) {
         float[] g = new float[GENE_COUNT];
-        for (int i = 0; i < GENE_COUNT; i++) {
-            g[i] = RANGES[i][0] + rng.nextFloat() * (RANGES[i][1] - RANGES[i][0]);
+        // A gentle 8-note phrase over 16 steps (rests on the off-beats).
+        int[] degrees = {0, 2, 4, 2, 3, 4, 7, 4, 0, 2, 4, 7, 4, 2, 0, -1};
+        for (int s = 0; s < STEPS; s++) {
+            int base = s * PARAMS_PER_STEP;
+            int deg = degrees[s];
+            // note 0.1..1.0 → degree 0..7; 0.0 = rest.
+            g[base + 0] = deg < 0 ? 0.0f : 0.1f + (deg / 7f) * 0.9f; // note
+            g[base + 1] = 0.5f;   // octave 1
+            g[base + 2] = 0.6f;   // cutoff ~1.5 kHz
+            g[base + 3] = 0.3f;   // resonance
+            g[base + 4] = 0.2f;   // soft attack
+            g[base + 5] = 0.5f;   // medium decay
+            g[base + 6] = 0.2f;   // slight detune
+            g[base + 7] = deg < 0 ? 0.0f : 0.4f; // level
         }
         return new AudioGenome(g);
     }
 
-    /** Blend crossover: child = alpha*A + (1-alpha)*B, clamped to bounds. */
+    /** A random genome (all genes uniform 0..1). */
+    public static AudioGenome random(Random rng) {
+        float[] g = new float[GENE_COUNT];
+        for (int i = 0; i < GENE_COUNT; i++) g[i] = rng.nextFloat();
+        return new AudioGenome(g);
+    }
+
+    /** Blend crossover: child = alpha*A + (1-alpha)*B, clamped to [0,1]. */
     public static AudioGenome crossover(AudioGenome a, AudioGenome b, Random rng) {
         float alpha = rng.nextFloat();
         float[] g = new float[GENE_COUNT];
         for (int i = 0; i < GENE_COUNT; i++) {
-            g[i] = clamp(alpha * a.genes[i] + (1f - alpha) * b.genes[i], RANGES[i][0], RANGES[i][1]);
+            g[i] = clamp(alpha * a.genes[i] + (1f - alpha) * b.genes[i], LO, HI);
         }
         return new AudioGenome(g);
     }
 
     /**
      * Gaussian mutation. Each gene is perturbed with probability {@code rate}
-     * (0..1) by N(0, sigma*range), then clamped to bounds. Rate controls how
-     * many genes change per child (exploration); sigma controls how far each
-     * changed gene jumps (strength). Low rate + low sigma = stable convergence;
-     * high rate + high sigma = chaotic exploration.
+     * by N(0, sigma), then clamped to [0,1]. Rate = how many genes change
+     * (exploration breadth); sigma = how far each jumps (strength).
      */
     public AudioGenome mutate(Random rng, float sigma, float rate) {
         float[] g = genes.clone();
         for (int i = 0; i < GENE_COUNT; i++) {
-            if (rng.nextFloat() >= rate) continue; // leave this gene untouched
-            float span = RANGES[i][1] - RANGES[i][0];
-            g[i] = clamp(g[i] + (float) rng.nextGaussian() * sigma * span, RANGES[i][0], RANGES[i][1]);
+            if (rng.nextFloat() >= rate) continue;
+            g[i] = clamp(g[i] + (float) rng.nextGaussian() * sigma, LO, HI);
         }
         return new AudioGenome(g);
     }
@@ -90,7 +97,13 @@ public final class AudioGenome {
 
     @Override
     public String toString() {
-        return String.format("key=%.0f tempo=%.0f scale=%d pad=%.2f mel=%.2f bass=%.2f beat=%s",
-            genes[0], genes[1], (int) genes[2], genes[3], genes[4], genes[5], genes[6] >= 0.5f);
+        // Summarize: count active steps + mean level + mean cutoff.
+        int active = 0; float lvl = 0f, cut = 0f;
+        for (int s = 0; s < STEPS; s++) {
+            int b = s * PARAMS_PER_STEP;
+            if (genes[b] >= 0.1f) active++;
+            lvl += genes[b + 7]; cut += genes[b + 2];
+        }
+        return String.format("steps=%d/16 lvl=%.2f cut=%.2f", active, lvl / STEPS, cut / STEPS);
     }
 }

@@ -5,7 +5,7 @@
 #   evolve-ctl rate 0.4            set mutation rate
 #   evolve-ctl sigma 0.2           set mutation strength
 #   evolve-ctl loud 0.3            set loudness weight
-#   evolve-ctl harsh 0.35          set harshness weight
+#   evolve-ctl cent 0.35           set spectral-centroid weight
 #   evolve-ctl steady 0.2          set steadiness weight
 #   evolve-ctl novel 0.15          set novelty weight
 #   evolve-ctl target 0.0          set target weight
@@ -23,7 +23,7 @@ field() {
     rate)   echo mutationRate ;;
     sigma)  echo mutationSigma ;;
     loud)   echo loudness ;;
-    harsh)  echo harshness ;;
+    cent)   echo centroid ;;
     steady) echo steadiness ;;
     novel)  echo novelty ;;
     target) echo target ;;
