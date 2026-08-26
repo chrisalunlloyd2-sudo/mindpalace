@@ -2,6 +2,7 @@ package com.mindpalace.world;
 
 import java.io.File;
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Scans local repos and GitHub API to build the room list.
@@ -38,7 +39,7 @@ public class RepoMapper {
         File notesDir = new File(notesPath);
         if (notesDir.exists()) {
             Room notesRoom = new Room("ViperAI_Notes");
-            notesRoom.setLocalPath(VIPER_NOTES);
+            notesRoom.setLocalPath(notesPath);
             notesRoom.setLanguage("Markdown");
             notesRoom.setPrivate(true);
             notesRoom.setRepoDescription("Personal AI notes and knowledge base");
@@ -70,57 +71,83 @@ public class RepoMapper {
     }
 
     private void detectRepoMeta(Room room, File repoDir) {
-        // Try to read git remote
-        try {
-            ProcessBuilder pb = new ProcessBuilder("git", "-C", repoDir.getAbsolutePath(), "remote", "get-url", "origin");
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            String url = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
-            if (!url.isEmpty() && p.waitFor() == 0) {
-                room.setRemoteUrl(url);
-                // Extract the REAL GitHub repo name from the remote URL — this is
-                // the canonical name (fixes local-folder case/hyphen/underscore
-                // variants like sims1337backend vs SIMS1337-BACKEND).
-                String realName = extractRepoName(url);
-                if (realName != null && !realName.isEmpty()) {
-                    room.setRepoName(realName);
-                }
+        // Try to read git remote (bounded timeout — never hang the scan on a stall)
+        String url = runGit(repoDir, "remote", "get-url", "origin");
+        if (url != null && !url.isEmpty()) {
+            room.setRemoteUrl(url);
+            // Extract the REAL GitHub repo name from the remote URL — this is
+            // the canonical name (fixes local-folder case/hyphen/underscore
+            // variants like sims1337backend vs SIMS1337-BACKEND).
+            String realName = extractRepoName(url);
+            if (realName != null && !realName.isEmpty()) {
+                room.setRepoName(realName);
             }
-        } catch (Exception e) {
-            // No remote — local only
         }
 
-        // Get last commit
-        try {
-            ProcessBuilder pb = new ProcessBuilder("git", "-C", repoDir.getAbsolutePath(),
-                "log", "-1", "--format=%s (%ar)");
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            String msg = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
-            if (!msg.isEmpty() && p.waitFor() == 0) {
-                room.setLastCommit(msg);
-            }
-        } catch (Exception e) {
-            // No commits yet
+        // Get last commit (bounded timeout)
+        String msg = runGit(repoDir, "log", "-1", "--format=%s (%ar)");
+        if (msg != null && !msg.isEmpty()) {
+            room.setLastCommit(msg);
         }
 
-        // Detect primary language by file extensions
-        File[] files = repoDir.listFiles();
-        if (files != null) {
-            int py = 0, java = 0, js = 0, html = 0, md = 0;
-            for (File f : files) {
-                String name = f.getName().toLowerCase();
-                if (name.endsWith(".py")) py++;
-                else if (name.endsWith(".java")) java++;
-                else if (name.endsWith(".js")) js++;
-                else if (name.endsWith(".html")) html++;
-                else if (name.endsWith(".md")) md++;
+        // Detect primary language by file extensions (recursive, bounded depth + file
+        // cap). A top-level-only scan mislabels most repos as "Markdown" — README.md
+        // is often the only recognized file at the root, while the real source lives
+        // in src/main/java, src/main/python, etc.
+        int[] c = new int[6];  // py, java, js, html, md, totalScanned
+        countExtensions(repoDir, 5, c);
+        int py = c[0], java = c[1], js = c[2], html = c[3], md = c[4];
+        if (java > py && java > js) room.setLanguage("Java");
+        else if (py > js) room.setLanguage("Python");
+        else if (js > 0) room.setLanguage("JavaScript");
+        else if (html > 0) room.setLanguage("HTML");
+        else if (md > 0) room.setLanguage("Markdown");
+    }
+
+    /** Run a git command with a bounded timeout; returns trimmed stdout, or null on
+     *  failure/timeout — never hangs the room scan on a stalled git or a credential
+     *  prompt (the classic readAllBytes-without-waitFor deadlock). */
+    private String runGit(File repoDir, String... args) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder();
+            List<String> cmd = new ArrayList<>();
+            cmd.add("git");
+            cmd.add("-C");
+            cmd.add(repoDir.getAbsolutePath());
+            for (String a : args) cmd.add(a);
+            pb.command(cmd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            if (!p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return null;   // timed out
             }
-            if (java > py && java > js) room.setLanguage("Java");
-            else if (py > js) room.setLanguage("Python");
-            else if (js > 0) room.setLanguage("JavaScript");
-            else if (html > 0) room.setLanguage("HTML");
-            else if (md > 0) room.setLanguage("Markdown");
+            if (p.exitValue() != 0) return null;
+            return new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Recursively count file extensions (bounded depth + file cap), skipping VCS/build dirs. */
+    private void countExtensions(File dir, int depth, int[] c) {
+        if (depth < 0 || c[5] > 500) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                String n = f.getName();
+                if (n.equals(".git") || n.equals("node_modules") || n.equals("target") || n.equals("__pycache__")) continue;
+                countExtensions(f, depth - 1, c);
+                continue;
+            }
+            c[5]++;
+            String name = f.getName().toLowerCase();
+            if (name.endsWith(".py")) c[0]++;
+            else if (name.endsWith(".java")) c[1]++;
+            else if (name.endsWith(".js")) c[2]++;
+            else if (name.endsWith(".html")) c[3]++;
+            else if (name.endsWith(".md")) c[4]++;
         }
     }
 }

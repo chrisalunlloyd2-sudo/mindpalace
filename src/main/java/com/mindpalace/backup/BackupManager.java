@@ -19,11 +19,11 @@ public class BackupManager {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final Path backupRoot;
     private final Map<String, String> contentHash = new ConcurrentHashMap<>(); // path -> sha1
-    private final Set<String> seenHashes = ConcurrentHashMap.newKeySet();      // global dedupe
 
     private volatile long filesBackedUp;
     private volatile long bytesBackedUp;
     private volatile boolean running;
+    private volatile long backupErrors;
 
     public BackupManager(String backupRoot) {
         this.backupRoot = Path.of(backupRoot);
@@ -32,6 +32,7 @@ public class BackupManager {
     public void start() {
         running = true;
         try { Files.createDirectories(backupRoot); } catch (IOException ignored) {}
+        loadIndex();  // resume path->sha1 dedupe across restarts
         // Full crawl at start, then incremental every 5 minutes
         scheduler.schedule(this::fullCrawl, 5, TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(this::incrementalCrawl, 5, 5, TimeUnit.MINUTES);
@@ -57,8 +58,9 @@ public class BackupManager {
             if (!Files.exists(root)) continue;
             crawl(root);
         }
+        saveIndex();
         System.out.println("[Backup] Full crawl done: " + filesBackedUp + " files, "
-            + formatBytes(bytesBackedUp));
+            + formatBytes(bytesBackedUp) + (backupErrors > 0 ? ", " + backupErrors + " errors" : ""));
     }
 
     private void incrementalCrawl() {
@@ -66,6 +68,7 @@ public class BackupManager {
         String home = System.getProperty("user.home");
         crawl(Path.of(home, "AIGEN_SYS"));
         crawl(Path.of(home, "AppData", "Local", "hermes"));
+        saveIndex();
     }
 
     private void crawl(Path root) {
@@ -75,7 +78,10 @@ public class BackupManager {
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                     try {
                         mirror(file);
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        backupErrors++;
+                        if (backupErrors <= 5) System.err.println("[Backup] mirror failed: " + file + ": " + e.getMessage());
+                    }
                     return FileVisitResult.CONTINUE;
                 }
                 @Override
@@ -99,8 +105,10 @@ public class BackupManager {
             String hash = hash(src);
             if (hash == null) return;
 
-            // Global dedupe: identical content already backed up somewhere
-            if (!seenHashes.add(hash)) return;
+            // Path-keyed dedupe: skip only when THIS file is unchanged since the last
+            // backup. Distinct files with identical content are each backed up — a
+            // faithful mirror, not a content-hash set that silently drops duplicates.
+            if (hash.equals(contentHash.get(src.toString()))) return;
 
             // Preserve relative structure under backup root
             Path rel = relativize(src);
@@ -111,7 +119,10 @@ public class BackupManager {
             contentHash.put(src.toString(), hash);
             filesBackedUp++;
             bytesBackedUp += Files.size(src);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            backupErrors++;
+            if (backupErrors <= 5) System.err.println("[Backup] mirror failed: " + src + ": " + e.getMessage());
+        }
     }
 
     private Path relativize(Path src) {
@@ -139,6 +150,28 @@ public class BackupManager {
         }
     }
 
+    // ── dedupe index persistence (resume across restarts) ──
+    private void loadIndex() {
+        Path idx = backupRoot.resolve(".backup-index");
+        if (!Files.exists(idx)) return;
+        try {
+            for (String line : Files.readAllLines(idx)) {
+                int tab = line.indexOf('\t');
+                if (tab > 0) contentHash.put(line.substring(tab + 1), line.substring(0, tab));
+            }
+        } catch (IOException ignored) {}
+    }
+
+    private void saveIndex() {
+        try {
+            List<String> lines = new ArrayList<>(contentHash.size());
+            for (Map.Entry<String, String> e : contentHash.entrySet()) {
+                lines.add(e.getValue() + "\t" + e.getKey());
+            }
+            Files.write(backupRoot.resolve(".backup-index"), lines);
+        } catch (IOException ignored) {}
+    }
+
     private String formatBytes(long b) {
         if (b < 1024) return b + "B";
         if (b < 1024 * 1024) return String.format("%.1fKB", b / 1024.0);
@@ -148,4 +181,5 @@ public class BackupManager {
 
     public long getFilesBackedUp() { return filesBackedUp; }
     public long getBytesBackedUp() { return bytesBackedUp; }
+    public long getBackupErrors() { return backupErrors; }
 }

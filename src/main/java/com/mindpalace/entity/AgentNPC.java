@@ -5,6 +5,7 @@ import com.mindpalace.agent.KnowledgeGraph;
 import com.mindpalace.agent.BehaviorTree;
 import com.mindpalace.agent.OllamaClient;
 import com.mindpalace.agent.ModelConfig;
+import com.mindpalace.avatar.AvatarDescriptor;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.TodoCrystal;
@@ -25,9 +26,11 @@ import java.util.*;
 public class AgentNPC {
     public enum Role { EXPLORER, CRITIC }
     public enum State { IDLE, WALKING, READING, PLACING, CARRYING, MARKING, GOSSIPING }
+    public enum Sex { MALE, FEMALE }
 
     private final String name;
     private final Role role;
+    private final Sex sex;
     private final KVTree kv;
     private final KnowledgeGraph kg;
     private final Random rand;
@@ -48,10 +51,13 @@ public class AgentNPC {
 
     // Visual
     private float bobPhase;
+    private AvatarDescriptor avatar;   // optional dressing-room avatar (null = hardcoded sex dims)
 
     public AgentNPC(String name, Role role, long seed, KnowledgeGraph kg) {
         this.name = name;
         this.role = role;
+        // Explorer = the sexy Cortana female, Critic = the male (deterministic).
+        this.sex = (role == Role.EXPLORER) ? Sex.FEMALE : Sex.MALE;
         this.kv = new KVTree(role.name(), seed);
         this.kg = kg;
         this.rand = new Random(seed);
@@ -294,6 +300,9 @@ public class AgentNPC {
     // ── Getters ──
     public String getName() { return name; }
     public Role getRole() { return role; }
+    public Sex getSex() { return sex; }
+    public AvatarDescriptor getAvatar() { return avatar; }
+    public void setAvatar(AvatarDescriptor a) { this.avatar = a; }
     public KVTree getKV() { return kv; }
     public Vector3f getPosition() { return position; }
     public void setPosition(Vector3f p) { this.position = new Vector3f(p); }
@@ -304,9 +313,26 @@ public class AgentNPC {
     public float getBobPhase() { return bobPhase; }
     public Vector3f getFacing() { return facing; }
 
-    /** Body color — Explorer cyan, Critic amber. */
+    /** Distinct per-agent body color palette (bright + a few muted) — B3. */
+    private static final int[] BODY_PALETTE = {
+        com.mindpalace.render.Renderer.TEX_NEON_CYAN,
+        com.mindpalace.render.Renderer.TEX_NEON_PINK,
+        com.mindpalace.render.Renderer.TEX_NEON_GREEN,
+        com.mindpalace.render.Renderer.TEX_NEON_AMBER,
+        com.mindpalace.render.Renderer.TEX_BOOK_BLUE,
+        com.mindpalace.render.Renderer.TEX_BOOK_YELLOW,
+        com.mindpalace.render.Renderer.TEX_BOOK_ORANGE,
+        com.mindpalace.render.Renderer.TEX_BOOK_RED,
+    };
+
+    /** Distinct per-agent body color — deterministic hash of the name (B3). */
     public int getBodyTexture() {
+        return BODY_PALETTE[Math.floorMod(name.hashCode(), BODY_PALETTE.length)];
+    }
+
+    /** Role accent (visor + label): Explorer cyan, Critic amber. */
+    public int getRoleTexture() {
         return role == Role.EXPLORER ? com.mindpalace.render.Renderer.TEX_NEON_CYAN
-                                    : com.mindpalace.render.Renderer.TEX_NEON_AMBER;
+                                     : com.mindpalace.render.Renderer.TEX_NEON_AMBER;
     }
 }

@@ -46,7 +46,10 @@ public class OllamaClient {
                     models.add(m.getAsJsonObject().get("name").getAsString());
                 }
             }
-        } catch (IOException ignored) {}
+        } catch (Exception e) {
+            // network error or malformed JSON (JsonSyntaxException is a RuntimeException,
+            // not an IOException) — return whatever we collected so far
+        }
         return models;
     }
 
@@ -86,7 +89,7 @@ public class OllamaClient {
                 if (!resp.isSuccessful() || resp.body() == null) return null;
                 JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
                 JsonObject msg = result.getAsJsonObject("message");
-                if (msg.has("content")) return msg.get("content").getAsString();
+                if (msg.has("content") && !msg.get("content").isJsonNull()) return msg.get("content").getAsString();
                 return "";
             }
         } catch (IOException e) {
@@ -138,7 +141,7 @@ public class OllamaClient {
                 if (!resp.isSuccessful() || resp.body() == null) return new ToolResult(null, List.of());
                 JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
                 JsonObject msg = result.getAsJsonObject("message");
-                String content = msg.has("content") ? msg.get("content").getAsString() : "";
+                String content = (msg.has("content") && !msg.get("content").isJsonNull()) ? msg.get("content").getAsString() : "";
                 List<ToolCall> calls = new ArrayList<>();
                 if (msg.has("tool_calls")) {
                     for (JsonElement el : msg.getAsJsonArray("tool_calls")) {

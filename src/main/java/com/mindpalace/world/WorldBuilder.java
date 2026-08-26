@@ -1,5 +1,7 @@
 package com.mindpalace.world;
 
+import java.util.concurrent.CopyOnWriteArrayList;
+
 import com.mindpalace.render.Camera;
 import com.mindpalace.render.Renderer;
 import com.mindpalace.render.Texture;
@@ -13,7 +15,7 @@ import java.util.*;
  * Rooms sorted by repo size. Hardwood floors, wallpaper, exit signs.
  */
 public class WorldBuilder {
-    private List<Room> rooms = new ArrayList<>();
+    private List<Room> rooms = new CopyOnWriteArrayList<>();
     private List<Hallway> hallways = new ArrayList<>();
 
     public static final float HALLWAY_WIDTH = 3.5f;

@@ -18,7 +18,9 @@ import com.mindpalace.world.OutsideWorld;
 import com.mindpalace.genetics.GeneticTimeline;
 import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
+import com.mindpalace.ui.DressingRoom;
 import com.mindpalace.github.GitHubClient;
+import com.mindpalace.github.GistWall;
 import com.mindpalace.audio.AudioEngine;
 import com.mindpalace.audio.MusicEngine;
 import com.mindpalace.audio.StepSequencer;
@@ -52,6 +54,8 @@ public class GameEngine {
     private int width = 1920;
     private int height = 1080;
     private boolean fullscreen = false;
+    private boolean twoDTextMode = false;   // F4: VR 3D text <-> 2D readable text
+    private GistWall gistWall;               // fleet gist wall data source
     private boolean running = true;
 
     private Renderer renderer;
@@ -59,6 +63,7 @@ public class GameEngine {
     private BloomEffect bloom;
     private WorldBuilder world;
     private Player player;
+    private DressingRoom dressingRoom;   // F7: avatar dressing room (360° orbit editor)
     private Input input;
     private HUD hud;
     private BookEditor bookEditor;
@@ -253,6 +258,8 @@ public class GameEngine {
         bloom = new BloomEffect(width, height);
         fontRenderer = new FontRenderer();
         player = new Player();
+        // Dressing room owns the player avatar — Cortana preset as the starting point.
+        dressingRoom = new DressingRoom(com.mindpalace.avatar.AvatarLibrary.preset("cortana"));
         hud = new HUD();
         audio = new AudioEngine();
         player.setAudio(audio);
@@ -274,7 +281,16 @@ public class GameEngine {
         renderLoadingFrame();
 
         github = new GitHubClient();
+        // Auto-auth from Windows Credential Manager (env-var fallback) so the
+        // in-game GitHub surfaces (gist wall, editor, agents, live updates) work
+        // without a manual PAT entry. WorldBuilder already does the same.
+        if (!github.loadTokenFromCredentialManager()) {
+            String envTok = System.getenv("MIND_PALACE_GITHUB_TOKEN");
+            if (envTok != null && envTok.length() >= 20) github.setToken(envTok);
+        }
         bookEditor = new BookEditor(github);
+        gistWall = new GistWall();
+        gistWall.setToken(github.getToken());
 
         // Start LLM agents from SIMS1337
         agentManager = new AgentManager();
@@ -423,6 +439,10 @@ public class GameEngine {
         // Explorer = tool agent (phi3:mini), Critic = critic agent (tinyllama:1.1b)
         AgentNPC explorer = new AgentNPC("Explorer", AgentNPC.Role.EXPLORER, 42L, knowledgeGraph);
         AgentNPC critic = new AgentNPC("Critic", AgentNPC.Role.CRITIC, 1337L, knowledgeGraph);
+        // Dressing-room avatars — Explorer is the faithful Cortana preset, Critic is a
+        // deterministic procedural avatar (seeded 90s math). Remove with setAvatar(null).
+        explorer.setAvatar(com.mindpalace.avatar.AvatarLibrary.preset("cortana"));
+        critic.setAvatar(com.mindpalace.avatar.AvatarLibrary.random(1337L));
 
         // Attach real SLM brains, gated by the SHARED scheduler (one call at a time)
         com.mindpalace.agent.OllamaClient ollama = new com.mindpalace.agent.OllamaClient();
@@ -582,6 +602,16 @@ public class GameEngine {
 
     private void update(double dt) {
         input.update(dt);
+
+        // F7: toggle the dressing room (always available, so it can open AND close).
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F7)) {
+            if (dressingRoom != null) dressingRoom.toggle();
+        }
+        // While open, the dressing room owns ALL input (orbit/select/adjust).
+        if (dressingRoom != null && dressingRoom.isOpen()) {
+            dressingRoom.handleInput(input);
+            return;
+        }
 
         // Fact toast timer (Phase D)
         if (factToastTimer > 0) factToastTimer -= dt;
@@ -751,6 +781,13 @@ public class GameEngine {
         if (input.wasKeyPressed(GLFW.GLFW_KEY_TAB)) {
             showMap = !showMap;
             System.out.println("[MAP] " + (showMap ? "ON" : "OFF"));
+        }
+
+        // F4 — toggle 2D readable text mode (VR 3D text <-> 2D screen-pinned text).
+        // "Doubles for the toggle": the 3D path is never deleted, only gated.
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F4)) {
+            twoDTextMode = !twoDTextMode;
+            System.out.println("[2D-TEXT] " + (twoDTextMode ? "ON" : "OFF"));
         }
 
         if (state == GameState.PLAYING) {
@@ -1196,6 +1233,18 @@ public class GameEngine {
     private void render(double alpha) {
         bloom.begin();
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+
+        // Dressing room mode: orbit camera + avatar editor replaces the world view.
+        if (dressingRoom != null && dressingRoom.isOpen()) {
+            dressingRoom.positionCamera(player.getCamera());
+            renderer.beginFrame(player.getCamera());
+            dressingRoom.render(renderer, fontRenderer, player.getCamera(),
+                (float) width / height, (float) GLFW.glfwGetTime());
+            bloom.end();
+            GLFW.glfwSwapBuffers(window);
+            return;
+        }
+
         renderer.beginFrame(player.getCamera());
         // Sky dome — full gradient sphere so the sky is never black, even
         // looking straight up or sideways. Phase follows the real clock.
@@ -1211,15 +1260,22 @@ public class GameEngine {
 
         // Render neon sign text
         if (fontRenderer != null && fontRenderer.isReady()) {
-            renderNeonSignText();
-            renderFloorMap();
+            if (!twoDTextMode) {
+                // 3D world text (signs/spines/posters/floor labels) — the VR path.
+                renderNeonSignText();
+                renderFloorMap();
+                renderBookSpineText();
+                renderRoomPoster();
+                renderFloorSigns();
+            } else {
+                // 2D read mode — pin the key world text into a fixed screen panel.
+                renderTwoDTextPanel();
+            }
             renderScreenHUD();
-            renderBookSpineText();
-            renderRoomPoster();
             renderBookTooltip();
             renderBookHighlight();
-            renderFloorSigns();
             renderTelemetryPanel();
+            renderGistWall();
             renderFactToast();
             renderTocToast();
         }
@@ -1275,64 +1331,109 @@ public class GameEngine {
 
     private void renderNPCs() {
         Camera cam = player.getCamera();
+        float time = (float) GLFW.glfwGetTime();
         for (AgentNPC npc : npcs) {
             Vector3f p = npc.getPosition();
             if (cam.getPosition().distance(p) > 30f) continue;
 
-            // 90s polygon avatar: geometric head + torso + limbs, oriented to
-            // movement, with a walk-cycle arm/leg swing and idle bob.
+            // Gait: walk-cycle swing + idle bob (B2)
             float bob = (float) Math.sin(npc.getBobPhase()) * 0.05f;
             boolean walking = npc.getState() == AgentNPC.State.WALKING
                            || npc.getState() == AgentNPC.State.CARRYING;
             float swing = walking ? (float) Math.sin(npc.getBobPhase()) * 0.5f : 0f;
             float yaw = (float) Math.atan2(npc.getFacing().x, npc.getFacing().z);
 
-            int tex = npc.getBodyTexture();
-            int limbTex = Renderer.TEX_METAL;   // dark limbs
-            int headTex = Renderer.TEX_WHITE;
+            boolean female = npc.getSex() == AgentNPC.Sex.FEMALE;
 
-            // Feet on the ground; body rises from there.
+            // Dressing-room avatar: when an NPC carries an AvatarDescriptor it drives
+            // sex + skin + clothing + proportions (the box-renderer reads the parametric
+            // model directly). Absent a descriptor, the hardcoded sex dims below apply.
+            com.mindpalace.avatar.AvatarDescriptor av = npc.getAvatar();
+            if (av != null) {
+                female = av.sex == com.mindpalace.avatar.AvatarDescriptor.Sex.FEMALE;
+            }
+
+            // Anthropometric proportions (B1) — the box-renderer analog of bone scaling.
+            float shoulderW = female ? 0.30f : 0.44f;   // biacromial width
+            float hipW      = female ? 0.38f : 0.28f;   // intertrochanteric width
+            float legLen    = female ? 0.58f : 0.55f;   // elongated limbs
+            float armLen    = female ? 0.44f : 0.42f;
+
+            // Cortana hologram tint — cyan (female) / deeper blue (male); avatar skin wins.
+            Vector3f holoTint = female
+                ? new Vector3f(0.05f, 0.80f, 1.00f)
+                : new Vector3f(0.10f, 0.55f, 1.00f);
+
+            // Tight-fit clothing = material layer (no extra geometry):
+            //   female → yoga pants (dark) + bra (magenta); male → trousers (dark)
+            float pantsR = 0.07f, pantsG = 0.07f, pantsB = 0.11f;
+            float braR = 0.92f, braG = 0.18f, braB = 0.45f;
+
+            // Avatar overrides — skin tint, clothing color, and pull/push proportions.
+            if (av != null) {
+                shoulderW *= av.getProportion(com.mindpalace.avatar.AvatarDescriptor.BodyPart.SHOULDERS);
+                hipW      *= av.getProportion(com.mindpalace.avatar.AvatarDescriptor.BodyPart.HIPS);
+                legLen    *= av.getProportion(com.mindpalace.avatar.AvatarDescriptor.BodyPart.LEGS);
+                armLen    *= av.getProportion(com.mindpalace.avatar.AvatarDescriptor.BodyPart.ARMS);
+                holoTint = new Vector3f(av.skinR, av.skinG, av.skinB);
+                pantsR = av.bottomR; pantsG = av.bottomG; pantsB = av.bottomB;
+                braR = av.topR; braG = av.topG; braB = av.topB;
+            }
+
             float footY = p.y + bob;
-            float hipY = footY + 0.55f;          // leg length
-            float shoulderY = hipY + 0.55f;      // torso length
-            float headY = shoulderY + 0.22f;    // neck + head
+            float hipY = footY + legLen;
+            float waistY = hipY + 0.26f;      // pelvis (hips) top
+            float shoulderY = waistY + 0.30f; // chest top
+            float headY = shoulderY + 0.22f;
 
-            // Legs — two thin vertical cubes, swinging forward/back while walking
+            // Legs — yoga pants (female) / trousers (male): solid dark, swinging
             float legSwing = swing * 0.25f;
-            renderer.drawCubeYaw(
-                new Vector3f(p.x - 0.10f, hipY - 0.27f, p.z + legSwing),
-                new Vector3f(0.10f, 0.55f, 0.10f), yaw, limbTex);
-            renderer.drawCubeYaw(
-                new Vector3f(p.x + 0.10f, hipY - 0.27f, p.z - legSwing),
-                new Vector3f(0.10f, 0.55f, 0.10f), yaw, limbTex);
+            renderer.drawCubeColorYaw(new Vector3f(p.x - 0.10f, hipY - legLen * 0.5f, p.z + legSwing),
+                new Vector3f(0.10f, legLen, 0.10f), yaw, pantsR, pantsG, pantsB);
+            renderer.drawCubeColorYaw(new Vector3f(p.x + 0.10f, hipY - legLen * 0.5f, p.z - legSwing),
+                new Vector3f(0.10f, legLen, 0.10f), yaw, pantsR, pantsG, pantsB);
 
-            // Torso — a tapered look via two stacked cubes (chest + pelvis)
-            renderer.drawCubeYaw(
-                new Vector3f(p.x, hipY + 0.15f, p.z),
-                new Vector3f(0.34f, 0.30f, 0.20f), yaw, tex);
-            renderer.drawCubeYaw(
-                new Vector3f(p.x, shoulderY - 0.10f, p.z),
-                new Vector3f(0.42f, 0.30f, 0.24f), yaw, tex);
+            // Pelvis / hips — female: wide hips (yoga pants); male: narrow (trousers)
+            renderer.drawCubeColorYaw(new Vector3f(p.x, hipY + 0.13f, p.z),
+                new Vector3f(hipW, 0.26f, 0.20f), yaw, pantsR, pantsG, pantsB);
 
-            // Arms — swing opposite to legs
+            // Chest — female: bra (solid accent + bust); male: bare hologram chest
+            if (female) {
+                // bust (bra cups) — two small accent boxes
+                renderer.drawCubeColorYaw(new Vector3f(p.x - 0.09f, shoulderY - 0.06f, p.z),
+                    new Vector3f(0.12f, 0.10f, 0.10f), yaw, braR, braG, braB);
+                renderer.drawCubeColorYaw(new Vector3f(p.x + 0.09f, shoulderY - 0.06f, p.z),
+                    new Vector3f(0.12f, 0.10f, 0.10f), yaw, braR, braG, braB);
+                // bra band (torso)
+                renderer.drawCubeColorYaw(new Vector3f(p.x, shoulderY - 0.10f, p.z),
+                    new Vector3f(shoulderW, 0.22f, 0.20f), yaw, braR, braG, braB);
+            } else {
+                renderer.drawHologramCube(new Vector3f(p.x, shoulderY - 0.10f, p.z),
+                    new Vector3f(shoulderW, 0.30f, 0.24f), yaw, holoTint, time);
+            }
+
+            // Arms — bare hologram, swing opposite legs
             float armSwing = -swing * 0.30f;
-            renderer.drawCubeYaw(
-                new Vector3f(p.x - 0.26f, shoulderY - 0.12f, p.z + armSwing),
-                new Vector3f(0.09f, 0.42f, 0.09f), yaw, limbTex);
-            renderer.drawCubeYaw(
-                new Vector3f(p.x + 0.26f, shoulderY - 0.12f, p.z - armSwing),
-                new Vector3f(0.09f, 0.42f, 0.09f), yaw, limbTex);
+            renderer.drawHologramCube(new Vector3f(p.x - 0.24f, shoulderY - 0.12f, p.z + armSwing),
+                new Vector3f(0.09f, armLen, 0.09f), yaw, holoTint, time);
+            renderer.drawHologramCube(new Vector3f(p.x + 0.24f, shoulderY - 0.12f, p.z - armSwing),
+                new Vector3f(0.09f, armLen, 0.09f), yaw, holoTint, time);
 
-            // Head — a cube with a "visor" (role-colored face plate)
-            renderer.drawCubeYaw(
-                new Vector3f(p.x, headY, p.z),
-                new Vector3f(0.24f, 0.24f, 0.24f), yaw, headTex);
-            // Face plate (role color) on the front of the head
+            // Head — hologram
+            renderer.drawHologramCube(new Vector3f(p.x, headY, p.z),
+                new Vector3f(0.24f, 0.24f, 0.24f), yaw, holoTint, time);
+
+            // Hair — solid cap (avatar style/color; skipped when style is NONE)
+            if (av != null && av.hairStyle != com.mindpalace.avatar.AvatarDescriptor.HairStyle.NONE) {
+                renderer.drawCubeColorYaw(new Vector3f(p.x, headY + 0.14f, p.z),
+                    new Vector3f(0.26f, 0.10f, 0.26f), yaw, av.hairR, av.hairG, av.hairB);
+            }
+
+            // Face plate (role color) — keeps Explorer/Critic readable
             float fx = p.x + npc.getFacing().x * 0.13f;
             float fz = p.z + npc.getFacing().z * 0.13f;
-            renderer.drawCubeYaw(
-                new Vector3f(fx, headY, fz),
-                new Vector3f(0.16f, 0.12f, 0.02f), yaw, tex);
+            renderer.drawCubeYaw(new Vector3f(fx, headY, fz),
+                new Vector3f(0.16f, 0.12f, 0.02f), yaw, npc.getRoleTexture());
 
             // Carried crystal (if any) floats above head
             if (npc.getCarriedCrystal() != null) {
@@ -1354,6 +1455,7 @@ public class GameEngine {
         }
     }
 
+
     private void renderCrystals() {
         Camera cam = player.getCamera();
         for (TodoCrystal c : crystals) {
@@ -1374,6 +1476,57 @@ public class GameEngine {
                 fontRenderer.renderBillboard(c.getLabel(), labelPos, 0.03f,
                     new Vector3f(0.3f, 1.0f, 0.4f), proj, view, cam.getPosition());
             }
+        }
+    }
+
+    /**
+     * 2D read mode — the "2D" half of the VR<->2D text toggle. Pins the key world
+     * text (current room + the book under the crosshair + its preview) into a fixed
+     * screen-space panel so it is always readable no matter where the camera faces.
+     * World graphics stay identical; only the text is pinned to the screen.
+     */
+    private void renderTwoDTextPanel() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f base = new Vector3f(camPos).add(new Vector3f(camFront).mul(3f));
+
+        fontRenderer.renderBillboard("2D READ MODE  (F4 back to 3D)",
+            new Vector3f(base.x, base.y + 0.55f, base.z), 0.09f,
+            new Vector3f(1.0f, 1.0f, 0.3f), proj, view, camPos);
+
+        Room room = player.getCurrentRoom();
+        if (room != null) {
+            fontRenderer.renderBillboard(room.getDisplayLabel(),
+                new Vector3f(base.x, base.y + 0.38f, base.z), 0.07f,
+                new Vector3f(0.0f, 0.9f, 1.0f), proj, view, camPos);
+
+            String meta = room.getLanguage() + "  " + room.getStarCount() + " \u2605";
+            fontRenderer.renderBillboard(meta,
+                new Vector3f(base.x, base.y + 0.26f, base.z), 0.05f,
+                new Vector3f(0.8f, 0.8f, 0.8f), proj, view, camPos);
+
+            Book looked = findBookInSights(room);
+            if (looked != null) {
+                String tip = looked.getFilename() + " | " + looked.getLanguage()
+                    + " | " + formatSize(looked.getSizeBytes());
+                fontRenderer.renderBillboard(tip,
+                    new Vector3f(base.x, base.y + 0.14f, base.z), 0.06f,
+                    new Vector3f(0.5f, 1.0f, 0.6f), proj, view, camPos);
+
+                String preview = previewLine(looked, room);
+                if (preview != null) {
+                    fontRenderer.renderBillboard(preview,
+                        new Vector3f(base.x, base.y + 0.02f, base.z), 0.05f,
+                        new Vector3f(0.9f, 0.9f, 0.9f), proj, view, camPos);
+                }
+            }
+        } else {
+            fontRenderer.renderBillboard("MindPalace — no room",
+                new Vector3f(base.x, base.y + 0.38f, base.z), 0.07f,
+                new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
         }
     }
 
@@ -1460,7 +1613,7 @@ public class GameEngine {
             camFront.y * 3f - 0.6f,
             camFront.z * 3f - camRight.z * 0f);
 
-        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  ESC:Menu  F11:Fullscreen";
+        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  F4:2D  ESC:Menu  F11:Fullscreen";
         fontRenderer.renderBillboard(hotkeys, hudCenter, 0.06f,
             new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
 
@@ -1654,6 +1807,43 @@ public class GameEngine {
     }
 
     /** Phase D — fact toast (from clicking the potted plant). */
+    /**
+     * Fleet gist wall — right-side screen panel (mirror of the telemetry panel on
+     * the left) surfacing the live fleet status + workflow logits + word-library
+     * success paths. Text is billboard-rendered so it is always readable.
+     */
+    private void renderGistWall() {
+        if (gistWall == null) return;
+        gistWall.refresh();
+        java.util.List<String> lines = gistWall.getLines();
+        if (lines.isEmpty()) return;
+
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
+
+        // Anchored to the RIGHT of the view, 2.5m out (mirror of telemetry on left)
+        Vector3f base = new Vector3f(camPos).add(
+            camFront.x * 2.5f + camRight.x * 1.4f,
+            camFront.y * 2.5f + 0.55f,
+            camFront.z * 2.5f + camRight.z * 1.4f);
+
+        float step = 0.09f;
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            boolean header = line.startsWith("==");
+            float size = header ? 0.055f : 0.045f;
+            Vector3f color = header
+                ? new Vector3f(1.0f, 0.8f, 0.3f)
+                : new Vector3f(0.6f, 0.9f, 0.6f);
+            Vector3f p = new Vector3f(base.x, base.y - i * step, base.z);
+            fontRenderer.renderBillboard(line, p, size, color, proj, view, camPos);
+        }
+    }
+
     private void renderFactToast() {
         if (factToastTimer <= 0 || factToast.isEmpty()) return;
         Camera cam = player.getCamera();
