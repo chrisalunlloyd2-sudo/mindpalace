@@ -438,7 +438,7 @@ public class GameEngine {
         sonicFit.setSampleRate(8000); // fitness renders at 8 kHz (25s-equivalent cheap)
         sonicFitness = sonicFit;
         audioEvolver = new com.mindpalace.genetics.AudioEvolver(
-            new java.util.Random(), sonicFit,
+            com.mindpalace.genetics.DeterministicSeed.random("audio-evolve"), sonicFit,
             g -> com.mindpalace.audio.MusicEngine.renderOffline(g, 8000), // 1s clip @ 8kHz
             50, 10, 0.15f, 0.2f); // pop 50, top-10 parents, 40 children
         genomeArchive = new com.mindpalace.genetics.GenomeArchive(
@@ -3377,6 +3377,25 @@ public class GameEngine {
         System.out.println((telemetryOk ? "PASS" : "FAIL")
             + " telemetry (append-only + pacing + query)");
         if (telemetryOk) pass++; else fail++;
+
+        // 35. DeterministicSeed — same (purpose, time) → same seed; different
+        //     purpose → different seed. Reproducible, zero entropy.
+        boolean seedOk = false;
+        try {
+            long t = 1_700_000_000_000L; // fixed epoch
+            long a1 = com.mindpalace.genetics.DeterministicSeed.seed("audio-evolve", t, 30_000L);
+            long a2 = com.mindpalace.genetics.DeterministicSeed.seed("audio-evolve", t, 30_000L);
+            long b  = com.mindpalace.genetics.DeterministicSeed.seed("depin-Explorer", t, 30_000L);
+            long a3 = com.mindpalace.genetics.DeterministicSeed.seed("audio-evolve", t + 30_000L, 30_000L);
+            // same purpose+time → identical; different purpose → different;
+            // next window → different (time-based).
+            seedOk = (a1 == a2) && (a1 != b) && (a1 != a3);
+        } catch (Exception e) {
+            seedOk = false;
+        }
+        System.out.println((seedOk ? "PASS" : "FAIL")
+            + " deterministic seed (time-based, reproducible)");
+        if (seedOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

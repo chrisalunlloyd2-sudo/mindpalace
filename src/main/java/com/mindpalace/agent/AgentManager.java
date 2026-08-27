@@ -349,7 +349,9 @@ public class AgentManager {
                 for (com.mindpalace.economy.Blackboard.Job j : open)
                     if (j.isOpen() && j.difficulty <= p.tier()) eligible.add(j);
                 if (eligible.isEmpty()) continue;
-                com.mindpalace.economy.Blackboard.Job job = eligible.get((int)(Math.random() * eligible.size()));
+                // Deterministic pick: same (agent, time-window) → same job.
+                java.util.Random rng = com.mindpalace.genetics.DeterministicSeed.random("depin-" + agent);
+                com.mindpalace.economy.Blackboard.Job job = eligible.get(rng.nextInt(eligible.size()));
                 if (depin.claim(job.id, agent)) {
                     double earned = depin.complete(job.id);
                     if (earned > 0) {
