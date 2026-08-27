@@ -163,6 +163,8 @@ public class GameEngine {
     private double shopCooldown;
     // Genetic enhancement — the player's persistent module timeline (genome).
     private GeneticTimeline genome;
+    // Unified event telemetry — append-only, paced, queryable swarm ledger.
+    private com.mindpalace.backup.Telemetry telemetry;
     private static final String[] FACTS = {
         "The first computer bug was a real moth, taped into a logbook in 1947.",
         "Git was created by Linus Torvalds in 2005, in about 10 days.",
@@ -292,6 +294,12 @@ public class GameEngine {
         gistWall = new GistWall();
         gistWall.setToken(github.getToken());
 
+        // Unified telemetry — append-only, paced, queryable swarm ledger.
+        telemetry = new com.mindpalace.backup.Telemetry(
+            java.nio.file.Path.of(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory"));
+        telemetry.record(com.mindpalace.backup.Telemetry.SYSTEM, "boot", "mindpalace started");
+        System.out.println("[Telemetry] ledger ready — " + telemetry.summary());
+
         // Start LLM agents from SIMS1337
         agentManager = new AgentManager();
         agentChat = new AgentChat();
@@ -301,6 +309,8 @@ public class GameEngine {
             agentManager.setIssueStream(new com.mindpalace.github.GitHubIssueStream(
                 github.getToken(), "chrisalunlloyd2-sudo", 30_000L));
         }
+        // Unified telemetry: agents record quorum/DePIN/issue events.
+        agentManager.setTelemetry(telemetry);
         agentManager.setCallbacks(
             msg -> agentChat.addMessage(msg),
             msg -> agentChat.addMessage(msg),
@@ -1036,6 +1046,8 @@ public class GameEngine {
                 // Splice the module into the player's genome — a dated mutation
                 // with a real in-game effect, recorded on the persistent timeline.
                 GeneticTimeline.Mutation m = genome.mutate(shop.name, shopEffect(shop.name), shop.cost);
+                if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.SHOP,
+                    shop.name, "Lv" + m.level + " " + shopEffect(shop.name));
                 shopToast = "Spliced " + shop.name + " Lv" + m.level + " into your genome! ("
                     + shopEffect(shop.name) + ") Wallet: " + fmt(depin.participant("player").wallet.getBalance());
                 System.out.println("[GENOME] " + shop.name + " -> Lv" + m.level + " (" + GeneticTimeline.whenLabel(m.when) + "). Modules: " + genome.moduleCount());
@@ -3341,6 +3353,30 @@ public class GameEngine {
         System.out.println((issueStreamOk ? "PASS" : "FAIL")
             + " issue stream (add-only + cellular pacing)");
         if (issueStreamOk) pass++; else fail++;
+
+        // 34. Telemetry — append-only, paced, queryable event ledger.
+        boolean telemetryOk = false;
+        try {
+            java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("telemetry-test");
+            com.mindpalace.backup.Telemetry t = new com.mindpalace.backup.Telemetry(tmp, 60_000L);
+            boolean a = t.record(com.mindpalace.backup.Telemetry.AGENT, "act", "d1");
+            boolean b = t.record(com.mindpalace.backup.Telemetry.AGENT, "act", "d2"); // paced -> false
+            boolean c = t.record(com.mindpalace.backup.Telemetry.QUORUM, "APPROVED", "x");
+            long n = t.count();
+            String sum = t.summary();
+            java.util.List<String[]> recent = t.recent(10);
+            t.stop();
+            // a recorded, b paced (same category too soon), c recorded (diff cat),
+            // count==2, summary mentions both categories, recent has 2 rows.
+            telemetryOk = a && !b && c && n == 2
+                && sum.contains("agent") && sum.contains("quorum")
+                && recent.size() == 2;
+        } catch (Exception e) {
+            telemetryOk = false;
+        }
+        System.out.println((telemetryOk ? "PASS" : "FAIL")
+            + " telemetry (append-only + pacing + query)");
+        if (telemetryOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

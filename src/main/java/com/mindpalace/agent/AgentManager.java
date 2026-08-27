@@ -191,6 +191,15 @@ public class AgentManager {
         this.issueStream = stream;
     }
 
+    // ── Telemetry ──────────────────────────────────────────────────────
+
+    private com.mindpalace.backup.Telemetry telemetry;
+
+    /** Inject the unified telemetry ledger (append-only, paced). */
+    public void setTelemetry(com.mindpalace.backup.Telemetry t) {
+        this.telemetry = t;
+    }
+
     /**
      * Raise approved topics as GitHub issues (ADD-ONLY, quorum-gated).
      * Each approved topic becomes one issue on the current room's repo. The
@@ -296,7 +305,11 @@ public class AgentManager {
             }
             // Raise approved topics as GitHub issues (ADD-ONLY, paced).
             int raised = raiseApprovedTopics();
-            if (raised > 0) log("[AgentManager] raised " + raised + " GitHub issues");
+            if (raised > 0) {
+                log("[AgentManager] raised " + raised + " GitHub issues");
+                if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.ISSUE,
+                    "raised", String.valueOf(raised));
+            }
         } catch (Exception e) {
             log("[AgentManager] lexical bridge error: " + e.getMessage());
         }
@@ -311,7 +324,11 @@ public class AgentManager {
             quorum.advanceTimePulse(0.1);
             quorum.autoVoteAll();
             WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
-            if (r != null) log("[AgentManager] quorum: " + r);
+            if (r != null) {
+                log("[AgentManager] quorum: " + r);
+                if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.QUORUM,
+                    r.status, text);
+            }
         } catch (Exception e) {
             log("[AgentManager] quorum error: " + e.getMessage());
         }
@@ -337,6 +354,8 @@ public class AgentManager {
                     double earned = depin.complete(job.id);
                     if (earned > 0) {
                         log("[DePIN] " + agent + " completed \"" + job.title + "\" (+" + fmt(earned) + " credits, skill " + p.skill.get() + ")");
+                        if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.DEPIN,
+                            agent, job.title + " +" + fmt(earned));
                     }
                 }
             }
