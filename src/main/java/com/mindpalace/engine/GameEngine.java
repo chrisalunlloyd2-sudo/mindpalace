@@ -165,6 +165,8 @@ public class GameEngine {
     private GeneticTimeline genome;
     // Unified event telemetry — append-only, paced, queryable swarm ledger.
     private com.mindpalace.backup.Telemetry telemetry;
+    // Real file tool executor (read/edit/create/delete) — never-twice + telemetry.
+    private ToolExecutor toolExecutor;
     private static final String[] FACTS = {
         "The first computer bug was a real moth, taped into a logbook in 1947.",
         "Git was created by Linus Torvalds in 2005, in about 10 days.",
@@ -410,6 +412,12 @@ public class GameEngine {
         // Self-managing memory + never-make-code-twice DB
         memoryManager = new MemoryManager(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory");
         memoryManager.start();
+
+        // Real file tool executor — the agents' read/edit/create/delete path,
+        // governed by never-twice + telemetry. Base = the AIGEN_SYS repos root.
+        toolExecutor = new ToolExecutor(
+            java.nio.file.Path.of(System.getProperty("user.home"), "AIGEN_SYS", "repos"),
+            memoryManager, telemetry);
 
         // Genetic enhancement timeline — the player's persistent genome.
         genome = new GeneticTimeline(java.nio.file.Path.of(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory"));
@@ -3396,6 +3404,35 @@ public class GameEngine {
         System.out.println((seedOk ? "PASS" : "FAIL")
             + " deterministic seed (time-based, reproducible)");
         if (seedOk) pass++; else fail++;
+
+        // 36. ToolExecutor — real file I/O + never-twice + path-escape guard.
+        boolean toolOk = false;
+        try {
+            java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("tool-exec-test");
+            com.mindpalace.backup.MemoryManager mm = new com.mindpalace.backup.MemoryManager(tmp.toString());
+            mm.start();
+            com.mindpalace.backup.Telemetry tl = new com.mindpalace.backup.Telemetry(tmp);
+            ToolExecutor te = new ToolExecutor(tmp, mm, tl);
+
+            // create -> read -> edit -> never-twice -> delete -> path-escape
+            ToolExecutor.ToolResult c = te.execute("create", new String[]{"a.txt", "hello"});
+            ToolExecutor.ToolResult r = te.execute("read", new String[]{"a.txt"});
+            ToolExecutor.ToolResult e = te.execute("edit", new String[]{"a.txt", "world"});
+            ToolExecutor.ToolResult dup = te.execute("create", new String[]{"b.txt", "world"}); // never-twice
+            ToolExecutor.ToolResult esc = te.execute("read", new String[]{"../etc/passwd"});
+            ToolExecutor.ToolResult d = te.execute("delete", new String[]{"a.txt"});
+
+            boolean fileExists = java.nio.file.Files.exists(tmp.resolve("a.txt"));
+            toolOk = c.success && r.success && r.output.contains("5 chars")
+                && e.success && !dup.success && dup.output.contains("never-twice")
+                && !esc.success && d.success && !fileExists;
+            mm.stop(); tl.stop();
+        } catch (Exception ex) {
+            toolOk = false;
+        }
+        System.out.println((toolOk ? "PASS" : "FAIL")
+            + " tool executor (real I/O + never-twice + escape guard)");
+        if (toolOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
