@@ -270,6 +270,10 @@ public class AgentManager {
 
         log("[AgentManager] Auto-cycle — agents discussing " + (currentRoom != null ? currentRoom.getRepoName() : "?"));
 
+        // Telemetry: record the cycle itself (paced, append-only).
+        if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.AGENT,
+            "cycle", currentRoom != null ? currentRoom.getRepoName() : "?");
+
         // Route the tool agent's model by task complexity (SIMS1337 ModelRouter).
         Complexity cx = Complexity.estimate(context);
         routedModel = router.select(cx);
@@ -700,6 +704,7 @@ public class AgentManager {
                 case "read_file": {
                     if (github != null && github.isAuthenticated()) {
                         String content = github.fetchFileContent(repo, filename);
+                        if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "read", filename);
                         return content != null ? "read " + filename + " (" + content.length() + " chars)" : "read failed";
                     }
                     // Local fallback
@@ -707,6 +712,7 @@ public class AgentManager {
                         java.nio.file.Path fp = java.nio.file.Path.of(currentRoom.getLocalPath(), filename);
                         if (java.nio.file.Files.exists(fp)) {
                             String c = java.nio.file.Files.readString(fp);
+                            if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "read", filename);
                             return "read " + filename + " (" + c.length() + " chars)";
                         }
                     }
@@ -750,11 +756,13 @@ public class AgentManager {
                 case "delete_file": {
                     if (github != null && github.isAuthenticated()) {
                         boolean ok = github.deleteFile(repo, filename, null, "MindPalace agent delete: " + filename);
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
                         return ok ? "deleted " + filename : "delete failed";
                     }
                     if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(currentRoom.getLocalPath(), filename));
-                        return "deleted " + filename + " (local)";
+                        boolean ok = java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(currentRoom.getLocalPath(), filename));
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
+                        return ok ? "deleted " + filename + " (local)" : "delete failed (no such file)";
                     }
                     return "delete failed (no auth/local path)";
                 }
