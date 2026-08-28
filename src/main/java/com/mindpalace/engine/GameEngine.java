@@ -302,6 +302,10 @@ public class GameEngine {
         telemetry.record(com.mindpalace.backup.Telemetry.SYSTEM, "boot", "mindpalace started");
         System.out.println("[Telemetry] ledger ready — " + telemetry.summary());
 
+        // Self-managing memory + never-make-code-twice DB (needed by agents).
+        memoryManager = new MemoryManager(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory");
+        memoryManager.start();
+
         // Start LLM agents from SIMS1337
         agentManager = new AgentManager();
         agentChat = new AgentChat();
@@ -313,6 +317,8 @@ public class GameEngine {
         }
         // Unified telemetry: agents record quorum/DePIN/issue events.
         agentManager.setTelemetry(telemetry);
+        // Never-twice memory: agents refuse to write identical code twice.
+        agentManager.setMemory(memoryManager);
         agentManager.setCallbacks(
             msg -> agentChat.addMessage(msg),
             msg -> agentChat.addMessage(msg),
@@ -408,10 +414,6 @@ public class GameEngine {
 
         // Idle detection — agents work harder when idle, quiet when playing
         idleDetector = new IdleDetector();
-
-        // Self-managing memory + never-make-code-twice DB
-        memoryManager = new MemoryManager(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory");
-        memoryManager.start();
 
         // Real file tool executor — the agents' read/edit/create/delete path,
         // governed by never-twice + telemetry. Base = the AIGEN_SYS repos root.

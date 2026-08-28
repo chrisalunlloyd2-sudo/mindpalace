@@ -200,6 +200,13 @@ public class AgentManager {
         this.telemetry = t;
     }
 
+    private com.mindpalace.backup.MemoryManager memory;
+
+    /** Inject the never-twice memory (code/mistake dedupe) for local writes. */
+    public void setMemory(com.mindpalace.backup.MemoryManager m) {
+        this.memory = m;
+    }
+
     /**
      * Raise approved topics as GitHub issues (ADD-ONLY, quorum-gated).
      * Each approved topic becomes one issue on the current room's repo. The
@@ -367,6 +374,11 @@ public class AgentManager {
     }
 
     private static String fmt(double v) { return String.format("%.2f", v); }
+
+    private static String langOf(String filename) {
+        int i = filename.lastIndexOf('.');
+        return i < 0 ? "txt" : filename.substring(i + 1);
+    }
 
     // ── Chat → quorum → TODO bridge ─────────────────────────────────────
 
@@ -650,10 +662,25 @@ public class AgentManager {
                 return;
             }
 
-            // Execute each requested tool call
+            // Execute each requested tool call, then feed results back for a
+            // synthesis round so the model reacts to its own actions (not just
+            // fire-and-forget). This closes the loop: act → observe → reflect.
+            List<String> results = new ArrayList<>();
             for (OllamaClient.ToolCall call : tr.toolCalls) {
                 String result = executeTool(call);
+                results.add(call.name + " → " + result);
                 emit(onToolMessage, "[Tool] " + call.name + " → " + result);
+            }
+
+            // Synthesis: the model reflects on what it just did.
+            List<Map<String, String>> synth = new ArrayList<>();
+            synth.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT));
+            synth.add(Map.of("role", "user", "content",
+                "You just took these actions:\n" + String.join("\n", results)
+                + "\n\nSummarize what you did and what you'll do next, in one line."));
+            OllamaClient.ToolResult sr = ollama.chatWithTools(routedModel, synth, List.<com.google.gson.JsonObject>of());
+            if (sr != null && sr.content != null && !sr.content.isEmpty()) {
+                emit(onToolMessage, "[Tool] " + sr.content);
             }
         } catch (Exception e) {
             log("[AgentManager] tool loop error: " + e.getMessage());
@@ -687,24 +714,35 @@ public class AgentManager {
                 }
                 case "edit_file": {
                     String content = args.has("content") ? args.get("content").getAsString() : "";
+                    // Never-twice: refuse to write identical code twice (local path).
+                    if (memory != null && !memory.recordCode(content, langOf(filename))) {
+                        return "never-twice: identical code already written";
+                    }
                     if (github != null && github.isAuthenticated()) {
                         boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent edit: " + filename, null);
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
                         return ok ? "edited " + filename : "edit failed";
                     }
                     if (currentRoom.getLocalPath() != null) {
                         java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), content);
+                        if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
                         return "edited " + filename + " (local)";
                     }
                     return "edit failed (no auth/local path)";
                 }
                 case "create_file": {
                     String content = args.has("content") ? args.get("content").getAsString() : "";
+                    if (memory != null && !memory.recordCode(content, langOf(filename))) {
+                        return "never-twice: identical code already written";
+                    }
                     if (github != null && github.isAuthenticated()) {
                         boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent create: " + filename, null);
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename);
                         return ok ? "created " + filename : "create failed";
                     }
                     if (currentRoom.getLocalPath() != null) {
                         java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), content);
+                        if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename);
                         return "created " + filename + " (local)";
                     }
                     return "create failed (no auth/local path)";
