@@ -15,6 +15,11 @@ public class OllamaClient {
     private final OkHttpClient http;
     private final Gson gson = new Gson();
 
+    // ONE-MODEL GATE: cold-shot policy means exactly one model may be in flight
+    // at any moment. The scheduler already serializes, but this lock makes the
+    // invariant physical — a second caller blocks until the first model unloads.
+    private final Object modelGate = new Object();
+
     public OllamaClient() {
         http = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -64,6 +69,10 @@ public class OllamaClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
+        // COLD-SHOT: unload immediately after the reply — never more than one
+        // model resident in RAM. Slower (disk reload each turn) by design: the
+        // game's frames never compete with an idle model's memory footprint.
+        body.addProperty("keep_alive", 0);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -81,16 +90,18 @@ public class OllamaClient {
         }
 
         try {
-            Request r = new Request.Builder()
-                .url(BASE + "/chat")
-                .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
-                .build();
-            try (Response resp = http.newCall(r).execute()) {
-                if (!resp.isSuccessful() || resp.body() == null) return null;
-                JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
-                JsonObject msg = result.getAsJsonObject("message");
-                if (msg.has("content") && !msg.get("content").isJsonNull()) return msg.get("content").getAsString();
-                return "";
+            synchronized (modelGate) {
+                Request r = new Request.Builder()
+                    .url(BASE + "/chat")
+                    .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+                    .build();
+                try (Response resp = http.newCall(r).execute()) {
+                    if (!resp.isSuccessful() || resp.body() == null) return null;
+                    JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
+                    JsonObject msg = result.getAsJsonObject("message");
+                    if (msg.has("content") && !msg.get("content").isJsonNull()) return msg.get("content").getAsString();
+                    return "";
+                }
             }
         } catch (IOException e) {
             return null;
@@ -116,6 +127,8 @@ public class OllamaClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
+        // COLD-SHOT: same policy as chat() — one model resident, zero after.
+        body.addProperty("keep_alive", 0);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -133,26 +146,28 @@ public class OllamaClient {
         }
 
         try {
-            Request r = new Request.Builder()
-                .url(BASE + "/chat")
-                .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
-                .build();
-            try (Response resp = http.newCall(r).execute()) {
-                if (!resp.isSuccessful() || resp.body() == null) return new ToolResult(null, List.of());
-                JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
-                JsonObject msg = result.getAsJsonObject("message");
-                String content = (msg.has("content") && !msg.get("content").isJsonNull()) ? msg.get("content").getAsString() : "";
-                List<ToolCall> calls = new ArrayList<>();
-                if (msg.has("tool_calls")) {
-                    for (JsonElement el : msg.getAsJsonArray("tool_calls")) {
-                        JsonObject tc = el.getAsJsonObject();
-                        JsonObject fn = tc.getAsJsonObject("function");
-                        String name = fn.get("name").getAsString();
-                        String args = fn.has("arguments") ? fn.get("arguments").getAsString() : "{}";
-                        calls.add(new ToolCall(name, args));
+            synchronized (modelGate) {
+                Request r = new Request.Builder()
+                    .url(BASE + "/chat")
+                    .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+                    .build();
+                try (Response resp = http.newCall(r).execute()) {
+                    if (!resp.isSuccessful() || resp.body() == null) return new ToolResult(null, List.of());
+                    JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
+                    JsonObject msg = result.getAsJsonObject("message");
+                    String content = (msg.has("content") && !msg.get("content").isJsonNull()) ? msg.get("content").getAsString() : "";
+                    List<ToolCall> calls = new ArrayList<>();
+                    if (msg.has("tool_calls")) {
+                        for (JsonElement el : msg.getAsJsonArray("tool_calls")) {
+                            JsonObject tc = el.getAsJsonObject();
+                            JsonObject fn = tc.getAsJsonObject("function");
+                            String name = fn.get("name").getAsString();
+                            String args = fn.has("arguments") ? fn.get("arguments").getAsString() : "{}";
+                            calls.add(new ToolCall(name, args));
+                        }
                     }
+                    return new ToolResult(content, calls);
                 }
-                return new ToolResult(content, calls);
             }
         } catch (IOException e) {
             return new ToolResult(null, List.of());

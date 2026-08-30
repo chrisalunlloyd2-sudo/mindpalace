@@ -29,6 +29,7 @@ public class AgentManager {
     // Agent configs (centralized in ModelConfig)
     private static final String TOOL_MODEL = ModelConfig.TOOL_MODEL;
     private static final String CRITIC_MODEL = ModelConfig.CRITIC_MODEL;
+    private static final String TIE_MODEL = ModelConfig.TIE_MODEL;
 
     // Conversation histories — now managed by ModelLifespan (bounded + drift-corrected)
     private final ModelLifespan toolLifespan;
@@ -129,14 +130,17 @@ public class AgentManager {
         fow.assignModel(TOOL_MODEL, "tool");
         fow.assignModel(CRITIC_MODEL, "critic");
 
-        // Quorum: register both models as voters at their hex positions.
+        // Quorum: register THREE voters (quorumMin=3 requires it). The tie-breaker
+        // is gemma2:2b — pinned at the proposal hex so it always sees votes that
+        // land on (0,0) where the lexical bridge anchors them.
         quorum.setModelPosition(TOOL_MODEL, 0, 0);
         quorum.setModelPosition(CRITIC_MODEL, 1, 0);
+        quorum.setModelPosition(TIE_MODEL, 0, 0);
 
         // LoRA: start on CODE (the tool agent's primary domain).
         lora.switchAdapter(AdapterType.CODE);
 
-        log("[AgentManager] SIMS1337 parity wired — router + LoRA + quorum + FOW");
+        log("[AgentManager] SIMS1337 parity wired — router + LoRA + quorum + FOW + tie-breaker " + TIE_MODEL);
     }
 
     public void stop() {
@@ -200,6 +204,33 @@ public class AgentManager {
         this.telemetry = t;
     }
 
+    // ── Context kits (per-model wrapper: LoRA + KG + KV, never mixed) ──
+
+    private final Map<String, ContextKit> kits = new LinkedHashMap<>();
+
+    /** The kit for a model — created on first use, persistent thereafter. */
+    private ContextKit kit(String model) {
+        return kits.computeIfAbsent(model, m ->
+            new ContextKit(m, AdapterType.CODE, 0x5EED_0000_0000_0000L | m.hashCode()));
+    }
+
+    /** The world's knowledge graph — injects room neighborhoods into kits. */
+    private KnowledgeGraph knowledgeGraph;
+    public void setKnowledgeGraph(KnowledgeGraph kg) { this.knowledgeGraph = kg; }
+
+    /** Render the riding context prefix for a model (LoRA+KG+KV in one line). */
+    private String ctx(String model) {
+        ContextKit k = kit(model);
+        // Refresh the KG neighborhood when a room is present.
+        if (currentRoom != null && knowledgeGraph != null) {
+            List<String> nodes = new ArrayList<>();
+            for (Room nb : knowledgeGraph.neighbors(currentRoom)) nodes.add(nb.getRepoName());
+            nodes.add(currentRoom.getRepoName());
+            k.setKgNodes(nodes);
+        }
+        return k.render();
+    }
+
     private com.mindpalace.backup.MemoryManager memory;
 
     /** Inject the never-twice memory (code/mistake dedupe) for local writes. */
@@ -246,7 +277,8 @@ public class AgentManager {
 
         // Direct conversational reply via the chat model, on the IMMEDIATE path
         // (bypasses the 5-min spacing gate so the player isn't left waiting).
-        modelScheduler.submitImmediate(ModelConfig.CHAT_MODEL, prompt, chatLifespan)
+        modelScheduler.submitImmediate(ModelConfig.CHAT_MODEL,
+            ctx(ModelConfig.CHAT_MODEL) + "\n" + prompt, chatLifespan)
             .thenAccept(resp -> {
                 if (resp != null && !resp.isEmpty()) {
                     emit(onToolMessage, "[Guide] " + resp);
@@ -286,7 +318,7 @@ public class AgentManager {
         runToolLoop();
 
         // Critic reviews the tool agent's work (scheduler spaces it 5 min)
-        String criticPrompt = "The tool agent just acted on the current room. Evaluate its work. Should we proceed? What risks or improvements?";
+        String criticPrompt = ctx(CRITIC_MODEL) + "\nThe tool agent just acted on the current room. Evaluate its work. Should we proceed? What risks or improvements?";
         modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
             .thenAccept(criticResp -> {
                 if (criticResp != null && !criticResp.isEmpty()) {
@@ -602,7 +634,7 @@ public class AgentManager {
                 + "Issue: " + issue.text + "\n\n"
                 + "Return ONLY the corrected full file content. Do not add commentary.\n\n"
                 + "```\n" + content + "\n```";
-            String fixed = ollama.chat(routedModel, prompt, "");
+            String fixed = ollama.chat(routedModel, ctx(routedModel) + "\n" + prompt, "");
             if (fixed == null || fixed.isEmpty() || fixed.equals(content)) return false;
 
             // Strip any markdown fence the model may have wrapped the output in.
@@ -655,7 +687,7 @@ public class AgentManager {
     private void executeToolRound(String context) {
         try {
             List<Map<String, String>> msgs = new ArrayList<>();
-            msgs.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT));
+            msgs.add(Map.of("role", "system", "content", ctx(routedModel) + "\n" + TOOL_SYSTEM_PROMPT));
             msgs.add(Map.of("role", "user", "content", context + "\n\nTake ONE concrete action using your tools."));
 
             OllamaClient.ToolResult tr = ollama.chatWithTools(routedModel, msgs, TOOLS);
@@ -678,7 +710,7 @@ public class AgentManager {
 
             // Synthesis: the model reflects on what it just did.
             List<Map<String, String>> synth = new ArrayList<>();
-            synth.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT));
+            synth.add(Map.of("role", "system", "content", ctx(routedModel) + "\n" + TOOL_SYSTEM_PROMPT));
             synth.add(Map.of("role", "user", "content",
                 "You just took these actions:\n" + String.join("\n", results)
                 + "\n\nSummarize what you did and what you'll do next, in one line."));

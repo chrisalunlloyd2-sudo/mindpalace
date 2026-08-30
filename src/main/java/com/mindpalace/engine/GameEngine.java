@@ -350,6 +350,8 @@ public class GameEngine {
         // Build the knowledge graph + spawn agent NPCs (bodies in the world)
         knowledgeGraph = new KnowledgeGraph();
         knowledgeGraph.build(world.getRooms());
+        // Kits ride the KG: every model's context wrapper gets room neighborhoods.
+        agentManager.setKnowledgeGraph(knowledgeGraph);
 
         // Wire the editor's language toggle to the shared LoRA switcher + KG.
         bookEditor.setSims(agentManager.getLora(), knowledgeGraph);
@@ -3435,6 +3437,27 @@ public class GameEngine {
         System.out.println((toolOk ? "PASS" : "FAIL")
             + " tool executor (real I/O + never-twice + escape guard)");
         if (toolOk) pass++; else fail++;
+
+        // 37. Quorum tie-breaker — 3 voters can reach quorum; lexical topics can
+        //     actually be APPROVED (was PENDING forever with only 2 voters).
+        boolean quorumOk = false;
+        try {
+            com.mindpalace.agent.sims.WeightedQuorumVote q =
+                new com.mindpalace.agent.sims.WeightedQuorumVote();
+            q.setModelPosition("a", 0, 0);
+            q.setModelPosition("b", 1, 0);
+            q.setModelPosition("c", 0, 0); // tie-breaker at proposal hex
+            q.registerProposal("t1", "test topic", new com.mindpalace.agent.sims.HexCoord(0, 0));
+            q.autoVoteAll();
+            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r = q.calculateQuorum("t1");
+            // With 3 visible voters, the result must not be stuck PENDING.
+            quorumOk = r != null && !"PENDING".equals(r.status) && r.visible >= 3;
+        } catch (Exception e) {
+            quorumOk = false;
+        }
+        System.out.println((quorumOk ? "PASS" : "FAIL")
+            + " quorum tie-breaker (3 voters, no eternal PENDING)");
+        if (quorumOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

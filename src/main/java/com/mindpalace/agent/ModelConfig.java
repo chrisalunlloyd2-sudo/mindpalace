@@ -17,6 +17,9 @@ public final class ModelConfig {
     /** Critic agent — reviews the tool agent's proposals. */
     public static final String CRITIC_MODEL = "qwen2.5:0.5b";
 
+    /** Tie-breaker voter — breaks 1-1 ties in quorum votes (1.1GB, cold-shot). */
+    public static final String TIE_MODEL = "deepseek-r1:1.5b";
+
     /** Code-suggestion model for the in-game book editor (small + fast). */
     public static final String CODE_MODEL = "qwen2.5:0.5b";
 
