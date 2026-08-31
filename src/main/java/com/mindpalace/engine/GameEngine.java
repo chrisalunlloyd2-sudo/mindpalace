@@ -3738,7 +3738,7 @@ public class GameEngine {
             }
             case 9 -> { // portal pad — floor 0's themed teleporter (Amber/Cerulean)
                 p.set(0f, hallY + 1.7f, hallZ1 - 7f);
-                cam.setYaw(0); cam.setPitch(-6f);
+                cam.setYaw(0); cam.setPitch(-12f);
                 if (shoot) { captureLabeled("10_portal_pad"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             default -> { // done — clean exit for CI
