@@ -514,6 +514,20 @@ public class AgentManager {
         // Also include any room names the engine knows (broader coverage).
         if (currentRoom != null) allNames.add(currentRoom.getRepoName());
 
+        // THE SPEC: "find and solve issues in ALL new non-legacy repos". If the
+        // player hasn't walked the mansion (discoveredRepos empty), FOW must not
+        // blind the bridge — enumerate every repo on disk and classify.
+        if (allNames.isEmpty()) {
+            Path reposRoot = Paths.get("C:/Users/viper/AIGEN_SYS/repos");
+            if (Files.isDirectory(reposRoot)) {
+                try (Stream<Path> ls = Files.list(reposRoot)) {
+                    ls.filter(Files::isDirectory).map(p -> p.getFileName().toString())
+                      .filter(n -> !n.startsWith("."))
+                      .forEach(allNames::add);
+                } catch (IOException ignored) {}
+            }
+        }
+
         for (String repo : allNames) {
             if (LegacyRepoClassifier.isLegacy(repo, allNames)) continue;
             // Find the local path for this repo (via the room list is not
