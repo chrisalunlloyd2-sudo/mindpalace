@@ -10,3 +10,4 @@ chat_logs/
 
 # installer build artifacts (large binaries — upload to GitHub release instead)
 installer/
+game_console.log
