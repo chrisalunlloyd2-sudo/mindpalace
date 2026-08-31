@@ -4,6 +4,7 @@ import com.mindpalace.engine.Input;
 import com.mindpalace.render.Camera;
 import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.world.OutsideWorld;
+import com.mindpalace.world.PortalTheme;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Hallway;
 import com.mindpalace.audio.AudioEngine;
@@ -327,7 +328,8 @@ public class Player {
         onGround = true;
         teleportCooldown = 1.0;
         if (audio != null) audio.playDoorOpen();
-        System.out.println("[TELEPORT] -> Floor " + (floor + 1));
+        PortalTheme theme = PortalTheme.forPad(floor);
+        System.out.println("[TELEPORT] -> Floor " + (floor + 1) + " (" + theme + ")");
     }
 
     /** Teleport onto a specific teleporter pad (exact pad position). */
@@ -343,7 +345,8 @@ public class Player {
         onGround = true;
         teleportCooldown = 1.0;
         if (audio != null) audio.playDoorOpen();
-        System.out.println("[TELEPORT] -> Pad " + (padIndex + 1) + " (floor " + (padIndex + 1) + ")");
+        System.out.println("[TELEPORT] -> Pad " + (padIndex + 1) + " (floor " + (padIndex + 1)
+            + ", " + PortalTheme.forPad(padIndex) + ")");
     }
 
     /** Teleport to the mansion (player home) in the outside world. */
@@ -393,7 +396,7 @@ public class Player {
         onGround = true;
         teleportCooldown = 1.0;
         if (audio != null) audio.playDoorOpen();
-        System.out.println("[TELEPORT] -> Planet");
+        System.out.println("[TELEPORT] -> Planet (" + PortalTheme.PLANET + ")");
     }
 
     /** Return to the flat palace (clears planet gravity). */

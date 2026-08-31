@@ -31,20 +31,12 @@ python - "$DIR" <<'PYEOF'
 import sys, os, struct, zlib
 d = sys.argv[1]
 labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gauge","05_main_hall",
-          "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents"]
+          "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad"]
 fail = 0
-for lbl in labels:
-    files = [f for f in os.listdir(d) if f.startswith(lbl)] if os.path.isdir(d) else []
-    if not files:
-        print(f"MISSING {lbl}"); fail += 1; continue
-    path = os.path.join(d, files[0])
-    # PNG brightness check without deps: parse IHDR, decompress a sample of IDAT,
-    # compute mean luminance of the first rows.
+def load_png(path):
     with open(path, "rb") as f:
         data = f.read()
     w, h = struct.unpack(">II", data[16:24])
-    bitdepth, ctype = data[24], data[25]
-    # gather IDAT chunks
     idat = b""
     i = 8
     while i < len(data):
@@ -53,19 +45,52 @@ for lbl in labels:
         if typ == b"IDAT": idat += data[i+8:i+8+ln]
         i += 12 + ln
     raw = zlib.decompress(idat)
-    stride = 1 + w * 4  # assume RGBA8 output of LWJGL Screenshot
+    stride = 1 + w * 4  # RGBA8 output of LWJGL Screenshot
+    return w, h, raw, stride
+def px(raw, stride, x, y):
+    o = y * stride + 1 + x * 4
+    return raw[o], raw[o+1], raw[o+2]
+for lbl in labels:
+    files = [f for f in os.listdir(d) if f.startswith(lbl)] if os.path.isdir(d) else []
+    if not files:
+        print(f"MISSING {lbl}"); fail += 1; continue
+    w, h, raw, stride = load_png(os.path.join(d, files[0]))
     n = 0; total = 0
-    for row in range(0, min(h, 40)):
+    # Full-frame sample (every 8th px, every 4th row) — the old top-40-rows
+    # sample read the dark hallway ceiling/sky and flagged every shot
+    # TOO-DARK (mean 0.3–2.3) even while features rendered fine.
+    for row in range(0, h, 4):
         base = row * stride + 1
-        for x in range(0, w, 16):
-            px = base + x * 4
-            if px + 2 < len(raw):
-                total += raw[px] + raw[px+1] + raw[px+2]
+        for x in range(0, w, 8):
+            o = base + x * 4
+            if o + 2 < len(raw):
+                total += raw[o] + raw[o+1] + raw[o+2]
                 n += 2
     mean = total / max(n, 1)
     status = "OK" if mean > 6.0 else "TOO-DARK"
     if mean <= 6.0: fail += 1
     print(f"{lbl}: {files[0]} {w}x{h} brightness={mean:.1f} {status}")
+
+# Portal color-pair hue assertion — floor 0's pad (Amber/Cerulean pair) must
+# show BOTH hue families in the 10_portal_pad shot: the amber ring (warm,
+# r-dominant) and the cerulean beam/pad (cool, b>g>r). Counts full-decoded
+# pixels of the bottom-center band where the pad sits (camera looks down the
+# hall at the pad, pitch -6°, so the pad occupies the lower third of frame).
+portal = [f for f in os.listdir(d) if f.startswith("10_portal_pad")] if os.path.isdir(d) else []
+if not portal:
+    print("MISSING 10_portal_pad hue check"); fail += 1
+else:
+    w, h, raw, stride = load_png(os.path.join(d, portal[0]))
+    amber = cerulean = 0
+    for y in range(int(h*0.55), h, 2):
+        for x in range(0, w, 2):
+            r, g, b = px(raw, stride, x, y)
+            if r > 120 and r > g + 30 and r > b + 50: amber += 1        # warm ring
+            if b > 120 and b > r + 40 and g > 80: cerulean += 1        # cool beam
+    ok = amber > 100 and cerulean > 100
+    print(f"portal color pair: amber={amber} cerulean={cerulean} "
+          + ("OK" if ok else "HUE-FAIL"))
+    if not ok: fail += 1
 print("VERIFY-PASS" if fail == 0 else f"VERIFY-FAIL ({fail})")
 sys.exit(0 if fail == 0 else 1)
 PYEOF

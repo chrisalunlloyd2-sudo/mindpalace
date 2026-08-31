@@ -79,12 +79,16 @@ Alcubierre jump, gimbals, paired color themes).
 **Status:** `DONE` for the core (local agent shipped: "teleporter network —
 Diablo-style portal list, return pad on planet", "teleporter menu lists actual pads,
 each routes to its exact pad", Phase G graphics: particle swirl + glow ring +
-animated pad + shimmer). `[RM]` Phase G = DONE.
+animated pad + shimmer). `[RM]` Phase G = DONE. **Paired complementary color
+themes = `DONE`** (TASK_0001: `world/PortalTheme.java` — 6-pair palette rotated
+by pad index, planet pad has its own Copper/Mint pair, destination picker shows
+a two-block swatch per entry, selftest #38 + E2E waypoint 10 + hue assertion
+in `e2e.sh`).
 
-**Next action (extend, not redo):** `[SPEC]` II extras still open — paired
-complementary color themes (Cerulean ↔ Amber), bezier lightning conduits between
-linked portals, Alcubierre FOV-punch camera warp, particle ingest/egress, proximity
-acoustics. Add as a "portal polish" slice on top of the existing network.
+**Next action (extend, not redo):** `[SPEC]` II extras still open — bezier
+lightning conduits between linked portals, Alcubierre FOV-punch camera warp,
+particle ingest/egress, proximity acoustics. Add as a "portal polish" slice
+on top of the existing network.
 
 ---
 
@@ -327,7 +331,7 @@ slice (later; Java port where feasible, worker-offload the heavy math).**
 4. §4 avatars (Phase B1→B2→B3)
 5. §8 engine TOOLS execution loop — **biggest "not hooked in" gap**
 6. §7 chat priority queue (user chat never waits behind autonomous)
-7. §3 portal polish (paired colors + conduits + Alcubierre jump)
+7. ~~§3 portal polish: paired colors~~ ✅ DONE (TASK_0001, `PortalTheme.java`) — conduits + Alcubierre jump still open (→ §3)
 8. §6 spring-damper camera + astral walk
 9. §5 sky/outside streaming + local weather
 10. §13 editor: syntax highlight + undo/redo + multi-file

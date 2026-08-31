@@ -15,6 +15,7 @@ import com.mindpalace.economy.DePIN;
 import com.mindpalace.agent.KnowledgeGraph;
 import com.mindpalace.world.TodoCrystal;
 import com.mindpalace.world.OutsideWorld;
+import com.mindpalace.world.PortalTheme;
 import com.mindpalace.genetics.GeneticTimeline;
 import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
@@ -2136,6 +2137,14 @@ public class GameEngine {
         fontRenderer.renderBillboard("TELEPORT DESTINATION", center, 0.09f,
             new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
 
+        // Theme for one destination: floor pads rotate through the palette,
+        // the planet pad has its own pair; non-pad destinations (Outside,
+        // Palace) get no swatch — only physical pads are color-matchable.
+        java.util.function.IntFunction<PortalTheme> themeFor = i ->
+            i < pads      ? PortalTheme.forPad(i)
+          : i == pads + 1 ? PortalTheme.PLANET
+          : null;
+
         for (int i = 0; i < options; i++) {
             String label;
             if (i < pads) label = (i + 1) + ". Teleporter " + (i + 1) + " (Floor " + (i + 1) + ")";
@@ -2148,6 +2157,28 @@ public class GameEngine {
                 ? new Vector3f(1.0f, 0.9f, 0.3f)
                 : new Vector3f(0.7f, 0.7f, 0.7f);
             fontRenderer.renderBillboard(label, pos, 0.06f, col, proj, view, camPos);
+        }
+
+        // Two-block color swatches — the destination's PortalTheme pair, so a
+        // menu entry can be visually matched to the physical pad it routes to.
+        // Drawn after the labels: FontRenderer leaves textShader bound, so
+        // rebind the basic shader before any cube draw.
+        renderer.beginFrame(cam);
+        Vector3f right = cam.getRight();
+        float sw = 0.055f;              // swatch block size
+        float gap = sw * 1.2f;          // center-to-center spacing of the pair
+        for (int i = 0; i < options; i++) {
+            PortalTheme theme = themeFor.apply(i);
+            if (theme == null) continue;
+            Vector3f pos = new Vector3f(center.x, startY - i * lineH, center.z);
+            Vector3f base = new Vector3f(pos)
+                .add(right.x * -1.15f, -0.012f, right.z * -1.15f);
+            renderer.drawCubeColor(base, new Vector3f(sw, sw, sw),
+                theme.colorA.x, theme.colorA.y, theme.colorA.z);
+            renderer.drawCubeColor(
+                new Vector3f(base).add(right.x * gap, 0f, right.z * gap),
+                new Vector3f(sw, sw, sw),
+                theme.colorB.x, theme.colorB.y, theme.colorB.z);
         }
     }
 
@@ -3533,6 +3564,40 @@ public class GameEngine {
             + " quorum tie-breaker (3 voters, no eternal PENDING)");
         if (quorumOk) pass++; else fail++;
 
+        // 38. Portal color pairing — every teleporter pad has a complementary
+        //     color pair (roadmap §3): pair hues >= 110 degrees apart, every
+        //     color clears the bloom bright-pass (luminance > 0.6), the planet
+        //     return pad has its own pair, and adjacent pads never share a
+        //     hue family on either channel (menu rows stay distinguishable).
+        boolean portalThemeOk = false;
+        try {
+            portalThemeOk = PortalTheme.PLANET.isComplementary();
+            int nPads = world.getTeleporterPads().size();
+            portalThemeOk = portalThemeOk && nPads >= 2;
+            PortalTheme prev = null;
+            for (int i = 0; portalThemeOk && i < nPads; i++) {
+                PortalTheme t = PortalTheme.forPad(i);
+                // Complementary pair + both colors bloom
+                portalThemeOk = t.isComplementary()
+                    && PortalTheme.luminance(t.colorA.x, t.colorA.y, t.colorA.z) > 0.6f
+                    && PortalTheme.luminance(t.colorB.x, t.colorB.y, t.colorB.z) > 0.6f;
+                // Adjacent pads distinguishable: no shared hue family on either
+                // channel (A-to-A and B-to-B hue distance >= 30 degrees)
+                if (prev != null) {
+                    portalThemeOk = portalThemeOk
+                        && PortalTheme.minHueDist(t.colorA, prev.colorA) >= 30f
+                        && PortalTheme.minHueDist(t.colorB, prev.colorB) >= 30f;
+                }
+                prev = t;
+            }
+        } catch (Exception e) {
+            portalThemeOk = false;
+            System.err.println("[SelfTest] portal theme threw: " + e);
+        }
+        System.out.println((portalThemeOk ? "PASS" : "FAIL")
+            + " portal color pairing (complementary pairs, adjacent pads distinct)");
+        if (portalThemeOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
     }
@@ -3671,8 +3736,13 @@ public class GameEngine {
                 cam.setYaw(-45); cam.setPitch(-5);
                 if (shoot) { captureLabeled("09_agents"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            case 9 -> { // portal pad — floor 0's themed teleporter (Amber/Cerulean)
+                p.set(0f, hallY + 1.7f, hallZ1 - 7f);
+                cam.setYaw(0); cam.setPitch(-6f);
+                if (shoot) { captureLabeled("10_portal_pad"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 9 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 10 waypoints captured. Exiting.");
                 cleanup();
                 System.exit(0);
             }
