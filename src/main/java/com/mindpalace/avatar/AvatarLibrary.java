@@ -126,4 +126,86 @@ public final class AvatarLibrary {
     }
 
     private static float clamp(float f) { return Math.max(0f, Math.min(1f, f)); }
+
+    // ── CharacterDNA cross-port ─────────────────────────────────────────────
+    // One seed => the SAME avatar in BOTH the Three.js web model AND this Java
+    // engine (byte-for-byte identical to avatar-creator's generateCharacter).
+    // Use fromDna() when the in-game avatar must match the web model.
+
+    /** Build a descriptor from a CharacterDNA seed (cross-port correct). */
+    public static AvatarDescriptor fromDna(long seed) {
+        return fromDna(CharacterDNA.generateCharacter(seed, null));
+    }
+
+    /** Map a CharacterDNA.Character (the web generator's output) -> AvatarDescriptor. */
+    public static AvatarDescriptor fromDna(CharacterDNA.Character c) {
+        AvatarDescriptor a = new AvatarDescriptor();
+        a.name = c.name;
+        a.sex = "male".equals(c.sex) ? AvatarDescriptor.Sex.MALE : AvatarDescriptor.Sex.FEMALE;
+
+        float[] sk = CharacterDNA.hexToRgb(c.skinTone);
+        a.skinR = sk[0]; a.skinG = sk[1]; a.skinB = sk[2];
+        a.skinTexture = 0; // smooth (web generator has no texture concept)
+
+        float[] hr = CharacterDNA.hexToRgb(c.hairColor);
+        a.hairR = hr[0]; a.hairG = hr[1]; a.hairB = hr[2];
+        a.hairStyle = mapHairStyle(c.hairStyle);
+
+        a.eyeShape = AvatarDescriptor.EyeShape.ALMOND;
+        float[] er = CharacterDNA.hexToRgb(c.eyeColor);
+        a.eyeR = er[0]; a.eyeG = er[1]; a.eyeB = er[2];
+
+        // inches -> multiplicative scale (baseline 36" => 1.0, hourglass waist 24" => 2/3)
+        a.proportions.put(AvatarDescriptor.BodyPart.CHEST, c.bust / 36f);
+        a.proportions.put(AvatarDescriptor.BodyPart.WAIST, c.waist / 36f);
+        a.proportions.put(AvatarDescriptor.BodyPart.HIPS, c.hips / 36f);
+
+        a.top = mapTop(c.outfit);
+        a.bottom = mapBottom(c.outfit);
+        a.footwear = "none";
+        float[] tr = CharacterDNA.hexToRgb(c.clothingTop);
+        a.topR = tr[0]; a.topG = tr[1]; a.topB = tr[2];
+        float[] br = CharacterDNA.hexToRgb(c.clothingBottom);
+        a.bottomR = br[0]; a.bottomG = br[1]; a.bottomB = br[2];
+
+        a.eyeliner = (float) c.makeup.eyelinerThickness;
+        float[] es = CharacterDNA.hexToRgb(c.makeup.eyeshadowColor);
+        a.eyeshadowR = es[0]; a.eyeshadowG = es[1]; a.eyeshadowB = es[2];
+        a.blush = (float) c.makeup.blushIntensity;
+        float[] ls = CharacterDNA.hexToRgb(c.makeup.lipstickColor);
+        a.lipstickR = ls[0]; a.lipstickG = ls[1]; a.lipstickB = ls[2];
+        a.lipstick = (float) c.makeup.lipstickOpacity;
+
+        return a;
+    }
+
+    private static AvatarDescriptor.HairStyle mapHairStyle(String s) {
+        switch (s) {
+            case "ponytail": return AvatarDescriptor.HairStyle.PONYTAIL;
+            case "bob":      return AvatarDescriptor.HairStyle.BOB;
+            case "bun":      return AvatarDescriptor.HairStyle.BOB; // no BUN enum; bob is closest
+            case "down":     return AvatarDescriptor.HairStyle.LONG;
+            default:         return AvatarDescriptor.HairStyle.LONG;
+        }
+    }
+
+    private static String mapTop(String outfit) {
+        switch (outfit) {
+            case "sportsbra-yoga": return "bra";
+            case "tshirt-shorts":  return "tshirt";
+            case "tank-skirt":     return "tanktop";
+            case "none":           return "none";
+            default:               return "bra";
+        }
+    }
+
+    private static String mapBottom(String outfit) {
+        switch (outfit) {
+            case "sportsbra-yoga": return "yogapants";
+            case "tshirt-shorts":  return "shorts";
+            case "tank-skirt":     return "skirt";
+            case "none":           return "none";
+            default:               return "yogapants";
+        }
+    }
 }
