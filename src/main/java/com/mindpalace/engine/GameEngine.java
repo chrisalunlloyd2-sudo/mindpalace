@@ -103,7 +103,10 @@ public class GameEngine {
     private double patchToastTimer;
     private KnowledgeGraph knowledgeGraph;
     private final List<AgentNPC> npcs = new ArrayList<>();
-    private final List<TodoCrystal> crystals = new ArrayList<>();
+    // Thread-safe: the lexical bridge adds crystals from the agent thread while
+    // the render thread iterates — a plain ArrayList threw
+    // ConcurrentModificationException and froze the game (2026-08-30).
+    private final List<TodoCrystal> crystals = java.util.Collections.synchronizedList(new ArrayList<>());
     private BackupManager backupManager;
     private MemoryManager memoryManager;
     private IdleDetector idleDetector;
@@ -874,9 +877,9 @@ public class GameEngine {
                 if (reason != null && agentChat != null) {
                     agentChat.addMessage("[" + npc.getName() + "] " + reason);
                 }
-                // Explorer picks up nearby crystals
+                // Explorer picks up nearby crystals (snapshot — agent thread adds)
                 if (npc.getRole() == AgentNPC.Role.EXPLORER && npc.getCarriedCrystal() == null) {
-                    for (TodoCrystal c : crystals) {
+                    for (TodoCrystal c : new ArrayList<>(crystals)) {
                         if (c.isCarried() || c.getPosition() == null) continue;
                         if (npc.getPosition().distance(c.getPosition()) < 1.5f) {
                             npc.pickUpCrystal(c);
@@ -1534,7 +1537,7 @@ public class GameEngine {
 
     private void renderCrystals() {
         Camera cam = player.getCamera();
-        for (TodoCrystal c : crystals) {
+        for (TodoCrystal c : new ArrayList<>(crystals)) {  // snapshot — agent thread adds
             if (c.isCarried() || c.getPosition() == null) continue;
             Vector3f p = c.getPosition();
             if (cam.getPosition().distance(p) > 20f) continue;
@@ -2526,7 +2529,7 @@ public class GameEngine {
         }
 
         // Crystals
-        for (TodoCrystal c : crystals) {
+        for (TodoCrystal c : new ArrayList<>(crystals)) {  // snapshot — agent thread adds
             if (c.isCarried() || c.getPosition() == null) continue;
             Vector3f p = c.getPosition();
             float dx = (p.x - camPos.x) * scale;
