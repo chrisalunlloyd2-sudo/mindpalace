@@ -30,8 +30,8 @@ echo "=== [4/4] VERIFY SHOTS (exist + non-black) ==="
 python - "$DIR" <<'PYEOF'
 import sys, os, struct, zlib
 d = sys.argv[1]
-labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_main_hall","05_room_doorway",
-          "06_todo_crystals","07_hall_lookback","08_agents"]
+labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gauge","05_main_hall",
+          "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents"]
 fail = 0
 for lbl in labels:
     files = [f for f in os.listdir(d) if f.startswith(lbl)] if os.path.isdir(d) else []

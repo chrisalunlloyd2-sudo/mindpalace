@@ -176,6 +176,8 @@ public class GameEngine {
     private long tapeFeedTimer;
     // Rotor Room — three Enigma rings outside the entrance (determinism visible).
     private com.mindpalace.world.RotorRoom rotorRoom;
+    // Banburismus gauge — the deciban meter (live GA evidence).
+    private com.mindpalace.world.BanburismusGauge banburismusGauge;
     // Real file tool executor (read/edit/create/delete) — never-twice + telemetry.
     private ToolExecutor toolExecutor;
     private static final String[] FACTS = {
@@ -384,6 +386,11 @@ public class GameEngine {
             rotorRoom = new com.mindpalace.world.RotorRoom(
                 new Vector3f(0f, hs.y, hs.z - 14f));
             System.out.println("[RotorRoom] three rings in the courtyard z=" + (hs.z - 14f));
+
+            // Banburismus gauge: deciban meter mounted high on the hall wall.
+            banburismusGauge = new com.mindpalace.world.BanburismusGauge(
+                new Vector3f(-WorldBuilder.HALLWAY_WIDTH / 2f + 0.4f, hs.y + 2.8f, hs.z + 8f));
+            System.out.println("[Banburismus] gauge mounted on hall wall z=" + (hs.z + 8f));
         }
 
         // Wire the editor's language toggle to the shared LoRA switcher + KG.
@@ -1331,6 +1338,14 @@ public class GameEngine {
         // Rotor Room — Enigma rings in the courtyard, stepping every second.
         if (rotorRoom != null) {
             rotorRoom.render(renderer, player.getCamera().getPosition(), GLFW.glfwGetTime());
+        }
+
+        // Banburismus gauge — deciban needle fed by the live GA (two logs/frame).
+        if (banburismusGauge != null) {
+            if (audioEvolver != null) {
+                banburismusGauge.update(audioEvolver.bestScore(), audioEvolver.meanScore());
+            }
+            banburismusGauge.render(renderer, player.getCamera().getPosition(), GLFW.glfwGetTime());
         }
 
         // Render agent NPCs (bodies) + TODO crystals
@@ -3626,33 +3641,38 @@ public class GameEngine {
                 cam.setYaw(0); cam.setPitch(50f);
                 if (shoot) { captureLabeled("03_turing_tape"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 3 -> { // hallway run — the long view down the main hall
+            case 3 -> { // banburismus gauge — the deciban meter on the left wall
+                p.set(0f, hallY + 1.7f, hallZ0 + 7f);
+                cam.setYaw(-75); cam.setPitch(10f);
+                if (shoot) { captureLabeled("04_banburismus_gauge"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 4 -> { // hallway run — the long view down the main hall
                 p.set(0f, hallY + 1.7f, hallZ0 + 12f);
                 cam.setYaw(0); cam.setPitch(0f);
-                if (shoot) { captureLabeled("04_main_hall"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("05_main_hall"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 4 -> { // room doorway — a repo room entrance
+            case 5 -> { // room doorway — a repo room entrance
                 p.set(2.5f, hallY + 1.7f, hallZ0 + 18f);
                 cam.setYaw(90); cam.setPitch(0);
-                if (shoot) { captureLabeled("05_room_doorway"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("06_room_doorway"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 5 -> { // crystals — TODO field from above-ish
+            case 6 -> { // crystals — TODO field from above-ish
                 p.set(-2.0f, hallY + 1.7f, (hallZ0 + hallZ1) / 2f);
                 cam.setYaw(180); cam.setPitch(20f);
-                if (shoot) { captureLabeled("06_todo_crystals"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("07_todo_crystals"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 6 -> { // end of hall — looking back (whole mansion)
+            case 7 -> { // end of hall — looking back (whole mansion)
                 p.set(0f, hallY + 1.7f, hallZ1 - 4f);
                 cam.setYaw(180); cam.setPitch(0);
-                if (shoot) { captureLabeled("07_hall_lookback"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("08_hall_lookback"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 7 -> { // agents — NPC area from a corner
+            case 8 -> { // agents — NPC area from a corner
                 p.set(1.5f, hallY + 1.7f, hallZ0 + 10f);
                 cam.setYaw(-45); cam.setPitch(-5);
-                if (shoot) { captureLabeled("08_agents"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("09_agents"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 8 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 9 waypoints captured. Exiting.");
                 cleanup();
                 System.exit(0);
             }
