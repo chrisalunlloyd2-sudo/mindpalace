@@ -325,8 +325,9 @@ public class WorldBuilder {
         }
 
         // Return teleporter pad at the +Y pole — the way back to the palace.
+        // Distinct Copper/Cobalt pair so the "Planet" menu entry is matchable.
         Vector3f pad = getPlanetPad();
-        renderTeleporter(r, pad.y, pad.z);
+        renderTeleporter(r, pad.y, pad.z, PortalTheme.PLANET);
     }
 
     /** A tree standing on the planet surface, oriented along the local normal. */
@@ -385,10 +386,12 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(signX, signY, signZ),
             new Vector3f(1.5f, 0.4f, 0.08f), Renderer.TEX_NEON_GREEN);
 
-        // Teleporter pad at hallway end (to next floor) — cool animated portal
+        // Teleporter pad at hallway end (to next floor) — cool animated portal,
+        // themed with this floor's complementary color pair (pad index == floor
+        // index, see getTeleporterPads) so its menu entry is visually matchable.
         if (hw.getFloor() < hallways.size() - 1) {
             float padZ = hw.getEnd().z - 1.0f;
-            renderTeleporter(r, s.y, padZ);
+            renderTeleporter(r, s.y, padZ, PortalTheme.forPad(hw.getFloor()));
         }
 
         // Poster frames on walls between doors
@@ -406,35 +409,42 @@ public class WorldBuilder {
     }
 
     /**
-     * Teleporter — a pulsing cyan portal pad with a rising light beam, a
-     * rotating glow ring, and a swirling particle column (Phase G upgrade).
-     * Replaces the old stairwell.
+     * Teleporter — a pulsing portal pad with a rising light beam, a rotating
+     * glow ring, and a swirling particle column (Phase G upgrade). Replaces
+     * the old stairwell. Every color comes from the pad's PortalTheme: outer
+     * ring + orbit bars + sparkles glow theme.colorA (accent), inner pad +
+     * rising beam glow theme.colorB (complement) — so each linked pad has a
+     * stable two-color identity a player can match to its menu entry.
      */
-    private void renderTeleporter(Renderer r, float floorY, float padZ) {
+    private void renderTeleporter(Renderer r, float floorY, float padZ, PortalTheme theme) {
         float pulse = 0.5f + 0.5f * (float) Math.sin(time * 3.0f);
         float padY = floorY + 0.06f;
 
-        // Base ring (amber) — slightly larger so the glow ring sits on top
-        r.drawCube(new Vector3f(0, padY, padZ), new Vector3f(2.0f, 0.08f, 2.0f), Renderer.TEX_NEON_AMBER);
-        // Inner pad (cyan, pulses) — concentric animated rings
-        r.drawCube(new Vector3f(0, padY + 0.04f, padZ),
-            new Vector3f(1.5f + pulse * 0.3f, 0.06f, 1.5f + pulse * 0.3f), Renderer.TEX_NEON_CYAN);
+        // Base ring (theme accent) — slightly larger so the glow ring sits on top
+        r.drawCubeColor(new Vector3f(0, padY, padZ), new Vector3f(2.0f, 0.08f, 2.0f),
+            theme.colorA.x, theme.colorA.y, theme.colorA.z);
+        // Inner pad (theme complement, pulses) — concentric animated rings
+        r.drawCubeColor(new Vector3f(0, padY + 0.04f, padZ),
+            new Vector3f(1.5f + pulse * 0.3f, 0.06f, 1.5f + pulse * 0.3f),
+            theme.colorB.x, theme.colorB.y, theme.colorB.z);
         // Inner bright core (white-hot center)
         r.drawCube(new Vector3f(0, padY + 0.07f, padZ),
             new Vector3f(0.7f + pulse * 0.2f, 0.05f, 0.7f + pulse * 0.2f), Renderer.TEX_WHITE);
 
-        // Rising light beam (vertical column, pulses upward)
+        // Rising light beam (vertical column, pulses upward) — theme complement
         float beamH = 1.5f + pulse * 1.5f;
-        r.drawCube(new Vector3f(0, padY + 0.1f + beamH / 2f, padZ),
-            new Vector3f(0.5f, beamH, 0.5f), Renderer.TEX_NEON_CYAN);
+        r.drawCubeColor(new Vector3f(0, padY + 0.1f + beamH / 2f, padZ),
+            new Vector3f(0.5f, beamH, 0.5f),
+            theme.colorB.x, theme.colorB.y, theme.colorB.z);
 
-        // Rotating glow ring (two thin bars sweeping around the beam)
+        // Rotating glow ring (two thin bars sweeping around the beam) — accent
         for (int ring = 0; ring < 2; ring++) {
             float ang = time * 1.5f + ring * (float) Math.PI;
             float ox = (float) Math.cos(ang) * 1.4f;
             float oz = (float) Math.sin(ang) * 1.4f;
-            r.drawCube(new Vector3f(ox, padY + 0.9f + ring * 0.4f, padZ + oz),
-                new Vector3f(0.25f, 0.06f, 0.25f), Renderer.TEX_NEON_GREEN);
+            r.drawCubeColor(new Vector3f(ox, padY + 0.9f + ring * 0.4f, padZ + oz),
+                new Vector3f(0.25f, 0.06f, 0.25f),
+                theme.colorA.x, theme.colorA.y, theme.colorA.z);
         }
 
         // Swirling particle column — spiral of rising orbs
@@ -445,21 +455,29 @@ public class WorldBuilder {
             float ox = (float) Math.cos(spiralAng) * radius;
             float oz = (float) Math.sin(spiralAng) * radius;
             float oy = padY + 0.3f + (i / 10f) * 2.2f;       // rise with index
-            // Alternate cyan/white/green for a shimmer
-            int tex = (i % 3 == 0) ? Renderer.TEX_NEON_GREEN
-                    : (i % 3 == 1) ? Renderer.TEX_NEON_CYAN : Renderer.TEX_WHITE;
+            // Alternate accent/complement/white for a shimmer — the pad reads
+            // as exactly its two theme hues plus a white core.
             float sz = 0.10f + 0.06f * (float) Math.sin(time * 5f + i);
-            r.drawCube(new Vector3f(ox, oy, padZ + oz), new Vector3f(sz, sz, sz), tex);
+            if (i % 3 == 0) {
+                r.drawCubeColor(new Vector3f(ox, oy, padZ + oz), new Vector3f(sz, sz, sz),
+                    theme.colorA.x, theme.colorA.y, theme.colorA.z);
+            } else if (i % 3 == 1) {
+                r.drawCubeColor(new Vector3f(ox, oy, padZ + oz), new Vector3f(sz, sz, sz),
+                    theme.colorB.x, theme.colorB.y, theme.colorB.z);
+            } else {
+                r.drawCube(new Vector3f(ox, oy, padZ + oz), new Vector3f(sz, sz, sz), Renderer.TEX_WHITE);
+            }
         }
 
-        // Floating sparkle orbs around the beam (legacy — kept for density)
+        // Floating sparkle orbs around the beam (legacy — kept for density) — accent
         for (int i = 0; i < 4; i++) {
             float ang = time * 2.0f + i * (float) Math.PI / 2f;
             float ox = (float) Math.cos(ang) * 1.2f;
             float oz = (float) Math.sin(ang) * 1.2f;
             float oy = padY + 0.5f + 0.4f * (float) Math.sin(time * 4.0f + i);
-            r.drawCube(new Vector3f(ox, oy, padZ + oz),
-                new Vector3f(0.12f, 0.12f, 0.12f), Renderer.TEX_NEON_GREEN);
+            r.drawCubeColor(new Vector3f(ox, oy, padZ + oz),
+                new Vector3f(0.12f, 0.12f, 0.12f),
+                theme.colorA.x, theme.colorA.y, theme.colorA.z);
         }
     }
 
