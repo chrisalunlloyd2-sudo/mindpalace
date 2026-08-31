@@ -138,6 +138,9 @@ public class GameEngine {
 
     // Screenshot + auto-drive (agent "sees" the game)
     private boolean autodrive;
+    private boolean e2eMode;
+    private int e2eWaypoint = 0;
+    private double e2ePhaseTimer = 0;
     private String screenshotDir;
     private int shotCounter;
     private double shotTimer;
@@ -165,6 +168,9 @@ public class GameEngine {
     private GeneticTimeline genome;
     // Unified event telemetry — append-only, paced, queryable swarm ledger.
     private com.mindpalace.backup.Telemetry telemetry;
+    // Turing Tape floor — glowing strip in the main hall, one cell per event.
+    private com.mindpalace.world.TuringTape turingTape;
+    private long tapeFeedTimer;
     // Real file tool executor (read/edit/create/delete) — never-twice + telemetry.
     private ToolExecutor toolExecutor;
     private static final String[] FACTS = {
@@ -198,6 +204,14 @@ public class GameEngine {
         this.autodrive = true;
         this.screenshotDir = dir;
         System.out.println("[Autodrive] enabled, screenshots -> " + dir);
+    }
+
+    /** E2E flow: selftest → waypoint tour with labeled shots → clean exit. */
+    public void setE2E(String dir) {
+        this.autodrive = true;
+        this.screenshotDir = dir;
+        this.e2eMode = true;
+        System.out.println("[E2E] enabled, waypoints + labeled shots -> " + dir);
     }
 
     /** Enable self-test mode (called from Main before run()). */
@@ -352,6 +366,15 @@ public class GameEngine {
         knowledgeGraph.build(world.getRooms());
         // Kits ride the KG: every model's context wrapper gets room neighborhoods.
         agentManager.setKnowledgeGraph(knowledgeGraph);
+
+        // Turing Tape floor: glowing strip down the main hall, one cell per
+        // telemetry event (append-only; head pulses — one move ahead).
+        if (!world.getHallways().isEmpty()) {
+            Vector3f hs = world.getHallways().get(0).getStart();
+            turingTape = new com.mindpalace.world.TuringTape(
+                new Vector3f(0f, hs.y, hs.z + 4f), 1f);
+            System.out.println("[TuringTape] anchored at main hall z=" + (hs.z + 4f));
+        }
 
         // Wire the editor's language toggle to the shared LoRA switcher + KG.
         bookEditor.setSims(agentManager.getLora(), knowledgeGraph);
@@ -1283,6 +1306,17 @@ public class GameEngine {
         renderer.drawSkyDome(player.getCamera().getPosition(), skyPhase);
         world.render(renderer, player.getCamera());
         if (inMansion) renderMansionInterior();
+
+        // Turing Tape floor strip — feed it once a second, render always (LOD-capped inside).
+        if (turingTape != null) {
+            long now = System.currentTimeMillis();
+            if (now - tapeFeedTimer > 1000) {
+                tapeFeedTimer = now;
+                turingTape.feed(telemetry != null ? telemetry.recent(64) : null);
+            }
+            turingTape.render(renderer, player.getCamera().getPosition(),
+                (float) GLFW.glfwGetTime());
+        }
 
         // Render agent NPCs (bodies) + TODO crystals
         renderNPCs();
@@ -2598,6 +2632,16 @@ public class GameEngine {
         if (written != null) System.out.println("[Screenshot] " + written);
     }
 
+    /** Labeled capture for E2E: <dir>/<label>_<n>.png + a console marker line. */
+    private void captureLabeled(String label) {
+        if (screenshotDir == null) screenshotDir = "screenshots";
+        java.io.File dir = new java.io.File(screenshotDir);
+        if (!dir.exists()) dir.mkdirs();
+        String path = screenshotDir + "/" + label + "_" + String.format("%02d", shotCounter++) + ".png";
+        String written = Screenshot.capture(width, height, path);
+        if (written != null) System.out.println("[E2E-SHOT] " + label + " -> " + written);
+    }
+
     /**
      * Live patch poll + cinematic + apply. Shared by update() and
      * updateAutodrive() so patches ship in BOTH normal play and the
@@ -3473,6 +3517,13 @@ public class GameEngine {
     private void updateAutodrive(double dt) {
         world.tick((float) dt);
         updatePatches(dt);
+
+        // ── E2E waypoint tour: named stops, labeled shots, clean exit ──
+        if (e2eMode) {
+            updateE2ETour(dt);
+            return;
+        }
+
         shotTimer += dt;
         if (shotTimer >= 0.5) {
             shotTimer = 0.0;
@@ -3521,6 +3572,69 @@ public class GameEngine {
             case 5 -> { // strafe sideways to see a room doorway
                 p.x += 2.0f * (float) dt;
                 cam.setYaw(90f);
+            }
+        }
+        cam.setPosition(p);
+    }
+
+    /**
+     * E2E waypoint tour — the amazing test flow. Scripted stops, each with a
+     * labeled screenshot and an [E2E] marker the harness greps. Exits cleanly
+     * after the last waypoint (System.exit(0)) so CI can chain:
+     *   build → --e2e <dir> → verify shots exist + non-black.
+     */
+    private void updateE2ETour(double dt) {
+        Camera cam = player.getCamera();
+        Vector3f p = cam.getPosition();
+        float hallY = world.getHallways().isEmpty() ? 0f : world.getHallways().get(0).getStart().y;
+        float hallZ0 = world.getHallways().isEmpty() ? 0f : world.getHallways().get(0).getStart().z;
+        float hallZ1 = world.getHallways().isEmpty() ? 60f : world.getHallways().get(0).getEnd().z;
+
+        e2ePhaseTimer += dt;
+        // Each waypoint: 3s settle → shot → next. Lerp camera per phase.
+        double settle = 3.0;
+        boolean shoot = e2ePhaseTimer >= settle;
+
+        switch (e2eWaypoint) {
+            case 0 -> { // spawn — mansion approach
+                p.set(0f, hallY + 1.7f, hallZ0 - 6f);
+                cam.setYaw(0); cam.setPitch(0);
+                if (shoot) { captureLabeled("01_spawn_view"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 1 -> { // turing tape — look down at the glowing strip
+                p.set(0f, hallY + 1.7f, hallZ0 + 6f);
+                cam.setYaw(0); cam.setPitch(50f);
+                if (shoot) { captureLabeled("02_turing_tape"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 2 -> { // hallway run — the long view down the main hall
+                p.set(0f, hallY + 1.7f, hallZ0 + 12f);
+                cam.setYaw(0); cam.setPitch(0);
+                if (shoot) { captureLabeled("03_main_hall"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 3 -> { // room doorway — a repo room entrance
+                p.set(2.5f, hallY + 1.7f, hallZ0 + 18f);
+                cam.setYaw(90); cam.setPitch(0);
+                if (shoot) { captureLabeled("04_room_doorway"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 4 -> { // crystals — TODO field from above-ish
+                p.set(-2.0f, hallY + 1.7f, (hallZ0 + hallZ1) / 2f);
+                cam.setYaw(180); cam.setPitch(20f);
+                if (shoot) { captureLabeled("05_todo_crystals"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 5 -> { // end of hall — looking back (whole mansion)
+                p.set(0f, hallY + 1.7f, hallZ1 - 4f);
+                cam.setYaw(180); cam.setPitch(0);
+                if (shoot) { captureLabeled("06_hall_lookback"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 6 -> { // agents — NPC area from a corner
+                p.set(1.5f, hallY + 1.7f, hallZ0 + 10f);
+                cam.setYaw(-45); cam.setPitch(-5);
+                if (shoot) { captureLabeled("07_agents"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            default -> { // done — clean exit for CI
+                System.out.println("[E2E] tour complete — 7 waypoints captured. Exiting.");
+                cleanup();
+                System.exit(0);
             }
         }
         cam.setPosition(p);

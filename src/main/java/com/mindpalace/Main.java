@@ -18,6 +18,8 @@ public class Main {
         for (int i = 0; i < args.length; i++) {
             if (args[i].equals("--autodrive") && i + 1 < args.length) {
                 engine.setAutodrive(args[i + 1]);
+            } else if (args[i].equals("--e2e") && i + 1 < args.length) {
+                engine.setE2E(args[i + 1]);
             } else if (args[i].equals("--selftest")) {
                 engine.setSelfTest();
             }
