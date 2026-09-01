@@ -8,7 +8,6 @@ import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.world.OutsideWorld;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
-import org.lwjgl.opengl.GL11;
 
 /**
  * InteractionPromptSystem — ONE unified "nearby interactable" prompt (TASK 0002).
@@ -137,7 +136,7 @@ public class InteractionPromptSystem {
 
         // ── Books — nearest placed book in the current room, near view ──
         // (The crosshair tooltip/highlight stay separate — those need a direct
-        //  look; the prompt only needs the book to be nearby and in view.)
+        // look; the prompt only needs the book to be nearby and in view.)
         Room room = player.getCurrentRoom();
         if (room != null) {
             for (Book book : room.getBooks()) {
@@ -151,6 +150,20 @@ public class InteractionPromptSystem {
                 best = new Prompt("CLICK", "Read book: "
                     + (fn.length() > 28 ? fn.substring(0, 26) + ".." : fn), bp);
                 bestDist = d;
+            }
+
+            // ── Potted plant — CLICK fires the fact toast (Phase D finesse) ──
+            // Mirrors GameEngine.lookingAtPlant() exactly: same corner, same
+            // 1.5m reach, same 0.85 facing cone — so the prompt appears in
+            // exactly the situations where the click actually works.
+            Vector3f pp = plantPosition(room);
+            float pd = origin.distance(pp);
+            if (pd <= 1.5f && pd < bestDist) {
+                Vector3f pto = new Vector3f(pp).sub(origin).normalize();
+                if (front.dot(pto) > 0.85f) {
+                    best = new Prompt("CLICK", "Touch plant: random fact", pp);
+                    bestDist = pd;
+                }
             }
         }
 
@@ -190,6 +203,22 @@ public class InteractionPromptSystem {
     public Prompt current() { return current; }
 
     /**
+     * The potted plant's world position — SAME formula as
+     * WorldBuilder.renderRoom ornaments and GameEngine.lookingAtPlant
+     * (back corner: +0.6 inset from the left wall, side-dependent z).
+     * One source of truth would live on Room; until then this mirrors it.
+     */
+    private static Vector3f plantPosition(Room room) {
+        Vector3f c = room.getRoomCenter();
+        float w = Room.ROOM_WIDTH, d = Room.ROOM_DEPTH, h = Room.ROOM_HEIGHT;
+        int side = room.getHallwaySide();
+        float floorY = c.y - h / 2f;
+        float plantX = c.x - w / 2f + 0.6f;
+        float plantZ = side == 0 ? c.z + d / 2f - 0.6f : c.z - d / 2f + 0.6f;
+        return new Vector3f(plantX, floorY + 0.55f, plantZ);
+    }
+
+    /**
      * Render the selected prompt as a HUD-anchored overlay billboard: 3m
      * along the FULL look direction plus a small offset along the CAMERA's
      * up axis (extracted from the view matrix), so the prompt sits at a
@@ -219,26 +248,10 @@ public class InteractionPromptSystem {
 
         fontRenderer.renderBillboardOverlay(current.text(), anchor, 0.065f, PROMPT_COLOR, proj, view, camPos);
 
-        // ── DEBUG (TASK 0002): read back the anchor's pixels to prove whether
-        // the overlay actually lands in the framebuffer. Temporary.
-        try {
-            Vector3f clip = new Vector3f(anchor).mulPosition(new Matrix4f(proj).mul(view));
-            if (clip.z >= -1f && clip.z <= 1f) {
-                int sx = (int) ((clip.x * 0.5f + 0.5f) * 1920f);
-                int sy = (int) ((clip.y * 0.5f + 0.5f) * 1080f);
-                if (sx >= 0 && sx < 1916 && sy >= 0 && sy < 1076) {
-                    java.nio.ByteBuffer px = org.lwjgl.BufferUtils.createByteBuffer(16 * 4);
-                    GL11.glReadPixels(sx, sy, 4, 4, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, px);
-                    System.out.println("[PromptDBG] anchor=" + anchor + " clip=" + clip
-                        + " px(" + sx + "," + sy + ") rgb0=(" + (px.get(0) & 0xFF) + ","
-                        + (px.get(1) & 0xFF) + "," + (px.get(2) & 0xFF) + ")"
-                        + " rgb4=(" + (px.get(16) & 0xFF) + "," + (px.get(17) & 0xFF) + "," + (px.get(18) & 0xFF) + ")");
-                }
-            }
-        } catch (Exception e) {
-            System.out.println("[PromptDBG] failed: " + e);
-        }
-
+        // Text-change logging only (not per-frame). NOTE: a temporary
+        // glReadPixels pixel-debug block lived here during bring-up; it was
+        // removed because glReadPixels stalls the render pipeline every
+        // frame — the prompt scan must stay FPS-neutral.
         String t = current.text();
         if (!t.equals(lastText)) {
             lastText = t;
