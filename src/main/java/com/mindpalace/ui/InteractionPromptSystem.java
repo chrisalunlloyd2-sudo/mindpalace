@@ -8,6 +8,7 @@ import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.world.OutsideWorld;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import org.lwjgl.opengl.GL11;
 
 /**
  * InteractionPromptSystem — ONE unified "nearby interactable" prompt (TASK 0002).
@@ -217,6 +218,26 @@ public class InteractionPromptSystem {
             .add(new Vector3f(camUp).mul(PROMPT_RISE));
 
         fontRenderer.renderBillboardOverlay(current.text(), anchor, 0.065f, PROMPT_COLOR, proj, view, camPos);
+
+        // ── DEBUG (TASK 0002): read back the anchor's pixels to prove whether
+        // the overlay actually lands in the framebuffer. Temporary.
+        try {
+            Vector3f clip = new Vector3f(anchor).mulPosition(new Matrix4f(proj).mul(view));
+            if (clip.z >= -1f && clip.z <= 1f) {
+                int sx = (int) ((clip.x * 0.5f + 0.5f) * 1920f);
+                int sy = (int) ((clip.y * 0.5f + 0.5f) * 1080f);
+                if (sx >= 0 && sx < 1916 && sy >= 0 && sy < 1076) {
+                    java.nio.ByteBuffer px = org.lwjgl.BufferUtils.createByteBuffer(16 * 4);
+                    GL11.glReadPixels(sx, sy, 4, 4, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, px);
+                    System.out.println("[PromptDBG] anchor=" + anchor + " clip=" + clip
+                        + " px(" + sx + "," + sy + ") rgb0=(" + (px.get(0) & 0xFF) + ","
+                        + (px.get(1) & 0xFF) + "," + (px.get(2) & 0xFF) + ")"
+                        + " rgb4=(" + (px.get(16) & 0xFF) + "," + (px.get(17) & 0xFF) + "," + (px.get(18) & 0xFF) + ")");
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("[PromptDBG] failed: " + e);
+        }
 
         String t = current.text();
         if (!t.equals(lastText)) {
