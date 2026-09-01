@@ -123,12 +123,13 @@ public class InteractionPromptSystem {
                 if (d > DOOR_RANGE || d >= bestDist) continue;
                 Vector3f to = new Vector3f(dp).sub(origin).normalize();
                 if (front.dot(to) < FACING_DOT) continue;
-                StringBuilder sb = new StringBuilder("Open door: ").append(room.getDisplayLabel());
-                if (room.getLastCommit() != null && !room.getLastCommit().isEmpty()) {
-                    String lc = room.getLastCommit();
-                    sb.append(" | last: ").append(lc.length() > 40 ? lc.substring(0, 38) + ".." : lc);
-                }
-                best = new Prompt("ENTER", sb.toString(), dp);
+                // Short label — the prompt must fit the screen (~50 chars at
+                // 0.065 size); the full label + last commit already show on the
+                // door plaque/poster in-world, the prompt's job is the BUTTON.
+                String label = room.getDisplayLabel();
+                int sp = label.indexOf("] ");           // strip [PUBLIC]/[PRIVATE]
+                if (sp >= 0) label = label.substring(sp + 2);
+                best = new Prompt("ENTER", "Open door: " + label, dp);
                 bestDist = d;
             }
         }
@@ -188,22 +189,34 @@ public class InteractionPromptSystem {
     public Prompt current() { return current; }
 
     /**
-     * Render the selected prompt as a HUD-anchored billboard: pinned 3m in
-     * front of the camera slightly above view center (same geometry family
-     * as renderScreenHUD), so it sits in a fixed screen position whenever
-     * something is interactable — "follows the player everywhere", never
+     * Render the selected prompt as a HUD-anchored overlay billboard: 3m
+     * along the FULL look direction plus a small offset along the CAMERA's
+     * up axis (extracted from the view matrix), so the prompt sits at a
+     * FIXED screen position ~3° above view center at any pitch — looking
+     * down at a door or up at a pad never moves it (the first E2E run had
+     * a world-up anchor that pitch-drifted the prompt out of frame; the
+     * second used a horizontal-only anchor that drifted it 28° UP when
+     * aiming down). Depth test is disabled for the draw (renderBillboardOverlay)
+     * so world geometry NEVER occludes it — standing 1.5m from a door means
+     * the wall is closer than the 3m anchor, and a HUD element must win
+     * against the world, always. "Follows the player everywhere", never
      * world-pinned. No-op when nothing is selected.
      */
     public void render(FontRenderer fontRenderer, Matrix4f proj, Matrix4f view,
                        Vector3f camPos, Vector3f camFront) {
         if (fontRenderer == null || !fontRenderer.isReady() || current == null) return;
 
-        Vector3f anchor = new Vector3f(camPos).add(
-            camFront.x * PROMPT_DIST,
-            camFront.y * PROMPT_DIST + PROMPT_RISE,
-            camFront.z * PROMPT_DIST);
+        // Camera-space up: the view matrix's rotation is world→camera, so its
+        // transpose's column 1 is the camera's +Y (up) in world space. Copy
+        // first — joml transpose() mutates in place (never poison the caller's
+        // matrix; two-arg getColumn per the joml 1.10.5 API).
+        Vector3f camUp = new Matrix4f(view).transpose().getColumn(1, new Vector3f()).normalize();
 
-        fontRenderer.renderBillboard(current.text(), anchor, 0.065f, PROMPT_COLOR, proj, view, camPos);
+        Vector3f anchor = new Vector3f(camPos)
+            .add(new Vector3f(camFront).mul(PROMPT_DIST))
+            .add(new Vector3f(camUp).mul(PROMPT_RISE));
+
+        fontRenderer.renderBillboardOverlay(current.text(), anchor, 0.065f, PROMPT_COLOR, proj, view, camPos);
 
         String t = current.text();
         if (!t.equals(lastText)) {

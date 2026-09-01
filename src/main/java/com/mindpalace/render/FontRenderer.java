@@ -206,6 +206,26 @@ public class FontRenderer {
         renderInternal(text, position, charSize, color, projection, view, toCam, false, true);
     }
 
+    /**
+     * Overlay billboard — HUD-style text that is NEVER occluded by world
+     * geometry: the depth test is disabled for the draw, so a prompt anchored
+     * 3m in front of the camera still reads even when the player is standing
+     * closer than 3m to a wall/door (which would otherwise z-fight the text
+     * away). Same orientation as renderBillboard. Used by the unified
+     * interaction prompt (InteractionPromptSystem) — a HUD element must win
+     * against the world, always.
+     */
+    public void renderBillboardOverlay(String text, Vector3f position, float charSize, Vector3f color,
+                                       Matrix4f projection, Matrix4f view, Vector3f camPos) {
+        Vector3f toCam = new Vector3f(camPos).sub(position).normalize();
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        try {
+            renderInternal(text, position, charSize, color, projection, view, toCam, false, true);
+        } finally {
+            GL11.glEnable(GL11.GL_DEPTH_TEST);
+        }
+    }
+
     private void renderInternal(String text, Vector3f position, float charSize, Vector3f color,
                                 Matrix4f projection, Matrix4f view, Vector3f facingNormal,
                                 boolean floor, boolean billboard) {
