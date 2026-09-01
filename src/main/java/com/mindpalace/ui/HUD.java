@@ -2,13 +2,20 @@ package com.mindpalace.ui;
 
 import com.mindpalace.render.Renderer;
 import com.mindpalace.entity.Player;
-import com.mindpalace.world.Room;
 import com.mindpalace.world.WorldBuilder;
 import org.joml.Vector3f;
 
 /**
  * HUD — door interaction prompts with repo name + last commit.
+ *
+ * SUPERSEDED by {@link InteractionPromptSystem} (TASK 0002, 2026-08-31) —
+ * the unified nearby-interactable prompt. Kept per the never-delete rule:
+ * this class computed a door prompt but only printed it to the console; it
+ * never rendered anything on screen (a real rendering bug the unified
+ * system fixes — prompts now draw as HUD-anchored billboards). Nothing calls
+ * render() anymore; GameEngine constructs it for history only.
  */
+@Deprecated
 public class HUD {
     private static final float INTERACT_RANGE = 2.5f;
     private String lastPrompt = "";
@@ -18,7 +25,7 @@ public class HUD {
         Vector3f front = player.getLookDirection();
         String prompt = "";
 
-        for (Room room : world.getRooms()) {
+        for (com.mindpalace.world.Room room : world.getRooms()) {
             Vector3f dp = room.getDoorPosition();
             if (dp == null) continue;
             if (origin.distance(dp) < INTERACT_RANGE) {

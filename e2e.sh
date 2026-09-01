@@ -39,7 +39,7 @@ import sys, os, struct, zlib
 d = sys.argv[1]
 labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gauge","05_main_hall",
           "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad",
-          "11_nash_fountain"]
+          "11_nash_fountain","12_door_prompt"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:
@@ -105,6 +105,27 @@ else:
     ok = amber > 100 and cerulean > 100
     print(f"portal color pair: amber={amber} cerulean={cerulean} "
           + ("OK" if ok else "HUE-FAIL"))
+    if not ok: fail += 1
+
+# Unified interaction prompt hue assertion (TASK 0002) — the 12_door_prompt
+# shot stands 1.5m from a repo door facing it, so the magenta prompt
+# ("[ENTER] Open door: ...") must render HUD-anchored above view center.
+# Prompt color = (1.0, 0.2, 0.9) — the ONLY magenta HUD text (wallet is gold,
+# room info cyan, hotkeys grey), so b and r both high with g low is a clean
+# signature. Sample the middle band; require >40 hits (a text line at
+# 1920x1080 with 0.065 char size yields hundreds; control shots have ~0).
+prompt = [f for f in os.listdir(d) if f.startswith("12_door_prompt")] if os.path.isdir(d) else []
+if not prompt:
+    print("MISSING 12_door_prompt hue check"); fail += 1
+else:
+    w, h, raw, stride = load_png(os.path.join(d, prompt[0]))
+    magenta = 0
+    for y in range(int(h*0.35), int(h*0.60), 1):
+        for x in range(w//4, 3*w//4, 2):
+            r, g, b = px_at(raw, stride, x, y)
+            if r > 140 and b > 120 and g < 90 and r > g + 70 and b > g + 50: magenta += 1
+    ok = magenta > 40
+    print(f"door prompt magenta text: {magenta} " + ("OK" if ok else "HUE-FAIL"))
     if not ok: fail += 1
 print("VERIFY-PASS" if fail == 0 else f"VERIFY-FAIL ({fail})")
 sys.exit(0 if fail == 0 else 1)

@@ -66,7 +66,9 @@ public class GameEngine {
     private Player player;
     private DressingRoom dressingRoom;   // F7: avatar dressing room (360° orbit editor)
     private Input input;
-    private HUD hud;
+    @SuppressWarnings("deprecation")
+    private HUD hud;   // superseded by promptSystem (TASK 0002) — kept for history (never-delete rule)
+    private com.mindpalace.ui.InteractionPromptSystem promptSystem;   // unified nearby-interactable prompt (TASK 0002)
     private BookEditor bookEditor;
     private GitHubClient github;
     private AudioEngine audio;
@@ -289,6 +291,8 @@ public class GameEngine {
         // Dressing room owns the player avatar — Cortana preset as the starting point.
         dressingRoom = new DressingRoom(com.mindpalace.avatar.AvatarLibrary.preset("cortana"));
         hud = new HUD();
+        promptSystem = new com.mindpalace.ui.InteractionPromptSystem();
+        System.out.println("[Prompt] unified interaction prompt system online (TASK 0002)");
         audio = new AudioEngine();
         player.setAudio(audio);
         music = new MusicEngine();
@@ -1390,7 +1394,19 @@ public class GameEngine {
         }
 
         if (state == GameState.PLAYING) {
-            hud.render(renderer, player, world);
+            // Unified nearby-interactable prompt (TASK 0002): ONE prompt for
+            // doors, books, pads, shops, mansion — HUD-anchored so it follows
+            // the player. Selection is cheap (O(n) over nearby lists); render
+            // is a billboard pinned 3m in front of the camera like the HUD.
+            com.mindpalace.ui.InteractionPromptSystem.Prompt p =
+                promptSystem.select(player, world,
+                    agentChat != null && agentChat.isTyping());
+            if (p != null) {
+                Camera cam = player.getCamera();
+                promptSystem.render(fontRenderer,
+                    cam.getProjectionMatrix((float) width / height),
+                    cam.getViewMatrix(), cam.getPosition(), cam.getFront());
+            }
         }
 
         if (bookEditor.isOpen()) {
@@ -3612,6 +3628,144 @@ public class GameEngine {
             + " portal color pairing (complementary pairs, adjacent pads distinct)");
         if (portalThemeOk) pass++; else fail++;
 
+        // 39. Unified interaction prompt system (TASK 0002) — ONE prompt that
+        //     follows the player and names the button for whatever is nearby:
+        //     door → [ENTER] Open door, book → [CLICK] Read book, teleporter
+        //     pad → [ENTER] Use teleporter, nothing nearby → hidden. Drives the
+        //     REAL selection path (promptSystem.select) at real positions.
+        boolean promptOk = promptSystem != null;
+        int promptChecks = 0, promptPassed = 0;
+        if (promptOk) {
+            state = GameState.PLAYING;
+            // Case A: walk up to a real door → door prompt with ENTER button.
+            //         Doors are within 3m reach and need only ~41° facing, so
+            //         this mirrors standing in the hallway in front of a room.
+            Room anyRoom = null;
+            for (Room rm : world.getRooms()) {
+                if (rm.getDoorPosition() != null) { anyRoom = rm; break; }
+            }
+            if (anyRoom != null) {
+                Vector3f dp = anyRoom.getDoorPosition();
+                // stand ~1.8m before the door on the hall center-line side,
+                // facing the door (mirrors exitRoom's placement convention:
+                // side-0 doors exit to dp.x + 1.2, side-1 to dp.x - 1.2)
+                Vector3f stand = new Vector3f(dp.x + (anyRoom.getHallwaySide() == 0 ? 1.8f : -1.8f),
+                    dp.y + 0.6f, dp.z);
+                player.getCamera().setPosition(stand);
+                aimCameraAt(new Vector3f(dp).sub(stand).normalize());
+                promptChecks++;
+                com.mindpalace.ui.InteractionPromptSystem.Prompt pd =
+                    promptSystem.select(player, world, false);
+                if (pd != null && "ENTER".equals(pd.button)
+                    && pd.action.startsWith("Open door:")) {
+                    promptPassed++;
+                    System.out.println("  [Prompt-A] door prompt: " + pd.text());
+                } else {
+                    System.out.println("  [Prompt-A] expected door prompt, got: "
+                        + (pd == null ? "(none)" : pd.text()));
+                }
+            }
+            // Case B: inside a room with placed books → book prompt (CLICK).
+            Room bookRoom = null;
+            Book bookAim = null;
+            outerB:
+            for (Room rm : world.getRooms()) {
+                player.teleportIntoRoom(rm);
+                render(0);
+                for (Book b : rm.getBooks()) {
+                    if (b.isPlaced()) { bookRoom = rm; bookAim = b; break outerB; }
+                }
+            }
+            if (bookRoom != null && bookAim != null) {
+                Vector3f bpos = new Vector3f(bookAim.getWorldX(), bookAim.getWorldY(), bookAim.getWorldZ());
+                Vector3f dir = new Vector3f(bpos).sub(player.getPosition());
+                if (dir.length() > 2.5f) {
+                    // pull in to 2.5m of the book, keeping the aim line
+                    dir.normalize();
+                    player.getCamera().setPosition(
+                        new Vector3f(bpos).sub(dir.mul(2.5f)));
+                }
+                aimCameraAt(new Vector3f(bpos).sub(player.getPosition()).normalize());
+                promptChecks++;
+                com.mindpalace.ui.InteractionPromptSystem.Prompt pb =
+                    promptSystem.select(player, world, false);
+                if (pb != null && "CLICK".equals(pb.button)
+                    && pb.action.startsWith("Read book:")) {
+                    promptPassed++;
+                    System.out.println("  [Prompt-B] book prompt: " + pb.text());
+                } else {
+                    System.out.println("  [Prompt-B] expected book prompt, got: "
+                        + (pb == null ? "(none)" : pb.text()));
+                }
+            }
+            // Case C: stand on a teleporter pad → pad prompt (ENTER, teleporter).
+            // teleportToPad clears currentRoom (Case B left the player inside a
+            // room, which would gate pad detection) and lands exactly on the
+            // pad; its teleportCooldown=1.0 decays inside update(1.5).
+            List<Vector3f> tpads2 = world.getTeleporterPads();
+            if (!tpads2.isEmpty()) {
+                player.teleportToPad(0, world);
+                update(1.5); // tick: padFloor detection happens in Player.update
+                promptChecks++;
+                com.mindpalace.ui.InteractionPromptSystem.Prompt pp =
+                    promptSystem.select(player, world, false);
+                if (pp != null && "ENTER".equals(pp.button)
+                    && pp.action.contains("teleporter")) {
+                    promptPassed++;
+                    System.out.println("  [Prompt-C] pad prompt: " + pp.text());
+                } else {
+                    System.out.println("  [Prompt-C] expected pad prompt, got: "
+                        + (pp == null ? "(none)" : pp.text()));
+                }
+            }
+            // Case D: nothing nearby (mid-hall, facing along it) → hidden.
+            // Self-locating: walk the hall center-line and find a z that is
+            // >3.2m from EVERY door and >3m from every pad, then assert the
+            // prompt is hidden there (don't assume the geometry).
+            if (!world.getHallways().isEmpty()) {
+                Hallway hw0 = world.getHallways().get(0);
+                float hallY = hw0.getStart().y + 1.6f;
+                Vector3f quiet = null;
+                for (float z = hw0.getStart().z + 2f; z < hw0.getEnd().z - 2f && quiet == null; z += 0.5f) {
+                    Vector3f cand = new Vector3f(0f, hallY, z);
+                    boolean clear = true;
+                    for (Room rm : world.getRooms()) {
+                        Vector3f rdp = rm.getDoorPosition();
+                        if (rdp == null) continue;
+                        if (Math.abs(rdp.z - z) < 3.2f) { clear = false; break; }  // door proximity
+                    }
+                    if (clear) {
+                        for (Vector3f pad : world.getTeleporterPads()) {
+                            if (Math.abs(pad.z - z) < 3.0f) { clear = false; break; }
+                        }
+                    }
+                    if (clear) quiet = cand;
+                }
+                if (quiet != null) {
+                    player.getCamera().setPosition(quiet);
+                    player.getCamera().setYaw(0);
+                    player.getCamera().setPitch(0);
+                    update(0.0); // tick: padFloor re-detects (none) in Player.update
+                    promptChecks++;
+                    com.mindpalace.ui.InteractionPromptSystem.Prompt pn =
+                        promptSystem.select(player, world, false);
+                    if (pn == null) {
+                        promptPassed++;
+                        System.out.println("  [Prompt-D] no interactable → hidden (correct)");
+                    } else {
+                        System.out.println("  [Prompt-D] expected hidden, got: " + pn.text());
+                    }
+                } else {
+                    System.out.println("  [Prompt-D] skipped — no quiet spot on hall 0");
+                }
+            }
+            promptOk = promptChecks > 0 && promptPassed == promptChecks;
+        }
+        System.out.println((promptOk ? "PASS" : "FAIL")
+            + " unified interaction prompts (" + promptPassed + "/" + promptChecks
+            + " cases: door/book/pad/hidden)");
+        if (promptOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
     }
@@ -3760,8 +3914,33 @@ public class GameEngine {
                 cam.setYaw(0); cam.setPitch(-5);
                 if (shoot) { captureLabeled("11_nash_fountain"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            case 11 -> { // door prompt — the unified interaction prompt at a repo door
+                // Stand ~1.5m in front of the FIRST room's door (side 0 doors
+                // sit at x=-1.75; the prompt renders HUD-anchored above center
+                // whenever a door is within 3m reach + facing).
+                Vector3f door0 = null;
+                for (Room rm : world.getRooms()) {
+                    if (rm.getDoorPosition() != null) { door0 = rm.getDoorPosition(); break; }
+                }
+                if (door0 != null) {
+                    // face the door from the hall center-line, ~1.5m away
+                    // (side-0 doors sit at x=-1.75, side-1 at x=+1.75 — stand
+                    // toward the hall interior, i.e. toward x=0)
+                    float towardHall = door0.x < 0 ? 1.5f : -1.5f;
+                    Vector3f stand = new Vector3f(door0.x + towardHall, door0.y + 0.7f, door0.z);
+                    p.set(stand);
+                    Vector3f aim = new Vector3f(door0).sub(stand).normalize();
+                    float yaw = (float) Math.toDegrees(Math.atan2(aim.x, aim.z));
+                    float pitch = (float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y))));
+                    cam.setYaw(yaw); cam.setPitch(pitch);
+                } else {
+                    p.set(0f, hallY + 1.7f, hallZ0 + 4f);
+                    cam.setYaw(0); cam.setPitch(0);
+                }
+                if (shoot) { captureLabeled("12_door_prompt"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 11 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 12 waypoints captured. Exiting.");
                 cleanup();
                 System.exit(0);
             }
