@@ -179,6 +179,8 @@ public class GameEngine {
     private com.mindpalace.world.RotorRoom rotorRoom;
     // Banburismus gauge — the deciban meter (live GA evidence).
     private com.mindpalace.world.BanburismusGauge banburismusGauge;
+    // Nash fountain — droplets freeze mid-air at equilibrium (courtyard).
+    private com.mindpalace.world.NashFountain nashFountain;
     // Real file tool executor (read/edit/create/delete) — never-twice + telemetry.
     private ToolExecutor toolExecutor;
     private static final String[] FACTS = {
@@ -392,6 +394,11 @@ public class GameEngine {
             banburismusGauge = new com.mindpalace.world.BanburismusGauge(
                 new Vector3f(-WorldBuilder.HALLWAY_WIDTH / 2f + 0.4f, hs.y + 2.8f, hs.z + 8f));
             System.out.println("[Banburismus] gauge mounted on hall wall z=" + (hs.z + 8f));
+
+            // Nash fountain: equilibrium made physical, beside the rotor rings.
+            nashFountain = new com.mindpalace.world.NashFountain(
+                new Vector3f(3.5f, hs.y, hs.z - 14f));
+            System.out.println("[NashFountain] pool in the courtyard z=" + (hs.z - 14f));
         }
 
         // Wire the editor's language toggle to the shared LoRA switcher + KG.
@@ -1347,6 +1354,13 @@ public class GameEngine {
                 banburismusGauge.update(audioEvolver.bestScore(), audioEvolver.meanScore());
             }
             banburismusGauge.render(renderer, player.getCamera().getPosition(), GLFW.glfwGetTime());
+        }
+
+        // Nash fountain — fed by the same live GA; freezes at equilibrium.
+        if (nashFountain != null) {
+            if (audioEvolver != null) nashFountain.update(audioEvolver.bestScore());
+            nashFountain.render(renderer, player.getCamera().getPosition(),
+                GLFW.glfwGetTime(), 1f / 60f);
         }
 
         // Render agent NPCs (bodies) + TODO crystals
@@ -3741,8 +3755,13 @@ public class GameEngine {
                 cam.setYaw(0); cam.setPitch(-12f);
                 if (shoot) { captureLabeled("10_portal_pad"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            case 10 -> { // nash fountain — courtyard pool beside the rotor rings
+                p.set(3.5f, hallY + 1.7f, hallZ0 - 10f);
+                cam.setYaw(0); cam.setPitch(-5);
+                if (shoot) { captureLabeled("11_nash_fountain"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 10 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 11 waypoints captured. Exiting.");
                 cleanup();
                 System.exit(0);
             }

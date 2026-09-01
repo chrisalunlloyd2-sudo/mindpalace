@@ -38,7 +38,8 @@ python - "$DIR" <<'PYEOF'
 import sys, os, struct, zlib
 d = sys.argv[1]
 labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gauge","05_main_hall",
-          "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad"]
+          "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad",
+          "11_nash_fountain"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:
