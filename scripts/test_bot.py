@@ -26,8 +26,16 @@ JAVA = r"C:/Program Files/Java/jdk-17/bin/java"
 JVM = ["-Dprism.order=sw", "-Dprism.vsync=false",
        "-XX:+UseG1GC", "-XX:MaxGCPauseMillis=200", "-Xms256m", "-Xmx768m"]
 EXPECTED_LABELS = ["01_spawn_view", "02_rotor_rings", "03_turing_tape",
-                   "04_banburismus_gauge", "05_main_hall", "06_doorway",
-                   "07_crystals", "08_lookback", "09_agents"]
+                   "04_banburismus_gauge", "05_main_hall", "06_room_doorway",
+                   "07_todo_crystals", "08_hall_lookback", "09_agents",
+                   "10_portal_pad", "11_nash_fountain", "12_door_prompt",
+                   "13_plugboard"]
+# shots are written as NN_label_MM.png (waypoint + frame index)
+
+
+def shot_labels(d):
+    """Actual shots on disk — robust to the tour gaining waypoints."""
+    return sorted(p.name[:-4] for p in Path(d).glob("[0-9][0-9]_*.png"))
 
 
 def decode_png(path):
@@ -89,8 +97,16 @@ def decode_png(path):
 def verify_shots(d):
     d = Path(d)
     ok, report = True, []
+    found = shot_labels(d)
+    if not found:
+        print("NO SHOTS FOUND — E2E tour produced nothing")
+        return 1
     for label in EXPECTED_LABELS:
-        p = d / f"{label}.png"
+        if not any(f.startswith(label) or f.rsplit("_", 1)[0] == label for f in found):
+            report.append(f"MISSING waypoint {label}")
+            ok = False
+    for fname in found:
+        p = d / f"{fname}.png"
         if not p.exists():
             report.append(f"MISSING {label}.png"); ok = False; continue
         r = decode_png(p)
@@ -108,7 +124,7 @@ def verify_shots(d):
                 colors.add((r8 // 16, g8 // 16, b8 // 16))
         mean = total / max(n, 1)
         status = "OK" if (mean > 12 and len(colors) > 8) else "BLACK/FLAT"
-        report.append(f"{label}: {w}x{h} mean_lum={mean:.1f} colors={len(colors)} {status}")
+        report.append(f"{fname}: {w}x{h} mean_lum={mean:.1f} colors={len(colors)} {status}")
         if status != "OK":
             ok = False
     print("\n".join(report))
