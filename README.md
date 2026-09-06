@@ -3,6 +3,11 @@
 > A Doom-style first-person walkthrough of your code universe, where every door
 > is a GitHub repo, every book is a file, and two small language models live
 > inside the walls — reading, gossiping, and mining your code while you walk.
+>
+> **Now running the Autonomous Finishing Program** — 50 hypotheses, 7 phases,
+> shipped by a swarm of quota-free bots with machine-verified evidence at
+> every step. See [`HYPOTHESES_50.md`](HYPOTHESES_50.md) and the
+> [step-log issue](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/9).
 
 MindPalace turns your GitHub account into a grand, explorable palace. Walk a
 warm, fog-lit hallway where each door opens into a room built from a real
@@ -19,17 +24,18 @@ pull into the editor.
 
 1. [The Vision](#the-vision)
 2. [Current State](#current-state)
-3. [Key Parts of the Game](#key-parts-of-the-game)
-4. [Quick Start](#quick-start)
-5. [Controls](#controls)
-6. [The Options Panel](#the-options-panel)
-7. [Gameplay Guide](#gameplay-guide)
-8. [The Agents & Code Mining](#the-agents--code-mining)
-9. [Live Patching](#live-patching)
-10. [Project Structure](#project-structure)
-11. [Tech Stack](#tech-stack)
-12. [FAQ](#faq)
-13. [Roadmap](#roadmap)
+3. [The Autonomous Finishing Program](#the-autonomous-finishing-program)
+4. [Key Parts of the Game](#key-parts-of-the-game)
+5. [Quick Start](#quick-start)
+6. [Controls](#controls)
+7. [The Options Panel](#the-options-panel)
+8. [Gameplay Guide](#gameplay-guide)
+9. [The Agents & Code Mining](#the-agents--code-mining)
+10. [Live Patching](#live-patching)
+11. [Project Structure](#project-structure)
+12. [Tech Stack](#tech-stack)
+13. [FAQ](#faq)
+14. [Roadmap](#roadmap)
 
 ---
 
@@ -105,6 +111,42 @@ editor with a keystroke. The databases grow massive — that's the point.
 - **Self-test harness** — `--selftest` runs 16 automated checks (world, books,
   teleporters, agents, crystals, KG, font, editor, bloom, invert-Y, map,
   chat, mouse turn radius, room personality, finesse) and exits 0/1
+
+---
+
+## The Autonomous Finishing Program
+
+**Active (2026-09-06)** — the palace is finishing itself.
+
+The SLM agents' chat logs told the truth the hard way: 81.8% meta-chatter,
+code production trending to zero. So the game is now run like a research
+program: 50 falsifiable hypotheses across 7 phases, each one a small
+modular change with a build → selftest → E2E → commit → push → step-log
+pipeline — executed by **quota-free bots**, not cloud LLM calls.
+
+| Phase | Hypotheses | What it fixes |
+|-------|-----------|---------------|
+| **A** — SLM cognition | H01–H12 | Critics review real work; repetition breakers; patch-format edits; meta-chatter gate. Target: meta <15%, code-bearing >25% |
+| **B** — World finishing | H13–H22 | Walls + roofs for all rooms (the unfinished houses), 3× forest with species + paths + audio, bloom presets + quorum flares |
+| **C** — Bot swarm | H23–H32 | Scout fireflies report real repo files into agent chat; BDI_FSM bridge; stress bot; bot aging |
+| **D** — Quorum ↔ GitHub | H33–H38 | Every step appends machine-verified evidence to the [step-log issue](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/9); open issues become crystals; push-gate needs quorum approval |
+| **E** — Entropy economy | H39–H42 | LLM calls cost credits; idle decay; energy budget — nothing runs for free |
+| **F** — GLM flash tier | H43–H46 | Cheap calls route to local flash models; cloud burst OFF by default — quota walls can't happen by accident |
+| **G** — Modules | H47–H50 | Dedupe sentinel, doc-drift sentinel, multiplayer contract, weekly self-report |
+
+**The bot swarm** (already live, all `scripts/`):
+
+- `scout_bot.py` — recon: live telemetry, routing/quorum stats, chat-quality
+  metrics (`--report`, `--watch`, `--metrics`, `--map`)
+- `test_bot.py` — machine proof: PNG shot verification (found the door-prompt
+  HUD bug on its first run), selftest JSON, CME stress hunting
+- `cascade_dev.sh` — one command ships one hypothesis: guard → freeze →
+  build → selftest → E2E → commit → push → GitHub step-log comment
+- `bot_swarm.sh` — launch/sweep/status with the one-game-instance rule
+
+**Doctrine**: nothing lives forever (bots age and retire), nothing runs for
+free (every call is priced in credits), always advancing (one hypothesis
+per cycle, never twice the same code or mistake).
 
 ---
 
@@ -449,6 +491,9 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `BUILD_STRATEGY.md` | Exact build command, jar-lock rule, self-test gate, bloom testing, release-upload recipe |
 | `BLACKBOARD.md` | Living phase tracker |
 | `PATCHING.md` | Live-patch schema + graphics hot-tuning |
+| `HYPOTHESES_50.md` | The 50-hypothesis autonomous finishing program (7 phases) |
+| `WORLD_FINISHER_PLAN.md` | Phase B spec: walls/roofs/forest/bloom standards |
+| `GLM_FLASH_BLUEPRINT.md` | Phase F spec: flash-tier model routing, quota firewall |
 
 ---
 
