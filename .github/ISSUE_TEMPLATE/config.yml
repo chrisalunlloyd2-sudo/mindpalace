@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Autonomous program status
+    url: https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/9
+    about: Step-log — live evidence of every shipped hypothesis (read before filing)
+  - name: DEV_SETUP gotchas
+    about: Most "bugs" on Windows are documented gotchas (model-gate, MSYS paths, frozen jar)
+    # see DEV_SETUP.md
