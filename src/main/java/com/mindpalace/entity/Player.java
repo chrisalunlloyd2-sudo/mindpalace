@@ -174,6 +174,34 @@ public class Player {
         }
     }
 
+    /**
+     * H13b: push the player out of a solid box along the axis of least
+     * penetration (x or z), based on where they came FROM. If the previous
+     * position was outside the box on x, push back on x; else on z. This
+     * gives natural wall-sliding instead of sticky corners.
+     */
+    private Vector3f resolveAxis(Vector3f next, Vector3f old, OutsideWorld ow, float r) {
+        // Try keeping the old coordinate on each axis in turn; pick whichever
+        // escape is smallest and doesn't land in another solid.
+        float px = next.x, pz = next.z;
+        // Escape on X: return to old.x
+        Vector3f tryX = new Vector3f(old.x, next.y, next.z);
+        Vector3f tryZ = new Vector3f(next.x, next.y, old.z);
+        boolean inX = ow.insideSolid(tryX.x, tryX.z, r) || ow.insideHouseSolid(tryX.x, tryX.z, r);
+        boolean inZ = ow.insideSolid(tryZ.x, tryZ.z, r) || ow.insideHouseSolid(tryZ.x, tryZ.z, r);
+        if (!inX && inZ) { next.x = tryX.x; return next; }
+        if (!inZ && inX) { next.z = tryZ.z; return next; }
+        if (!inX && !inZ) {
+            // Both escapes free — pick the smaller correction
+            if (Math.abs(old.x - px) <= Math.abs(old.z - pz)) { next.x = old.x; }
+            else { next.z = old.z; }
+            return next;
+        }
+        // Fully boxed in (corner case): revert to previous position
+        next.x = old.x; next.z = old.z;
+        return next;
+    }
+
     private Vector3f collide(Vector3f old, Vector3f next, WorldBuilder world) {
         float r = RADIUS;
         float hw = WorldBuilder.HALLWAY_WIDTH / 2f - 0.1f;
@@ -186,6 +214,14 @@ public class Player {
                 if (next.x > OutsideWorld.HALF_W - r) next.x = OutsideWorld.HALF_W - r;
                 if (next.z < OutsideWorld.MIN_Z + r) next.z = OutsideWorld.MIN_Z + r;
                 if (next.z > -30f - r) next.z = -30f - r;
+                // H13b: buildings are solid. Resolve on the axis of least
+                // penetration so sliding along a wall feels natural. Houses
+                // allow passage only through their front-door strip.
+                OutsideWorld ow = world.getOutsideWorld();
+                if (ow.insideSolid(next.x, next.z, r) || ow.insideHouseSolid(next.x, next.z, r)) {
+                    Vector3f resolved = resolveAxis(next, old, ow, r);
+                    next.x = resolved.x; next.z = resolved.z;
+                }
                 return next;
             }
             // Palace corridor: clamp to hallway width

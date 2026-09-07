@@ -57,6 +57,52 @@ public class OutsideWorld {
     private final Vector3f tocTreePos = new Vector3f(0f, 0f, -250f);
     private final Vector3f lakeCenter = new Vector3f(40f, 0f, -210f);
 
+    // ── Solid-world colliders (H13b, step 60) ─────────────────────────────
+    // Every building is an axis-aligned box the player cannot walk through.
+    // Houses keep a doorway gap on their -Z face (the door faces -Z).
+    public static final class Box {
+        public final float minX, maxX, minZ, maxZ;
+        public Box(float cx, float cz, float w, float d) {
+            this.minX = cx - w / 2f; this.maxX = cx + w / 2f;
+            this.minZ = cz - d / 2f; this.maxZ = cz + d / 2f;
+        }
+    }
+    private final java.util.List<Box> colliders = new java.util.ArrayList<>();
+    private final java.util.List<Box> houses = new java.util.ArrayList<>(); // doorway boxes
+
+    /** Register a solid building box. Called during scene build. */
+    private void addBox(java.util.List<Box> list, float cx, float cz, float w, float d) {
+        list.add(new Box(cx, cz, w, d));
+    }
+
+    /** All building colliders (walls only — houses' doorways handled apart). */
+    public java.util.List<Box> getColliders() { return colliders; }
+
+    /** Town houses: collider minus doorway — walk-in allowed only through the door. */
+    public java.util.List<Box> getHouses() { return houses; }
+
+    /** True if (x,z) is inside any solid collider (with player radius pad). */
+    public boolean insideSolid(float x, float z, float r) {
+        for (Box b : colliders)
+            if (x > b.minX - r && x < b.maxX + r && z > b.minZ - r && z < b.maxZ + r) return true;
+        return false;
+    }
+
+    /**
+     * House test with doorway allowance: inside the house footprint is solid
+     * EXCEPT a 1.6m-wide doorway strip centered on the house's front (-Z) face.
+     */
+    public boolean insideHouseSolid(float x, float z, float r) {
+        for (Box b : houses) {
+            if (x > b.minX - r && x < b.maxX + r && z > b.minZ - r && z < b.maxZ + r) {
+                boolean doorStrip = Math.abs(x - (b.minX + b.maxX) / 2f) < 0.8f + r
+                                    && z < b.minZ + 0.9f && z > b.minZ - 0.3f;
+                if (!doorStrip) return true;
+            }
+        }
+        return false;
+    }
+
     /** Mansion (player home) position — player + crystals spawn here. */
     public Vector3f getMansionPos() { return mansionPos; }
     /** TOC tree of knowledge position — walk up to retrieve system data. */
@@ -371,6 +417,9 @@ public class OutsideWorld {
         float w = 22f, d = 16f, h = 7f;
         float cy = floorY + h / 2f, t = 0.3f;
 
+        // Collider (registered once — H13b: the mansion is solid)
+        if (colliders.isEmpty()) addBox(colliders, mx, mz, w, d);
+
         // Foundation
         r.drawCube(new Vector3f(mx, floorY + 0.1f, mz), new Vector3f(w, 0.2f, d), Renderer.TEX_CONCRETE);
         // Walls (stone)
@@ -408,6 +457,7 @@ public class OutsideWorld {
         float hx = hospitalPos.x, hz = hospitalPos.z;
         float w = 18f, d = 12f, h = 6f;
         float cy = floorY + h / 2f, t = 0.3f;
+        if (colliders.size() == 1) addBox(colliders, hx, hz, w, d); // H13b: solid
         r.drawCube(new Vector3f(hx, floorY + 0.1f, hz), new Vector3f(w, 0.2f, d), Renderer.TEX_CONCRETE);
         r.drawCube(new Vector3f(hx, cy, hz - d / 2f), new Vector3f(w, h, t), Renderer.TEX_WHITE);
         r.drawCube(new Vector3f(hx, cy, hz + d / 2f), new Vector3f(w, h, t), Renderer.TEX_WHITE);
@@ -431,6 +481,7 @@ public class OutsideWorld {
         float fx = factoryPos.x, fz = factoryPos.z;
         float w = 30f, d = 20f, h = 8f;
         float cy = floorY + h / 2f, t = 0.3f;
+        if (colliders.size() == 2) addBox(colliders, fx, fz, w, d); // H13b: solid
         // Industrial shell
         r.drawCube(new Vector3f(fx, floorY + 0.1f, fz), new Vector3f(w, 0.2f, d), Renderer.TEX_CONCRETE);
         r.drawCube(new Vector3f(fx, cy, fz - d / 2f), new Vector3f(w, h, t), Renderer.TEX_METAL);
@@ -524,6 +575,11 @@ public class OutsideWorld {
 
     private void renderHouse(Renderer r, float hx, float floorY, float hz, boolean night, int h) {
         float w = 5f, d = 4f, hh = 3f;
+        // Collider + doorway (H13b): registered once per house, doorway on -Z
+        float hminX = hx - w / 2f, hminZ = hz - d / 2f;
+        boolean registered = false;
+        for (Box b : houses) if (b.minX == hminX && b.minZ == hminZ) { registered = true; break; }
+        if (!registered) addBox(houses, hx, hz, w, d);
         r.drawCube(new Vector3f(hx, floorY + 0.1f, hz), new Vector3f(w, 0.15f, d), Renderer.TEX_CONCRETE);
         r.drawCube(new Vector3f(hx, floorY + hh / 2f, hz - d / 2f), new Vector3f(w, hh, 0.2f), Renderer.TEX_WALL);
         r.drawCube(new Vector3f(hx, floorY + hh / 2f, hz + d / 2f), new Vector3f(w, hh, 0.2f), Renderer.TEX_WALL);
