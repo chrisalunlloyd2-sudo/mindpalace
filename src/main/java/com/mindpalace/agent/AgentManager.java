@@ -59,6 +59,16 @@ public class AgentManager {
     private final FOWGate fow = new FOWGate();
     private volatile String routedModel = TOOL_MODEL; // set by the router each cycle
 
+    /**
+     * The tool round's concrete actions (tool name → result lines), published
+     * by the scheduler worker at the end of {@link #executeToolRound} and read
+     * by the autonomous cycle when composing the critic's prompt. One writer
+     * (the scheduler's single worker) + one reader (agent thread) + volatile =
+     * safe publication; no locks (the CME rule forbids locking across render
+     * iteration sites).
+     */
+    private volatile String lastToolActions;
+
     // ── Chat → quorum → TODO bridge ────────────────────────────────────
     // The user's spec: "check chat logs, extract lexical vectors to quorum
     // voting, then trigger TODOs — they should get inputs from my git FOW or
@@ -314,17 +324,42 @@ public class AgentManager {
 
         // Tool agent now runs a REAL tool-calling loop: it can read/edit/create/
         // delete files in the current repo, not just emit text. The critic still
-        // reviews the outcome afterward.
+        // reviews the outcome afterward. runToolLoop is async (scheduler worker);
+        // it publishes its concrete actions into lastToolActions when done.
+        lastToolActions = null;  // stale from a previous cycle is worse than none
         runToolLoop();
 
-        // Critic reviews the tool agent's work (scheduler spaces it 5 min)
-        String criticPrompt = ctx(CRITIC_MODEL) + "\nThe tool agent just acted on the current room. Evaluate its work. Should we proceed? What risks or improvements?";
-        modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
-            .thenAccept(criticResp -> {
-                if (criticResp != null && !criticResp.isEmpty()) {
-                    emit(onCriticMessage, "[Auto] " + criticResp);
-                }
-            });
+        // Critic reviews the tool agent's work (scheduler spaces it 5 min).
+        // H01: the critic sees the ACTUAL actions (tool name → result), not a
+        // bare "the tool agent just acted". With nothing to review, the critic
+        // is skipped entirely — a reviewer without work is what produced the
+        // endless "Would you like to move forward?" hallucination loops.
+        String actions = lastToolActions;
+        if (actions == null || actions.isEmpty()) {
+            // Tool round may still be in flight (async); give it one short
+            // grace window before concluding there is nothing to review.
+            try { Thread.sleep(2500); } catch (InterruptedException ignored) {}
+            actions = lastToolActions;
+        }
+        if (actions == null || actions.isEmpty()) {
+            log("[AgentManager] critic skipped — no tool actions to review this cycle");
+        } else {
+            String criticPrompt = ctx(CRITIC_MODEL)
+                + "\nThe tool agent just did, in room " + (currentRoom != null ? currentRoom.getRepoName() : "?")
+                + ":\n" + actions
+                + "\nEvaluate these CONCRETE actions. Name the files touched. "
+                + "Is the result correct for the language? Should we proceed, "
+                + "and what is the single biggest risk? Be specific, no meta-talk.";
+            final String reviewed = actions;
+            modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
+                .thenAccept(criticResp -> {
+                    if (criticResp != null && !criticResp.isEmpty()) {
+                        emit(onCriticMessage, "[Critic] " + criticResp);
+                        if (telemetry != null) telemetry.record(
+                            com.mindpalace.backup.Telemetry.AGENT, "critic-reviewed", reviewed.length() + " chars");
+                    }
+                });
+        }
 
         // Quorum vote: register the cycle's proposal and let both models vote
         // (FOW-gated). The result is logged as the "voting schema" heartbeat.
@@ -709,7 +744,7 @@ public class AgentManager {
                 if (tr != null && tr.content != null && !tr.content.isEmpty()) {
                     emit(onToolMessage, "[Tool] " + tr.content);
                 }
-                return;
+                return;  // nothing happened → lastToolActions stays null (H01 skip)
             }
 
             // Execute each requested tool call, then feed results back for a
@@ -721,6 +756,15 @@ public class AgentManager {
                 results.add(call.name + " → " + result);
                 emit(onToolMessage, "[Tool] " + call.name + " → " + result);
             }
+
+            // H01 publication: the concrete action record the critic reviews.
+            // Cap at 3 results × 200 chars each to respect CRITIC_BUDGET.
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < results.size() && i < 3; i++) {
+                String r = results.get(i);
+                sb.append("- ").append(r.length() > 300 ? r.substring(0, 300) + "…" : r).append('\n');
+            }
+            lastToolActions = sb.toString();
 
             // Synthesis: the model reflects on what it just did.
             List<Map<String, String>> synth = new ArrayList<>();
