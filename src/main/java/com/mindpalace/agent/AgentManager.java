@@ -750,13 +750,31 @@ public class AgentManager {
                 return;  // nothing happened → lastToolActions stays null (H01 skip)
             }
 
-            // Execute each requested tool call, then feed results back for a
-            // synthesis round so the model reacts to its own actions (not just
-            // fire-and-forget). This closes the loop: act → observe → reflect.
+            // Execute each requested tool call, then feed results back in the
+            // PROPER Ollama sequence (H03): the assistant turn echoes its own
+            // tool_calls, then each tool result arrives as a role:"tool"
+            // message. The model sees its actions as history, not as a
+            // user-message summary — closing the loop on real content.
             List<String> results = new ArrayList<>();
+            StringBuilder tcJson = new StringBuilder("[");
+            for (int i = 0; i < tr.toolCalls.size(); i++) {
+                OllamaClient.ToolCall c = tr.toolCalls.get(i);
+                if (i > 0) tcJson.append(',');
+                tcJson.append("{\"function\":{\"name\":\"").append(escapeJson(c.name))
+                      .append("\",\"arguments\":").append(c.arguments == null ? "{}" : c.arguments).append("}}");
+            }
+            tcJson.append(']');
+
+            List<Map<String, String>> feedback = new ArrayList<>(msgs);
+            Map<String, String> assistantTurn = new java.util.HashMap<>(tr.content != null
+                ? Map.of("role", "assistant", "content", tr.content)
+                : Map.of("role", "assistant", "content", ""));
+            assistantTurn.put("tool_calls", tcJson.toString());
+            feedback.add(assistantTurn);
             for (OllamaClient.ToolCall call : tr.toolCalls) {
                 String result = executeTool(call);
                 results.add(call.name + " → " + result);
+                feedback.add(Map.of("role", "tool", "content", result));
                 emit(onToolMessage, "[Tool] " + call.name + " → " + result);
             }
 
@@ -769,19 +787,38 @@ public class AgentManager {
             }
             lastToolActions = sb.toString();
 
-            // Synthesis: the model reflects on what it just did.
-            List<Map<String, String>> synth = new ArrayList<>();
-            synth.add(Map.of("role", "system", "content", ctx(routedModel) + "\n" + TOOL_SYSTEM_PROMPT));
-            synth.add(Map.of("role", "user", "content",
-                "You just took these actions:\n" + String.join("\n", results)
-                + "\n\nSummarize what you did and what you'll do next, in one line."));
-            OllamaClient.ToolResult sr = ollama.chatWithTools(routedModel, synth, List.<com.google.gson.JsonObject>of());
+            // Synthesis round: model reacts to its own actions seen as real
+            // history (assistant tool_calls + tool results), per H03.
+            feedback.add(Map.of("role", "user", "content",
+                "You just took the actions shown above. In ONE line: what did you "
+                + "learn from the results, and what is the next concrete step?"));
+            OllamaClient.ToolResult sr = ollama.chatWithTools(routedModel, feedback, List.<com.google.gson.JsonObject>of());
             if (sr != null && sr.content != null && !sr.content.isEmpty()) {
                 emit(onToolMessage, "[Tool] " + sr.content);
             }
         } catch (Exception e) {
             log("[AgentManager] tool loop error: " + e.getMessage());
         }
+    }
+
+    /** Minimal JSON string escaping for tool-call replay (H03). */
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder(s.length() + 8);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+                    else sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     /** Execute a single tool call against the current room's repo. */

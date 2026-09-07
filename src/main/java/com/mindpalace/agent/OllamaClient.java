@@ -135,6 +135,15 @@ public class OllamaClient {
             JsonObject msg = new JsonObject();
             msg.addProperty("role", m.get("role"));
             msg.addProperty("content", m.get("content"));
+            // H03: assistant turns may carry tool_calls (the model's own
+            // prior actions); tool turns carry their results. Ollama's chat
+            // API accepts both — this is how the model SEES what it did,
+            // instead of a user-message summary of it.
+            if (m.containsKey("tool_calls") && !m.get("tool_calls").isEmpty()) {
+                try {
+                    msg.add("tool_calls", gson.fromJson(m.get("tool_calls"), JsonArray.class));
+                } catch (Exception ignored) { /* malformed — omit */ }
+            }
             msgs.add(msg);
         }
         body.add("messages", msgs);
