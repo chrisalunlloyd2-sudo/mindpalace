@@ -183,6 +183,8 @@ public class GameEngine {
     private com.mindpalace.world.BanburismusGauge banburismusGauge;
     // Nash fountain — droplets freeze mid-air at equilibrium (courtyard).
     private com.mindpalace.world.NashFountain nashFountain;
+    // Enigma plugboard — foyer puzzle; swapping plugs re-seeds the GA (E key).
+    private com.mindpalace.world.EnigmaPlugboard plugboard;
     // Real file tool executor (read/edit/create/delete) — never-twice + telemetry.
     private ToolExecutor toolExecutor;
     private static final String[] FACTS = {
@@ -403,6 +405,15 @@ public class GameEngine {
             nashFountain = new com.mindpalace.world.NashFountain(
                 new Vector3f(3.5f, hs.y, hs.z - 14f));
             System.out.println("[NashFountain] pool in the courtyard z=" + (hs.z - 14f));
+
+            // Enigma plugboard: foyer puzzle — swap plugs (E) to re-seed the GA.
+            // Mounted INSIDE the main hall on the right wall (opposite the
+            // gauge), eye height, clearly visible from the hall walkway.
+            plugboard = new com.mindpalace.world.EnigmaPlugboard(
+                new Vector3f(WorldBuilder.HALLWAY_WIDTH / 2f - 0.4f, hs.y + 1.4f, hs.z + 8f),
+                com.mindpalace.genetics.DeterministicSeed.seed("plugboard"));
+            System.out.println("[Plugboard] mounted on hall right wall z=" + (hs.z + 8f)
+                + ", wiring " + plugboard.wiringLabel());
         }
 
         // Wire the editor's language toggle to the shared LoRA switcher + KG.
@@ -708,6 +719,26 @@ public class GameEngine {
                 tocCooldown = 3.0;
                 System.out.println("[TOC] " + tocToast);
             }
+        }
+
+        // ── Courtyard coupling: rotor carries → sound; wind by position ──
+        // RotorRoom emits one-shot carry events each render tick (III tick /
+        // II chime / I bell); the audio engine voices them. Wind level rises
+        // as the player leaves the mansion (z decreases toward the forest).
+        if (rotorRoom != null && audio != null && state == GameState.PLAYING) {
+            int carry = rotorRoom.consumeCarry();
+            if (carry == 1) audio.playRotorTick(rotorRoom.rotorState(GLFW.glfwGetTime())[0]);
+            else if (carry == 2) audio.playRotorChime();
+            else if (carry == 3) audio.playRotorBell();
+
+            // Rotor-clock music: engage once, the score turns with the rings.
+            if (!music.isRotorClock()) music.setRotorClock(true);
+
+            // Wind: 0 inside rooms, ramps 0→1 across the courtyard→forest span.
+            Vector3f pp = player.getPosition();
+            float outside = pp.z < -20f ? 1f : 0f;   // beyond the courtyard
+            float ramp = (float) Math.max(0, Math.min(1, (-20f - pp.z) / 60f));
+            audio.setWindLevel(outside * ramp);
         }
 
         // Mansion interior — Enter at the mansion door toggles inside/outside.
@@ -1365,6 +1396,23 @@ public class GameEngine {
             if (audioEvolver != null) nashFountain.update(audioEvolver.bestScore());
             nashFountain.render(renderer, player.getCamera().getPosition(),
                 GLFW.glfwGetTime(), 1f / 60f);
+        }
+
+        // Enigma plugboard — render + E-key swap when near (re-seeds the GA).
+        if (plugboard != null) {
+            plugboard.render(renderer, player.getCamera().getPosition());
+            if (input != null && input.wasKeyPressed(GLFW.GLFW_KEY_E)
+                && plugboard.isInteractable(player.getPosition())) {
+                long newSeed = plugboard.swapNext();
+                if (audioEvolver != null) {
+                    audioEvolver.reseed(new java.util.Random(newSeed));
+                }
+                factToast = "PLUGBOARD " + plugboard.wiringLabel()
+                    + " — GA re-seeded (swap " + plugboard.swaps() + ")";
+                factToastTimer = 4.0;
+                System.out.println("[Plugboard] swap " + plugboard.swaps()
+                    + " wiring " + plugboard.wiringLabel() + " seed " + newSeed);
+            }
         }
 
         // Render agent NPCs (bodies) + TODO crystals
@@ -3939,8 +3987,13 @@ public class GameEngine {
                 }
                 if (shoot) { captureLabeled("12_door_prompt"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            case 12 -> { // enigma plugboard — puzzle board on the hall's right wall
+                p.set(0f, hallY + 1.7f, hallZ0 + 7f);
+                cam.setYaw(75); cam.setPitch(0);
+                if (shoot) { captureLabeled("13_plugboard"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 12 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 13 waypoints captured. Exiting.");
                 cleanup();
                 System.exit(0);
             }

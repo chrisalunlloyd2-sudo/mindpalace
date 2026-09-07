@@ -161,6 +161,17 @@ public class MusicEngine {
         }
     }
 
+    /**
+     * Rotor-clock bridge: when enabled, the chord progression advances one bar
+     * per rotor-III revolution (8 s) instead of per internal bar — the
+     * courtyard's music literally turns with the rings. The rotor's bar count
+     * selects the chord; everything else (tempo/beat) stays engine-driven.
+     */
+    public void setRotorClock(boolean on) { rotorClock = on; }
+    public boolean isRotorClock() { return rotorClock; }
+    private static volatile boolean rotorClock = false;
+    private static volatile long rotorBarOffset = 0; // rotor bar at enable time
+
     private static double midiHz(int midi) { return 440.0 * Math.pow(2.0, (midi - 69) / 12.0); }
 
     /**
@@ -172,8 +183,17 @@ public class MusicEngine {
                                       float bassLvl, float attack, float decay, long step) {
         double stepsPerSec = bpm / 60.0 * 4.0;
         double t = step / stepsPerSec;
-        int bar = (int) (step / STEPS_PER_BAR);
         int stepInBar = (int) (step % STEPS_PER_BAR);
+        // Bar source: internal counter, or the rotor odometer (one bar per
+        // rotor-III revolution) when the rotor clock is engaged.
+        int bar;
+        if (rotorClock) {
+            long rotorBar = (long) Math.floor(t / 8.0); // 8 s = one revolution
+            if (rotorBarOffset == 0) rotorBarOffset = rotorBar;
+            bar = (int) Math.floorMod(rotorBar - rotorBarOffset, 1L << 30);
+        } else {
+            bar = (int) (step / STEPS_PER_BAR);
+        }
         int chordIdx = Math.floorMod(bar, prog.length);
         int chordRoot = root + scale[prog[chordIdx]];
 

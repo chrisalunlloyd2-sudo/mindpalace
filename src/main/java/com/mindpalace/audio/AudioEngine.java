@@ -13,6 +13,9 @@ public class AudioEngine {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private SourceDataLine ambientLine;
     private boolean ambientPlaying;
+    private SourceDataLine windLine;
+    private volatile boolean windPlaying;
+    private volatile float windLevel = 0f;
     private long lastFootstep;
     private static final long FOOTSTEP_MS = 400;
 
@@ -41,6 +44,42 @@ public class AudioEngine {
         if (!enabled) return;
         executor.submit(() -> playTone(300, 0.08f, 0.12f, genNoiseBurst()));
     }
+
+    // ── Rotor courtyard sounds (carry events from RotorRoom) ──
+
+    /** Soft tick when rotor III steps — pitch follows the active cell. */
+    public void playRotorTick(int cell) {
+        if (!enabled) return;
+        double hz = 320 + cell * 40;   // 8 cells → 320–600 Hz ladder
+        executor.submit(() -> playTone(hz, 0.05f, 0.08f, genBlip(hz, 0.05f)));
+    }
+
+    /** Mid chime on a rotor II carry. */
+    public void playRotorChime() {
+        if (!enabled) return;
+        executor.submit(() -> playTone(660, 0.35f, 0.18f, genBell(660, 990, 0.35f)));
+    }
+
+    /** Low bell on a rotor I carry (once a minute) — the mansion notices. */
+    public void playRotorBell() {
+        if (!enabled) return;
+        executor.submit(() -> playTone(220, 0.8f, 0.22f, genBell(220, 330, 0.8f)));
+    }
+
+    /** Forest wind — quiet filtered noise, volume 0..1 by distance to trees. */
+    public void playWindStart() {
+        if (!enabled || windPlaying) return;
+        windPlaying = true;
+        executor.submit(this::windLoop);
+    }
+
+    public void playWindStop() {
+        windPlaying = false;
+        if (windLine != null) { windLine.close(); windLine = null; }
+    }
+
+    /** Live wind level 0..1 — called each frame from the render loop. */
+    public void setWindLevel(float level) { windLevel = Math.max(0, Math.min(1, level)); }
 
     public void playAmbientStart() {
         if (!enabled || ambientPlaying) return;
@@ -93,6 +132,36 @@ public class AudioEngine {
         if (ambientLine != null) { ambientLine.close(); ambientLine = null; }
     }
 
+    /** Forest wind: slow-breathing filtered noise, level-driven by distance. */
+    private void windLoop() {
+        try {
+            AudioFormat fmt = new AudioFormat(SAMPLE_RATE, 8, 1, true, false);
+            DataLine.Info info = new DataLine.Info(SourceDataLine.class, fmt);
+            windLine = (SourceDataLine) AudioSystem.getLine(info);
+            windLine.open(fmt, SAMPLE_RATE);
+            windLine.start();
+
+            double phase = 0;
+            byte[] buf = new byte[1024];
+            while (windPlaying) {
+                float lvl = windLevel;
+                for (int i = 0; i < buf.length; i++) {
+                    // Band-ish noise: white noise low-passed by a moving average
+                    // whose window breathes with a slow LFO (gust feel).
+                    double gust = 0.6 + 0.4 * Math.sin(phase * 0.11 + Math.sin(phase * 0.037) * 2.0);
+                    phase += 2 * Math.PI / SAMPLE_RATE;
+                    double s = (Math.random() - 0.5) * gust * lvl;
+                    // crude one-pole low-pass keeps it soft (not hissy)
+                    windLp = (float) (0.85 * windLp + 0.15 * s);
+                    buf[i] = (byte) (windLp * 90 * masterVolume);
+                }
+                windLine.write(buf, 0, buf.length);
+            }
+        } catch (Exception ignored) {}
+        if (windLine != null) { windLine.close(); windLine = null; }
+    }
+    private float windLp = 0f;
+
     // ── Waveform generators ──
 
     private byte[] genSweep(double startHz, double endHz, float duration) {
@@ -118,6 +187,33 @@ public class AudioEngine {
         return buf;
     }
 
+    /** Pure sine blip with sharp decay — rotor tick. */
+    private byte[] genBlip(double hz, float duration) {
+        int len = (int) (SAMPLE_RATE * duration);
+        byte[] buf = new byte[len];
+        for (int i = 0; i < len; i++) {
+            double t = (double) i / SAMPLE_RATE;
+            double env = Math.exp(-8.0 * i / len);
+            buf[i] = (byte) (Math.sin(2 * Math.PI * hz * t) * 70 * env * masterVolume);
+        }
+        return buf;
+    }
+
+    /** Bell: fundamental + inharmonic partial, slow exponential decay. */
+    private byte[] genBell(double hz, double partialHz, float duration) {
+        int len = (int) (SAMPLE_RATE * duration);
+        byte[] buf = new byte[len];
+        for (int i = 0; i < len; i++) {
+            double t = (double) i / SAMPLE_RATE;
+            double env = Math.exp(-3.5 * i / len);
+            double s = Math.sin(2 * Math.PI * hz * t) * 0.8
+                     + Math.sin(2 * Math.PI * partialHz * t) * 0.4
+                     + Math.sin(2 * Math.PI * partialHz * 1.51 * t) * 0.15;
+            buf[i] = (byte) (s * 60 * env * masterVolume);
+        }
+        return buf;
+    }
+
     // ── Volume / state ──
 
     public void setMasterVolume(float v) { this.masterVolume = Math.max(0, Math.min(1, v)); }
@@ -128,6 +224,8 @@ public class AudioEngine {
     public void cleanup() {
         ambientPlaying = false;
         if (ambientLine != null) { ambientLine.close(); ambientLine = null; }
+        windPlaying = false;
+        if (windLine != null) { windLine.close(); windLine = null; }
         executor.shutdown();
     }
 }

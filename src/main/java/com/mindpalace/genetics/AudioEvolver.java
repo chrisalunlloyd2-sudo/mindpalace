@@ -81,6 +81,15 @@ public final class AudioEvolver {
         }
     }
 
+    /**
+     * Re-seed the evolver's RNG (the Enigma plugboard swap): the same wiring
+     * always yields the same future genome stream. The current population is
+     * kept — only the future mutations change course.
+     */
+    public void reseed(java.util.Random newRng) {
+        this.rng.setSeed(new java.util.Random(newRng.nextLong()).nextLong());
+    }
+
     /** Run one generation: evaluate, select top-K, breed. Returns the new best. */
     public AudioGenome step() {
         float[] scores = evaluate();

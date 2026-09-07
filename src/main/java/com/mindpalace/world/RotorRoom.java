@@ -11,6 +11,14 @@ import org.joml.Vector3f;
  * step per second (rotor III steps every tick, II every 8th, I every 64th —
  * real Enigma carry). The active marker on each ring pulses.
  *
+ * Audio coupling (this advancement): rotor carries are events, not just state.
+ * A carry on II fires a mid chime, on I a low bell; III stepping is felt as a
+ * soft tick whose pitch follows the active cell. Consumers read the event via
+ * {@link #consumeCarry()} and drive sound; the game's music engine also rides
+ * the rotor clock — one bar per rotor-III revolution — so the courtyard's
+ * music literally turns with the rings. Events are one-shot (consumed once);
+ * the clock itself stays pure/deterministic for the selftest.
+ *
  * Performance: 3 rings × 8 hex cells = 24 flat cubes + 3 marker cubes, drawn
  * only within LOD range. No per-frame allocation beyond a handful of Vector3f.
  */
@@ -30,6 +38,9 @@ public final class RotorRoom {
     private final long anchorTime;   // time basis — same second ⇒ same rotor state
     private int[] rotorPos = {0, 0, 0};  // III, II, I — visible state for tests
 
+    // Carry events (audio/visual consumers): 1 = III wrap, 2 = II wrap, 3 = I wrap
+    private volatile int pendingCarry = 0;
+
     public RotorRoom(Vector3f center) {
         this.center = new Vector3f(center);
         this.anchorTime = 0L;
@@ -42,11 +53,28 @@ public final class RotorRoom {
      */
     public int[] rotorState(double time) {
         long t = (long) Math.floor(time);
-        rotorPos[0] = (int) (t % 8);                 // III — fast
-        rotorPos[1] = (int) ((t / 8) % 8);           // II — mid
-        rotorPos[2] = (int) ((t / 64) % 8);          // I — slow
+        int p0 = (int) (t % 8);                 // III — fast
+        int p1 = (int) ((t / 8) % 8);           // II — mid
+        int p2 = (int) ((t / 64) % 8);          // I — slow
+        // Carry events: monotonic in t, so comparing against the previous
+        // consumed positions detects wraps exactly once. I wraps 1/64 s —
+        // rare; III every second — the courtyard's heartbeat tick.
+        if (p2 != rotorPos[2] && t > 0) pendingCarry = 3;      // I wrap: big bell
+        else if (p1 != rotorPos[1] && t > 0) pendingCarry = 2; // II wrap: chime
+        else if (p0 != rotorPos[0] && t > 0) pendingCarry = 1; // III tick
+        rotorPos[0] = p0; rotorPos[1] = p1; rotorPos[2] = p2;
         return rotorPos;
     }
+
+    /** Consume a carry event (1=III tick, 2=II chime, 3=I bell). 0 = none. */
+    public int consumeCarry() { int c = pendingCarry; pendingCarry = 0; return c; }
+
+    /**
+     * The rotor clock as music: one bar = one full III revolution (8 s).
+     * Gives the music engine a deterministic bar counter that turns with the
+     * rings — the courtyard's score is the rotor's odometer, literally.
+     */
+    public static long rotorBar(double time) { return (long) Math.floor(time / 8.0); }
 
     /** Render the three rings + markers. Culls beyond LOD_DIST. */
     public void render(Renderer r, Vector3f camPos, double time) {
