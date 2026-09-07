@@ -897,8 +897,44 @@ public class AgentManager {
         return sb.toString();
     }
 
+    // ── H08: meta-chatter gate ─────────────────────────────────────────
+    // The chat logs' top openers were ALL conversational filler ("Would you
+    // like..." x102, "Please provide..." x65, ...). Anything opening with one
+    // of these patterns is rejected at emit: the model gets ONE forced-rephrase
+    // chance with a concrete prompt; a second offender (or anything SILENT-
+    // shaped) is dropped entirely. The world stays quiet unless there is work.
+    private static final java.util.regex.Pattern[] META_PATTERNS = {
+        java.util.regex.Pattern.compile("^\\[?\\w*\\]?\\s*(would you like|please provide|let's continue|let's refine|understood,? (how|but|let's|please)|absolutely,? let's|as outlined|drifting off-topic|refocus|how will the \\w+ agent)", java.util.regex.Pattern.CASE_INSENSITIVE)
+    };
+
+    private boolean isMetaChatter(String msg) {
+        if (msg == null) return true;
+        String body = msg.replaceFirst("^\\[(Auto|Critic|Tool)\\]\\s*", "");
+        for (java.util.regex.Pattern p : META_PATTERNS)
+            if (p.matcher(body.trim()).find()) return true;
+        return false;
+    }
+
+    private final java.util.Set<String> rephraseAttempts = java.util.Collections.newSetFromMap(new java.util.LinkedHashMap<>() {
+        protected boolean removeEldestEntry(java.util.Map.Entry<String, Boolean> e) { return size() > 24; }
+    });
+
     private void emit(Consumer<String> cb, String msg) {
-        if (cb != null) cb.accept(msg);
+        if (cb == null) return;
+        // SILENT bow-out (H02 directive) never broadcasts.
+        if (msg != null && msg.trim().equalsIgnoreCase("[Critic] SILENT")) return;
+        if (isMetaChatter(msg)) {
+            String key = msg.length() + ":" + msg.hashCode();
+            if (rephraseAttempts.add(key)) {
+                // ONE rephrase chance: demand a concrete artifact, log quietly.
+                log("[H08] meta-chatter blocked, requesting rephrase: "
+                    + msg.substring(0, Math.min(60, msg.length())) + "…");
+                return; // this emission dies; next cycle's directive + critic gate do the rephrasing
+            }
+            log("[H08] repeat meta-chatter dropped: " + key);
+            return;
+        }
+        cb.accept(msg);
         log(msg);
     }
 
