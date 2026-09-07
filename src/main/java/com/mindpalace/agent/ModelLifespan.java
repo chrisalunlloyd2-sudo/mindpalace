@@ -128,19 +128,35 @@ public class ModelLifespan {
         while (recentReplies.size() > REPEAT_WINDOW) recentReplies.removeFirst();
         if (recentReplies.size() < 3) return;
 
-        // Compare the newest reply against recent ones (normalized)
+        // Near-duplicate detection: exact match missed the real-world loop
+        // ("Absolutely, let's continue..." ×102 with tiny wording shifts), so
+        // compare character-bigram similarity instead — SequenceMatcher-style,
+        // threshold 0.85 = same text with trivial edits.
         String norm = normalize(reply);
         int matches = 0;
         for (String r : recentReplies) {
             if (r == reply) continue; // skip self
-            if (normalize(r).equals(norm)) matches++;
+            if (similarity(normalize(r), norm) >= 0.85f) matches++;
         }
         if (matches >= 2) {
             repeatCount++;
             System.out.println("[Lifespan] REPETITION detected on " + model
-                + " (count=" + repeatCount + ")");
+                + " (count=" + repeatCount + ", near-dup=" + matches + ")");
             correct();
         }
+    }
+
+    /** Character-bigram similarity in [0,1] (Dice coefficient, no deps). */
+    static float similarity(String a, String b) {
+        if (a.length() < 2 || b.length() < 2) return a.equals(b) ? 1f : 0f;
+        java.util.Map<String, int[]> grams = new java.util.HashMap<>();
+        for (int i = 0; i < a.length() - 1; i++)
+            grams.computeIfAbsent(a.substring(i, i + 2), k -> new int[]{0, 0})[0]++;
+        for (int i = 0; i < b.length() - 1; i++)
+            grams.computeIfAbsent(b.substring(i, i + 2), k -> new int[]{0, 0})[1]++;
+        int inter = 0, ta = 0, tb = 0;
+        for (int[] c : grams.values()) { inter += Math.min(c[0], c[1]); ta += c[0]; tb += c[1]; }
+        return (ta + tb) == 0 ? 0f : 2f * inter / (ta + tb);
     }
 
     private String normalize(String s) {
@@ -186,16 +202,27 @@ public class ModelLifespan {
 
     /** Apply a corrector: drop poisoned turns + re-anchor. */
     private void correct() {
-        // Drop the last 2 turns (the drifted reply + its trigger)
+        // Drop the last 2 turns (the repeated reply + its trigger)
         for (int i = 0; i < 2 && !history.isEmpty(); i++) history.removeLast();
 
-        // Re-anchor: append a corrective system nudge
-        history.addFirst(Map.of("role", "system", "content",
-            "You drifted off-task. Refocus on the user's actual request. Be concise and specific."));
+        // H02 fix: the old nudge ("You drifted off-task. Refocus...") was
+        // appended to history as a turn — the SLM then ANSWERED it, which is
+        // where the "Understood, let's refocus..." meta-chatter came from.
+        // The cure fed the disease. Now the correction rides the SYSTEM
+        // prompt (instructions, never conversational turns) and demands a
+        // concrete artifact, so the next reply has work to do.
+        int extra = correctionCount++;
+        if (systemPrompt != null && !systemPrompt.contains("ANTI-LOOP DIRECTIVE")) {
+            systemPrompt = systemPrompt + "\n\nANTI-LOOP DIRECTIVE: You repeat yourself when you have nothing concrete to do. NEVER write meta-talk (\"Would you like...\", \"let's continue\", \"refocus\"). Instead do exactly ONE of: (a) name a file and one specific action on it, (b) state a specific question about the code with your current guess, or (c) output 'SILENT' if truly nothing applies. This directive overrides habits.";
+        } else if (extra > 0 && (extra % 5 == 0) && systemPrompt != null) {
+            // Escalate temperature pressure every 5th correction via a varied tail
+            systemPrompt = systemPrompt.replaceAll("\\(variation " + "\\d+\\)", "(variation " + extra + ")");
+        }
 
         // Compact: fold old history into a summary to free budget
         compact();
     }
+    private int correctionCount = 0;
 
     /** Fold the oldest turns into a rolling summary (compaction). */
     private void compact() {

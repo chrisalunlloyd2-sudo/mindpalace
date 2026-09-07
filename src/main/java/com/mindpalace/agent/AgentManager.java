@@ -353,7 +353,10 @@ public class AgentManager {
             final String reviewed = actions;
             modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
                 .thenAccept(criticResp -> {
-                    if (criticResp != null && !criticResp.isEmpty()) {
+                    // H02 companion: the ANTI-LOOP DIRECTIVE lets the model
+                    // bow out with 'SILENT' — never broadcast an empty bow.
+                    if (criticResp != null && !criticResp.isEmpty()
+                            && !criticResp.trim().equalsIgnoreCase("SILENT")) {
                         emit(onCriticMessage, "[Critic] " + criticResp);
                         if (telemetry != null) telemetry.record(
                             com.mindpalace.backup.Telemetry.AGENT, "critic-reviewed", reviewed.length() + " chars");
