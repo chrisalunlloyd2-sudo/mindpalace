@@ -19,11 +19,13 @@ JAVA_HOME="C:/Program Files/Java/jdk-17"
 JPACKAGE="$JAVA_HOME/bin/jpackage.exe"
 JAR="$REPO/target/mindpalace-1.0.0.jar"
 APP_NAME="MindPalace"
-APP_VERSION="1.0.0"
+APP_VERSION="1.1.0"
 MAIN_CLASS="com.mindpalace.Main"
 OUT_DIR="$REPO/installer"
 OUT_DIR_WIN="C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\installer"
-ICON="$REPO/installer/MindPalace/MindPalace.ico"
+ICON="$REPO/MindPalace.ico"          # fallback probe
+# jpackage is native Windows: icon must be a Windows path (C:/...), never MSYS /c/...
+ICON_WIN="C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\installer\\MindPalace\\MindPalace.ico"
 
 cd "$REPO"
 
@@ -42,7 +44,7 @@ mkdir -p "$OUT_DIR"
 
 # 2. Build the installer (EXE type, bundled runtime)
 ICON_ARG=()
-[ -f "$ICON" ] && ICON_ARG=(--icon "$ICON")
+[ -f "$REPO/installer/MindPalace/MindPalace.ico" ] && ICON_ARG=(--icon "$ICON_WIN")
 
 "$JPACKAGE" \
   --type exe \
