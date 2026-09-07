@@ -108,7 +108,7 @@ editor with a keystroke. The databases grow massive — that's the point.
 - **Backup + Memory** — cold backup to D:, never-make-code-twice / never-make-mistakes-twice SQLite DBs
 - **Model Lifespan** — token-budgeted context, drift detection, rolling summary, RAG memory
 - **Live patching** — drop a `patch.json` and the game ships rooms/books/texts/graphics without restarting
-- **Self-test harness** — `--selftest` runs 16 automated checks (world, books,
+- **Self-test harness** — `--selftest` runs 40 automated checks (world, books,
   teleporters, agents, crystals, KG, font, editor, bloom, invert-Y, map,
   chat, mouse turn radius, room personality, finesse) and exits 0/1
 
@@ -147,6 +147,44 @@ pipeline — executed by **quota-free bots**, not cloud LLM calls.
 **Doctrine**: nothing lives forever (bots age and retire), nothing runs for
 free (every call is priced in credits), always advancing (one hypothesis
 per cycle, never twice the same code or mistake).
+
+## Near-Term Milestones (public — attract & onboard contributors)
+
+| Milestone | What lands | Target |
+|-----------|-----------|--------|
+| **M1 — Demo mode (step 112)** | `--demo` boots a fixture palace; zero-auth UX + hermetic CI | next |
+| **M2 — World finishing (Phase B, 64–78)** | cobblestone paths, forest floor, room heights, quorum gold flares, 16 E2E waypoints | in progress (60–63 shipped) |
+| **M3 — PR preview safety (step 96)** | quorum-approved diffs gate autonomous pushes; agent branches land via PR | next |
+| **M4 — v1.2.0-beta release** | new installer + release notes per phase, auto-updater skeleton (step 109) | after B |
+| **M5 — Multiplayer contract (step 147)** | shared-palace protocol draft, read-only spectator rooms | later |
+
+Good first issues are labeled
+[`good first issue`](https://github.com/chrisalunlloyd2-sudo/mindpalace/labels/good%20first%20issue) —
+each maps to exactly one step in `NEXT_100_STEPS.md` and one pattern in
+[`ARCHITECTURE.md`](ARCHITECTURE.md)'s "where do I add X" table. The
+issue templates walk you through the evidence + budget checklist.
+
+## The Public Vision (why contribute)
+
+Most "AI agent" projects run agents *next to* the code. MindPalace puts
+them **inside** it — a literal, walkable palace where SLM agents have
+bodies, wallets, a voting quorum, and consequences. Three open problems
+make it genuinely interesting to work on:
+
+1. **SLM cognition under hard budgets** — 0.5B–1.5B models doing real
+   repo work with priced, gated, critiqued actions (no cloud, no prompts
+   bigger than a model's ceiling). Every fix teaches something about
+   small-model failure modes you can't learn from frontier models.
+2. **A world that finishes itself** — the Finishing Program ships every
+   step with machine-verified evidence (build → selftest → E2E PNG proof
+   → step-log). Contribution means watching your PR's evidence appear in
+   public, automatically.
+3. **Determinism as a feature** — same repo list → same world, frame for
+   frame. That constraint shapes everything (layout, audio, agents) and
+   is why the E2E tour can prove regressions pixel by pixel.
+
+Everything runs local: your code, your GPU, your Ollama models. No
+telemetry leaves the machine.
 
 ---
 
@@ -220,7 +258,16 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
 | Flag | Effect |
 |------|--------|
 | `--autodrive <dir>` | Scripted walkthrough that captures PNG frames to `<dir>` (lets an agent SEE the world) |
-| `--selftest` | Run 16 automated checks headlessly, print PASS/FAIL, exit 0/1 (CI gate) |
+| `--selftest` | 40 automated checks headlessly, PASS/FAIL, exit 0/1 (CI gate) |
+| `--e2e <dir>` | 13 labeled waypoints captured as PNGs (visual regression proof) |
+| `--demo` | Full palace from a bundled JSON snapshot — no GitHub auth, no network (see docs/DEMO_MODE.md; lands as step 112) |
+
+### Or skip the build — download the installer
+
+Prebuilt jpackage installers on the
+[Releases page](https://github.com/chrisalunlloyd2-sudo/mindpalace/releases):
+**v1.1.0-beta1** (74.8 MB) — unzip, run `MindPalace.exe`. Nothing else to
+install; the JRE is bundled.
 
 ---
 
