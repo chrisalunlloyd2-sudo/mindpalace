@@ -158,6 +158,9 @@ per cycle, never twice the same code or mistake).
 | **M4 — v1.2.0-beta release** | new installer + release notes per phase, auto-updater skeleton (step 109) | after B |
 | **M5 — Multiplayer contract (step 147)** | shared-palace protocol draft, read-only spectator rooms | later |
 
+The quarter-level plan (weeks, exit criteria, risks) lives in
+[`ROADMAP_3MONTH.md`](ROADMAP_3MONTH.md).
+
 Good first issues are labeled
 [`good first issue`](https://github.com/chrisalunlloyd2-sudo/mindpalace/labels/good%20first%20issue) —
 each maps to exactly one step in `NEXT_100_STEPS.md` and one pattern in
@@ -541,6 +544,7 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `HYPOTHESES_50.md` | The 50-hypothesis autonomous finishing program (7 phases) |
 | `WORLD_FINISHER_PLAN.md` | Phase B spec: walls/roofs/forest/bloom standards |
 | `GLM_FLASH_BLUEPRINT.md` | Phase F spec: flash-tier model routing, quota firewall |
+| `ROADMAP_3MONTH.md` | 3-month milestones: Month 1 world+bots, Month 2 trustworthy agents, Month 3 open to contributors |
 | `docs/DEMO_MODE.md` | Demo mode: full palace, zero setup (fixture world) |
 | `docs/GITHUB_AUTH.md` | How the PAT-from-Credential-Manager auth works + troubleshooting |
 | `docs/PERFORMANCE.md` | Tuning flags, in-game knobs, budget rules |
