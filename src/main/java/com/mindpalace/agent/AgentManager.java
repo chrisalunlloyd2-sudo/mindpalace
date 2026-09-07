@@ -107,6 +107,10 @@ public class AgentManager {
         this.chatLifespan = new ModelLifespan(ollama, ModelConfig.CHAT_MODEL, ModelConfig.TOOL_BUDGET, ModelConfig.DRIFT_THRESHOLD);
     }
 
+    /** Selftest mode: parity wiring runs, the autonomous cycle does not. */
+    private volatile boolean selfTest = false;
+    public void setSelfTest(boolean st) { this.selfTest = st; }
+
     // ── Lifecycle ──
 
     public void start() {
@@ -128,8 +132,12 @@ public class AgentManager {
         // the voting schema with the two agents as voters.
         initSimsParity();
 
-        // Start autonomous cycle
-        scheduler.scheduleWithFixedDelay(this::autonomousCycle, 30, CYCLE_MS / 1000, TimeUnit.SECONDS);
+        // Start autonomous cycle — NOT in selftest mode (the selftest owns
+        // the DePIN/quorum checks deterministically; a cycle firing mid-test
+        // races them. Observed: 39/1 with model-gate contention).
+        if (!selfTest) {
+            scheduler.scheduleWithFixedDelay(this::autonomousCycle, 30, CYCLE_MS / 1000, TimeUnit.SECONDS);
+        }
     }
 
     /** Wire the SIMS1337 pillars: FOW positions, quorum voters, LoRA context. */

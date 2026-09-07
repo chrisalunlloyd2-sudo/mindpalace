@@ -375,6 +375,11 @@ public class GameEngine {
         // DePIN economy — seed wallets + jobs so agents can work autonomously.
         initDePIN();
         agentManager.setDePIN(depin);
+        // Selftest owns the DePIN/quorum checks deterministically: the
+        // autonomous cycle claims jobs and votes too, racing the checks
+        // (observed: 39/1 with model-gate contention). Parity wiring still
+        // runs inside agentManager.start(); only the cycle is suppressed.
+        agentManager.setSelfTest(selfTest);
         agentManager.start();
 
         // Build the knowledge graph + spawn agent NPCs (bodies in the world)

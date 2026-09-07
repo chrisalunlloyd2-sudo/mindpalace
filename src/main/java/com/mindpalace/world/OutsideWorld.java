@@ -255,13 +255,22 @@ public class OutsideWorld {
     // ── Forest (Fibonacci phyllotaxis, deciduous + evergreen) ──
 
     private void renderForest(Renderer r, float floorY, float time, Season s) {
-        int count = 220;  // dense forest
+        // H16 (step 63): forest fill 220 → 660 (×3). Density falls off
+        // radially from the mansion (parkland near, wild far), spread across
+        // the full world width in three lobes so no region is bare.
+        int count = 660;
         for (int ti = 0; ti < count; ti++) {
             // Golden-angle spiral → natural, non-clustering scatter
             float ang = ti * GOLDEN;
             float rad = 4f + 2.2f * (float) Math.sqrt(ti);
             float tx = (float) Math.cos(ang) * rad * 1.4f;
             float tz = -90f + (float) Math.sin(ang) * rad;
+            // Step 63: radial density falloff — near-mansion ring is parkland
+            // (skip 2 of 3), the far field is dense. Same seed order → same
+            // world every boot (deterministic E2E).
+            float mansionDist = (float) Math.sqrt((tx - mansionPos.x) * (tx - mansionPos.x)
+                                                + (tz - mansionPos.z) * (tz - mansionPos.z));
+            if (mansionPos.z - tz < 40f && (ti % 3 != 0)) continue; // parkland thinning
             // Keep inside bounds, avoid the lake and feature footprints
             if (Math.abs(tx) > HALF_W - 2f) continue;
             if (tz < MIN_Z + 2f || tz > MAX_Z - 2f) continue;
@@ -585,9 +594,18 @@ public class OutsideWorld {
         r.drawCube(new Vector3f(hx, floorY + hh / 2f, hz + d / 2f), new Vector3f(w, hh, 0.2f), Renderer.TEX_WALL);
         r.drawCube(new Vector3f(hx - w / 2f, floorY + hh / 2f, hz), new Vector3f(0.2f, hh, d), Renderer.TEX_WALL);
         r.drawCube(new Vector3f(hx + w / 2f, floorY + hh / 2f, hz), new Vector3f(0.2f, hh, d), Renderer.TEX_WALL);
-        // Roof (color varies per house)
+        // Roof (color varies per house) — slab + parapet ring (H14, step 61)
         int[] roofTex = {Renderer.TEX_BOOK_RED, Renderer.TEX_BOOK_BLUE, Renderer.TEX_BOOK_ORANGE, Renderer.TEX_BOOK_GREY, Renderer.TEX_BOOK_YELLOW};
         r.drawCube(new Vector3f(hx, floorY + hh + 0.4f, hz), new Vector3f(w + 0.4f, 0.3f, d + 0.4f), roofTex[h % roofTex.length]);
+        // Parapet: 4 thin rim walls on the roof edge (reads as a real building)
+        float py = floorY + hh + 0.75f, pt = 0.15f, ph = 0.5f;
+        r.drawCube(new Vector3f(hx, py, hz - d / 2f - 0.12f), new Vector3f(w + 0.4f, ph, pt), roofTex[h % roofTex.length]);
+        r.drawCube(new Vector3f(hx, py, hz + d / 2f + 0.12f), new Vector3f(w + 0.4f, ph, pt), roofTex[h % roofTex.length]);
+        r.drawCube(new Vector3f(hx - w / 2f - 0.12f, py, hz), new Vector3f(pt, ph, d + 0.4f), roofTex[h % roofTex.length]);
+        r.drawCube(new Vector3f(hx + w / 2f + 0.12f, py, hz), new Vector3f(pt, ph, d + 0.4f), roofTex[h % roofTex.length]);
+        // Chimney (every house deserves smoke someday — H19 hook point)
+        r.drawCube(new Vector3f(hx + w / 2f - 0.6f, floorY + hh + 1.1f, hz + d / 4f),
+            new Vector3f(0.5f, 1.0f, 0.5f), Renderer.TEX_BARK);
         // Door + window
         r.drawCube(new Vector3f(hx, floorY + 1.1f, hz - d / 2f - 0.05f), new Vector3f(1.1f, 2.2f, 0.1f), Renderer.TEX_DOOR);
         int winTex = night ? Renderer.TEX_NEON_AMBER : Renderer.TEX_NEON_CYAN;
