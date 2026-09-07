@@ -494,6 +494,11 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `HYPOTHESES_50.md` | The 50-hypothesis autonomous finishing program (7 phases) |
 | `WORLD_FINISHER_PLAN.md` | Phase B spec: walls/roofs/forest/bloom standards |
 | `GLM_FLASH_BLUEPRINT.md` | Phase F spec: flash-tier model routing, quota firewall |
+| `docs/DEMO_MODE.md` | Demo mode: full palace, zero setup (fixture world) |
+| `docs/GITHUB_AUTH.md` | How the PAT-from-Credential-Manager auth works + troubleshooting |
+| `docs/PERFORMANCE.md` | Tuning flags, in-game knobs, budget rules |
+| `docs/LAYOUT_ALGORITHMS.md` | How repos become rooms + adding new layout algorithms |
+| `docs/GAMEPLAY_FEATURES.md` | Feature usage guide: everything the player can do |
 
 ---
 
