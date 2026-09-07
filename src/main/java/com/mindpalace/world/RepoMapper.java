@@ -49,6 +49,44 @@ public class RepoMapper {
         System.out.println("[RepoMapper] Found " + rooms.size() + " repos locally");
     }
 
+
+    /**
+     * Demo mode (step 112): build rooms from the bundled fixture manifest
+     * instead of the local/GitHub scan. Fixtures are REAL directories under
+     * data/demo_repos/<name>/ (committed) so populateRoom finds files and
+     * the editor's full CRUD works offline. Zero auth, zero network.
+     */
+    public void scanDemoRepos(List<Room> rooms) {
+        java.nio.file.Path manifest = java.nio.file.Path.of("data", "demo_repos.json");
+        if (!java.nio.file.Files.isRegularFile(manifest)) {
+            System.err.println("[RepoMapper] demo manifest missing — falling back to local scan");
+            scanRepos(rooms);
+            return;
+        }
+        try {
+            String json = java.nio.file.Files.readString(manifest);
+            // Minimal parse: names + metadata via regex (no JSON dep in this package)
+            // \\042 = double-quote (octal); braces literal (no quantifier context)
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "\\{\\s*\\042name\\042:\\s*\\042([^\\042]+)\\042,\\s*\\042language\\042:\\s*\\042([^\\042]+)\\042,"
+              + "\\s*\\042description\\042:\\s*\\042([^\\042]+)\\042,\\s*\\042private\\042:\\s*(true|false)"
+              + ",\\s*\\042path\\042:\\s*\\042([^\\042]+)\\042\\s*\\}").matcher(json);
+            while (m.find()) {
+                Room room = new Room(m.group(1));
+                room.setLocalPath(java.nio.file.Paths.get(m.group(5)).toAbsolutePath().toString());
+                room.setLanguage(m.group(2));
+                room.setRepoDescription(m.group(3));
+                room.setPrivate(Boolean.parseBoolean(m.group(4)));
+                rooms.add(room);
+            }
+        } catch (Exception e) {
+            System.err.println("[RepoMapper] demo manifest parse failed: " + e.getMessage());
+            scanRepos(rooms);
+            return;
+        }
+        System.out.println("[RepoMapper] Demo fixtures loaded: " + rooms.size() + " rooms (no auth, no network)");
+    }
+
     /**
      * Extract the canonical repo name from a git remote URL.
      * Handles: https://github.com/user/repo.git, git@github.com:user/repo.git,

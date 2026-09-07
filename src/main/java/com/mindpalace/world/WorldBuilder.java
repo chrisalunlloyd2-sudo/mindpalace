@@ -149,9 +149,14 @@ public class WorldBuilder {
         return 0f;
     }
 
+    /** Demo mode: rooms come from data/demo_repos.json fixtures (no auth). */
+    private boolean demoMode = false;
+    public void setDemoMode(boolean d) { this.demoMode = d; }
+
     public void build() {
         System.out.println("[WorldBuilder] Building MindPalace world...");
-        repoMapper.scanRepos(rooms);
+        if (demoMode) repoMapper.scanDemoRepos(rooms);
+        else repoMapper.scanRepos(rooms);
 
         // Fog of war: fetch remote (incl. private) repos from GitHub and mark them fogged
         GitHubClient gh = new GitHubClient();
@@ -205,51 +210,20 @@ public class WorldBuilder {
     }
 
     private void layoutWorld() {
-        int total = rooms.size();
-        int floors = Math.max(4, (total + 16) / 17); // ~17 rooms per floor
-        int perFloor = (total + floors - 1) / floors;
-        int perSide = (perFloor + 1) / 2;
-
-        float len = perSide * DOOR_SPACING + HALLWAY_START_OFFSET * 2;
-        float floorGap = HALLWAY_HEIGHT + 1.0f;
-        float zOffset = len + 4.0f;
-
-        for (int f = 0; f < floors; f++) {
-            Hallway hw = new Hallway(f);
-            hw.setStart(new Vector3f(0, f * floorGap, f * zOffset));
-            hw.setEnd(new Vector3f(0, f * floorGap, f * zOffset + len));
-            hw.setWidth(HALLWAY_WIDTH);
-            hw.setHeight(HALLWAY_HEIGHT);
-            hallways.add(hw);
-        }
-
+        // Step 113 (M2): layout is now a strategy (LAYOUT_ALGORITHMS.md).
+        // CORRIDOR is a bit-identical port of the original body — the world's
+        // shape must not change, E2E waypoints depend on it.
+        activeLayout.layout(rooms, hallways);
         // No stairways — teleporters handle floor transitions (stairs were
         // removed: they poked through the floor above and looked like a
         // "block in the middle of the hall").
         stairways.clear();
-
-        int idx = 0;
-        for (int floor = 0; floor < floors && idx < total; floor++) {
-            Hallway hw = hallways.get(floor);
-            float hz = hw.getStart().z;
-            float hy = hw.getStart().y;
-            for (int side = 0; side < 2 && idx < total; side++) {
-                for (int i = 0; i < perSide && idx < total; i++) {
-                    Room room = rooms.get(idx);
-                    room.setFloor(floor);
-                    room.setHallwaySide(side);
-                    float doorZ = hz + HALLWAY_START_OFFSET + i * DOOR_SPACING;
-                    float doorX = side == 0 ? -HALLWAY_WIDTH / 2f : HALLWAY_WIDTH / 2f;
-                    float cx = side == 0 ? -HALLWAY_WIDTH / 2f - Room.ROOM_DEPTH / 2f - Room.WALL_THICKNESS
-                                         : HALLWAY_WIDTH / 2f + Room.ROOM_DEPTH / 2f + Room.WALL_THICKNESS;
-                    room.setDoorPosition(new Vector3f(doorX, hy + 1.0f, doorZ));
-                    room.setRoomCenter(new Vector3f(cx, hy + Room.ROOM_HEIGHT / 2f, doorZ));
-                    room.setDoorRotation(side == 0 ? 90 : -90);
-                    idx++;
-                }
-            }
-        }
     }
+
+    /** Active layout strategy (default: the classic corridor). */
+    private RoomLayout activeLayout = RoomLayout.CORRIDOR;
+    /** Switch the layout strategy (must be called before build()). */
+    public void setLayout(RoomLayout l) { this.activeLayout = l; }
 
     public void render(Renderer r, Camera camera) {
         Vector3f camPos = camera.getPosition();

@@ -11,6 +11,7 @@ import com.mindpalace.engine.GameEngine;
  * CLI flags:
  *   --autodrive <dir>   scripted walkthrough that captures PNG frames to <dir>
  *                       (lets the agent SEE the world without a human driving)
+ *   --demo              fixture world from data/demo_repos.json — zero auth/network
  */
 public class Main {
     public static void main(String[] args) {
@@ -22,6 +23,8 @@ public class Main {
                 engine.setE2E(args[i + 1]);
             } else if (args[i].equals("--selftest")) {
                 engine.setSelfTest();
+            } else if (args[i].equals("--demo")) {
+                engine.setDemo();
             }
         }
         engine.run();

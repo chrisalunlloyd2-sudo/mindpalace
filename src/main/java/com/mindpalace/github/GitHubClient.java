@@ -123,8 +123,22 @@ public class GitHubClient {
     /**
      * Fetch file contents for a repo (top-level only for speed).
      */
+    // ── TTL cache (M2, step 116): GitHub API responses cached 10 minutes ──
+    // The agents' tool loop can hit contents/ dozens of times per cycle;
+    // rate limits are 5000/hr authenticated. Cache is per-user session
+    // (in-memory, not persisted — a stale read is one refresh away).
+    private static final long CACHE_TTL_MS = 10 * 60 * 1000L;
+    private final class CacheEntry<T> { final T value; final long at; CacheEntry(T v) { value = v; at = System.currentTimeMillis(); } boolean fresh() { return System.currentTimeMillis() - at < CACHE_TTL_MS; } }
+    private final java.util.Map<String, CacheEntry<List<Book>>> contentsCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, CacheEntry<String>> fileCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Clear all API caches (forces fresh fetches; used by the editor after writes). */
+    public void clearCache() { contentsCache.clear(); fileCache.clear(); }
+
     public List<Book> fetchRepoContents(String repoName) throws IOException {
         List<Book> books = new ArrayList<>();
+        CacheEntry<List<Book>> hit = contentsCache.get(repoName);
+        if (hit != null && hit.fresh()) return hit.value;
 
         Request req = new Request.Builder()
             .url(API_BASE + "/repos/" + username + "/" + repoName + "/contents/")
@@ -161,6 +175,9 @@ public class GitHubClient {
      * Fetch a single file's content.
      */
     public String fetchFileContent(String repoName, String filePath) throws IOException {
+        String key = repoName + ":" + filePath;
+        CacheEntry<String> hit = fileCache.get(key);
+        if (hit != null && hit.fresh()) return hit.value;
         Request req = new Request.Builder()
             .url(API_BASE + "/repos/" + username + "/" + repoName + "/contents/" + filePath)
             .header("Authorization", "token " + token)
@@ -169,7 +186,9 @@ public class GitHubClient {
 
         try (Response resp = http.newCall(req).execute()) {
             if (resp.isSuccessful()) {
-                return resp.body().string();
+                String body = resp.body().string();
+                fileCache.put(key, new CacheEntry<>(body));
+                return body;
             }
         }
         return null;
@@ -192,7 +211,9 @@ public class GitHubClient {
             .build();
 
         try (Response resp = http.newCall(req).execute()) {
-            return resp.isSuccessful();
+            boolean ok = resp.isSuccessful();
+            if (ok) clearCache(); // writes invalidate the whole session cache (KISS)
+            return ok;
         }
     }
 

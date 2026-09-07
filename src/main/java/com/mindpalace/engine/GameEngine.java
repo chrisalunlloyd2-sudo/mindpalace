@@ -128,6 +128,10 @@ public class GameEngine {
     private boolean seqEditing;     // true when the grid is the active menu
 
     private double lastFrameTime;
+
+    // FPS overlay state (M2 step 115) — frameTimes hold seconds
+    private boolean fpsShow = false;
+    private final java.util.ArrayDeque<Double> frameTimes = new java.util.ArrayDeque<>();
     private double accumulator;
     private static final double PHYSICS_DT = 1.0 / 120.0;
     private static final double MAX_FRAME_TIME = 0.25;
@@ -228,6 +232,10 @@ public class GameEngine {
         System.out.println("[E2E] enabled, waypoints + labeled shots -> " + dir);
     }
 
+/** Demo mode: fixture world, no GitHub auth, no network (step 112). */
+    private boolean demoMode = false;
+    public void setDemo() { this.demoMode = true; }
+
     /** Enable self-test mode (called from Main before run()). */
     public void setSelfTest() {
         this.selfTest = true;
@@ -305,6 +313,7 @@ public class GameEngine {
         renderLoadingFrame();
 
         world = new WorldBuilder();
+        world.setDemoMode(demoMode);
         world.build();
 
         // Start the day at the mansion (player home) in the outside world.
@@ -892,6 +901,13 @@ public class GameEngine {
             player.setNoclip(!player.isNoclip());
             System.out.println("[NOCLIP] " + (player.isNoclip() ? "ON" : "OFF"));
         }
+
+        // F4 — FPS overlay (M2, step 115): rolling average over ~2s of frames
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F4)) {
+            fpsShow = !fpsShow;
+        }
+        frameTimes.addLast(dt);
+        if (frameTimes.size() > 120) frameTimes.removeFirst();
 
         // Tab — toggle full-screen map overlay (hold to view, release to close)
         if (input.wasKeyPressed(GLFW.GLFW_KEY_TAB)) {
@@ -1664,6 +1680,19 @@ public class GameEngine {
      * World graphics stay identical; only the text is pinned to the screen.
      */
     private void renderTwoDTextPanel() {
+        // F4 FPS overlay (M2 step 115): rolling average over frameTimes
+        if (fpsShow) {
+            double sum = 0; int n = 0;
+            for (Double ft : frameTimes) { sum += ft; n++; }
+            double avgFps = n > 0 ? n / Math.max(sum, 1e-9) : 0;
+            Camera fcam = player.getCamera();
+            Vector3f fpos = new Vector3f(fcam.getPosition()).add(new Vector3f(fcam.getFront()).mul(1.2f));
+            String line = String.format("[DEBUG] %.1f FPS  (%d rooms, %d halls)",
+                avgFps, world.getRooms().size(), world.getHallways().size());
+            fontRenderer.renderBillboard(line, fpos, 0.05f,
+                new org.joml.Vector3f(0.2f, 1.0f, 0.4f),
+                fcam.getProjectionMatrix((float) width / height), fcam.getViewMatrix(), fcam.getPosition());
+        }
         Camera cam = player.getCamera();
         Matrix4f proj = cam.getProjectionMatrix((float) width / height);
         Matrix4f view = cam.getViewMatrix();

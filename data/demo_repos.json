@@ -1,0 +1,86 @@
+[
+  {
+    "name": "hello-web",
+    "language": "HTML",
+    "description": "A tiny landing page",
+    "private": false,
+    "path": "data/demo_repos/hello-web"
+  },
+  {
+    "name": "palace-notes",
+    "language": "Markdown",
+    "description": "Demo knowledge base",
+    "private": true,
+    "path": "data/demo_repos/palace-notes"
+  },
+  {
+    "name": "tiny-py",
+    "language": "Python",
+    "description": "Small python playground",
+    "private": false,
+    "path": "data/demo_repos/tiny-py"
+  },
+  {
+    "name": "rust-fragment",
+    "language": "Rust",
+    "description": "Rust sampler",
+    "private": false,
+    "path": "data/demo_repos/rust-fragment"
+  },
+  {
+    "name": "go-lite",
+    "language": "Go",
+    "description": "Go sampler",
+    "private": false,
+    "path": "data/demo_repos/go-lite"
+  },
+  {
+    "name": "java-corner",
+    "language": "Java",
+    "description": "Java sampler",
+    "private": false,
+    "path": "data/demo_repos/java-corner"
+  },
+  {
+    "name": "shell-kit",
+    "language": "Shell",
+    "description": "Scripts sampler",
+    "private": false,
+    "path": "data/demo_repos/shell-kit"
+  },
+  {
+    "name": "json-configs",
+    "language": "JSON",
+    "description": "Config sampler",
+    "private": false,
+    "path": "data/demo_repos/json-configs"
+  },
+  {
+    "name": "css-lab",
+    "language": "CSS",
+    "description": "Style experiments",
+    "private": false,
+    "path": "data/demo_repos/css-lab"
+  },
+  {
+    "name": "ts-lite",
+    "language": "TypeScript",
+    "description": "TS sampler",
+    "private": false,
+    "path": "data/demo_repos/ts-lite"
+  },
+  {
+    "name": "docs-vault",
+    "language": "Markdown",
+    "description": "More docs for room density",
+    "private": false,
+    "path": "data/demo_repos/docs-vault"
+  },
+  {
+    "name": "c-ember",
+    "language": "C",
+    "description": "C sampler",
+    "private": false,
+    "path": "data/demo_repos/c-ember"
+  }
+]
