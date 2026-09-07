@@ -5,10 +5,26 @@
 
 ---
 
+## ACTIVE — The Autonomous Finishing Program (2026-09-06)
+
+The palace now finishes itself. `HYPOTHESES_50.md` (steps 1–50) +
+`NEXT_100_STEPS.md` (steps 51–150) run as one-hypothesis-per-cycle
+TASK files executed by the hourly watcher and quota-free bots, each
+shipping through the full cascade (build → selftest → E2E → commit →
+push → step-log evidence on issue #9).
+
+**Shipped so far**: H01–H03, H08 (cognition), steps 59–61+63 (walls,
+roofs, forest ×3) — see the step-log for machine-verified evidence.
+**Release policy**: version bump per phase, installer exe on every green
+phase (v1.1.0-beta1 is live).
+
+
+---
+
 ## Current State (Phase 1.x — COMPLETE)
 
 - 3D first-person engine (LWJGL 3 + OpenGL 3.3, Phong lighting + distance fog)
-- 136 rooms / 8 hallways, mapped to real GitHub repos (sorted by size)
+- 145 rooms / 9 hallways, mapped to real GitHub repos (sorted by size)
 - Wooden bookcases (3 walls), books grouped by language, color-coded spines
 - Readable neon signs (cyan=public, pink=private), glowing neon door frames
 - Teleporter pads (pulsing cyan portals) between floors
@@ -60,8 +76,9 @@
 
 ## Phase H — Exe Installer
 
-- [ ] jpackage native .exe installer
-- [ ] Auto-updater
+- [x] jpackage native .exe installer (v1.0.0-coldshot, v1.1.0-beta1 on Releases;
+      icon Windows-path fix in build-installer.sh)
+- [ ] Auto-updater (checks Releases API; queued NEXT_100 step 109)
 
 ---
 
@@ -97,7 +114,7 @@
 
 ---
 
-## Phase 4 — The Courtyard
+## Phase 4 — The Courtyard (core DONE — rotor/Nash/Banburismus/Tape + audio coupling; polish queued in NEXT_100 Phase B)
 
 - [x] Glass ceiling, fountain, couches, TV screens, bar, hotel safe
 - [ ] Password-protected safe, AES-256, visual combination lock
@@ -125,7 +142,7 @@
 
 ---
 
-## Phase 6 — Curie the Cat
+## Phase 6 — Curie the Cat (queued — overlaps NEXT_100 step 73 forest wildlife)
 
 - [ ] Separate repo `chrisalunlloyd2-sudo/Curie`
 - [ ] Calico cat, walking animation, cat doors, roaming AI, meows/purrs
