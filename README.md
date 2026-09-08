@@ -611,6 +611,7 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `CONTRIBUTION_NORMS.md` | The five working norms + what maintainers commit to |
 | `CONTRIBUTOR_LADDER.md` | Visitor → tester → contributor → regular → maintainer, with open doors per rung |
 | `CONTRIBUTORS.md` | The people list: testers, first-PR authors, notable work |
+| `FIRST_WEEK.md` | Short-term checklist: ordered by leverage, proof lines, done-items kept for the record |
 | `COMMUNITY.md` | Outreach playbook: pitch, surfaces, channels, newcomer funnel |
 | `docs/OUTREACH_POSTS.md` | Ready-to-post demo artifact + tweet thread / HN / r/localLLaMA copy |
 | `docs/LABELS.md` | Issue labeling taxonomy: high/medium/low × area/* |
