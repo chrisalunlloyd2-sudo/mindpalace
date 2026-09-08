@@ -56,5 +56,9 @@ setup.
 - Time-to-walking: installer → walking around, target < 2 min (issue #11
   closes this with INSTALLER.md).
 - Time-to-first-PR: good-first-issue → merged, tracked via the step-log.
+- Weekly digest: `python scripts/feedback_digest.py --days 7` (script-only,
+  no LLM) prints window issues/discussions + funnel health; append its
+  output to the Sunday review pack. The welcome-feedback workflow greets
+  first-time issues/PRs and every discussion with the 3 feedback questions.
 - Both numbers go into the weekly self-report (step 148's four numbers +
   these two = the Sunday review pack).
