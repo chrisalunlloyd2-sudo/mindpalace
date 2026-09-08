@@ -9,6 +9,8 @@
 > every step. See [`HYPOTHESES_50.md`](HYPOTHESES_50.md) and the
 > [step-log issue](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/9).
 
+![The MindPalace — first view: fog-lit hallway, every door a real GitHub repo](docs/screenshots/hero.png)
+
 MindPalace turns your GitHub account into a grand, explorable palace. Walk a
 warm, fog-lit hallway where each door opens into a room built from a real
 repository. Wooden bookcases line three walls; every book is a file you can
@@ -192,6 +194,13 @@ telemetry leaves the machine.
 ---
 
 ## Key Parts of the Game
+
+| | |
+|---|---|
+| ![Main hall](docs/screenshots/main_hall.png) | ![Agents](docs/screenshots/agents.png) |
+| ![Rotor rings](docs/screenshots/rotor_rings.png) | The courtyard's Enigma rotor — carries tick, chime, and bell every second |
+
+
 
 ### The Hallway
 A grand corridor with hardwood floors, wallpaper, and crown molding. Doors line
@@ -531,6 +540,17 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 
 ---
 
+## Community
+
+- **Evidence log / step-log**: [issue #9](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/9) — every shipped step with machine-verified evidence, append-only
+- **Pick impactful work**: [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) → Tier 1 (scored, WHYs, linked issues #10–#12) or filter [open `high` issues](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues?q=is%3Aissue+is%3Aopen+label%3Ahigh)
+- **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md) — cascade rules, code style, PR expectations
+- **Environment**: [DEV_SETUP.md](DEV_SETUP.md) — prereqs + proven gotchas
+- **Web presence**: [GitHub Pages site](https://chrisalunlloyd2-sudo.github.io/mind-palace/) (palace personality CSS)
+- **Releases**: [installer + notes](https://github.com/chrisalunlloyd2-sudo/mindpalace/releases)
+- **Templates**: bug / feature / docs / hypothesis-step — evidence-first, pre-answering triage questions
+- **Outreach playbook**: [COMMUNITY.md](COMMUNITY.md) — the pitch, surfaces, announcement checklist, tone rules
+
 ## Documentation
 
 | Doc | Purpose |
@@ -544,6 +564,7 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `HYPOTHESES_50.md` | The 50-hypothesis autonomous finishing program (7 phases) |
 | `WORLD_FINISHER_PLAN.md` | Phase B spec: walls/roofs/forest/bloom standards |
 | `GLM_FLASH_BLUEPRINT.md` | Phase F spec: flash-tier model routing, quota firewall |
+| `COMMUNITY.md` | Outreach playbook: pitch, surfaces, channels, newcomer funnel |
 | `docs/LABELS.md` | Issue labeling taxonomy: high/medium/low × area/* |
 | `FEATURE_BACKLOG.md` | Prioritized feature backlog with P·C/(E·R) scoring, tiers, and queue rules |
 | `ROADMAP_3MONTH.md` | 3-month milestones: Month 1 world+bots, Month 2 trustworthy agents, Month 3 open to contributors |
