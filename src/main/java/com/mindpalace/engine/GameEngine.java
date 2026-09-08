@@ -132,6 +132,11 @@ public class GameEngine {
     // FPS overlay state (M2 step 115) — frameTimes hold seconds
     private boolean fpsShow = false;
     private final java.util.ArrayDeque<Double> frameTimes = new java.util.ArrayDeque<>();
+
+    // Commit time slider (M3 step 121) — per-room history scrub
+    private final com.mindpalace.world.TimeMachine timeMachine =
+        new com.mindpalace.world.TimeMachine(com.mindpalace.world.RepoMapper.SHARED_GIT);
+    private String timeMachineRoom;   // which repo the history is loaded for
     private double accumulator;
     private static final double PHYSICS_DT = 1.0 / 120.0;
     private static final double MAX_FRAME_TIME = 0.25;
@@ -638,6 +643,12 @@ public class GameEngine {
     private String readBookContent(Room room, Book book) {
         String localPath = room.getLocalPath();
         if (localPath == null || book.getFilePath() == null) return null;
+        // Time slider (M3): when scrubbed, show the file AS OF that commit
+        if (timeMachine.isActive() && timeMachineRoom != null
+                && timeMachineRoom.equals(room.getRepoName())) {
+            String hist = timeMachine.fileContentAt(book.getFilePath());
+            if (hist != null) return hist;
+        }
         try {
             java.nio.file.Path p = java.nio.file.Path.of(localPath, book.getFilePath());
             if (!java.nio.file.Files.isRegularFile(p)) return null;
@@ -909,6 +920,14 @@ public class GameEngine {
         frameTimes.addLast(dt);
         if (frameTimes.size() > 120) frameTimes.removeFirst();
 
+        // [ / ] — commit time slider (M3, step 121): scrub room history
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_LEFT_BRACKET)) {
+            scrubTimeMachine(-1);
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_RIGHT_BRACKET)) {
+            scrubTimeMachine(1);
+        }
+
         // Tab — toggle full-screen map overlay (hold to view, release to close)
         if (input.wasKeyPressed(GLFW.GLFW_KEY_TAB)) {
             showMap = !showMap;
@@ -1053,6 +1072,34 @@ public class GameEngine {
             deployManager.deploy(player.getCurrentRoom(),
                 "mindpalace: saved " + bookEditor.getCurrentBook().getFilename());
             bookEditor.clearDirty();
+        }
+    }
+
+
+    /**
+     * [ / ] time slider (M3 step 121): scrub the current room's commit
+     * history. Loads history on first use per room; at position 0 the
+     * editor reads live files (present state).
+     */
+    private void scrubTimeMachine(int dir) {
+        Room room = player.getCurrentRoom();
+        if (room == null || room.getLocalPath() == null) return;
+        if (timeMachineRoom == null || !timeMachineRoom.equals(room.getRepoName())) {
+            boolean ok = timeMachine.load(room.getLocalPath());
+            timeMachineRoom = room.getRepoName();
+            if (!ok) {
+                System.out.println("[TimeMachine] no git history for " + room.getRepoName());
+                return;
+            }
+        }
+        int before = timeMachine.getPosition();
+        timeMachine.setPosition(before + dir);
+        if (timeMachine.getPosition() != before) {
+            com.mindpalace.world.TimeMachine.Commit c = timeMachine.currentCommit();
+            System.out.println("[TimeMachine] " + room.getRepoName() + " @ "
+                + (timeMachine.isActive()
+                    ? c.sha + " " + c.when + " — " + c.subject
+                    : "PRESENT (live files)"));
         }
     }
 

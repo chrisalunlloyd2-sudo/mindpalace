@@ -128,6 +128,14 @@ public class RepoMapper {
             room.setLastCommit(msg);
         }
 
+        // Heatmap activity (M3 step 123): commits in the last 30 days.
+        // One bounded git call per repo at scan time — no per-frame cost.
+        String actOut = runGit(repoDir,
+            "log", "--since=30.days", "--format=%h");
+        if (actOut != null && !actOut.isEmpty()) {
+            room.setActivity30d(actOut.split("\n").length);
+        }
+
         // Detect primary language by file extensions (recursive, bounded depth + file
         // cap). A top-level-only scan mislabels most repos as "Markdown" — README.md
         // is often the only recognized file at the root, while the real source lives
@@ -142,10 +150,20 @@ public class RepoMapper {
         else if (md > 0) room.setLanguage("Markdown");
     }
 
+    /** Public bounded-timeout git runner — shared with TimeMachine (M3). */
+    public interface GitRunner { String run(File repoDir, String... args); }
+
     /** Run a git command with a bounded timeout; returns trimmed stdout, or null on
      *  failure/timeout — never hangs the room scan on a stalled git or a credential
      *  prompt (the classic readAllBytes-without-waitFor deadlock). */
     private String runGit(File repoDir, String... args) {
+        return SHARED_GIT.run(repoDir, args);
+    }
+
+    /** The shared runner instance (TimeMachine uses this via its ctor). */
+    public static final GitRunner SHARED_GIT = new GitRunner() {
+        @Override
+        public String run(File repoDir, String... args) {
         try {
             ProcessBuilder pb = new ProcessBuilder();
             List<String> cmd = new ArrayList<>();
@@ -165,7 +183,8 @@ public class RepoMapper {
         } catch (Exception e) {
             return null;
         }
-    }
+        }
+    };
 
     /** Recursively count file extensions (bounded depth + file cap), skipping VCS/build dirs. */
     private void countExtensions(File dir, int depth, int[] c) {

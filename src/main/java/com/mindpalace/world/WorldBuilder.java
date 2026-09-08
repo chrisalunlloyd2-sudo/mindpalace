@@ -741,7 +741,14 @@ public class WorldBuilder {
     private void renderDoorFrame(Renderer r, float wallX, float floorY, float doorZ, Room room) {
         float dw = Room.DOOR_WIDTH, dh = Room.DOOR_HEIGHT;
         float offsetX = wallX > 0 ? -0.12f : 0.12f;
-        int color = room.isPrivate() ? Renderer.TEX_NEON_PINK : Renderer.TEX_NEON_CYAN;
+        // Heatmap tier (M3 step 123): commit activity last 30 days —
+        // 0 = privacy color (cyan/pink), 1-2 = green, 3-5 = amber, 6+ = red.
+        int color;
+        int act = room.getActivity30d();
+        if (act >= 6) color = Renderer.TEX_NEON_RED;
+        else if (act >= 3) color = Renderer.TEX_NEON_AMBER;
+        else if (act >= 1) color = Renderer.TEX_NEON_GREEN;
+        else color = room.isPrivate() ? Renderer.TEX_NEON_PINK : Renderer.TEX_NEON_CYAN;
         float t = 0.06f; // trim thickness
 
         // Two vertical side posts

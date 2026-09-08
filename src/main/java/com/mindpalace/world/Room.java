@@ -87,6 +87,11 @@ public class Room {
     public Room getBackRoom() { return backRoom; }
     public void setBackRoom(Room room) { this.backRoom = room; }
     public String getPosterImagePath() { return posterImagePath; }
+    // Heatmap activity (M3 step 123): commits in the last 30 days (0 if unknown)
+    private int activity30d = 0;
+    public int getActivity30d() { return activity30d; }
+    public void setActivity30d(int a) { this.activity30d = a; }
+
     public void setPosterImagePath(String p) { this.posterImagePath = p; }
 
     // Door animation
