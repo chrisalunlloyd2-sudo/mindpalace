@@ -9,11 +9,14 @@ labels: ["bug"]
 
 **What happened** (one line):
 
+**Expected behavior** (what you believe SHOULD happen — cite the doc/issue if known):
+
 **Where** (room/waypoint/menu, or "outside world"):
 
-**Steps to reproduce**:
-1.
-2.
+**Reproduction** (the smaller the repro, the faster the fix):
+1. State: fresh install / running session / demo mode / after N cycles
+2. Exact keys or flags: (e.g. `--demo`, press `[` twice, walk forward)
+3. What you observed vs what you expected, per step
 
 **Evidence** (attach — this is what makes bugs fixable):
 - Console log tail (`game_console.log`, last ~50 lines)

@@ -7,20 +7,20 @@
 
 ## The 10-minute smoke pass (run this first, every fresh install)
 
-| # | Surface | Do this | Broken looks like |
-|---|---------|---------|-------------------|
-| 1 | **Boot (live)** | `java -jar mindpalace-live.jar` → walk | crash before "World built"; > 2 min boot |
-| 2 | **Demo boot** | `--demo` — no GitHub account needed | manifest error in console; rooms = 0 |
-| 3 | **Doors** | Enter near 5 doors | door doesn't slide; teleport wrong floor |
-| 4 | **Books** | open, edit, save, close 3 books | content mismatch; editor won't close |
-| 5 | **Time slider** | inside a git repo: `[` then `]` ×5 | console shows no commit; editor shows wrong history |
-| 6 | **Doors heatmap** | look across a hallway | all frames identical color (activity tiers gone) |
-| 7 | **Search** | `/palace` + Enter | no jump; wrong door |
-| 8 | **FPS overlay** | F4 indoors + outside | no readout; wild swings while standing still |
-| 9 | **Rotor + audio** | stand in courtyard 70s | no tick/chime/bell; wind silent in forest |
-| 10 | **Collision** | try walking through the mansion wall | you pass through (the pre-H13b bug class) |
-| 11 | **Teleporters** | pad → list → confirm | stuck on pad; wrong destination |
-| 12 | **Sequencer** | B toggle, steps, tempo | no sound; UI stuck |
+| # | Surface | Do this | Expected | Broken looks like |
+|---|---------|---------|----------|-------------------|
+| 1 | Boot (live) | `java -jar mindpalace-live.jar` → walk | console: `World built: 9 hallways, ~145 rooms` → `Agents started`; walking within 2 min | crash before "World built"; > 2 min boot |
+| 2 | Demo boot | `--demo` (no GitHub account needed) | `Demo fixtures loaded: 12 rooms (no auth, no network)`; NO remote-merge lines even with a stored token (zero-network contract, fixed a612fb3) | manifest error; room count ≠ 12; `[GitHub] Authenticated` followed by a merge |
+| 3 | Doors | Enter near 5 doors | door slides up; console `[ENTER] <room label>`; interior has 3 bookcase walls | door doesn't slide; wrong room label |
+| 4 | Books | open, edit, save, close 3 books | editor opens with the file's real content; save writes through (`[Deploy]` line); close restores view | content mismatch; editor won't close; no save line |
+| 5 | Time slider | inside a git repo: `[` then `]` ×5 | one `[TimeMachine] <repo> @ <sha> <when> — <subject>` line per press; `]` past the newest prints `PRESENT (live files)`; editor at depth > 0 shows that commit's text | no console lines; editor content unchanged while scrubbed |
+| 6 | Doors heatmap | look across a hallway | frames differ by activity: 30d-active repos read green/amber/red; inert repos stay cyan/pink | all frames identical color |
+| 7 | Search | `/palace` + Enter | camera snaps beside the matching door; `[Search] Jumped to <label>`; unknown query prints `No repo matching '...'` | no jump; wrong door; no console line |
+| 8 | FPS overlay | F4 indoors, then outside | `[DEBUG] <n> FPS (rooms, halls)` billboard in front of camera; steady reading while standing still | no readout; wild swings standing still |
+| 9 | Rotor + audio | stand in courtyard 70s | tick every 1s, chime every 8s, bell every 64s; wind rises walking toward forest | no tick; chime/bell never arrive; wind silent in forest |
+| 10 | Collision | try walking through the mansion wall | you slide along walls; houses enterable only via the front doorway strip | you pass through any wall (pre-H13b class) |
+| 11 | Teleporters | pad → Enter → list → Enter | `[TELEPORT] Destination picker open` → `[TELEPORT] -> Pad N`; arrive on the chosen floor | stuck on pad; wrong floor; picker invisible |
+| 12 | Sequencer | B toggle, toggle steps, change tempo | grid toggles; steps trigger audible hits; tempo change audible immediately | no sound; UI stuck |
 
 ## Known-good baseline (don't file these)
 
