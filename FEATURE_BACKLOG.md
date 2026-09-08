@@ -1,5 +1,13 @@
 # FEATURE_BACKLOG.md — prioritized backlog with scoring
 
+> **Picking impactful work (start here):**
+> 1. Skim **Tier 1** below — highest score first; each item has a WHY.
+> 2. On GitHub, filter [`open` + `high`](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues?q=is%3Aissue+is%3Aopen+label%3Ahigh)
+>    — anything labeled high/area-* is currently-impactful by definition.
+> 3. `good first issue` + `area/ux` or `area/docs` = the newcomer funnel.
+> 4. Impact = which SUCCESS_METRICS row moves (every Tier 1 item names it).
+> Rules of engagement + scoring formula: see Queue rules at the bottom.
+
 > Label contract: every issue carries one **area/** + one **high/medium/low**
 > label (docs/LABELS.md). This file's tiers consume the same priorities:
 > `high` -> Tier 1 candidate, `medium` -> Tier 2, `low` -> Tier 4.
@@ -33,7 +41,7 @@
 
 ## Tier 1 — READY (next 3 actions, scored, with the WHY)
 
-### 1. Slider fidelity + layout determinism selftest checks — score 25
+### 1. Slider fidelity + layout determinism selftest checks — score 25 — [#10](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/10)
 **Why (user value):** Today, when you scrub to an old commit, you're
 trusting that the book you're reading is *actually* that commit's text —
 nothing proves it. And when a contributor experiments with a new layout
@@ -43,7 +51,9 @@ facts: what you read in the past IS the past, and the world you walk is
 the world that was built. They also close the last two open rows in
 SUCCESS_METRICS — objective tracking becomes fully self-contained.
 
-### 2. Release hygiene + installer QA — score 8.0
+
+**Moves metric:** selftest check count 40 → 42 (both queued checks land); SUCCESS_METRICS 'Slider content fidelity' row closes.
+### 2. Release hygiene + installer QA — score 8.0 — [#11](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/11)
 **Why (user value):** A new contributor's first 5 minutes are the
 installer. Right now we can't prove the exe on Releases matches the code
 in main — a stale binary would send every newcomer into bugs we already
@@ -52,7 +62,9 @@ auditable INSTALLER.md ("ran it fresh, here's what happened"), retired
 stale tags, and every future release is installed-verified before it's
 announced. This is the item that makes the "good first issue" funnel real.
 
-### 3. CME defensive sweep — score 3.3
+
+**Moves metric:** Releases audit-proof (latest exe == HEAD); unlocks `good first issue` funnel; M4 release-automation prerequisite.
+### 3. CME defensive sweep — score 3.3 — [#12](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/12)
 **Why (user value):** The one crash class that ever froze the palace for
 hours was a ConcurrentModificationException — agent thread mutating a
 list while the render thread walked it. We fixed the one instance we
@@ -61,6 +73,8 @@ agents, votes). Each is a future random freeze: the game just dies,
 the scout says "game down", and nobody knows why. Sweeping them converts
 "occasionally the palace vanishes" into "the palace doesn't do that".
 
+
+**Moves metric:** game-alive streak (scout); zero new ConcurrentModificationException classes in stress bot output.
 ## Tier 2 — SHAPED (spec'd, waiting for slot)
 
 > WHYs in brief: profiling (#4) converts the 60fps budget from a promise
