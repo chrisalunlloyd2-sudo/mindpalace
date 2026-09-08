@@ -23,7 +23,7 @@ setup.
 | Releases | installer + release notes per phase | every version bump |
 | GitHub Pages site | palace personality + vision | on visual milestones |
 | FEATURE_BACKLOG | scored tiers + linked issues | on triage (see LABELS.md) |
-| `good first issue` | newcomer funnel — each maps to one NEXT_100 step + one ARCHITECTURE pattern | keep ≥ 3 open at all times |
+| `good first issue` | newcomer funnel — 6 open (#13–#18): fixture room, manifest polish, gotcha row, INSTALLER skeleton, panel screenshots, teleporter check | keep ≥ 6 open while the funnel is young |
 
 ## Announcement checklist (every minor release)
 
