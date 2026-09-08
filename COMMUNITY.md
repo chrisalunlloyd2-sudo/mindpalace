@@ -23,7 +23,7 @@ setup.
 | Releases | installer + release notes per phase | every version bump |
 | GitHub Pages site | palace personality + vision | on visual milestones |
 | FEATURE_BACKLOG | scored tiers + linked issues | on triage (see LABELS.md) |
-| `good first issue` | newcomer funnel — 6 open (#13–#18): fixture room, manifest polish, gotcha row, INSTALLER skeleton, panel screenshots, teleporter check | keep ≥ 6 open while the funnel is young |
+| `good first issue` | newcomer funnel — 10 open (#13–#18, #22–#25): fixture room, manifest polish, gotcha rows, INSTALLER skeleton, panel screenshots, teleporter check, window title, Quick Start demo line, Win11 row, CI smoke | keep ≥ 6 open while the funnel is young |
 
 ## Announcement checklist (every minor release)
 
