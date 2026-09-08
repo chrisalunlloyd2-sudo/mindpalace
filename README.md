@@ -11,6 +11,9 @@
 
 ![The MindPalace — first view: fog-lit hallway, every door a real GitHub repo](docs/screenshots/hero.png)
 
+> **Just visiting?** Watch it run itself: `java -jar mindpalace-live.jar --demo` — a full palace, no GitHub account, no setup.
+> Want in? **[How to help](#how-to-help)** — 5 paths, 15 minutes to a merged PR ([FIRST_PR.md](FIRST_PR.md) walks one end to end).
+
 MindPalace turns your GitHub account into a grand, explorable palace. Walk a
 warm, fog-lit hallway where each door opens into a room built from a real
 repository. Wooden bookcases line three walls; every book is a file you can
@@ -508,6 +511,17 @@ mindpalace/
 ---
 
 ## FAQ
+
+**Q: Can I try it without connecting my GitHub account?**
+A: Yes — `--demo` boots a full 12-room fixture palace with zero auth and
+zero network. No token, no Ollama needed. It's also what CI runs.
+
+**Q: I don't write Java. Can I still contribute?**
+A: Yes — three lanes need no Java at all: add a [fixture room](FIRST_PR.md)
+(JSON + a few text files, 15 min), improve the docs (every stumble is a
+missing DEV_SETUP.md row), or run the [smoke pass](docs/TEST_PLAN.md) and
+file evidence-backed bugs. Designers: the whole look is a re-skin
+([docs/DESIGN.md](docs/DESIGN.md)).
 
 **Q: Why is the game dark?**
 A: The palace is intentionally moody — warm, fog-lit, atmospheric. If it's too
