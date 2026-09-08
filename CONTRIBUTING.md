@@ -71,3 +71,6 @@ landmines.
 - Evidence log: GitHub issue #9 (append-only)
 - Data: `todo_management/todo_files/mindpalace/` (TASK files, one at a time)
 - Docs: ARCHITECTURE.md (module map), DEV_SETUP.md (environment)
+## PR template
+
+Opening a PR auto-loads [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) — the cascade-evidence checklist. Fill it in; an empty evidence section is the #1 reason PRs bounce.
