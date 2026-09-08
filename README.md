@@ -565,6 +565,8 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 4. **Move the look** — designers: the re-skin system in [docs/DESIGN.md](docs/DESIGN.md); one `:root` block moves the whole mood.
 5. **Ship it** — every change goes through the cascade (build → selftest → E2E → step-log). [CONTRIBUTING.md](CONTRIBUTING.md) explains the one rule that makes contributions merge fast: machine-verified evidence.
 
+**The norms:** [CONTRIBUTION_NORMS.md](CONTRIBUTION_NORMS.md) — evidence before opinion, cascade for everyone, small complete PRs, backlog as queue, leave-it-better. [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — evidence-first, respect in both directions; reports handled privately.
+
 **Quick wins (no Java needed):** run `--demo` and report bugs · [add a fixture room](docs/DEMO_MODE.md#quick-win-add-a-fixture-room-10-minutes-no-code) (10 min, JSON + files) · [write your own layout algorithm](docs/LAYOUT_ALGORITHMS.md#quick-win-write-your-own-layout-an-afternoon-one-file) (one Java file, afternoon) · [docs](#community) — every gotcha you hit that isn't documented is a missing row in DEV_SETUP.md.
 
 ## Community
@@ -593,6 +595,8 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `HYPOTHESES_50.md` | The 50-hypothesis autonomous finishing program (7 phases) |
 | `WORLD_FINISHER_PLAN.md` | Phase B spec: walls/roofs/forest/bloom standards |
 | `GLM_FLASH_BLUEPRINT.md` | Phase F spec: flash-tier model routing, quota firewall |
+| `CODE_OF_CONDUCT.md` | House rules: evidence-first culture, enforcement ladder |
+| `CONTRIBUTION_NORMS.md` | The five working norms + what maintainers commit to |
 | `COMMUNITY.md` | Outreach playbook: pitch, surfaces, channels, newcomer funnel |
 | `docs/OUTREACH_POSTS.md` | Ready-to-post demo artifact + tweet thread / HN / r/localLLaMA copy |
 | `docs/LABELS.md` | Issue labeling taxonomy: high/medium/low × area/* |

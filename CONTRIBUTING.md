@@ -6,7 +6,8 @@ landmines.
 
 > **First contribution ever?** Skip this file for now — [FIRST_PR.md](FIRST_PR.md)
 > walks one real PR end to end (no Java needed). Come back here when you
-> want the full rules.
+> want the full rules. How we work day-to-day: [CONTRIBUTION_NORMS.md](CONTRIBUTION_NORMS.md).
+> House culture: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Quick start (5 minutes)
 
