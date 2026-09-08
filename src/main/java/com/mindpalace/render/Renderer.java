@@ -13,6 +13,10 @@ public class Renderer {
     private Shader basicShader;
     private Matrix4f projectionMatrix;
     private Matrix4f viewMatrix = new Matrix4f();
+
+    /** Matrices for the per-frame frustum culler (perf). */
+    public Matrix4f getProjectionMatrix() { return projectionMatrix; }
+    public Matrix4f getViewMatrix() { return viewMatrix; }
     private Vector3f viewPos = new Vector3f();
     private Shader hologramShader;
     private int width, height;

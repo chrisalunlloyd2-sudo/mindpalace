@@ -8,6 +8,7 @@ import com.mindpalace.render.Texture;
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.github.RepoScanner;
 import org.joml.Vector3f;
+import com.mindpalace.render.FrustumCuller;
 import java.util.*;
 
 /**
@@ -15,6 +16,13 @@ import java.util.*;
  * Rooms sorted by repo size. Hardwood floors, wallpaper, exit signs.
  */
 public class WorldBuilder {
+
+    private final FrustumCuller frustum = new FrustumCuller();
+    private long culledRoomsLastFrame = 0; // F4-visible stat
+
+    /** Rooms the frustum culler skipped last frame (perf HUD row). */
+    public long getCulledRoomsLastFrame() { return culledRoomsLastFrame; }
+
     private List<Room> rooms = new CopyOnWriteArrayList<>();
     private List<Hallway> hallways = new ArrayList<>();
 
@@ -231,6 +239,10 @@ public class WorldBuilder {
         Vector3f camFront = camera.getFront();
         this.camX = camPos.x;
         this.camZ = camPos.z;
+        // perf: frustum culling — planes from the current proj*view
+        frustum.update(r.getProjectionMatrix(), r.getViewMatrix());
+        long before = culledRoomsLastFrame;
+        culledRoomsLastFrame = 0;
 
         // Planet — always render when active (it's the open world)
         if (planetActive) renderPlanet(r, camPos);
@@ -255,7 +267,11 @@ public class WorldBuilder {
             Vector3f c = room.getRoomCenter();
             float dist = camPos.distance(c);
             if (dist > ROOM_CULL_DISTANCE) continue;
-            if (!isInFront(camPos, camFront, c, dist)) continue;
+            // perf: proper frustum test (room AABB) replaces the 2D front check
+            if (!frustum.intersectsAabb(c, Room.ROOM_WIDTH / 2f, 1.5f, Room.ROOM_DEPTH / 2f)) {
+                culledRoomsLastFrame++;
+                continue;
+            }
             // Fog of war: skip fogged rooms until their hex is revealed
             if (room.isFogged() && !fogOfWar.isRoomRevealed(room)) continue;
             renderRoom(r, room);

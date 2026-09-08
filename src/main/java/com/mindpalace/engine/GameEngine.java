@@ -131,6 +131,9 @@ public class GameEngine {
 
     // FPS overlay state (M2 step 115) — frameTimes hold seconds
     private boolean fpsShow = false;
+    private boolean minimapShow = true; // M toggles the corner overlay
+    private Room minimapHighlight;              // search target, flashes 4s
+    private long minimapHighlightUntil = 0L;
     private final java.util.ArrayDeque<Double> frameTimes = new java.util.ArrayDeque<>();
 
     // Commit time slider (M3 step 121) — per-room history scrub
@@ -843,6 +846,8 @@ public class GameEngine {
                     player.getCamera().setPosition(dp.x + (found.getHallwaySide() == 0 ? 1.5f : -1.5f),
                         player.getCamera().getPosition().y, dp.z);
                     System.out.println("[Search] Jumped to " + found.getDisplayLabel());
+                    minimapHighlight = found;   // flash the target on the minimap
+                    minimapHighlightUntil = System.currentTimeMillis() + 4000L;
                 } else {
                     System.out.println("[Search] No repo matching '" + searchQuery + "'");
                 }
@@ -917,7 +922,16 @@ public class GameEngine {
         if (input.wasKeyPressed(GLFW.GLFW_KEY_F4)) {
             fpsShow = !fpsShow;
         }
+
+        // M — toggle minimap overlay (feat ask: minimap UX improvement)
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_M)) {
+            minimapShow = !minimapShow;
+            System.out.println("[Minimap] " + (minimapShow ? "ON" : "OFF"));
+        }
         frameTimes.addLast(dt);
+        if (minimapHighlight != null && System.currentTimeMillis() > minimapHighlightUntil) {
+            minimapHighlight = null; // highlight expired
+        }
         if (frameTimes.size() > 120) frameTimes.removeFirst();
 
         // [ / ] — commit time slider (M3, step 121): scrub room history
@@ -1734,8 +1748,9 @@ public class GameEngine {
             double avgFps = n > 0 ? n / Math.max(sum, 1e-9) : 0;
             Camera fcam = player.getCamera();
             Vector3f fpos = new Vector3f(fcam.getPosition()).add(new Vector3f(fcam.getFront()).mul(1.2f));
-            String line = String.format("[DEBUG] %.1f FPS  (%d rooms, %d halls)",
-                avgFps, world.getRooms().size(), world.getHallways().size());
+            String line = String.format("[DEBUG] %.1f FPS  (%d rooms, %d halls, %d frustum-culled)",
+                avgFps, world.getRooms().size(), world.getHallways().size(),
+                world.getCulledRoomsLastFrame());
             fontRenderer.renderBillboard(line, fpos, 0.05f,
                 new org.joml.Vector3f(0.2f, 1.0f, 0.4f),
                 fcam.getProjectionMatrix((float) width / height), fcam.getViewMatrix(), fcam.getPosition());
@@ -1893,7 +1908,7 @@ public class GameEngine {
         }
 
         // Minimap — top-right corner
-        renderMinimap(cam, proj, view, camPos, camFront, camRight);
+        if (minimapShow) renderMinimap(cam, proj, view, camPos, camFront, camRight);
 
         // ---- Live patch cinematic + loaded toast (billboards in front of camera) ----
         if (patchCinematic || patchToastTimer > 0) {
@@ -1953,7 +1968,9 @@ public class GameEngine {
             Vector3f dotPos = new Vector3f(mapCenter).add(
                 camRight.x * dx, 0, camFront.x * dz + camFront.z * dz);
 
-            Vector3f dotColor = room.isPrivate()
+            Vector3f dotColor = (room == minimapHighlight)
+                ? new Vector3f(1.0f, 0.8f, 0.2f)   // gold flash: search target
+                : room.isPrivate()
                 ? new Vector3f(1.0f, 0.3f, 0.5f)
                 : new Vector3f(0.3f, 0.8f, 1.0f);
             fontRenderer.renderBillboard(".", dotPos, 0.04f, dotColor, proj, view, camPos);
