@@ -252,7 +252,17 @@ and powers the agents' spatial awareness.
 - GPU with OpenGL 3.3 support
 - (Optional) Ollama running locally for the SLM agents
 
-### Build & Run
+### Try it in 60 seconds (no GitHub account, no build)
+
+```bash
+# after installing the latest release (Releases) — or any build of the jar:
+java -Dprism.order=sw -Dprism.vsync=false -jar mindpalace-live.jar --demo
+```
+
+A full 12-room fixture palace boots with **zero auth and zero network** —
+the same mode CI verifies. See [DEMO_MODE.md](docs/DEMO_MODE.md).
+
+### Build & Run (live mode — your real GitHub repos)
 
 ```bash
 git clone https://github.com/chrisalunlloyd2-sudo/mindpalace.git
