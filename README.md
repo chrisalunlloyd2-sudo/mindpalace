@@ -574,7 +574,7 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 - **Pick impactful work**: [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) → Tier 1 (scored, WHYs, linked issues #10–#12) or filter [open `high` issues](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues?q=is%3Aissue+is%3Aopen+label%3Ahigh)
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md) — cascade rules, code style, PR expectations
 - **Environment**: [DEV_SETUP.md](DEV_SETUP.md) — prereqs + proven gotchas
-- **Web presence**: [GitHub Pages site](https://chrisalunlloyd2-sudo.github.io/mind-palace/) (palace personality CSS)
+- **Hosted demo tour**: [demo.html on GitHub Pages](https://chrisalunlloyd2-sudo.github.io/mind-palace/demo.html) — 11 real waypoints + stills, run-it-locally CTAs · [Pages site](https://chrisalunlloyd2-sudo.github.io/mind-palace/)
 - **Releases**: [installer + notes](https://github.com/chrisalunlloyd2-sudo/mindpalace/releases)
 - **Templates**: bug / feature / docs / hypothesis-step — evidence-first, pre-answering triage questions
 - **Outreach**: [COMMUNITY.md](COMMUNITY.md) (playbook) · [docs/OUTREACH_POSTS.md](docs/OUTREACH_POSTS.md) (ready-to-post threads) — the pitch, surfaces, announcement checklist, tone rules

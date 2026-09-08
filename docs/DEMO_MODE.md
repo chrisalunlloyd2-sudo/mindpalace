@@ -58,3 +58,9 @@ Contributors shape the demo world without touching Java:
 House rules: files must be yours or permissively licensed (they ship in
 the repo), keep each file < 50 lines, no binaries. Your room appears in
 every future demo boot and the CI smoke pass.
+
+## Hosted tour (no install at all)
+
+[demo.html on GitHub Pages](https://chrisalunlloyd2-sudo.github.io/mind-palace/demo.html)
+presents the 11-waypoint verification tour + stills with run-it-locally
+CTAs. Static by nature — the interactive demo is `--demo` locally.
