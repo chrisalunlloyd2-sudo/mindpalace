@@ -578,6 +578,7 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 - **Environment**: [DEV_SETUP.md](DEV_SETUP.md) — prereqs + proven gotchas
 - **Hosted demo tour**: [demo.html on GitHub Pages](https://chrisalunlloyd2-sudo.github.io/mind-palace/demo.html) — 11 real waypoints + stills, run-it-locally CTAs · [Pages site](https://chrisalunlloyd2-sudo.github.io/mind-palace/)
 - **Feedback & discussion**: [Discussion #21](https://github.com/chrisalunlloyd2-sudo/mindpalace/discussions/21) — concept post, three feedback questions, open to everyone
+- **Help & contact**: [.github/SUPPORT.md](.github/SUPPORT.md) — maintainer contact (Discussions / profile-contact email relay), where-each-problem-goes table, response expectations
 - **Releases**: [installer + notes](https://github.com/chrisalunlloyd2-sudo/mindpalace/releases)
 - **Templates**: bug / feature / docs / hypothesis-step — evidence-first, pre-answering triage questions
 - **Outreach**: [COMMUNITY.md](COMMUNITY.md) (playbook) · [docs/OUTREACH_POSTS.md](docs/OUTREACH_POSTS.md) (ready-to-post threads) — the pitch, surfaces, announcement checklist, tone rules

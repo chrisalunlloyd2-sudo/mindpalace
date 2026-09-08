@@ -41,9 +41,13 @@ affecting community members falls within scope when reported.
 
 - Maintainers may remove, edit, or reject contributions that violate
   this document — comments, PRs, or discussions — with a stated reason.
-- Reports go to the repo owner (GitHub profile contact or the
-  [Q&A discussion](https://github.com/chrisalunlloyd2-sudo/mindpalace/discussions)).
-  Reports are handled privately and promptly.
+- **Report to the maintainer** via any of (pick what you're comfortable with):
+  - GitHub Discussions: the [Q&A category](https://github.com/chrisalunlloyd2-sudo/mindpalace/discussions/categories/q-a) — public questions, visible to all
+  - Issue contact: open a GitHub issue on `chrisalunlloyd2-sudo/mindpalace` marked `question`
+  - GitHub profile contact: [chrisalunlloyd2-sudo](https://github.com/chrisalunlloyd2-sudo) — "Start a conversation" sends email without exposing your address
+  - Direct email: available on request via the profile contact (kept off public docs to avoid spam harvesters)
+  Reports are handled privately and promptly. The full contact map also
+  lives in [.github/SUPPORT.md](.github/SUPPORT.md).
 - Escalation: repeated violations → temporary mute → permanent ban.
   One strike for evidence-faking; the step-log is sacred.
 
