@@ -1,8 +1,10 @@
 ---
 name: Docs issue
 about: Documentation wrong, stale, or missing
-labels: documentation
+labels: ["documentation", "area/docs"]
 ---
+**Priority**: `high` (blocks onboarding / active wrong-info) | `medium` | `low`
+
 **Which doc** (ARCHITECTURE.md / CONTRIBUTING.md / DEV_SETUP.md / docs/*):
 
 **What's wrong**:
@@ -15,5 +17,4 @@ labels: documentation
 
 **Proof of staleness** (for stale/wrong): file:line of the code that disagrees.
 
-**Note**: every drafted task carries a "verify before you build" rule —
-planning docs run behind shipped code by design; grep first, don't trust.
+**Note**: planning docs run behind shipped code by design — grep first, don't trust.

@@ -1,8 +1,12 @@
 ---
 name: Bug report
 about: Something in the palace is broken
-labels: bug
+labels: ["bug"]
 ---
+**Priority** (replace this line, keep exactly one): `high` (blocks a milestone / crash-class) | `medium` (next milestone) | `low` (polish)
+
+**Area** (where the FIX lands — see docs/LABELS.md): `area/ux` | `area/perf` | `area/infra` | `area/world` | `area/agents` | `area/audio` | `area/docs`
+
 **What happened** (one line):
 
 **Where** (room/waypoint/menu, or "outside world"):

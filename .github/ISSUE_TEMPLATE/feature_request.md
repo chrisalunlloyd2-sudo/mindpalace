@@ -1,12 +1,15 @@
 ---
 name: Feature request
 about: A new room, tool, sound, or system for the palace
-labels: enhancement
+labels: ["enhancement"]
 ---
+**Priority** (maintainer triages): `high` | `medium` | `low`
+
+**Area** (pick exactly one — see docs/LABELS.md): `area/ux` | `area/perf` | `area/infra` | `area/world` | `area/agents` | `area/audio` | `area/docs`
+
 **One-line pitch**:
 
-**Which module does this belong in?** (see ARCHITECTURE.md's "where do I add X" table):
-- world/ (a place) / render/ (pixels) / agent/ (a mind) / audio/ / economy/ / ui/
+**Which module does this belong in?** (ARCHITECTURE.md's "where do I add X" table):
 
 **Which existing pattern does it copy?** (the table's "pattern to copy" column):
 

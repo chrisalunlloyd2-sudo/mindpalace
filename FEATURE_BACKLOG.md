@@ -1,5 +1,9 @@
 # FEATURE_BACKLOG.md — prioritized backlog with scoring
 
+> Label contract: every issue carries one **area/** + one **high/medium/low**
+> label (docs/LABELS.md). This file's tiers consume the same priorities:
+> `high` -> Tier 1 candidate, `medium` -> Tier 2, `low` -> Tier 4.
+
 > Consolidated from: BACKLOG.md (items 5–21), NEXT_100_STEPS.md unshipped
 > steps, SUCCESS_METRICS queued checks, and milestone follow-ups. Every
 > item carries a priority score, so ordering is defensible, not vibes.
