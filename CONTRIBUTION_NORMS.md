@@ -53,7 +53,7 @@ touches it.
 - **Your evidence is safe.** A good bug report with imperfect prose is
   accepted; we fix the template usage, not reject the report.
 - **Credit in release notes** for testers (3+ accepted reports) and
-  first-PR authors.
+  first-PR authors — recorded in [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 ## Decision-making
 

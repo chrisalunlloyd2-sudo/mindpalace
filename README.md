@@ -577,7 +577,8 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md) — cascade rules, code style, PR expectations
 - **Environment**: [DEV_SETUP.md](DEV_SETUP.md) — prereqs + proven gotchas
 - **Hosted demo tour**: [demo.html on GitHub Pages](https://chrisalunlloyd2-sudo.github.io/mind-palace/demo.html) — 11 real waypoints + stills, run-it-locally CTAs · [Pages site](https://chrisalunlloyd2-sudo.github.io/mind-palace/)
-- **Feedback & discussion**: [Discussion #21](https://github.com/chrisalunlloyd2-sudo/mindpalace/discussions/21) — concept post, three feedback questions, open to everyone
+- **Feedback & discussion**: [Discussion #21](https://github.com/chrisalunlloyd2-sudo/mindpalace/discussions/21) — concept post + maintainer welcome, three feedback questions, open to everyone
+- **Grow with the project**: [CONTRIBUTOR_LADDER.md](CONTRIBUTOR_LADDER.md) — visitor → tester → contributor → regular → maintainer, every rung's door open · [CONTRIBUTORS.md](CONTRIBUTORS.md) — credit as a norm
 - **Help & contact**: [.github/SUPPORT.md](.github/SUPPORT.md) — maintainer contact (Discussions / profile-contact email relay), where-each-problem-goes table, response expectations
 - **Releases**: [installer + notes](https://github.com/chrisalunlloyd2-sudo/mindpalace/releases)
 - **Templates**: bug / feature / docs / hypothesis-step — evidence-first, pre-answering triage questions
@@ -598,6 +599,8 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `GLM_FLASH_BLUEPRINT.md` | Phase F spec: flash-tier model routing, quota firewall |
 | `CODE_OF_CONDUCT.md` | House rules: evidence-first culture, enforcement ladder |
 | `CONTRIBUTION_NORMS.md` | The five working norms + what maintainers commit to |
+| `CONTRIBUTOR_LADDER.md` | Visitor → tester → contributor → regular → maintainer, with open doors per rung |
+| `CONTRIBUTORS.md` | The people list: testers, first-PR authors, notable work |
 | `COMMUNITY.md` | Outreach playbook: pitch, surfaces, channels, newcomer funnel |
 | `docs/OUTREACH_POSTS.md` | Ready-to-post demo artifact + tweet thread / HN / r/localLLaMA copy |
 | `docs/LABELS.md` | Issue labeling taxonomy: high/medium/low × area/* |
