@@ -542,6 +542,8 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 
 ## Community
 
+> **Want to help?** Testers → [docs/TEST_PLAN.md](docs/TEST_PLAN.md) (12-minute smoke pass) · Designers → [docs/DESIGN.md](docs/DESIGN.md) (re-skin system + open asks) · Developers → [CONTRIBUTING.md](CONTRIBUTING.md) + [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) Tier 1.
+
 - **Evidence log / step-log**: [issue #9](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/9) — every shipped step with machine-verified evidence, append-only
 - **Pick impactful work**: [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) → Tier 1 (scored, WHYs, linked issues #10–#12) or filter [open `high` issues](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues?q=is%3Aissue+is%3Aopen+label%3Ahigh)
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md) — cascade rules, code style, PR expectations
