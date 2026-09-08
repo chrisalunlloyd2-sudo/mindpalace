@@ -543,7 +543,7 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 
 ## How to help (5 minutes to first contribution)
 
-1. **Run the demo** — `java -jar mindpalace-live.jar --demo` (no GitHub account). If anything feels off, file it with the [bug template](.github/ISSUE_TEMPLATE/bug_report.md).
+1. **Run the demo** — `java -jar mindpalace-live.jar --demo` (no GitHub account). If anything feels off, file it with the [bug template](.github/ISSUE_TEMPLATE/bug_report.md). **Never contributed before?** Follow [FIRST_PR.md](FIRST_PR.md) — a worked example, every command and expected output, 15 minutes to a merged PR.
 2. **Run the smoke pass** — 12 surfaces, 10 minutes: [docs/TEST_PLAN.md](docs/TEST_PLAN.md). Your GPU/OS row in the matrix is coverage we don't have.
 3. **Pick a scored issue** — Tier 1 in [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) (WHY + spec included), or the [`good first issue`](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) funnel for a first PR.
 4. **Move the look** — designers: the re-skin system in [docs/DESIGN.md](docs/DESIGN.md); one `:root` block moves the whole mood.

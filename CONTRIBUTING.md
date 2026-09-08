@@ -4,6 +4,10 @@ Welcome to the palace. Every room is a GitHub repo, every book is a file,
 and the walls are solid now. Here's how to work on it without stepping on
 landmines.
 
+> **First contribution ever?** Skip this file for now — [FIRST_PR.md](FIRST_PR.md)
+> walks one real PR end to end (no Java needed). Come back here when you
+> want the full rules.
+
 ## Quick start (5 minutes)
 
 1. **Prereqs**: Java 17 (JDK), Maven 3.9, Windows 10/11, OpenGL 3.3 GPU.
