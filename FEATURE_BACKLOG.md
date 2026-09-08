@@ -31,15 +31,46 @@
 | Commit time slider, activity heatmap | M3 | commit bdffe41 |
 | SUCCESS_METRICS + --progress scorecard | metrics ask | commits 98f0e97, 04b1ef3 |
 
-## Tier 1 — READY (next 3 actions, scored)
+## Tier 1 — READY (next 3 actions, scored, with the WHY)
 
-| # | Item | Cat | P | C | E | R | Score | Note |
-|---|------|-----|---|---|---|---|-------|------|
-| 1 | **Slider fidelity + layout determinism selftest checks** — book@rev == git show rev:path; same-repos-same-centers | bugs/tests | 5 | 5 | 1 | 1 | **25** | closes the 2 queued metrics; joins the 40-check gate |
-| 2 | **Release hygiene + installer QA** (BACKLOG 18+19): retire v1.0.0-coldshot, run installer fresh end-to-end, INSTALLER.md | github/installer | 4 | 4 | 2 | 1 | 8.0 | every release claim then audit-proof |
-| 3 | **CME defensive sweep** (BACKLOG 10): synchronizedList+snapshot audit over rooms/books/agents/votes | bugs | 5 | 4 | 2 | 3 | 3.3 | the one bug class that froze the game |
+### 1. Slider fidelity + layout determinism selftest checks — score 25
+**Why (user value):** Today, when you scrub to an old commit, you're
+trusting that the book you're reading is *actually* that commit's text —
+nothing proves it. And when a contributor experiments with a new layout
+algorithm, nothing proves the palace didn't silently rearrange itself.
+These two checks turn both "trust me" moments into machine-verified
+facts: what you read in the past IS the past, and the world you walk is
+the world that was built. They also close the last two open rows in
+SUCCESS_METRICS — objective tracking becomes fully self-contained.
+
+### 2. Release hygiene + installer QA — score 8.0
+**Why (user value):** A new contributor's first 5 minutes are the
+installer. Right now we can't prove the exe on Releases matches the code
+in main — a stale binary would send every newcomer into bugs we already
+fixed, and they'd blame the project, not the cache. After this: one
+auditable INSTALLER.md ("ran it fresh, here's what happened"), retired
+stale tags, and every future release is installed-verified before it's
+announced. This is the item that makes the "good first issue" funnel real.
+
+### 3. CME defensive sweep — score 3.3
+**Why (user value):** The one crash class that ever froze the palace for
+hours was a ConcurrentModificationException — agent thread mutating a
+list while the render thread walked it. We fixed the one instance we
+found; three more collections of the same shape exist (rooms, books,
+agents, votes). Each is a future random freeze: the game just dies,
+the scout says "game down", and nobody knows why. Sweeping them converts
+"occasionally the palace vanishes" into "the palace doesn't do that".
 
 ## Tier 2 — SHAPED (spec'd, waiting for slot)
+
+> WHYs in brief: profiling (#4) converts the 60fps budget from a promise
+> into a measured fact before anyone optimizes blind. Editor upgrade (#5)
+> makes the in-game editor usable for real work instead of peeking.
+> Memory fencing (#6) stops Ollama models from starving the game's RAM.
+> Live search overlay (#7) turns the console-only search into something
+> discoverable by players who never read the docs. Chunked streaming (#8)
+> stops the outside world from drawing itself whole when you can only see
+> a slice.
 
 | # | Item | Cat | P | C | E | R | Score | Blocker |
 |---|------|-----|---|---|---|---|-------|---------|
@@ -50,6 +81,17 @@
 | 8 | Chunked outside-world streaming + weather sync (BACKLOG 16) | performance/visuals | 3 | 3 | 3 | 2 | 1.5 | profiling first (item 4) |
 
 ## Tier 3 — PROMOTED / CONTRACTS (multi-day, milestone-gated)
+
+> WHYs in brief: multiplayer (#9) is the Architect's promoted next-week
+> ask — shared palaces are the viral feature; but the contract doc comes
+> first because the port-probe attempt proved nothing exists to poke.
+> BDI-as-player (#10) puts a deterministic zero-LLM agent inside the world
+> — the Architect's own idea, and a unique demo of the symbolic-AI stack.
+> Quorum push gate (#11) is the governance milestone: agents earn the
+> right to push only when 3 voters approve the exact diff — that's what
+> makes autonomous contribution safe enough to leave running. Control
+> Panel (#12) gives non-technical players a launcher that doesn't require
+> reading DEV_SETUP.md.
 
 | # | Item | Cat | Gate |
 |---|------|-----|------|
