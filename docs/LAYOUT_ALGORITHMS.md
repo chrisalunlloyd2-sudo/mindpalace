@@ -64,3 +64,18 @@ E2E waypoint — that's the test that catches it.
 Layout-isolation is item 5 of the Architect's community list; the corridor
 extraction + enum is queued as a NEXT_100_STEPS entry (step ~113). This
 doc fixes the contract first so the extraction lands as pure refactor.
+
+## Quick win: write your own layout (an afternoon, one file)
+
+The interface makes this a self-contained contribution:
+
+1. Copy `CorridorLayout.java` → `MyLayout.java` (keep the class shape).
+2. Change the math inside `layout()` — rings, spiral, districts, anything.
+   The contract: every room gets floor/side/doorPosition/roomCenter/
+   doorRotation; hallways appended; same input ⇒ same output.
+3. Register it: `RoomLayout` gains a constant; `WorldBuilder.setLayout()`
+   already exists as the switcher.
+4. Prove it: run `--demo` (12 rooms layout fast) and eyeball the world;
+   the stability selftest (#10) is the gate that must stay green.
+5. PR with 2–3 screenshots. Best one becomes an option in the panel
+   (step 114 wires the picker).

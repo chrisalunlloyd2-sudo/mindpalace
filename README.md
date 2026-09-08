@@ -549,6 +549,8 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 4. **Move the look** — designers: the re-skin system in [docs/DESIGN.md](docs/DESIGN.md); one `:root` block moves the whole mood.
 5. **Ship it** — every change goes through the cascade (build → selftest → E2E → step-log). [CONTRIBUTING.md](CONTRIBUTING.md) explains the one rule that makes contributions merge fast: machine-verified evidence.
 
+**Quick wins (no Java needed):** run `--demo` and report bugs · [add a fixture room](docs/DEMO_MODE.md#quick-win-add-a-fixture-room-10-minutes-no-code) (10 min, JSON + files) · [write your own layout algorithm](docs/LAYOUT_ALGORITHMS.md#quick-win-write-your-own-layout-an-afternoon-one-file) (one Java file, afternoon) · [docs](#community) — every gotcha you hit that isn't documented is a missing row in DEV_SETUP.md.
+
 ## Community
 
 

@@ -36,3 +36,25 @@ hermetic run (no GitHub rate limits on CI runners):
 Planned as step 112 in NEXT_100_STEPS.md (content & depth block). This
 page documents the contract ahead of the implementation so the flag name
 and file path are stable from day one.
+
+## Quick win: add a fixture room (10 minutes, no code)
+
+Contributors shape the demo world without touching Java:
+
+1. Create `data/demo_repos/<your-name>/` with 2–5 small real files
+   (any language — the spines color-code by extension).
+2. Append one object to `data/demo_repos.json`:
+
+        { "name": "your-name",
+          "language": "Python",
+          "description": "one line shown on the door sign",
+          "private": false,
+          "path": "data/demo_repos/your-name" }
+
+3. `--demo` and walk to your room (search `/your-name`).
+4. PR it. That's the whole contract — the manifest regex and room builder
+   handle the rest.
+
+House rules: files must be yours or permissively licensed (they ship in
+the repo), keep each file < 50 lines, no binaries. Your room appears in
+every future demo boot and the CI smoke pass.
