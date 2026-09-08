@@ -5,6 +5,14 @@
 > Tone rules apply: never announce what isn't shipped; lead with local;
 > every claim links to evidence.
 
+## The short concept post (the one to share first)
+
+[docs/CONCEPT_POST.md](CONCEPT_POST.md) — live as
+[Discussion #21](https://github.com/chrisalunlloyd2-sudo/mindpalace/discussions/21).
+Short, three concrete feedback questions, links the hosted demo + first-PR
+path. Use this one for DMs/Discord/Reddit comments; the threads below are
+the long-form variants.
+
 ## The demo artifact
 
 **`docs/screenshots/mindpalace_tour.gif`** — 11 real E2E waypoints as a
