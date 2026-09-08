@@ -1,0 +1,63 @@
+name: welcome-feedback
+
+on:
+  issues:
+    types: [opened]
+  discussion:
+    types: [created]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  discussions: write
+  pull-requests: write
+
+jobs:
+  greet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Welcome first-time contributors + route to feedback
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const kind = context.eventName === 'discussion' ? 'discussion' : (context.eventName === 'issues' ? 'issue' : 'PR');
+            // First-time detection: issues/PRs have author_association; discussions get a friendly reply regardless
+            const firstTime = context.payload[context.eventName] &&
+                              (context.payload.issue?.author_association === 'FIRST_TIME_CONTRIBUTOR' ||
+                               context.payload.pull_request?.author_association === 'FIRST_TIME_CONTRIBUTOR' ||
+                               kind === 'discussion');
+            if (!firstTime && kind !== 'discussion') return;
+
+            const body = kind === 'discussion' ? [
+              'Thanks for stopping by the palace! :castle:',
+              '',
+              'If you have feedback, the three questions in the concept post are the highest-signal answers for us:',
+              '- Is "your code as a place agents inhabit" useful, or just pretty?',
+              '- Which would you actually use: time-slider, door heatmap, in-game editor?',
+              '- If you ran it: one evidence-backed bug (docs/TEST_PLAN.md smoke pass) beats ten likes.',
+              '',
+              'Zero-setup look: `--demo` (no auth, no network) or the [hosted tour](https://chrisalunlloyd2-sudo.github.io/mind-palace/demo.html).',
+              'First PR in 15 minutes, no Java: [FIRST_PR.md](https://github.com/chrisalunlloyd2-sudo/mindpalace/blob/main/FIRST_PR.md).'
+            ].join('\n') : [
+              'Welcome to the palace — and thank you for the first contribution! :castle:',
+              '',
+              'A maintainer (or the autonomous program, if it qualifies) will triage this shortly. If you want the fastest path:',
+              '- Bug reports with console tail + RESULT line get fixed fastest (the template asks for exactly those).',
+              '- Your `good first issue` board: 6 open, all copy-paste runnable.',
+              '- The public evidence log for everything shipped: [step-log #9](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/9).'
+            ].join('\n');
+
+            if (kind === 'discussion') {
+              await github.rest.discussions.createReply({
+                owner: context.repo.owner, repo: context.repo.repo,
+                discussion_number: context.payload.discussion.number,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.payload.issue?.number || context.payload.pull_request?.number,
+                body
+              });
+            }
