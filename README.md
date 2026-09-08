@@ -38,6 +38,7 @@ pull into the editor.
 12. [Tech Stack](#tech-stack)
 13. [FAQ](#faq)
 14. [Roadmap](#roadmap)
+15. [How to help](#how-to-help)
 
 ---
 
@@ -540,9 +541,16 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 
 ---
 
+## How to help (5 minutes to first contribution)
+
+1. **Run the demo** — `java -jar mindpalace-live.jar --demo` (no GitHub account). If anything feels off, file it with the [bug template](.github/ISSUE_TEMPLATE/bug_report.md).
+2. **Run the smoke pass** — 12 surfaces, 10 minutes: [docs/TEST_PLAN.md](docs/TEST_PLAN.md). Your GPU/OS row in the matrix is coverage we don't have.
+3. **Pick a scored issue** — Tier 1 in [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) (WHY + spec included), or the [`good first issue`](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) funnel for a first PR.
+4. **Move the look** — designers: the re-skin system in [docs/DESIGN.md](docs/DESIGN.md); one `:root` block moves the whole mood.
+5. **Ship it** — every change goes through the cascade (build → selftest → E2E → step-log). [CONTRIBUTING.md](CONTRIBUTING.md) explains the one rule that makes contributions merge fast: machine-verified evidence.
+
 ## Community
 
-> **Want to help?** Testers → [docs/TEST_PLAN.md](docs/TEST_PLAN.md) (12-minute smoke pass) · Designers → [docs/DESIGN.md](docs/DESIGN.md) (re-skin system + open asks) · Developers → [CONTRIBUTING.md](CONTRIBUTING.md) + [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) Tier 1.
 
 - **Evidence log / step-log**: [issue #9](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/9) — every shipped step with machine-verified evidence, append-only
 - **Pick impactful work**: [FEATURE_BACKLOG.md](FEATURE_BACKLOG.md) → Tier 1 (scored, WHYs, linked issues #10–#12) or filter [open `high` issues](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues?q=is%3Aissue+is%3Aopen+label%3Ahigh)
