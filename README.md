@@ -11,6 +11,8 @@
 
 ![The MindPalace — first view: fog-lit hallway, every door a real GitHub repo](docs/screenshots/hero.png)
 
+![A tour of the palace — 11 real E2E waypoints](docs/screenshots/mindpalace_tour.gif)
+
 > **Just visiting?** Watch it run itself: `java -jar mindpalace-live.jar --demo` — a full palace, no GitHub account, no setup.
 > Want in? **[How to help](#how-to-help)** — 5 paths, 15 minutes to a merged PR ([FIRST_PR.md](FIRST_PR.md) walks one end to end).
 
@@ -575,7 +577,7 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 - **Web presence**: [GitHub Pages site](https://chrisalunlloyd2-sudo.github.io/mind-palace/) (palace personality CSS)
 - **Releases**: [installer + notes](https://github.com/chrisalunlloyd2-sudo/mindpalace/releases)
 - **Templates**: bug / feature / docs / hypothesis-step — evidence-first, pre-answering triage questions
-- **Outreach playbook**: [COMMUNITY.md](COMMUNITY.md) — the pitch, surfaces, announcement checklist, tone rules
+- **Outreach**: [COMMUNITY.md](COMMUNITY.md) (playbook) · [docs/OUTREACH_POSTS.md](docs/OUTREACH_POSTS.md) (ready-to-post threads) — the pitch, surfaces, announcement checklist, tone rules
 
 ## Documentation
 
@@ -591,6 +593,7 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `WORLD_FINISHER_PLAN.md` | Phase B spec: walls/roofs/forest/bloom standards |
 | `GLM_FLASH_BLUEPRINT.md` | Phase F spec: flash-tier model routing, quota firewall |
 | `COMMUNITY.md` | Outreach playbook: pitch, surfaces, channels, newcomer funnel |
+| `docs/OUTREACH_POSTS.md` | Ready-to-post demo artifact + tweet thread / HN / r/localLLaMA copy |
 | `docs/LABELS.md` | Issue labeling taxonomy: high/medium/low × area/* |
 | `FEATURE_BACKLOG.md` | Prioritized feature backlog with P·C/(E·R) scoring, tiers, and queue rules |
 | `ROADMAP_3MONTH.md` | 3-month milestones: Month 1 world+bots, Month 2 trustworthy agents, Month 3 open to contributors |
