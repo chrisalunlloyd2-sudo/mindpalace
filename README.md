@@ -262,6 +262,10 @@ java -Dprism.order=sw -Dprism.vsync=false -jar mindpalace-live.jar --demo
 A full 12-room fixture palace boots with **zero auth and zero network** —
 the same mode CI verifies. See [DEMO_MODE.md](docs/DEMO_MODE.md).
 
+**Building from source?** One command: `bash scripts/dev.sh demo` (or
+`scripts\dev.bat` on Windows cmd) — build + run in a single step, honoring
+the frozen-jar rule. Details: [DEV_SETUP.md](DEV_SETUP.md).
+
 ### Build & Run (live mode — your real GitHub repos)
 
 ```bash
