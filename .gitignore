@@ -1,6 +1,7 @@
 screenshots/
 *.png
 target/
+mindpalace-live.jar
 readtext.py
 patches/applied.json
 playtest*.log
