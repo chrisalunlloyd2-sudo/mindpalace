@@ -82,7 +82,13 @@ The Maven analog of `npm run dev` (this is a Maven project — there is no npm):
     bash scripts/dev.sh demo       # build + run --demo (zero auth/network)
     bash scripts/dev.sh selftest   # build + selftest only, exit code = gate
 
-Windows cmd: `scripts\dev.bat` with the same arguments. Verified end-to-end:
+Windows cmd uses the equivalent commands:
+
+    scripts\dev.bat            # build + run live mode
+    scripts\dev.bat demo       # build + run --demo (zero auth/network)
+    scripts\dev.bat selftest   # build + selftest only, exit code = gate
+
+Verified end-to-end:
 `dev.sh selftest` -> build -> frozen-jar copy -> `Demo fixtures loaded: 12 rooms`
 -> `RESULT: 40 passed, 0 failed`, EXIT 0.
 
