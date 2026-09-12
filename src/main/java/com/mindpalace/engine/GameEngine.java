@@ -3949,6 +3949,12 @@ public class GameEngine {
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
+        // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
+        // get exit 0 (previously the game stayed alive and the harness
+        // timeout returned 1 despite a green RESULT).
+        System.out.println("[selftest] all green — exiting.");
+        cleanup();
+        System.exit(0);
     }
 
     /**
