@@ -948,6 +948,36 @@ public class GameEngine {
             System.out.println("[MAP] " + (showMap ? "ON" : "OFF"));
         }
 
+        // Keyboard teleport from the map (feat: minimap + keyboard teleport):
+        // with the map open, 1..9 jump to the Nth revealed room on this floor.
+        if (showMap) {
+            for (int k = GLFW.GLFW_KEY_1; k <= GLFW.GLFW_KEY_9; k++) {
+                if (input.wasKeyPressed(k)) {
+                    java.util.List<Room> vis = new java.util.ArrayList<>();
+                    for (Room room : world.getRooms()) {
+                        if (room.getFloor() != player.getCurrentRoom().getFloor()) continue;
+                        if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
+                        if (room.getDoorPosition() == null) continue;
+                        vis.add(room);
+                    }
+                    int pick = k - GLFW.GLFW_KEY_1;
+                    if (pick < vis.size()) {
+                        Room target = vis.get(pick);
+                        Vector3f dp = target.getDoorPosition();
+                        player.getCamera().setPosition(dp.x + (target.getHallwaySide() == 0 ? 1.5f : -1.5f),
+                            player.getCamera().getPosition().y, dp.z);
+                        minimapHighlight = target;
+                        minimapHighlightUntil = System.currentTimeMillis() + 4000L;
+                        System.out.println("[MAP] Teleported to " + target.getDisplayLabel()
+                            + " (" + (pick + 1) + "/" + vis.size() + ")");
+                    } else {
+                        System.out.println("[MAP] No room #" + (pick + 1) + " on this floor ("
+                            + vis.size() + " revealed)");
+                    }
+                }
+            }
+        }
+
         // F4 — toggle 2D readable text mode (VR 3D text <-> 2D screen-pinned text).
         // "Doubles for the toggle": the 3D path is never deleted, only gated.
         if (input.wasKeyPressed(GLFW.GLFW_KEY_F4)) {
@@ -2689,7 +2719,7 @@ public class GameEngine {
             new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
 
         // Legend
-        fontRenderer.renderBillboard("@ you   o room   * agent   + crystal   [ ] hallway",
+        fontRenderer.renderBillboard("@ you   1-9 room (press to teleport)   o room   * agent   + crystal   [ ] hallway",
             new Vector3f(center.x, center.y + 0.7f, center.z), 0.05f,
             new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
 
@@ -2720,11 +2750,13 @@ public class GameEngine {
         }
 
         // Rooms on the current floor
+        int mapIdx = 0;
         for (Room room : world.getRooms()) {
             if (room.getFloor() != floor) continue;
             if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
             Vector3f dp = room.getDoorPosition();
             if (dp == null) continue;
+            mapIdx++;
             float dx = (dp.x - camPos.x) * scale;
             float dz = (dp.z - camPos.z) * scale;
             Vector3f dotPos = new Vector3f(center).add(
@@ -2734,7 +2766,10 @@ public class GameEngine {
             Vector3f col = room.isPrivate()
                 ? new Vector3f(1.0f, 0.3f, 0.5f)
                 : new Vector3f(0.3f, 0.8f, 1.0f);
-            fontRenderer.renderBillboard("o", dotPos, 0.05f, col, proj, view, camPos);
+            String dot = (mapIdx <= 9)
+                ? String.valueOf(mapIdx)   // numbered = teletransportable via 1..9
+                : "o";
+            fontRenderer.renderBillboard(dot, dotPos, 0.05f, col, proj, view, camPos);
         }
 
         // Agents
