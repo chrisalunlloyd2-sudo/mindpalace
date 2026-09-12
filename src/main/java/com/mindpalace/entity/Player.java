@@ -42,7 +42,11 @@ public class Player {
 
     public Player() {
         camera = new Camera();
-        camera.setPosition(0, EYE_HEIGHT, 3);
+        // Spawn in the open hallway heading toward the outside world, well clear of
+        // the mansion (20, 0, -180) and all house/building AABBs. Z=-50 is deep in the
+        // central hallway before any room portals; Z=3 (old spawn) was too close to
+        // mansion structures (regression from bae3794, H13b solid-world colliders).
+        camera.setPosition(0, EYE_HEIGHT, -50);
         camera.setYaw(0); // looking +Z down hallway
     }
 
