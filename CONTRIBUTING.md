@@ -15,7 +15,7 @@ landmines.
    Optional: [Ollama](https://ollama.com) for the SLM agents.
 2. **Build**: `mvn -DskipTests package` → `BUILD SUCCESS` gate.
 3. **Verify before you ship**: `java -jar mindpalace-live.jar --selftest`
-   → must print `40 passed, 0 failed`.
+   → must print `42 passed, 0 failed`.
 4. **Run**: `java -jar target/mindpalace-1.0.0.jar` (see DEV_SETUP.md for
    the frozen-jar rule if you also run the live game).
 5. **See the world prove itself**: `--e2e <dir>` writes 13 labeled

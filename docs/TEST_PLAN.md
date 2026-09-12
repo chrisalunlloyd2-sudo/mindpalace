@@ -27,7 +27,7 @@
 - E2E waypoints `07_todo_crystals` and `12_door_prompt` capture dark —
   baseline artifacts, A/B-proven (step-log). Everything else must be lit.
 - Console shows `?` where UTF-8 arrows belong — codepage artifact, parsers handle it.
-- Selftest prints `40 passed, 0 failed` — if yours differs, that IS worth filing.
+- Selftest prints `42 passed, 0 failed` — if yours differs, that IS worth filing.
 
 ## Environment matrix (what we especially need)
 
