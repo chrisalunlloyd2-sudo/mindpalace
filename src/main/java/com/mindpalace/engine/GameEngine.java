@@ -3947,6 +3947,77 @@ public class GameEngine {
             + " cases: door/book/pad/hidden)");
         if (promptOk) pass++; else fail++;
 
+        // 40. TimeMachine fidelity: book content at rev == `git show rev:path`
+        boolean sliderOk = false;
+        try {
+            Room sliderRoom = world.getRooms().stream()
+                .filter(rm -> rm.getLocalPath() != null && !rm.getLocalPath().isEmpty()
+                    && !rm.getBooks().isEmpty())
+                .findFirst().orElse(null);
+            if (sliderRoom != null) {
+                com.mindpalace.world.TimeMachine tm =
+                    new com.mindpalace.world.TimeMachine(com.mindpalace.world.RepoMapper.SHARED_GIT);
+                if (tm.load(sliderRoom.getLocalPath()) && tm.getHistory().size() > 0) {
+                    // scrub mid-history (position 1, or last if tiny)
+                    int pos = Math.min(1, tm.getHistory().size() - 1);
+                    tm.setPosition(pos);
+                    com.mindpalace.world.Book b = sliderRoom.getBooks().get(0);
+                    String relPath = b.getFilePath();
+                    String bookText = tm.fileContentAt(relPath);
+                    String rev = tm.currentCommit().sha;
+                    String expect = com.mindpalace.world.RepoMapper.SHARED_GIT.run(
+                        new java.io.File(sliderRoom.getLocalPath()),
+                        "show", rev + ":" + relPath);
+                    sliderOk = expect != null && bookText != null && expect.equals(bookText);
+                    System.out.println((sliderOk ? "PASS" : "FAIL")
+                        + " slider fidelity: book == git show " + (rev != null ? rev.substring(0, Math.min(7, rev.length())) : "?")
+                        + ":" + relPath);
+                } else {
+                    System.out.println("PASS slider fidelity: skipped (no git-history room in demo world)");
+                    sliderOk = true;
+                }
+            } else {
+                System.out.println("PASS slider fidelity: skipped (no local-path room)");
+                sliderOk = true;
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL slider fidelity: " + e.getMessage());
+        }
+        if (sliderOk) pass++; else fail++;
+
+        // 41. Layout determinism: run CorridorLayout twice on copies of the
+        // same room list — the rebuilt centers must match run 1 exactly.
+        boolean layoutOk = false;
+        try {
+            List<com.mindpalace.world.Room> rooms = world.getRooms();
+            java.util.Map<String, String> run1 = new java.util.LinkedHashMap<>();
+            java.util.Map<String, String> run2 = new java.util.LinkedHashMap<>();
+            // deep-enough copies: fresh Rooms with same repoName, layout() writes centers
+            List<com.mindpalace.world.Room> copyA = new java.util.ArrayList<>();
+            List<com.mindpalace.world.Room> copyB = new java.util.ArrayList<>();
+            List<com.mindpalace.world.Hallway> hallsA = new java.util.ArrayList<>();
+            List<com.mindpalace.world.Hallway> hallsB = new java.util.ArrayList<>();
+            for (com.mindpalace.world.Room rm : rooms) {
+                com.mindpalace.world.Room a = new com.mindpalace.world.Room(rm.getRepoName());
+                com.mindpalace.world.Room b = new com.mindpalace.world.Room(rm.getRepoName());
+                copyA.add(a); copyB.add(b);
+            }
+            new com.mindpalace.world.CorridorLayout().layout(copyA, hallsA);
+            new com.mindpalace.world.CorridorLayout().layout(copyB, hallsB);
+            for (int idx = 0; idx < copyA.size(); idx++) {
+                Vector3f ca = copyA.get(idx).getRoomCenter();
+                Vector3f cb = copyB.get(idx).getRoomCenter();
+                run1.put(copyA.get(idx).getRepoName(), ca == null ? "null" : ca.x + "," + ca.y + "," + ca.z);
+                run2.put(copyB.get(idx).getRepoName(), cb == null ? "null" : cb.x + "," + cb.y + "," + cb.z);
+            }
+            layoutOk = run1.equals(run2);
+            System.out.println((layoutOk ? "PASS" : "FAIL")
+                + " layout determinism: " + copyA.size() + " rooms, two CorridorLayout runs identical");
+        } catch (Exception e) {
+            System.out.println("FAIL layout determinism: " + e.getMessage());
+        }
+        if (layoutOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
