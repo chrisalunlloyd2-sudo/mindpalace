@@ -70,10 +70,23 @@ public class GitHubClient {
     public boolean isAuthenticated() { return authenticated; }
     public String getToken() { return token; }
 
+    // ── TTL cache for the full repo list (same pattern as contentsCache/
+    // fileCache below). The Evolve background loop calls fetchAllRepos()
+    // every 2-3 generations with no gate, re-pulling all pages every time —
+    // this was the only fetch method in the class without a cache.
+    private static final long REPO_LIST_CACHE_TTL_MS = 10 * 60 * 1000L;
+    private volatile List<Room> cachedRepoList;
+    private volatile long cachedRepoListAt;
+
     /**
-     * Fetch all repos for the authenticated user.
+     * Fetch all repos for the authenticated user. Cached for 10 minutes —
+     * call clearRepoListCache() (or clearCache()) to force a fresh pull.
      */
     public List<Room> fetchAllRepos() throws IOException {
+        if (cachedRepoList != null && System.currentTimeMillis() - cachedRepoListAt < REPO_LIST_CACHE_TTL_MS) {
+            return cachedRepoList;
+        }
+
         List<Room> rooms = new ArrayList<>();
         int page = 1;
 
@@ -117,8 +130,13 @@ public class GitHubClient {
         }
 
         System.out.println("[GitHub] Fetched " + rooms.size() + " repos from GitHub");
+        cachedRepoList = rooms;
+        cachedRepoListAt = System.currentTimeMillis();
         return rooms;
     }
+
+    /** Force the next fetchAllRepos() call to hit the network. */
+    public void clearRepoListCache() { cachedRepoList = null; }
 
     /**
      * Fetch file contents for a repo (top-level only for speed).
@@ -133,7 +151,7 @@ public class GitHubClient {
     private final java.util.Map<String, CacheEntry<String>> fileCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Clear all API caches (forces fresh fetches; used by the editor after writes). */
-    public void clearCache() { contentsCache.clear(); fileCache.clear(); }
+    public void clearCache() { contentsCache.clear(); fileCache.clear(); clearRepoListCache(); }
 
     public List<Book> fetchRepoContents(String repoName) throws IOException {
         List<Book> books = new ArrayList<>();
