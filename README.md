@@ -36,6 +36,14 @@ pull into the editor.
 5. [Quick Start](#quick-start)
 6. [Controls](#controls)
 7. [The Options Panel](#the-options-panel)
+
+### Windows (cmd)
+
+| Command | What it does |
+|---------|-------------|
+| `scripts\dev.bat` | Build + run the palace (default) |
+| `scripts\dev.bat demo` | Launch in demo mode (no GitHub account needed) |
+| `scripts\dev.bat selftest` | Run the self-test suite |
 8. [Gameplay Guide](#gameplay-guide)
 9. [The Agents & Code Mining](#the-agents--code-mining)
 10. [Live Patching](#live-patching)
