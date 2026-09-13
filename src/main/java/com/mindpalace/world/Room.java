@@ -27,7 +27,11 @@ public class Room {
     private int floor;              // 0=ground, 1=upper
 
     // Contents
-    private List<Book> books = new ArrayList<>();
+    // Thread-safe (issue #12): books are iterated by the render thread, the
+    // LiveUpdateManager poller thread and agent NPCs while BookEditor and
+    // BookViewer remove entries through the live getBooks() reference.
+    // CopyOnWriteArrayList turns every iteration into an immutable snapshot.
+    private List<Book> books = new java.util.concurrent.CopyOnWriteArrayList<>();
     private List<LabDevice> labDevices = new ArrayList<>();
     private Room backRoom;  // second room for comments/gists/archive
     private String posterImagePath;  // a repo image (png/jpg) to render on the poster

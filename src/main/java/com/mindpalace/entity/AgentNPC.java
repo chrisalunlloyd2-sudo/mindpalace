@@ -103,8 +103,11 @@ public class AgentNPC {
         // Reached a room — do the role-specific thing
         if (currentRoom != null) {
             if (role == Role.EXPLORER) {
-                if (kv.roll("curiosity") && !currentRoom.getBooks().isEmpty()) {
-                    currentBook = currentRoom.getBooks().get(rand.nextInt(currentRoom.getBooks().size()));
+                // Snapshot once: a concurrent book removal could throw between
+                // isEmpty / size / get calls on the live list (issue #12)
+                java.util.List<com.mindpalace.world.Book> booksSnap = new java.util.ArrayList<>(currentRoom.getBooks());
+                if (kv.roll("curiosity") && !booksSnap.isEmpty()) {
+                    currentBook = booksSnap.get(rand.nextInt(booksSnap.size()));
                     state = State.READING;
                     stateTimer = 2f + rand.nextFloat() * 3f;
                     return;
@@ -186,8 +189,11 @@ public class AgentNPC {
                 }
             }
             case READ_BOOK -> {
-                if (currentRoom != null && !currentRoom.getBooks().isEmpty()) {
-                    currentBook = currentRoom.getBooks().get(rand.nextInt(currentRoom.getBooks().size()));
+                // Snapshot once: a concurrent book removal could throw between
+                // isEmpty / size / get calls on the live list (issue #12)
+                java.util.List<com.mindpalace.world.Book> booksSnap2 = currentRoom == null ? null : new java.util.ArrayList<>(currentRoom.getBooks());
+                if (booksSnap2 != null && !booksSnap2.isEmpty()) {
+                    currentBook = booksSnap2.get(rand.nextInt(booksSnap2.size()));
                     state = State.READING;
                     stateTimer = 3f;
                 }

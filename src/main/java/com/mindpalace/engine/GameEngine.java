@@ -105,7 +105,10 @@ public class GameEngine {
     private String patchToast = "";
     private double patchToastTimer;
     private KnowledgeGraph knowledgeGraph;
-    private final List<AgentNPC> npcs = new ArrayList<>();
+    // Thread-safe (issue #12): NPCs are added by WorldBuilder on the load
+    // thread while the render thread iterates them every frame. Mirrors the
+    // crystals fix (2026-08-30) and WorldBuilder.rooms: CopyOnWriteArrayList.
+    private final List<AgentNPC> npcs = new java.util.concurrent.CopyOnWriteArrayList<>();
     // Thread-safe: the lexical bridge adds crystals from the agent thread while
     // the render thread iterates — a plain ArrayList threw
     // ConcurrentModificationException and froze the game (2026-08-30).
