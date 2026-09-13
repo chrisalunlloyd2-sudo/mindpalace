@@ -625,6 +625,12 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `docs/GITHUB_AUTH.md` | How the PAT-from-Credential-Manager auth works + troubleshooting |
 | `docs/PERFORMANCE.md` | Tuning flags, in-game knobs, budget rules |
 | `docs/LAYOUT_ALGORITHMS.md` | How repos become rooms + adding new layout algorithms |
+
+### FAQ
+
+| Question | Answer |
+|----------|--------|
+| **How do I see the FPS?** | Press **F4** to toggle the DEBUG overlay. It shows live FPS, room/hall counts, and how many objects were frustum-culled this frame. Note that numbers vary by machine — see [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) for tuning flags and benchmark rules before comparing. |
 | `docs/GAMEPLAY_FEATURES.md` | Feature usage guide: everything the player can do |
 
 ---
