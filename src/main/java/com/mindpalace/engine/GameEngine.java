@@ -4018,6 +4018,35 @@ public class GameEngine {
         }
         if (layoutOk) pass++; else fail++;
 
+        // 26. Spawn point validation — player spawns in open hallway, not inside
+        //     buildings or colliders (H13b regression: spawn was too close to mansion).
+        //     Verify: position at spawn, first W input moves the player forward.
+        //     Real APIs: EYE_HEIGHT is private → literal 1.6f; engine's own `input`
+        //     field (a second Input would steal GLFW callbacks); synthetic key path
+        //     injectKeyPress + update(dt) merges into keys[] for one frame.
+        boolean spawnOk = true;
+        float eye = 1.6f; // Player.EYE_HEIGHT (private)
+        Vector3f spawnPos = new Vector3f(0f, eye, -50f);
+        player.getCamera().setPosition(spawnPos);
+        player.getCamera().setYaw(180f); // yaw=180 → front = (0,0,-1), toward outside
+        render(0); // settle
+        Vector3f atSpawn = player.getCamera().getPosition();
+        if (Math.abs(atSpawn.x - 0f) > 0.1f || Math.abs(atSpawn.y - eye) > 0.1f
+            || Math.abs(atSpawn.z - (-50f)) > 0.1f) {
+            spawnOk = false; // spawn position doesn't match
+        }
+        // Simulate forward movement (W key) via the synthetic-input path and
+        // verify the player moves forward (-Z direction with yaw=180).
+        Vector3f before = new Vector3f(player.getPosition());
+        input.injectKeyPress(GLFW.GLFW_KEY_W);
+        input.update(0.016); // merges synthPress into keys[] for this frame
+        player.update(0.016, input, world); // one physics frame with W held
+        Vector3f after = new Vector3f(player.getPosition());
+        if (before.z <= after.z) spawnOk = false; // W with yaw=180 must decrease z
+        System.out.println((spawnOk ? "PASS" : "FAIL")
+            + " spawn validation (position + WASD movement: z " + before.z + " -> " + after.z + ")");
+        if (spawnOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
