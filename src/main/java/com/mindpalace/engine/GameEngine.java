@@ -3300,6 +3300,8 @@ public class GameEngine {
         // 19. SIMS1337 parity — ModelRouter + LoRASwitcher + WeightedQuorumVote + FOWGate
         boolean simsOk = agentManager != null;
         boolean simRouter = simsOk, simLora = false, simQuorum = false, simFow = false;
+        int fowAgents = -1, fowModels = -1;
+        boolean fowRead = false;
         if (simsOk) {
             // Router: complexity → tier mapping is deterministic.
             simRouter = agentManager.getRouter().select(Complexity.LOW).equals("qwen2.5:0.5b")
@@ -3322,8 +3324,10 @@ public class GameEngine {
             }
             // FOW: two agents pinned, two models assigned.
             if (simsOk) {
-                simFow = agentManager.getFow().agentCount() == 2
-                      && agentManager.getFow().modelCount() == 2;
+                fowAgents = agentManager.getFow().agentCount();
+                fowModels = agentManager.getFow().modelCount();
+                fowRead = true;
+                simFow = fowAgents == 2 && fowModels == 2;
             simsOk = simFow;
             }
         }
@@ -3331,7 +3335,10 @@ public class GameEngine {
         System.out.println("  SIMS1337 stages: router=" + (simRouter ? "PASS" : "FAIL")
             + " lora=" + (simLora ? "PASS" : "FAIL")
             + " quorum=" + (simQuorum ? "PASS" : "FAIL")
-            + " fow=" + (simFow ? "PASS" : "FAIL"));
+            + " fow=" + (simFow ? "PASS" : "FAIL")
+            + (!simFow ? (fowRead
+                ? " (agents=" + fowAgents + " models=" + fowModels + ", expected 2/2)"
+                : " (skipped - earlier stage failed)") : ""));
         if (simsOk) pass++; else fail++;
 
         // 20. Code editor language toggle — ~20-language registry + LoRA switch
