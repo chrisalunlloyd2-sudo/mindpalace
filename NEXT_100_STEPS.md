@@ -27,8 +27,8 @@
 - [x] **58** H12 daily metrics task — scout_bot --steplog posts slm_quality scorecard (meta<15, code>25) weekly; self-sufficient PAT lookup
 
 ## PHASE B — World Finishing (59–78)
-- [ ] **59** H13 walls — procedural perimeter walls per room, door gaps aligned to hallway openings (WorldBuilder)
-- [ ] **60** H13b wall collision — player + NPC collision vs walls (engine/GameState move validation)
+- [x] **59** H13 walls — procedural perimeter walls per room, door gaps aligned to hallway openings (WorldBuilder)
+- [x] **60** H13b wall collision — player + NPC collision vs walls (engine/GameState move validation)
 - [ ] **61** H14 roofs — flat slab + parapet; courtyard open-sky
 - [ ] **62** H15 heights — interior ceiling 4.5m, hall 6m
 - [ ] **63** H16 forest fill ×3 — pine/oak/deadwood species, radial density falloff, DeterministicSeed (OutsideWorld: 220 → 600+ trees)

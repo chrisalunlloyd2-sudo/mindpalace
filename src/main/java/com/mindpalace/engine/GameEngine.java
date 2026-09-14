@@ -1049,7 +1049,7 @@ public class GameEngine {
 
             // Update agent NPCs (bodies + behaviors)
             for (AgentNPC npc : npcs) {
-                npc.update((float) dt, world.getRooms());
+                npc.update((float) dt, world.getRooms(), world.getHallways());
                 // Surface the SLM's reasoning into the chat HUD (coherent thread)
                 String reason = npc.consumeReason();
                 if (reason != null && agentChat != null) {
