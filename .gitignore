@@ -14,3 +14,29 @@ game_console.log
 mindpalace-live.jar
 build_alice.log
 selftest_alice.log
+---OPERATIONAL DEBRIS (cycle 53)
+--- root-anchored, tracked files never affected
+.api-pr36.json
+.api-pr36-files.json
+.api-pr37.json
+.api-pr37-files.json
+.api-pr38.json
+
+# cycle 54 batch 2: operational debris (root-anchored with / = repo-root only)
+.api-pr*.json
+/build43.log
+/build43.ps1
+/c9.json
+/c12.json
+/c37.json
+/comment12.json
+/commit39.json
+/done4*.txt
+/gate*
+/patch*.py
+/patch*.json
+/pkg*.log
+/ppr.json
+/pr3*.diff
+/rpr.json
+/selftest-last.log
