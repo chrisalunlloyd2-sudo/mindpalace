@@ -338,7 +338,7 @@ public class GameEngine {
         // Auto-auth from Windows Credential Manager (env-var fallback) so the
         // in-game GitHub surfaces (gist wall, editor, agents, live updates) work
         // without a manual PAT entry. WorldBuilder already does the same.
-        if (!github.loadTokenFromCredentialManager()) {
+        if (!demoMode && !github.loadTokenFromCredentialManager()) {
             String envTok = System.getenv("MIND_PALACE_GITHUB_TOKEN");
             if (envTok != null && envTok.length() >= 20) github.setToken(envTok);
         }
@@ -361,7 +361,7 @@ public class GameEngine {
         agentChat = new AgentChat();
         agentManager.setGitHubClient(github);  // hook in tool execution
         // Add-only issue stream: agents raise GitHub issues, never close/delete.
-        if (github.isAuthenticated()) {
+        if (!demoMode && github.isAuthenticated()) {
             agentManager.setIssueStream(new com.mindpalace.github.GitHubIssueStream(
                 github.getToken(), "chrisalunlloyd2-sudo", 30_000L));
         }
@@ -499,8 +499,12 @@ public class GameEngine {
                 if (dp != null) animationSystem.startGlowPulse(dp);
             }
         });
-        liveUpdateManager.snapshot();
-        liveUpdateManager.start();
+        if (!demoMode) {
+            liveUpdateManager.snapshot();
+            liveUpdateManager.start();
+        } else {
+            System.out.println("[LiveUpdate] demo mode - poller suppressed (hermetic selftest, refs #39)");
+        }
 
         // Idle detection — agents work harder when idle, quiet when playing
         idleDetector = new IdleDetector();
@@ -3674,8 +3678,8 @@ public class GameEngine {
             // never hits the API. Construct with a huge interval to test this
             // without network.
             com.mindpalace.github.GitHubIssueStream stream =
-                new com.mindpalace.github.GitHubIssueStream("x".repeat(40), "test", 60_000L);
-            int first = stream.raise("repo", "t", "b");   // -1 (bad token) or -2
+                new com.mindpalace.github.GitHubIssueStream("x".repeat(40), "test", Long.MAX_VALUE);
+            int first = stream.raise("repo", "t", "b");   // -1 (bad token) or -2 (first call also paced, Long.MAX_VALUE)
             int second = stream.raise("repo", "t", "b");  // must be -2 (paced)
             issueStreamOk = !hasDelete && second == -2;
         } catch (Exception e) {
@@ -4049,6 +4053,13 @@ public class GameEngine {
         System.out.println((spawnOk ? "PASS" : "FAIL")
             + " spawn validation (position + WASD movement: z " + before.z + " -> " + after.z + ")");
         if (spawnOk) pass++; else fail++;
+
+        // #39 hermeticity: --demo must be zero-network end to end (refs #39, #40).
+        boolean hermeticOk = !github.isAuthenticated();
+        hermeticOk = hermeticOk && !liveUpdateManager.isRunning();
+        System.out.println((hermeticOk ? "PASS" : "FAIL")
+            + " demo hermeticity (no auth, no live poller)");
+        if (hermeticOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
