@@ -584,7 +584,8 @@ public class GameEngine {
             50, 10, 0.15f, 0.2f); // pop 50, top-10 parents, 40 children
         genomeArchive = new com.mindpalace.genetics.GenomeArchive(
             java.nio.file.Path.of(dataRoot, "mindpalace_memory")); // #49
-        genomeControl = new com.mindpalace.genetics.GenomeControl();
+        genomeControl = new com.mindpalace.genetics.GenomeControl(
+            java.nio.file.Path.of(dataRoot, "mindpalace_memory")); // #55: routed like GenomeArchive
         evolveTimer = EVOLVE_INTERVAL;
         refreshTimer = REFRESH_INTERVAL;
 
@@ -3704,6 +3705,14 @@ public class GameEngine {
             boolean applied = cev.mutationRate() == 0.7f && cfit.centroidWeight() == 0.5f;
             ctlOk = applied && summary.contains("rate=0.70") && summary.contains("cent=0.50")
                 && summary.contains("refresh=2");
+            // #55 round-trip: temp-routed instance proves ack()/clear() hermetically (bare ctor would hit ~/AIGEN_SYS).
+            java.nio.file.Path ctlTmp = java.nio.file.Files.createTempDirectory("mindpalace-ctl");
+            com.mindpalace.genetics.GenomeControl gctl = new com.mindpalace.genetics.GenomeControl(ctlTmp);
+            gctl.ack(7);
+            java.nio.file.Path ctlFile = ctlTmp.resolve("evolution").resolve("control.json");
+            boolean ackOk = java.nio.file.Files.exists(ctlFile);
+            gctl.clear();
+            ctlOk = ctlOk && ackOk && !java.nio.file.Files.exists(ctlFile);
         } catch (Exception e) {
             ctlOk = false;
         }
