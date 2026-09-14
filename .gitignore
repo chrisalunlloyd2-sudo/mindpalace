@@ -40,3 +40,7 @@ selftest_alice.log
 /pr3*.diff
 /rpr.json
 /selftest-last.log
+# cycle 59: PR tooling residue (root-anchored)
+/commit_msg*.txt
+/pr_payload.json
+/pr_resp.json
