@@ -528,6 +528,11 @@ mindpalace/
 
 ## FAQ
 
+**Q: How do I see the FPS?**
+A: Press `F4` to toggle the DEBUG overlay. It shows FPS, room and hall counts,
+and the frustum-culled count. When comparing results, record the machine
+specification as described in [PERFORMANCE.md](PERFORMANCE.md).
+
 **Q: Can I try it without connecting my GitHub account?**
 A: Yes — `--demo` boots a full 12-room fixture palace with zero auth and
 zero network. No token, no Ollama needed. It's also what CI runs.
