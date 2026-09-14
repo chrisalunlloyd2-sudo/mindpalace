@@ -41,18 +41,18 @@ jobs:
           tail -n 40 selftest.log
           tail -n 15 selftest.log >> "$GITHUB_STEP_SUMMARY"
           exit $rc
-      - name: Assert green (44/0, fixtures, hermeticity)
+      - name: Assert green (45/0, fixtures, hermeticity)
         shell: pwsh
         run: |
           $log = Get-Content selftest.log -Raw
           $checks = @(
-            "RESULT: 44 passed, 0 failed",
+            "RESULT: 45 passed, 0 failed",
             "Demo fixtures loaded: 12 rooms",
             "PASS demo hermeticity"
           )
           $missing = $checks | Where-Object { $log -notmatch [regex]::Escape($_) }
           if ($missing) { $missing | ForEach-Object { Write-Host "::error::missing: $_" }; exit 1 }
-          Write-Host "CI smoke GREEN: 44/0, 12 demo rooms, hermeticity PASS"
+          Write-Host "CI smoke GREEN: 45/0, 12 demo rooms, hermeticity PASS"
       - name: Upload selftest log
         if: always()
         uses: actions/upload-artifact@v4
