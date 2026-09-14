@@ -845,7 +845,7 @@ public class AgentManager {
                     if (github != null && github.isAuthenticated()) {
                         String content = github.fetchFileContent(repo, filename);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "read", filename);
-                        return content != null ? "read " + filename + " (" + content.length() + " chars)" : "read failed";
+                        return content != null ? truncateHeadTail(filename, content) : "read failed";
                     }
                     // Local fallback
                     if (currentRoom.getLocalPath() != null) {
@@ -853,24 +853,48 @@ public class AgentManager {
                         if (java.nio.file.Files.exists(fp)) {
                             String c = java.nio.file.Files.readString(fp);
                             if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "read", filename);
-                            return "read " + filename + " (" + c.length() + " chars)";
+                            return truncateHeadTail(filename, c);
                         }
                     }
                     return "read failed (no auth/local path)";
                 }
                 case "edit_file": {
-                    String content = args.has("content") ? args.get("content").getAsString() : "";
+                    // H05 patch semantics: old_string/new_string does a targeted
+                    // replace when old_string is given; bare content = full
+                    // rewrite (legacy). Whole-file rewrites of big files were
+                    // the #1 waster — SLMs re-emitted 500-line files to change
+                    // one line.
+                    String oldStr = args.has("old_string") ? args.get("old_string").getAsString() : null;
+                    String content = args.has("content") ? args.get("content").getAsString() : null;
+                    if (content == null) content = "";
+                    String finalContent = content;
+                    if (oldStr != null && !oldStr.isEmpty()) {
+                        String newStr = args.has("new_string") ? args.get("new_string").getAsString() : "";
+                        String current = readCurrentFile(repo, filename);
+                        if (current == null) return "edit failed (cannot read current " + filename + ")";
+                        if (!current.contains(oldStr))
+                            return "edit failed: old_string not found in " + filename
+                                + " (read the file first, copy exact text)";
+                        int first = current.indexOf(oldStr);
+                        int count = 1, idx = first;
+                        while ((idx = current.indexOf(oldStr, idx + 1)) != -1) count++;
+                        if (count > 1)
+                            return "edit failed: old_string matches " + count
+                                + " times in " + filename + " — include more context to make it unique";
+                        finalContent = current.substring(0, first) + newStr
+                            + current.substring(first + oldStr.length());
+                    }
                     // Never-twice: refuse to write identical code twice (local path).
-                    if (memory != null && !memory.recordCode(content, langOf(filename))) {
+                    if (memory != null && !memory.recordCode(finalContent, langOf(filename))) {
                         return "never-twice: identical code already written";
                     }
                     if (github != null && github.isAuthenticated()) {
-                        boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent edit: " + filename, null);
+                        boolean ok = github.upsertFile(repo, filename, finalContent, "MindPalace agent edit: " + filename, null);
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
                         return ok ? "edited " + filename : "edit failed";
                     }
                     if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), content);
+                        java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), finalContent);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
                         return "edited " + filename + " (local)";
                     }
@@ -992,6 +1016,45 @@ public class AgentManager {
 
     // ── Tool definitions ──
 
+    /** H05: fetch current file content (github first, then local) for patch edits. */
+    private String readCurrentFile(String repo, String filename) {
+        if (github != null && github.isAuthenticated()) {
+            try {
+                return github.fetchFileContent(repo, filename);
+            } catch (Exception ignored) { }
+        }
+        if (currentRoom != null && currentRoom.getLocalPath() != null) {
+            try {
+                java.nio.file.Path fp = java.nio.file.Path.of(currentRoom.getLocalPath(), filename);
+                if (java.nio.file.Files.exists(fp)) return java.nio.file.Files.readString(fp);
+            } catch (Exception ignored) { }
+        }
+        return null;
+    }
+
+    /** H04: files return head+tail 150 lines (not a char count) so the SLM
+     *  sees real code within its token budget; the middle is elided. */
+    private static String truncateHeadTail(String filename, String content) {
+        final int MAX = 150;
+        String[] lines = content.split("\n", -1);
+        if (lines.length > 0 && lines[lines.length - 1].isEmpty()) {
+            lines = java.util.Arrays.copyOf(lines, lines.length - 1); // trailing \n
+        }
+        String head = "read " + filename + " (" + lines.length + " lines)\n";
+        if (lines.length <= 2 * MAX) return head + content;
+        StringBuilder sb = new StringBuilder(head);
+        for (int i = 0; i < MAX; i++) sb.append(lines[i]).append('\n');
+        sb.append("... [" ).append(lines.length - 2 * MAX).append(" middle lines elided]\n");
+        for (int i = lines.length - MAX; i < lines.length; i++) sb.append(lines[i]).append('\n');
+        return sb.toString();
+    }
+
+    /** Selftest hook for the private truncation logic (AgentManager is in the
+     *  agent package; the selftest in engine needs a public bridge). */
+    public static String truncateHeadTailForTest(String filename, String content) {
+        return truncateHeadTail(filename, content);
+    }
+
     private static List<JsonObject> buildTools() {
         List<JsonObject> tools = new ArrayList<>();
         Gson g = new Gson();
@@ -1017,14 +1080,16 @@ public class AgentManager {
         editFile.addProperty("type", "function");
         JsonObject efFn = new JsonObject();
         efFn.addProperty("name", "edit_file");
-        efFn.addProperty("description", "Edit a file in the current repo");
+        efFn.addProperty("description", "Edit a file in the current repo. PREFERRED: pass old_string (exact text to replace, unique in file) + new_string for a targeted patch. Full rewrite via content only for tiny files.");
         JsonObject efParams = new JsonObject();
         efParams.addProperty("type", "object");
         JsonObject efProps = new JsonObject();
         efProps.add("filename", g.fromJson("{\"type\":\"string\",\"description\":\"Path to the file\"}", JsonObject.class));
-        efProps.add("content", g.fromJson("{\"type\":\"string\",\"description\":\"New content for the file\"}", JsonObject.class));
+        efProps.add("old_string", g.fromJson("{\"type\":\"string\",\"description\":\"Exact text to replace (must be unique in the file). Read the file first and copy it exactly.\"}", JsonObject.class));
+        efProps.add("new_string", g.fromJson("{\"type\":\"string\",\"description\":\"Replacement text\"}", JsonObject.class));
+        efProps.add("content", g.fromJson("{\"type\":\"string\",\"description\":\"Full new content (only when NOT using old_string/new_string)\"}", JsonObject.class));
         efParams.add("properties", efProps);
-        efParams.add("required", g.fromJson("[\"filename\",\"content\"]", JsonArray.class));
+        efParams.add("required", g.fromJson("[\"filename\"]", JsonArray.class));
         efFn.add("parameters", efParams);
         editFile.add("function", efFn);
         tools.add(editFile);

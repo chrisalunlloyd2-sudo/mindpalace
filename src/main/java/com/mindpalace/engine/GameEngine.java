@@ -4134,6 +4134,24 @@ public class GameEngine {
         }
         if (hermeticOk) pass++; else fail++;
 
+        // 27. H04 budgets — read_file returns head+tail 150 lines (test via
+        //     AgentManager.truncateHeadTail through a 400-line synthetic file:
+        //     expect 150 + elision marker + 150, and short files untouched).
+        boolean h04Ok = false;
+        try {
+            StringBuilder big = new StringBuilder();
+            for (int i = 1; i <= 400; i++) big.append("line ").append(i).append('\n');
+            String out = agentManager.truncateHeadTailForTest("f.java", big.toString());
+            h04Ok = out.startsWith("read f.java (400 lines)")
+                && out.contains("line 1\n") && out.contains("line 150\n")
+                && out.contains("middle lines elided") && out.contains("line 400")
+                && !out.contains("line 200\n"); // middle really gone
+            String smallOut = agentManager.truncateHeadTailForTest("tiny.java", "one\ntwo\n");
+            h04Ok = h04Ok && smallOut.startsWith("read tiny.java (2 lines)") && smallOut.contains("one\ntwo\n");
+        } catch (Exception e) { h04Ok = false; }
+        System.out.println((h04Ok ? "PASS" : "FAIL") + " H04 head/tail truncation (400-line file elides middle)");
+        if (h04Ok) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains

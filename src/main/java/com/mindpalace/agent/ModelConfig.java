@@ -33,7 +33,7 @@ public final class ModelConfig {
     public static final String EMBED_MODEL = "nomic-embed-text";
 
     /** Token budgets (below each model's context ceiling). */
-    public static final int TOOL_BUDGET = 2000;
+    public static final int TOOL_BUDGET = 4000;
     public static final int CRITIC_BUDGET = 1000;
 
     /** Drift threshold — cosine similarity below this = drifted. */
