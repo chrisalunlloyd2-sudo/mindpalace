@@ -313,9 +313,11 @@ install; the JRE is bundled.
 | Enter | Open door / exit room / send chat |
 | Left Click | Click book to open editor / click plant for a fact |
 | Tab | Toggle full-map overlay |
+| M | Toggle minimap overlay |
 | ESC | Toggle menu / close editor |
 | F1 | Help overlay |
 | F3 | Toggle noclip (free-fly: Space/Shift up/down, no collision) |
+| F4 | Toggle FPS/debug overlay (includes frustum-culled count) |
 | F11 | Fullscreen toggle |
 | F12 | Screenshot (saves to `screenshots/`) |
 | `/` | Search / jump to any repo |
