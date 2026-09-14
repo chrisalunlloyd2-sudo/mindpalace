@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   demo-selftest:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -22,10 +22,12 @@ jobs:
           distribution: temurin
           java-version: 17
           cache: maven
+      - name: Install Xvfb + Mesa (software GL)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
       - name: Package (skip tests)
-        run: mvn -B -ntp -DskipTests package
-      - name: Demo selftest (hermetic)
-        run: java -jar target/mindpalace-1.0.0.jar --demo --selftest > selftest.log 2>&1; Get-Content selftest.log -Tail 40
+        run: mvn -B -ntp -DskipTests package -Dlwjgl.natives=natives-linux
+      - name: Demo selftest (hermetic, Xvfb)
+        run: xvfb-run -a -s "-screen 0 1280x720x24" java -jar target/mindpalace-1.0.0.jar --demo --selftest > selftest.log 2>&1; tail -n 40 selftest.log
       - name: Assert green (44/0, fixtures, hermeticity)
         shell: pwsh
         run: |
@@ -44,3 +46,4 @@ jobs:
         with:
           name: selftest-log
           path: selftest.log
+
