@@ -4055,10 +4055,19 @@ public class GameEngine {
         if (spawnOk) pass++; else fail++;
 
         // #39 hermeticity: --demo must be zero-network end to end (refs #39, #40).
-        boolean hermeticOk = !github.isAuthenticated();
-        hermeticOk = hermeticOk && !liveUpdateManager.isRunning();
-        System.out.println((hermeticOk ? "PASS" : "FAIL")
-            + " demo hermeticity (no auth, no live poller)");
+        // #43 (Alice 2026-09-14): the assert is ABOUT demo mode - live-mode auth+poller
+        // are correct behavior, so gate the check on demoMode instead of failing live
+        // --selftest on authed boxes (CONTRIBUTING step 3 uses plain --selftest).
+        boolean hermeticOk;
+        if (demoMode) {
+            hermeticOk = !github.isAuthenticated();
+            hermeticOk = hermeticOk && !liveUpdateManager.isRunning();
+            System.out.println((hermeticOk ? "PASS" : "FAIL")
+                + " demo hermeticity (no auth, no live poller)");
+        } else {
+            hermeticOk = true;
+            System.out.println("PASS demo hermeticity: skipped (live mode - see #43)");
+        }
         if (hermeticOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
