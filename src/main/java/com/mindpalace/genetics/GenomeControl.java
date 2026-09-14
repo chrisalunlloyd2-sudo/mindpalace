@@ -21,17 +21,30 @@ import java.nio.file.*;
  */
 public final class GenomeControl {
 
-    /** The control file the game watches and the CLI writes. */
+    /** Legacy canonical path (real mode). Instance ops route via <dataDir>/evolution/control.json (#55). */
     public static final Path CONTROL_FILE = Path.of(
         System.getProperty("user.home"), "AIGEN_SYS", "mindpalace_memory", "evolution", "control.json");
 
     private final Gson gson = new Gson();
 
+    /** Data dir root; the control file lives under <dataDir>/evolution/. */
+    private final Path dir;
+
+    /** Real-mode default: canonical AIGEN_SYS location (compat for bare ctor). */
+    public GenomeControl() {
+        this(Path.of(System.getProperty("user.home"), "AIGEN_SYS", "mindpalace_memory"));
+    }
+
+    /** Hermetic/demo routing (#55): mirrors GenomeArchive - <dataDir>/evolution/. */
+    public GenomeControl(Path dataDir) {
+        this.dir = dataDir.resolve("evolution");
+    }
+
     /** Read the pending control request, or null if none/absent. */
     public JsonObject read() {
         try {
-            if (!Files.exists(CONTROL_FILE)) return null;
-            String s = Files.readString(CONTROL_FILE).trim();
+            if (!Files.exists(dir.resolve("control.json"))) return null;
+            String s = Files.readString(dir.resolve("control.json")).trim();
             if (s.isEmpty()) return null;
             return JsonParser.parseString(s).getAsJsonObject();
         } catch (Exception ignored) {
@@ -42,17 +55,17 @@ public final class GenomeControl {
     /** Ack a request by writing back the current generation, then clear it. */
     public void ack(int generation) {
         try {
-            Files.createDirectories(CONTROL_FILE.getParent());
+            Files.createDirectories(dir);
             JsonObject o = new JsonObject();
             o.addProperty("generation", generation);
-            Files.writeString(CONTROL_FILE, gson.toJson(o));
+            Files.writeString(dir.resolve("control.json"), gson.toJson(o));
         } catch (Exception ignored) {
         }
     }
 
     /** Clear the control file (no pending request). */
     public void clear() {
-        try { Files.deleteIfExists(CONTROL_FILE); } catch (Exception ignored) {}
+        try { Files.deleteIfExists(dir.resolve("control.json")); } catch (Exception ignored) {}
     }
 
     /** Apply a control request to the evolver + fitness. Returns a summary. */
