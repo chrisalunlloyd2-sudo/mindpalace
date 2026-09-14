@@ -520,9 +520,21 @@ public class GameEngine {
         System.out.println("[Genome] timeline loaded — " + genome.moduleCount()
             + " modules, " + genome.mutationCount() + " mutations");
 
-        // Cold backup to D: — mirror everything (chats, logs, code, files)
-        backupManager = new BackupManager("D:/mindpalace_backup");
-        backupManager.start();
+        // Cold backup (issue #47): root from config; skipped in demo mode (hermetic selftest)
+        backupManager = null; // #47: never constructed in demo mode (hermetic selftest)
+        if (!demoMode) {
+            String backupDir = System.getProperty("mindpalace.backup.dir");
+            if (backupDir == null || backupDir.trim().isEmpty()) {
+                backupDir = System.getenv("MINDPALACE_BACKUP_DIR");
+            }
+            if (backupDir == null || backupDir.trim().isEmpty()) {
+                backupDir = "D:/mindpalace_backup";
+            }
+            backupManager = new BackupManager(backupDir.trim());
+            backupManager.start();
+        } else {
+            System.out.println("[Backup] demo mode - cold backup suppressed (hermetic selftest, refs #47)");
+        }
 
         loadingText = "Ready.";
         loadingProgress = 1.0f;
@@ -4076,10 +4088,17 @@ public class GameEngine {
         // --selftest on authed boxes (CONTRIBUTING step 3 uses plain --selftest).
         boolean hermeticOk;
         if (demoMode) {
+            boolean backupUntouched = (backupManager == null); // #47: demo must never construct BackupManager
             hermeticOk = !github.isAuthenticated();
             hermeticOk = hermeticOk && !liveUpdateManager.isRunning();
+            hermeticOk = hermeticOk && backupUntouched;
             System.out.println((hermeticOk ? "PASS" : "FAIL")
-                + " demo hermeticity (no auth, no live poller)");
+                + " demo hermeticity (no auth, no live poller, no backup crawl)");
+            if (!hermeticOk) {
+                System.out.println("  hermeticity detail: auth=" + github.isAuthenticated()
+                    + " pollerRunning=" + liveUpdateManager.isRunning()
+                    + " backupWired=" + (!backupUntouched) + " (refs #47)");
+            }
         } else {
             hermeticOk = true;
             System.out.println("PASS demo hermeticity: skipped (live mode - see #43)");
