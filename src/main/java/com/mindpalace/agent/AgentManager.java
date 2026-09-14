@@ -22,6 +22,15 @@ import java.util.stream.Stream;
  */
 public class AgentManager {
     private final OllamaClient ollama;
+
+    /** Resolve the local repos root: MIND_PALACE_REPOS_DIR env var > mindpalace.repos
+     *  property > historical AIGEN_SYS default. Mirrors RepoMapper.scanRepos so both
+     *  classes honor the same overrides. (refs #59) */
+    private static Path resolveReposRoot() {
+        String dir = System.getenv("MIND_PALACE_REPOS_DIR");
+        if (dir == null || dir.isEmpty()) dir = System.getProperty("mindpalace.repos", "C:/Users/viper/AIGEN_SYS/repos");
+        return Paths.get(dir);
+    }
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private final Gson gson = new Gson();
     private final ModelScheduler modelScheduler;  // serializes ALL model calls
@@ -566,7 +575,7 @@ public class AgentManager {
         // player hasn't walked the mansion (discoveredRepos empty), FOW must not
         // blind the bridge — enumerate every repo on disk and classify.
         if (allNames.isEmpty()) {
-            Path reposRoot = Paths.get("C:/Users/viper/AIGEN_SYS/repos");
+            Path reposRoot = resolveReposRoot();
             if (Files.isDirectory(reposRoot)) {
                 try (Stream<Path> ls = Files.list(reposRoot)) {
                     ls.filter(Files::isDirectory).map(p -> p.getFileName().toString())
@@ -580,7 +589,7 @@ public class AgentManager {
             if (LegacyRepoClassifier.isLegacy(repo, allNames)) continue;
             // Find the local path for this repo (via the room list is not
             // available here; use the standard AIGEN_SYS path).
-            Path repoDir = Paths.get("C:/Users/viper/AIGEN_SYS/repos", repo);
+            Path repoDir = resolveReposRoot().resolve(repo);
             if (!Files.isDirectory(repoDir)) continue;
             scanRepoForIssues(repoDir, repo, topics, issues);
         }
@@ -681,7 +690,7 @@ public class AgentManager {
 
     /** Read → propose-fix → apply for a single issue (local checkout only). */
     private boolean solveOne(Issue issue) {
-        Path repoDir = Paths.get("C:/Users/viper/AIGEN_SYS/repos", issue.repo);
+        Path repoDir = resolveReposRoot().resolve(issue.repo);
         Path file = repoDir.resolve(issue.file);
         if (!Files.isRegularFile(file)) return false;
 
