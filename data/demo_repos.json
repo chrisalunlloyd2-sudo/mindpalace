@@ -37,7 +37,7 @@
   {
     "name": "java-corner",
     "language": "Java",
-    "description": "Java sampler",
+    "description": "A small Java workspace for experimenting with code",
     "private": false,
     "path": "data/demo_repos/java-corner"
   },
