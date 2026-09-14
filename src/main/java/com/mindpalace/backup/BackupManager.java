@@ -8,9 +8,12 @@ import java.util.concurrent.*;
 import java.util.zip.*;
 
 /**
- * Cold backup system — auto-crawls the machine and mirrors everything to D:.
+ * Cold backup system - auto-crawls configured roots and mirrors them to a
+ * configurable backup root: mindpalace.backup.dir system property first,
+ * then MINDPALACE_BACKUP_DIR env var, then the D:/mindpalace_backup default.
  *
- * D: is the cold backup between GitHub and local. Nothing is 0 or 1 unaccounted:
+ * Issue #47: the root was hardcoded to D:/, which made --demo non-hermetic
+ * on Windows and created a stray D: directory inside ubuntu CI checkouts.
  * every file touched, every chat, every log, every agent recording is copied.
  * Runs on a background thread, dedupes by content hash (never copy twice),
  * and self-prunes to a theta curve so the backup never grows unbounded.
