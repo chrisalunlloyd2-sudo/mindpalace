@@ -1141,6 +1141,13 @@ public class AgentManager {
         "language and its idioms, and propose concrete code changes. " +
         "Talk about the code itself — functions, classes, algorithms, syntax, libraries — " +
         "not about 'hidden repos' or 'port scans'. Be concise and specific. " +
+        "WORKED EXAMPLE (follow this pattern exactly):\n" +
+        "Task: 'fix the typo in utils.py'\n" +
+        "1. read_file {\"filename\": \"utils.py\"} -> returns head+tail of the file\n" +
+        "2. edit_file {\"filename\": \"utils.py\", \"old_string\": \"def gret(name):\", \"new_string\": \"def greet(name):\"}\n" +
+        "   (old_string must be copied EXACTLY from the file you just read and be unique)\n" +
+        "3. Reply with what changed, in one sentence.\n" +
+        "NEVER rewrite a whole file with content= when a one-line old_string patch does it. " +
         "You are running on " + TOOL_MODEL + " via Ollama. " +
         "The current room and book context will be provided before each message.";
 

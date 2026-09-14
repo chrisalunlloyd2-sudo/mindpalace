@@ -13,7 +13,7 @@ telemetry.db, memory.db) and produces structured intelligence:
 
 No LLM calls, no cloud, $0 quota. Safe to cron every 15 min.
 """
-import json, os, re, sqlite3, sys, time
+import json, os, re, sqlite3, subprocess, sys, time
 from collections import Counter
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
@@ -339,6 +339,55 @@ def metrics():
     print(json.dumps(data, indent=2)[:800])
 
 
+def steplog():
+    """H12 weekly: post the latest slm_quality JSON to the step-log issue #9.
+
+    Reads the newest slm_quality_*.json in METRICS_DIR, renders a compact
+    scorecard, posts via gh issue comment. Quota-free (gh uses the stored
+    PAT; the JSON is already written by --metrics)."""
+    files = sorted(METRICS_DIR.glob("slm_quality_*.json"))
+    if not files:
+        print("no slm_quality files — run --metrics first")
+        return 1
+    latest = files[-1]
+    d = json.loads(latest.read_text(encoding="utf-8"))
+    meta = d.get("meta_chatter_pct", "?")
+    code = d.get("code_bearing_pct", "?")
+    msgs = d.get("messages", 0)
+    ok_meta = isinstance(meta, (int, float)) and meta < 15
+    ok_code = isinstance(code, (int, float)) and code > 25
+    verdict = "TARGETS MET" if (ok_meta and ok_code) else "TARGETS NOT MET (meta<15, code>25)"
+    body = (f"H12 slm_quality weekly scorecard — {d.get('date', latest.stem)}\n\n"
+            f"- messages: {msgs}\n- meta-chatter: {meta}% (target <15)\n"
+            f"- code-bearing: {code}% (target >25)\n\n{verdict}\n\n"
+            f"Source: {latest.name} (scout_bot --metrics, quota-free).")
+    cmd = ["gh", "issue", "comment", "9", "-R", "chrisalunlloyd2-sudo/mindpalace", "--body", body]
+    env = {**os.environ}
+    if not env.get("GH_TOKEN") and not env.get("GITHUB_TOKEN"):
+        # self-sufficient: pull the stored PAT from git credential manager
+        try:
+            r = subprocess.run(["git", "credential", "fill"],
+                               input="protocol=https\nhost=github.com\n\n",
+                               capture_output=True, text=True, timeout=30,
+                               cwd=str(REPO))
+            for line in r.stdout.splitlines():
+                if line.startswith("password="):
+                    env["GH_TOKEN"] = line.split("=", 1)[1].strip()
+                    break
+        except Exception as e:
+            print("credential lookup failed:", str(e)[:80])
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
+        if r.returncode == 0:
+            print("step-log posted:", r.stdout.strip()[-80:])
+            return 0
+        print("gh failed:", (r.stderr or r.stdout).strip()[:200])
+        return 1
+    except FileNotFoundError:
+        print("gh not on PATH")
+        return 1
+
+
 def watch():
     print(f"scout_bot WATCH — tailing {CONSOLE} (Ctrl+C to stop)")
     try:
@@ -364,6 +413,8 @@ if __name__ == "__main__":
         watch()
     elif "--metrics" in args:
         metrics()
+    elif "--steplog" in args:
+        sys.exit(steplog())
     elif "--progress" in args:
         sys.exit(progress())
     elif "--map" in args:
