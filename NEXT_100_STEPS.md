@@ -5,23 +5,26 @@
 > Nothing lives forever, nothing runs for free, always advancing.
 > Status markers: [x] shipped · [~] in flight · [ ] queued.
 
-## Where we are (2026-09-06)
+## Where we are (2026-09-13)
+- PHASE A CONT. (51-58): ✅ COMPLETE — all SLM cognition steps shipped (51-54 earlier, 55-58 today: f0cd7cc/f4476d4)
+- Selftest gate: 45/0 exit-0 (spawn validation #26, H04 truncation #27)
+- SLM work-lane: tools/slm_api_gate.py — local 3B extracts + Python validates (5b3a78a)
 - HYPOTHESES_50 infrastructure: DONE (bots, cascade, step-log issue #9)
 - H01 critic-context: SHIPPED (commit 108d06b) — critic sees real tool actions
 - Rotor/audio advancement: SHIPPED (commit 1eee1e7) — carry events, wind, rotor-clock music
 - CSS personality + README program section: SHIPPED (77a47cd, b21b447)
-- DAGs: docs/dag_{dataflow,architecture,deployer}.png (this drop)
-- Phase B world finishing: NOT STARTED (walls/roofs — the "unfinished houses")
+- DAGs: docs/dag_{dataflow,architecture,deployer}.png
+- Phase B world finishing: STARTED NEXT (walls/roofs — the "unfinished houses")
 
-## PHASE A CONT. — SLM Cognition (51–58)
+## PHASE A CONT. — SLM Cognition (51–58) ✅ COMPLETE (2026-09-13)
 - [x] **51** H01 critic-context — critic reviews concrete tool actions
-- [ ] **52** H02 repetition breaker — cosine/SequenceMatcher gate on last-N agent outputs; ≥0.85 match → perturb (temperature bump + "vary approach" system note). Files: AgentManager, ModelLifespan
-- [ ] **53** H08 meta-chatter gate — keyword filter on emit; reject "Would you like…"/"Please provide…"; one forced rephrase, else silent
-- [ ] **54** H03 tool-loop round-2 — tool results fed back as proper assistant/tool message pairs (Ollama format), SLM sees its own read_file output
-- [ ] **55** H04 budgets — TOOL_BUDGET 2000→4000; ToolExecutor truncates files head/tail 150 lines
-- [ ] **56** H05 patch semantics — edit_file gets old_string/new_string; solveOne stops rewriting whole files
-- [ ] **57** H06 few-shot anchor — one worked TODO→read→patch→apply example in the tool prompt
-- [ ] **58** H12 daily metrics task — scout_bot writes slm_quality JSON to the step-log weekly (targets: meta <15%, code >25%)
+- [x] **52** H02 repetition breaker — bigram similarity gate, ≥0.85 match → system-prompt ANTI-LOOP directive (no conversational nudge — that fed the meta-chatter)
+- [x] **53** H08 meta-chatter gate — keyword filter at emit; one rephrase chance, repeat offenders dropped
+- [x] **54** H03 tool-loop round-2 — assistant tool_calls + role:"tool" result messages (proper Ollama sequence)
+- [x] **55** H04 budgets — TOOL_BUDGET 2000→4000; read_file returns head+tail 150 lines (selftest #27)
+- [x] **56** H05 patch semantics — edit_file old_string/new_string with not-found + ambiguity guards; schema prefers patches
+- [x] **57** H06 few-shot anchor — worked read→patch→report example in TOOL_SYSTEM_PROMPT
+- [x] **58** H12 daily metrics task — scout_bot --steplog posts slm_quality scorecard (meta<15, code>25) weekly; self-sufficient PAT lookup
 
 ## PHASE B — World Finishing (59–78)
 - [ ] **59** H13 walls — procedural perimeter walls per room, door gaps aligned to hallway openings (WorldBuilder)
