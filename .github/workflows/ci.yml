@@ -16,6 +16,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Shallow-clone tripwire
+        run: |
+          n=$(git rev-list --count HEAD)
+          echo "commits: $n"
+          if [ "$n" -lt 2 ]; then echo "::error::shallow clone (1 commit) - slider-fidelity NPE territory; require fetch-depth: 0"; exit 1; fi
       - name: JDK 17 + Maven cache
         uses: actions/setup-java@v4
         with:
@@ -27,7 +34,13 @@ jobs:
       - name: Package (skip tests)
         run: mvn -B -ntp -DskipTests package -Dlwjgl.natives=natives-linux
       - name: Demo selftest (hermetic, Xvfb)
-        run: xvfb-run -a -s "-screen 0 1280x720x24" java -jar target/mindpalace-1.0.0.jar --demo --selftest > selftest.log 2>&1; tail -n 40 selftest.log
+        run: |
+          set +e
+          xvfb-run -a -s "-screen 0 1280x720x24" java -jar target/mindpalace-1.0.0.jar --demo --selftest > selftest.log 2>&1
+          rc=$?
+          tail -n 40 selftest.log
+          tail -n 15 selftest.log >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
       - name: Assert green (44/0, fixtures, hermeticity)
         shell: pwsh
         run: |
