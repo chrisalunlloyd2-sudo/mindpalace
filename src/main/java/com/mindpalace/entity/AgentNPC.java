@@ -9,6 +9,8 @@ import com.mindpalace.avatar.AvatarDescriptor;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.TodoCrystal;
+import com.mindpalace.world.WorldBuilder;
+import com.mindpalace.world.Hallway;
 import org.joml.Vector3f;
 
 import java.util.*;
@@ -44,6 +46,13 @@ public class AgentNPC {
     private float stateTimer;
     private float speed = 2.5f;
 
+    // H13b wall collision (step 60): mirrors Player.collide() corridor clamp.
+    // NPCs spawn at (0,1,0) = corridor center; rooms are Enter-to-teleport for
+    // the player, so NPC walls = hallway bounds. Walk targets project onto the
+    // door line so a clamped NPC still genuinely arrives (roles stay live).
+    private static final float NPC_RADIUS = 0.3f;
+    private List<Hallway> hallways;
+
     private Room currentRoom;
     private Book currentBook;
     private TodoCrystal carriedCrystal;
@@ -73,7 +82,8 @@ public class AgentNPC {
         this.brain = new BehaviorTree(ollama, model, name, scheduler);
     }
 
-    public void update(float dt, List<Room> rooms) {
+    public void update(float dt, List<Room> rooms, List<Hallway> hallways) {
+        this.hallways = hallways;
         stateTimer -= dt;
         decisionCooldown -= dt;  // track REAL time, not per-decision ticks
 
@@ -89,6 +99,7 @@ public class AgentNPC {
                 facing.set(to.x, 0, to.z).normalize();
                 to.mul(speed * dt);
                 position.add(to);
+                clampToCorridor();   // H13b: NPCs respect hallway walls (step 60)
                 bobPhase += dt * 8f;
             }
         }
@@ -97,6 +108,42 @@ public class AgentNPC {
         if (stateTimer <= 0) {
             decide(rooms);
         }
+    }
+
+    /** H13b (step 60): corridor-only clamp, mirrors Player.collide(). NPCs
+     *  spawn at (0,1,0) = corridor center and never legally enter rooms, so
+     *  the walls for an NPC are the hallway bounds themselves. */
+    private void clampToCorridor() {
+        if (hallways == null || hallways.isEmpty()) return;
+        float hw = WorldBuilder.HALLWAY_WIDTH / 2f - 0.1f;
+        float r = NPC_RADIUS;
+        if (position.x < -hw + r) position.x = -hw + r;
+        if (position.x > hw - r) position.x = hw - r;
+        if (position.z < -55f) position.z = -55f;
+        float maxZ = -55f;
+        for (Hallway hall : hallways) {
+            if (Math.abs(position.y - hall.getStart().y) < 1.5f) {
+                maxZ = hall.getEnd().z;
+                break;
+            }
+        }
+        if (position.z > maxZ - r) position.z = maxZ - r;
+    }
+
+    /** Project the walk target onto the corridor-side door line so a clamped
+     *  NPC can actually reach it: dist < 0.3f fires arrive() naturally and the
+     *  role-actions (READING/MARKING) stay live. doorX sits ON the wall plane
+     *  (+/-HALLWAY_WIDTH/2) but the clamp line is 0.4 units inside, so the
+     *  projection moves BOTH axes, landing the target exactly where a
+     *  wall-respecting NPC can stand. */
+    private void projectToDoorLine(Vector3f door) {
+        if (door == null || target == null) return;
+        float hw = WorldBuilder.HALLWAY_WIDTH / 2f - 0.1f;
+        float r = NPC_RADIUS;
+        float px = door.x;
+        if (px > hw) px = hw - r;
+        else if (px < -hw) px = -hw + r;
+        target.set(px, 1.0f, door.z);
     }
 
     private void arrive(List<Room> rooms) {
@@ -147,6 +194,7 @@ public class AgentNPC {
             currentRoom = dest;
             target = new Vector3f(dest.getRoomCenter());
             target.y = 1.0f;
+            projectToDoorLine(dest.getDoorPosition()); // H13b door-line target (step 60)
             state = State.WALKING;
             stateTimer = 8f;
         } else {
@@ -184,6 +232,7 @@ public class AgentNPC {
                     currentRoom = dest;
                     target = new Vector3f(dest.getRoomCenter());
                     target.y = 1.0f;
+                    projectToDoorLine(dest.getDoorPosition()); // H13b door-line target (step 60)
                     state = State.WALKING;
                     stateTimer = 8f;
                 }
@@ -281,6 +330,7 @@ public class AgentNPC {
         currentRoom = room;
         target = new Vector3f(room.getRoomCenter());
         target.y = 1.0f;
+        projectToDoorLine(room.getDoorPosition()); // H13b door-line target (step 60)
         state = State.WALKING;
         stateTimer = 10f;
     }
