@@ -1,0 +1,46 @@
+name: CI smoke
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ci-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  demo-selftest:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: JDK 17 + Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      - name: Package (skip tests)
+        run: mvn -B -ntp -DskipTests package
+      - name: Demo selftest (hermetic)
+        run: java -jar target/mindpalace-1.0.0.jar --demo --selftest > selftest.log 2>&1; Get-Content selftest.log -Tail 40
+      - name: Assert green (44/0, fixtures, hermeticity)
+        shell: pwsh
+        run: |
+          $log = Get-Content selftest.log -Raw
+          $checks = @(
+            "RESULT: 44 passed, 0 failed",
+            "Demo fixtures loaded: 12 rooms",
+            "PASS demo hermeticity"
+          )
+          $missing = $checks | Where-Object { $log -notmatch [regex]::Escape($_) }
+          if ($missing) { $missing | ForEach-Object { Write-Host "::error::missing: $_" }; exit 1 }
+          Write-Host "CI smoke GREEN: 44/0, 12 demo rooms, hermeticity PASS"
+      - name: Upload selftest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest-log
+          path: selftest.log
