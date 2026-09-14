@@ -289,9 +289,82 @@ public class OutsideWorld {
             float dist2 = dx * dx + dz * dz;
             int lod = dist2 < 12f * 12f ? 0 : dist2 < 28f * 28f ? 1 : 2;
 
-            // Every 4th tree is an evergreen (conifer); rest deciduous
-            if (ti % 4 == 0) renderEvergreen(r, tx, floorY, tz, ti, lod);
+            // H16 (step 63 completion): three species — every 7th tree is
+            // deadwood (bare gnarled trunk, catches the eye), every 4th (of
+            // the rest) is evergreen conifer, the majority deciduous. Same
+            // seed order → same world every boot (deterministic E2E).
+            if (ti % 7 == 0) renderDeadwood(r, tx, floorY, tz, ti, lod);
+            else if (ti % 4 == 0) renderEvergreen(r, tx, floorY, tz, ti, lod);
             else renderDeciduous(r, tx, floorY, tz, ti, s, lod);
+        }
+        renderForestFloor(r, floorY, time, s);
+    }
+
+    /** H17 (step 64): forest floor dressing — grass tufts, fallen logs,
+     *  rocks. Instanced-cheap: 1 cube per tuft, 3 per log, 1 per rock, all
+     *  on the same deterministic seed order as the trees so the world is
+     *  identical every boot. Draw calls scale with chunk visibility (LOD
+     *  culls the far half entirely). */
+    private void renderForestFloor(Renderer r, float floorY, float time, Season s) {
+        int count = 220; // 110 tufts + 55 logs + 55 rocks by stride
+        for (int i = 0; i < count; i++) {
+            float ang = i * GOLDEN + 0.9f; // offset from the tree spiral
+            float rad = 6f + 2.6f * (float) Math.sqrt(i);
+            float fx = (float) Math.cos(ang) * rad * 1.4f;
+            float fz = -90f + (float) Math.sin(ang) * rad;
+            if (Math.abs(fx) > HALF_W - 2f) continue;
+            if (fz < MIN_Z + 2f || fz > MAX_Z - 2f) continue;
+            if (inLake(fx, fz)) continue;
+            if (near(fx, fz, mansionPos, 16f) || near(fx, fz, hospitalPos, 12f)
+                || near(fx, fz, factoryPos, 16f) || near(fx, fz, tocTreePos, 20f)) continue;
+            if (!chunkVisible(fx, fz)) continue;
+
+            if (i % 4 == 0) {
+                // Fallen log — lying cylinder-ish (3 cubes: 2 body + 1 broken end)
+                float logAng = (i % 9) * 0.7f;
+                float lx = (float) Math.cos(logAng) * 1.4f, lz = (float) Math.sin(logAng) * 0.8f;
+                float logY = floorY + 0.16f;
+                r.drawCubeColor(new Vector3f(fx, logY, fz),
+                    new Vector3f(2.0f, 0.32f, 0.42f), 0.42f, 0.30f, 0.18f);
+                r.drawCubeColor(new Vector3f(fx + lx, logY + 0.06f, fz + lz),
+                    new Vector3f(1.2f, 0.30f, 0.40f), 0.46f, 0.33f, 0.20f);
+                r.drawCubeColor(new Vector3f(fx - 1.05f, logY - 0.04f, fz - lz * 0.4f),
+                    new Vector3f(0.36f, 0.40f, 0.44f), 0.35f, 0.26f, 0.16f);
+            } else if (i % 4 == 1) {
+                // Rock — grey boulder pair (big + small neighbor)
+                r.drawCubeColor(new Vector3f(fx, floorY + 0.14f, fz),
+                    new Vector3f(0.7f, 0.4f, 0.6f), 0.45f, 0.45f, 0.46f);
+                r.drawCubeColor(new Vector3f(fx + 0.6f, floorY + 0.08f, fz + 0.3f),
+                    new Vector3f(0.35f, 0.24f, 0.3f), 0.40f, 0.40f, 0.42f);
+            } else {
+                // Grass tufts — 2 crossed blades each; winter tints them white-ish
+                boolean winter = s == Season.WINTER;
+                float gr = winter ? 0.75f : 0.25f, gg = winter ? 0.85f : 0.55f,
+                      gb = winter ? 0.90f : 0.15f;
+                r.drawCubeColor(new Vector3f(fx, floorY + 0.09f, fz),
+                    new Vector3f(0.06f, 0.22f, 0.30f), gr, gg, gb);
+                r.drawCubeColor(new Vector3f(fx + 0.08f, floorY + 0.07f, fz + 0.05f),
+                    new Vector3f(0.26f, 0.18f, 0.06f), gr * 0.9f, gg * 0.9f, gb);
+            }
+        }
+    }
+
+    /** H16 3rd species: deadwood — bare gnarled trunk + stub branches. */
+    private void renderDeadwood(Renderer r, float tx, float floorY, float tz, int ti, int lod) {
+        float trunkH = 2.2f + (ti % 4) * 0.5f;
+        float lean = 0.12f * (ti % 3 - 1); // slight deterministic lean
+        r.drawCubeColor(new Vector3f(tx + lean, floorY + trunkH / 2f, tz),
+            new Vector3f(0.26f, trunkH, 0.26f), 0.36f, 0.28f, 0.22f);
+        if (lod > 1) return; // far LOD: trunk only
+        // Gnarled stubs — golden-angle forks, bare (no canopy)
+        int stubs = lod == 0 ? 3 : 2;
+        for (int b = 0; b < stubs; b++) {
+            float by = floorY + trunkH * (0.55f + 0.18f * b);
+            float bAng = b * GOLDEN + ti * 1.3f;
+            float bLen = 0.9f - 0.2f * b;
+            r.drawCubeColor(new Vector3f(tx + lean + (float) Math.cos(bAng) * bLen / 2f,
+                              by + bLen * 0.35f, tz + (float) Math.sin(bAng) * bLen / 2f),
+                new Vector3f(0.12f, 0.7f, 0.12f), 0.32f, 0.25f, 0.19f);
         }
     }
 
