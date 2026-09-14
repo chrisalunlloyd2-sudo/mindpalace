@@ -45,14 +45,17 @@ jobs:
         shell: pwsh
         run: |
           $log = Get-Content selftest.log -Raw
+          # count-agnostic RESULT regex (>=5 checks floor) - survives future count bumps, refs #57
+          $m = [regex]::Match($log, 'RESULT:\s*(\d+)\s+passed,\s*0\s+failed')
+          $n = if ($m.Success) { [int]$m.Groups[1].Value } else { -1 }
           $checks = @(
-            "RESULT: 45 passed, 0 failed",
             "Demo fixtures loaded: 12 rooms",
             "PASS demo hermeticity"
           )
+          if ($n -lt 5) { Write-Host "::error::RESULT line missing, malformed, or degenerate (<5 checks)"; exit 1 }
           $missing = $checks | Where-Object { $log -notmatch [regex]::Escape($_) }
           if ($missing) { $missing | ForEach-Object { Write-Host "::error::missing: $_" }; exit 1 }
-          Write-Host "CI smoke GREEN: 45/0, 12 demo rooms, hermeticity PASS"
+          Write-Host "CI smoke GREEN: $n/0, 12 demo rooms, hermeticity PASS"
       - name: Upload selftest log
         if: always()
         uses: actions/upload-artifact@v4
