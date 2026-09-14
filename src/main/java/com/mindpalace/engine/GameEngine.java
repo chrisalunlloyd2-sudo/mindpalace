@@ -247,6 +247,13 @@ public class GameEngine {
     private boolean demoMode = false;
     public void setDemo() { this.demoMode = true; }
 
+    // #49 (Alice 2026-09-14): demo hermeticity - persistence root routing.
+    // Live keeps the exact historical root (~/AIGEN_SYS); demo routes ALL
+    // persistence into a per-run temp dir so --demo --selftest never touches
+    // the real tree. aigenSysPreexisting feeds check 44 (refs #49).
+    private String dataRoot = null;
+    private boolean aigenSysPreexisting = false;
+
     /** Enable self-test mode (called from Main before run()). */
     public void setSelfTest() {
         this.selfTest = true;
@@ -304,6 +311,24 @@ public class GameEngine {
         loadingProgress = 0.1f;
         renderLoadingFrame();
 
+        // #49 (Alice 2026-09-14): capture pre-existence BEFORE any store is built -
+        // check 44 asserts absent-at-boot => still-absent-after-demo (no false-red
+        // on boxes where ~/AIGEN_SYS legitimately exists from real runs).
+        aigenSysPreexisting = java.nio.file.Files.exists(
+            java.nio.file.Path.of(System.getProperty("user.home"), "AIGEN_SYS"));
+        // #49: demo routes ALL persistence into a per-run temp dir (hermetic);
+        // live keeps the exact historical root - zero change outside --demo.
+        if (demoMode) {
+            try {
+                dataRoot = java.nio.file.Files.createTempDirectory("mindpalace-demo").toString();
+            } catch (java.io.IOException e) {
+                dataRoot = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"),
+                    "mindpalace-demo-" + Long.toUnsignedString(System.nanoTime())).toString();
+            }
+        } else {
+            dataRoot = java.nio.file.Path.of(System.getProperty("user.home"), "AIGEN_SYS").toString();
+        }
+
         input = new Input(window);
         renderer = new Renderer(width, height);
         bloom = new BloomEffect(width, height);
@@ -348,12 +373,12 @@ public class GameEngine {
 
         // Unified telemetry — append-only, paced, queryable swarm ledger.
         telemetry = new com.mindpalace.backup.Telemetry(
-            java.nio.file.Path.of(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory"));
+            java.nio.file.Path.of(dataRoot, "mindpalace_memory")); // #49: demo-temp root
         telemetry.record(com.mindpalace.backup.Telemetry.SYSTEM, "boot", "mindpalace started");
         System.out.println("[Telemetry] ledger ready — " + telemetry.summary());
 
         // Self-managing memory + never-make-code-twice DB (needed by agents).
-        memoryManager = new MemoryManager(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory");
+        memoryManager = new MemoryManager(java.nio.file.Path.of(dataRoot, "mindpalace_memory").toString()); // #49
         memoryManager.start();
 
         // Start LLM agents from SIMS1337
@@ -512,11 +537,11 @@ public class GameEngine {
         // Real file tool executor — the agents' read/edit/create/delete path,
         // governed by never-twice + telemetry. Base = the AIGEN_SYS repos root.
         toolExecutor = new ToolExecutor(
-            java.nio.file.Path.of(System.getProperty("user.home"), "AIGEN_SYS", "repos"),
+            java.nio.file.Path.of(dataRoot, "repos"), // #49: demo-temp root
             memoryManager, telemetry);
 
         // Genetic enhancement timeline — the player's persistent genome.
-        genome = new GeneticTimeline(java.nio.file.Path.of(System.getProperty("user.home") + "/AIGEN_SYS/mindpalace_memory"));
+        genome = new GeneticTimeline(java.nio.file.Path.of(dataRoot, "mindpalace_memory")); // #49
         System.out.println("[Genome] timeline loaded — " + genome.moduleCount()
             + " modules, " + genome.mutationCount() + " mutations");
 
@@ -558,7 +583,7 @@ public class GameEngine {
             g -> com.mindpalace.audio.MusicEngine.renderOffline(g, 8000), // 1s clip @ 8kHz
             50, 10, 0.15f, 0.2f); // pop 50, top-10 parents, 40 children
         genomeArchive = new com.mindpalace.genetics.GenomeArchive(
-            java.nio.file.Path.of(System.getProperty("user.home"), "AIGEN_SYS", "mindpalace_memory"));
+            java.nio.file.Path.of(dataRoot, "mindpalace_memory")); // #49
         genomeControl = new com.mindpalace.genetics.GenomeControl();
         evolveTimer = EVOLVE_INTERVAL;
         refreshTimer = REFRESH_INTERVAL;
@@ -687,9 +712,8 @@ public class GameEngine {
             try {
                 while (running) {
                     String line = consoleReader.readLine();
-                    if (line != null) {
-                        synchronized (this) { pendingCommand = line; }
-                    }
+                    if (line == null) break; // #49: EOF (closed stdin) must not spin
+                    synchronized (this) { pendingCommand = line; }
                 }
             } catch (Exception ignored) {}
         }, "console-reader");
@@ -4092,12 +4116,17 @@ public class GameEngine {
             hermeticOk = !github.isAuthenticated();
             hermeticOk = hermeticOk && !liveUpdateManager.isRunning();
             hermeticOk = hermeticOk && backupUntouched;
+            boolean aigenUntouched = aigenSysPreexisting
+                || !java.nio.file.Files.exists(java.nio.file.Path.of(
+                    System.getProperty("user.home"), "AIGEN_SYS", "mindpalace_memory"));
+            hermeticOk = hermeticOk && aigenUntouched; // #49: nothing written under AIGEN_SYS in demo
             System.out.println((hermeticOk ? "PASS" : "FAIL")
-                + " demo hermeticity (no auth, no live poller, no backup crawl)");
+                + " demo hermeticity (no auth, no live poller, no backup crawl, no AIGEN_SYS writes)");
             if (!hermeticOk) {
                 System.out.println("  hermeticity detail: auth=" + github.isAuthenticated()
                     + " pollerRunning=" + liveUpdateManager.isRunning()
-                    + " backupWired=" + (!backupUntouched) + " (refs #47)");
+                    + " backupWired=" + (!backupUntouched)
+                    + " aigenTouched=" + (!aigenUntouched) + " (refs #47 #49)");
             }
         } else {
             hermeticOk = true;
