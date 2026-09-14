@@ -114,6 +114,12 @@ public class AgentManager {
     // ── Lifecycle ──
 
     public void start() {
+        // SIMS1337 parity wiring is pure in-memory state: wire it
+        // UNCONDITIONALLY before the availability gate so the selftest sees
+        // FOW/quorum/LoRA populated even with no Ollama daemon reachable
+        // (CI has none). Wiring must not depend on a live HTTP probe.
+        initSimsParity();
+
         available = ollama.isAvailable();
         if (!available) {
             log("[AgentManager] Ollama not available — agents disabled");
@@ -127,10 +133,6 @@ public class AgentManager {
         toolLifespan.setSystemPrompt(TOOL_SYSTEM_PROMPT);
         criticLifespan.setSystemPrompt(CRITIC_SYSTEM_PROMPT);
         chatLifespan.setSystemPrompt(CHAT_SYSTEM_PROMPT);
-
-        // Initialize SIMS1337 parity: pin agents to hexes, assign models, seed
-        // the voting schema with the two agents as voters.
-        initSimsParity();
 
         // Start autonomous cycle — NOT in selftest mode (the selftest owns
         // the DePIN/quorum checks deterministically; a cycle firing mid-test
