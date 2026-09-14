@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * WeightedQuorumVote — FOW-gated quorum voting with a time pulse.
@@ -34,7 +35,7 @@ public class WeightedQuorumVote {
         public final String text;
         public final HexCoord hex;
         public final double timeSlot; // preferred pulse phase 0.0–1.0
-        public final Map<String, Vote> votes = new LinkedHashMap<>();
+        public final Map<String, Vote> votes = new ConcurrentHashMap<>();
 
         Proposal(String id, String text, HexCoord hex, double timeSlot) {
             this.id = id; this.text = text; this.hex = hex; this.timeSlot = timeSlot;
@@ -73,8 +74,8 @@ public class WeightedQuorumVote {
         }
     }
 
-    private final Map<String, ModelPosition> models = new LinkedHashMap<>();
-    private final Map<String, Proposal> proposals = new LinkedHashMap<>();
+    private final Map<String, ModelPosition> models = new ConcurrentHashMap<>();
+    private final Map<String, Proposal> proposals = new ConcurrentHashMap<>();
     private final int fowHop;
     private final int quorumMin;
     private final int approveMin;
