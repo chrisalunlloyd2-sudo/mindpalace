@@ -3299,30 +3299,39 @@ public class GameEngine {
 
         // 19. SIMS1337 parity — ModelRouter + LoRASwitcher + WeightedQuorumVote + FOWGate
         boolean simsOk = agentManager != null;
+        boolean simRouter = simsOk, simLora = false, simQuorum = false, simFow = false;
         if (simsOk) {
             // Router: complexity → tier mapping is deterministic.
-            simsOk = agentManager.getRouter().select(Complexity.LOW).equals("qwen2.5:0.5b")
+            simRouter = agentManager.getRouter().select(Complexity.LOW).equals("qwen2.5:0.5b")
                   && agentManager.getRouter().select(Complexity.CRITICAL).equals("phi3:mini");
+            simsOk = simRouter;
             // LoRA: switch to CODE and back, verify current type + switch count.
             if (simsOk) {
                 agentManager.getLora().switchAdapter(AdapterType.CODE);
-                simsOk = agentManager.getLora().currentType() == AdapterType.CODE
+                simLora = agentManager.getLora().currentType() == AdapterType.CODE
                       && agentManager.getLora().getSwitchCount() >= 1;
+            simsOk = simLora;
             }
             // Quorum: register a proposal, auto-vote, verify a result is produced.
             if (simsOk) {
                 String pid = "selftest-" + System.currentTimeMillis();
                 agentManager.getQuorum().registerProposal(pid, "selftest", new HexCoord(0, 0));
                 agentManager.getQuorum().autoVoteAll();
-                simsOk = agentManager.getQuorum().calculateQuorum(pid) != null;
+                simQuorum = agentManager.getQuorum().calculateQuorum(pid) != null;
+                simsOk = simQuorum;
             }
             // FOW: two agents pinned, two models assigned.
             if (simsOk) {
-                simsOk = agentManager.getFow().agentCount() == 2
+                simFow = agentManager.getFow().agentCount() == 2
                       && agentManager.getFow().modelCount() == 2;
+            simsOk = simFow;
             }
         }
         System.out.println((simsOk ? "PASS" : "FAIL") + " SIMS1337 parity (router + LoRA + quorum + FOW)");
+        System.out.println("  SIMS1337 stages: router=" + (simRouter ? "PASS" : "FAIL")
+            + " lora=" + (simLora ? "PASS" : "FAIL")
+            + " quorum=" + (simQuorum ? "PASS" : "FAIL")
+            + " fow=" + (simFow ? "PASS" : "FAIL"));
         if (simsOk) pass++; else fail++;
 
         // 20. Code editor language toggle — ~20-language registry + LoRA switch
@@ -3966,7 +3975,7 @@ public class GameEngine {
                     new com.mindpalace.world.TimeMachine(com.mindpalace.world.RepoMapper.SHARED_GIT);
                 if (tm.load(sliderRoom.getLocalPath()) && tm.getHistory().size() > 0) {
                     // scrub mid-history (position 1, or last if tiny)
-                    int pos = Math.min(1, tm.getHistory().size() - 1);
+                    int pos = Math.min(1, tm.getHistory().size()); // position 1 valid for any history size (clamp-to-size)
                     tm.setPosition(pos);
                     com.mindpalace.world.Book b = sliderRoom.getBooks().get(0);
                     String relPath = b.getFilePath();

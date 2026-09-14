@@ -48,6 +48,8 @@ public final class TimeMachine {
         cacheKeys.clear();
         cacheVals.clear();
         position = 0;
+        File dotGit = new File(repoPath, ".git");
+        if (!dotGit.exists()) return false; // non-git dirs: fail fast, never inherit a parent repo
         String out = git.run(new File(repoPath),
             "log", "-50", "--format=%h|%s|%ar|%ct");
         if (out == null || out.isEmpty()) return false;
@@ -69,7 +71,7 @@ public final class TimeMachine {
 
     /** Move the slider. 0 = present; k = the k-th commit back. Clamped. */
     public void setPosition(int pos) {
-        position = Math.max(0, Math.min(pos, Math.max(0, history.size() - 1)));
+        position = Math.max(0, Math.min(pos, history.size()));
     }
 
     /** Commit the slider currently points at (null when at present). */
