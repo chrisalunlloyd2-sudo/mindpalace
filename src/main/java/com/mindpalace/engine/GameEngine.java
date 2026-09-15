@@ -1522,6 +1522,7 @@ public class GameEngine {
     private static final float BLOOM_FOREST = 0.75f;
     private float bloomCurrent = BLOOM_HALL;
     private String bloomRegion = "hall";
+    private float bloomRegionFade = 0f; // >0 while the region name shows (step 68)
     // H21: quorum flare — +1.0 gold .. -1.0 ice, decays to 0 over ~1.5s
     private float quorumFlare = 0f;
 
@@ -1537,6 +1538,7 @@ public class GameEngine {
                      : region.equals("courtyard") ? BLOOM_COURTYARD : BLOOM_HALL;
         if (!region.equals(bloomRegion)) {
             bloomRegion = region;
+            bloomRegionFade = 1f; // step 68: HUD region-name fade (~2s)
             System.out.println("[Bloom] region -> " + region + " (intensity " + target + ")");
         }
         // 1.5s exponential lerp toward the region target
@@ -2035,6 +2037,17 @@ public class GameEngine {
             : "MindPalace — " + world.getRooms().size() + " rooms";
         fontRenderer.renderBillboard(roomInfo, hudTop, 0.08f,
             new Vector3f(0.0f, 0.9f, 1.0f), proj, view, camPos);
+
+        // H22 (step 68): region-name HUD line with fade — shows the region
+        // for ~2s after a region change, alpha easing out.
+        if (bloomRegionFade > 0f) {
+            bloomRegionFade -= 0.008f; // ~2s at 60fps
+            float a = Math.min(1f, Math.max(0f, bloomRegionFade));
+            Vector3f regionPos = new Vector3f(camPos).add(
+                camFront.x * 3f, camFront.y * 3f + 0.2f, camFront.z * 3f);
+            fontRenderer.renderBillboard(bloomRegion.toUpperCase(), regionPos, 0.05f,
+                new Vector3f(0.4f * a, 0.8f * a, 1.0f * a), proj, view, camPos);
+        }
 
         // Wallet balance (DePIN credits)
         if (depin != null) {
