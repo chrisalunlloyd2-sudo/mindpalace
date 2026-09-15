@@ -721,6 +721,44 @@ public class WorldBuilder {
                 renderDoorFrame(r, wallX, s.y, dp.z, room);
             }
         }
+
+        renderHallwayWindows(r, s, hw, wallX, side);
+    }
+
+    /** H20 (step 69): emissive window panes on the wall segments between
+     *  doors — warm glow at "night" (18:00-06:00), dim neutral glass by day.
+     *  One quad per mid-segment, centered on the wall, cheap (1 cube each). */
+    private void renderHallwayWindows(Renderer r, Vector3f s, Hallway hw, float wallX, int side) {
+        float len = hw.getEnd().z - s.z;
+        float dw = Room.DOOR_WIDTH, dh = Room.DOOR_HEIGHT;
+        int hour = java.time.LocalTime.now().getHour();
+        boolean night = hour < 6 || hour >= 18;
+        // midpoints between consecutive doors get one pane each
+        List<Float> doorZs = new ArrayList<>();
+        for (Room room : rooms)
+            if (room.getHallwaySide() == (side == -1 ? 0 : 1) && room.getFloor() == hw.getFloor())
+                if (room.getDoorPosition() != null
+                    && !(room.isFogged() && !fogOfWar.isRoomRevealed(room)))
+                    doorZs.add(room.getDoorPosition().z);
+        doorZs.sort(Float::compare);
+        float prev = s.z;
+        for (float dz : doorZs) {
+            float segEnd = dz - dw / 2f;
+            float mid = (prev + segEnd) / 2f;
+            if (segEnd - prev > 1.6f && chunkVisible(wallX, mid)) {
+                // pane: tall thin quad just inside the wall face, at eye height
+                // pane faces INTO the hallway: offset toward center (x=0)
+                float paneX = wallX - Math.signum(wallX) * 0.02f;
+                if (night) {
+                    r.drawCubeColor(new Vector3f(paneX, s.y + dh * 0.75f, mid),
+                        new Vector3f(0.05f, 0.9f, 1.0f), 1.0f, 0.85f, 0.55f);
+                } else {
+                    r.drawCubeColor(new Vector3f(paneX, s.y + dh * 0.75f, mid),
+                        new Vector3f(0.05f, 0.9f, 1.0f), 0.55f, 0.65f, 0.75f);
+                }
+            }
+            prev = dz + dw / 2f;
+        }
     }
 
     private void renderNeonSign(Renderer r, float wallX, float signY, float signZ, Room room) {

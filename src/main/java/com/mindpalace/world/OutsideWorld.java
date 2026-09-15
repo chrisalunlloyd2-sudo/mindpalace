@@ -170,6 +170,8 @@ public class OutsideWorld {
 
         renderGround(r, floorY, s, w);
         renderLake(r, floorY, time);
+        // Steps 71+73: path lanterns (night-aware) + firefly scouts looping the tree ring
+        renderPathLanterns(r, floorY, night);
         renderForest(r, floorY, time, s);
         renderFlowers(r, floorY, time, s);
         if (night) renderFireflies(r, floorY, time);
@@ -690,8 +692,26 @@ public class OutsideWorld {
         // Chimney (every house deserves smoke someday — H19 hook point)
         r.drawCube(new Vector3f(hx + w / 2f - 0.6f, floorY + hh + 1.1f, hz + d / 4f),
             new Vector3f(0.5f, 1.0f, 0.5f), Renderer.TEX_BARK);
-        // Door + window
-        r.drawCube(new Vector3f(hx, floorY + 1.1f, hz - d / 2f - 0.05f), new Vector3f(1.1f, 2.2f, 0.1f), Renderer.TEX_DOOR);
+        // H20 (step 70): door mesh — panel + jamb + lintel + step + knob.
+        // Slightly ajar (5° deterministic per house) so entrances read as real.
+        float doorW = 1.1f, doorH = 2.2f;
+        float ajar = 0.08f * ((h % 3) - 1); // -1, 0, +1 lean
+        // Panel — offset sideways by the ajar amount (hinged left)
+        r.drawCube(new Vector3f(hx - doorW / 2f + doorW / 2f * 0.15f + ajar * 0.3f, floorY + 1.1f, hz - d / 2f - 0.06f - ajar * 0.15f),
+            new Vector3f(doorW * 0.85f, doorH, 0.1f), Renderer.TEX_DOOR);
+        // Jamb posts + lintel
+        r.drawCube(new Vector3f(hx - doorW / 2f - 0.06f, floorY + doorH / 2f, hz - d / 2f - 0.06f),
+            new Vector3f(0.12f, doorH + 0.1f, 0.12f), Renderer.TEX_BARK);
+        r.drawCube(new Vector3f(hx + doorW / 2f + 0.06f, floorY + doorH / 2f, hz - d / 2f - 0.06f),
+            new Vector3f(0.12f, doorH + 0.1f, 0.12f), Renderer.TEX_BARK);
+        r.drawCube(new Vector3f(hx, floorY + doorH + 0.1f, hz - d / 2f - 0.06f),
+            new Vector3f(doorW + 0.36f, 0.12f, 0.12f), Renderer.TEX_BARK);
+        // Step stone in front of the door
+        r.drawCubeColor(new Vector3f(hx, floorY + 0.03f, hz - d / 2f - 0.35f),
+            new Vector3f(1.4f, 0.06f, 0.5f), 0.5f, 0.5f, 0.52f);
+        // Knob (bright so it catches the bloom)
+        r.drawCubeColor(new Vector3f(hx + 0.28f, floorY + 1.05f, hz - d / 2f - 0.13f - ajar * 0.15f),
+            new Vector3f(0.06f, 0.06f, 0.06f), 1.0f, 0.85f, 0.4f);
         int winTex = night ? Renderer.TEX_NEON_AMBER : Renderer.TEX_NEON_CYAN;
         r.drawCube(new Vector3f(hx + 1.5f, floorY + 1.8f, hz - d / 2f - 0.05f), new Vector3f(0.9f, 0.9f, 0.05f), winTex);
     }
@@ -888,7 +908,38 @@ public class OutsideWorld {
         }
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // ── Path lanterns + fireflies (steps 71 + 73) ───────────────────────────
+
+    /** H21 (step 71): lantern posts along the cobbled paths — post + cap +
+     *  glowing orb (amber at night, pale by day). One per cobble segment,
+     *  alternating sides so the paving reads as lit, not lined. */
+    private void renderPathLanterns(Renderer r, float floorY, boolean night) {
+        for (int i = 0; i < 5; i++) {
+            float px = (i - 2) * 30f;
+            for (int seg = 0; seg < 12; seg += 2) { // every other cobble segment
+                float lz = -110f + seg * 5f;
+                float lx = px + ((seg % 2 == 0) ? 1.55f : -1.55f);
+                if (!chunkVisible(lx, lz)) continue;
+                // Post (bark, 1.6m) + crossbar + lantern box
+                r.drawCube(new Vector3f(lx, floorY + 0.8f, lz),
+                    new Vector3f(0.08f, 1.6f, 0.08f), Renderer.TEX_BARK);
+                r.drawCube(new Vector3f(lx, floorY + 1.62f, lz),
+                    new Vector3f(0.5f, 0.06f, 0.5f), Renderer.TEX_WOOD);
+                if (night) {
+                    r.drawCubeColor(new Vector3f(lx, floorY + 1.35f, lz),
+                        new Vector3f(0.22f, 0.28f, 0.22f), 1.0f, 0.80f, 0.45f);
+                } else {
+                    r.drawCubeColor(new Vector3f(lx, floorY + 1.35f, lz),
+                        new Vector3f(0.22f, 0.28f, 0.22f), 0.85f, 0.85f, 0.80f);
+                }
+                // Cap
+                r.drawCubeColor(new Vector3f(lx, floorY + 1.68f, lz),
+                    new Vector3f(0.3f, 0.05f, 0.3f), 0.3f, 0.2f, 0.12f);
+            }
+        }
+    }
+
+        // ── Helpers ──────────────────────────────────────────────────────────────
 
     private boolean inLake(float x, float z) {
         float dx = x - lakeCenter.x, dz = z - lakeCenter.z;
