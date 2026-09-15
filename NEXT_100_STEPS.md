@@ -31,8 +31,8 @@
 - [x] **60** H13b wall collision — player + NPC collision vs walls (engine/GameState move validation)
 - [ ] **61** H14 roofs — flat slab + parapet; courtyard open-sky
 - [ ] **62** H15 heights — interior ceiling 4.5m, hall 6m
-- [ ] **63** H16 forest fill ×3 — pine/oak/deadwood species, radial density falloff, DeterministicSeed (OutsideWorld: 220 → 600+ trees)
-- [ ] **64** H17 forest floor — grass tufts, fallen logs, rocks (instanced, ≤40 draw calls total)
+- [x] **63** H16 forest fill ×3 — pine/oak/deadwood species, radial density falloff, DeterministicSeed (OutsideWorld: 220 → 600+ trees)
+- [x] **64** H17 forest floor — grass tufts, fallen logs, rocks (instanced, ≤40 draw calls total)
 - [ ] **65** H18 paths — cobblestone strips from hallway exits to the forest ring
 - [ ] **66** H20 bloom presets — courtyard warm / forest cool / hall neutral, 1.5s lerp on region change
 - [ ] **67** H21 quorum flares — APPROVED → gold bloom flare, REJECTED → ice dip (rides the rotor carry-event pattern; CSS already has the web-side twins)
