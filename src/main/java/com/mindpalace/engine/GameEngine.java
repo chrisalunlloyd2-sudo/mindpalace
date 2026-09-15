@@ -1551,7 +1551,19 @@ public class GameEngine {
             bloomCurrent = Math.max(0f, Math.min(2f, bloomCurrent));
         }
         bloom.setIntensity(bloomCurrent);
+        // H22 (step 72): weather-music coupling — rain slows the score
+        // (soaked-world feel), snow/clear restore. Cheap: only writes tempo
+        // when it would change (MusicEngine.setTempo is an AtomicInt).
+        com.mindpalace.world.OutsideWorld.Weather w = world.getOutsideWorld().weather();
+        if (!"forest".equals(region)) {
+            if (musicTempoWeather != 0) { musicTempoWeather = 0; music.setTempo(120); }
+        } else if (w == com.mindpalace.world.OutsideWorld.Weather.RAIN) {
+            if (musicTempoWeather != 1) { musicTempoWeather = 1; music.setTempo(72); System.out.println("[Weather] rain — score slows to 72 BPM"); }
+        } else {
+            if (musicTempoWeather != 2) { musicTempoWeather = 2; music.setTempo(120); }
+        }
     }
+    private int musicTempoWeather = 0;
 
     private void render(double alpha) {
         updateRegionBloom(0.016); // frame-paced; region presets lerp smoothly

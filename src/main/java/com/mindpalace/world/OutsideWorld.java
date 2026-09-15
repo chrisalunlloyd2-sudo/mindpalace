@@ -200,6 +200,10 @@ public class OutsideWorld {
 
         // Seasonal tint overlay — a thin translucent-ish color wash
         float[] tint = seasonTint(s);
+        // H22 (step 72): weather-forest coupling — rain darkens the wash
+        // (soaked ground), snow whitens it; CLEAR passes through untouched.
+        if (w == Weather.RAIN) { tint[0] *= 0.55f; tint[1] *= 0.60f; tint[2] *= 0.62f; }
+        else if (w == Weather.SNOW) { tint[0] = tint[0] * 0.4f + 0.6f; tint[1] = tint[1] * 0.4f + 0.6f; tint[2] = tint[2] * 0.4f + 0.6f; }
         r.drawCubeColor(new Vector3f(cx, floorY - 0.05f, cz),
             new Vector3f(wd, 0.02f, dp), tint[0], tint[1], tint[2]);
 
