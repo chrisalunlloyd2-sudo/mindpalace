@@ -201,11 +201,22 @@ public class OutsideWorld {
         r.drawCubeColor(new Vector3f(cx, floorY - 0.05f, cz),
             new Vector3f(wd, 0.02f, dp), tint[0], tint[1], tint[2]);
 
-        // A few dirt paths radiating from the palace entrance (walkable feel)
+        // H18 (step 65): cobblestone paths — the 5 radial strips are now
+        // cobbled: base dirt bed + cobble cap (alternating grey cubes per
+        // segment, deterministic offset → same stones every boot). Reads as
+        // real paving from the palace entrance out to the forest ring.
         for (int i = 0; i < 5; i++) {
             float px = (i - 2) * 30f;
             r.drawCubeColor(new Vector3f(px, floorY - 0.08f, -80f),
                 new Vector3f(2.5f, 0.02f, 60f), 0.45f, 0.35f, 0.22f);
+            // Cobble cap: 12 segments of alternating greys per strip
+            for (int seg = 0; seg < 12; seg++) {
+                float sz = -110f + seg * 5f;
+                if (!chunkVisible(px, sz)) continue;
+                float g = ((i + seg) % 2 == 0) ? 0.52f : 0.44f;
+                r.drawCubeColor(new Vector3f(px, floorY - 0.04f, sz),
+                    new Vector3f(2.1f, 0.03f, 4.6f), g, g, g + 0.02f);
+            }
         }
     }
 

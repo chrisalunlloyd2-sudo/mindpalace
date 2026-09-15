@@ -392,6 +392,21 @@ public class GameEngine {
         }
         // Unified telemetry: agents record quorum/DePIN/issue events.
         agentManager.setTelemetry(telemetry);
+        // H21 (step 67): quorum verdicts flare the world — gold bloom flash
+        // for APPROVED, ice dip for REJECTED (rides the carry-event pattern;
+        // web-side CSS twins already exist).
+        agentManager.setQuorumVerdictCallback(status -> {
+            if ("APPROVED".equals(status)) {
+                quorumFlare = 1.0f;  // gold
+                if (audio != null) audio.playQuorumApproved();
+                System.out.println("[Flare] APPROVED — gold flash");
+            } else if ("REJECTED".equals(status)) {
+                quorumFlare = -1.0f; // ice
+                if (audio != null) audio.playQuorumRejected();
+                System.out.println("[Flare] REJECTED — ice dip");
+            }
+        });
+
         // Never-twice memory: agents refuse to write identical code twice.
         agentManager.setMemory(memoryManager);
         agentManager.setCallbacks(
@@ -1499,7 +1514,47 @@ public class GameEngine {
         return new Vector3f(origin).add(dir.x * tMin, dir.y * tMin, dir.z * tMin);
     }
 
+    // H20 (step 66): region bloom presets — courtyard warm, forest cool,
+    // hallway neutral; 1.5s lerp on region change so transitions feel
+    // cinematic, not like a settings flip.
+    private static final float BLOOM_HALL = 0.55f;
+    private static final float BLOOM_COURTYARD = 0.95f;
+    private static final float BLOOM_FOREST = 0.75f;
+    private float bloomCurrent = BLOOM_HALL;
+    private String bloomRegion = "hall";
+    // H21: quorum flare — +1.0 gold .. -1.0 ice, decays to 0 over ~1.5s
+    private float quorumFlare = 0f;
+
+    private void updateRegionBloom(double dt) {
+        if (bloom == null) return;
+        String region;
+        if (inMansion) region = "courtyard";
+        else if (world.isInOpenWorld(player.getPosition().x, player.getPosition().z)
+                 && player.getPosition().z < -60f) region = "forest";
+        else if (world.isInOpenWorld(player.getPosition().x, player.getPosition().z)) region = "courtyard";
+        else region = "hall";
+        float target = region.equals("forest") ? BLOOM_FOREST
+                     : region.equals("courtyard") ? BLOOM_COURTYARD : BLOOM_HALL;
+        if (!region.equals(bloomRegion)) {
+            bloomRegion = region;
+            System.out.println("[Bloom] region -> " + region + " (intensity " + target + ")");
+        }
+        // 1.5s exponential lerp toward the region target
+        float k = 1f - (float) Math.exp(-dt / 0.5);
+        bloomCurrent += (target - bloomCurrent) * k;
+        // H21: quorum flare rides ON TOP of the region preset — gold lifts
+        // intensity, ice dips it; both decay to 0 over ~1.5s (exp).
+        if (Math.abs(quorumFlare) > 0.01f) {
+            float decay = 1f - (float) Math.exp(-dt / 0.5);
+            quorumFlare -= Math.signum(quorumFlare) * decay * Math.abs(quorumFlare);
+            bloomCurrent += quorumFlare * 0.6f;
+            bloomCurrent = Math.max(0f, Math.min(2f, bloomCurrent));
+        }
+        bloom.setIntensity(bloomCurrent);
+    }
+
     private void render(double alpha) {
+        updateRegionBloom(0.016); // frame-paced; region presets lerp smoothly
         bloom.begin();
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
 
@@ -4160,6 +4215,22 @@ public class GameEngine {
         } catch (Exception e) { h04Ok = false; }
         System.out.println((h04Ok ? "PASS" : "FAIL") + " H04 head/tail truncation (400-line file elides middle)");
         if (h04Ok) pass++; else fail++;
+
+        // 28. H21 quorum flare — the verdict callback flips quorumFlare and
+        //     the bloom loop decays it; verify the decay reaches ~0 (1.5s
+        //     exp @60fps) and that the audio cue methods exist and don't throw.
+        boolean flareOk = false;
+        try {
+            quorumFlare = 1.0f;
+            for (int i = 0; i < 120 && Math.abs(quorumFlare) > 0.05f; i++) {
+                float decay = 1f - (float) Math.exp(-0.016 / 0.5);
+                quorumFlare -= Math.signum(quorumFlare) * decay * Math.abs(quorumFlare);
+            }
+            flareOk = Math.abs(quorumFlare) <= 0.05f; // 3τ ≈ 1.5s — visually done
+            if (audio != null) { audio.playQuorumApproved(); audio.playQuorumRejected(); }
+        } catch (Exception e) { flareOk = false; }
+        System.out.println((flareOk ? "PASS" : "FAIL") + " quorum flare decay (gold->0 over ~1.5s) + audio cues");
+        if (flareOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

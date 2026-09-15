@@ -66,6 +66,18 @@ public class AudioEngine {
         executor.submit(() -> playTone(220, 0.8f, 0.22f, genBell(220, 330, 0.8f)));
     }
 
+    /** H21 (step 67): quorum APPROVED — bright rising gold chime. */
+    public void playQuorumApproved() {
+        if (!enabled) return;
+        executor.submit(() -> playTone(523, 0.5f, 0.20f, genBell(523, 784, 0.35f)));
+    }
+
+    /** H21 (step 67): quorum REJECTED — low ice-dip (descending minor). */
+    public void playQuorumRejected() {
+        if (!enabled) return;
+        executor.submit(() -> playTone(196, 0.6f, 0.18f, genSweep(220, 98, 0.6f)));
+    }
+
     /** Forest wind — quiet filtered noise, volume 0..1 by distance to trees. */
     public void playWindStart() {
         if (!enabled || windPlaying) return;

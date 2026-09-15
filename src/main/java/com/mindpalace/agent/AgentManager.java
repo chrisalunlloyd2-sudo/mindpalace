@@ -428,11 +428,21 @@ public class AgentManager {
                 log("[AgentManager] quorum: " + r);
                 if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.QUORUM,
                     r.status, text);
+                // H21 (step 67): ride the carry-event pattern — publish the
+                // verdict to the game so the world flares (gold for APPROVED,
+                // ice dip for REJECTED). The web-side CSS twins already exist.
+                if (onQuorumVerdict != null) onQuorumVerdict.accept(r.status);
             }
         } catch (Exception e) {
             log("[AgentManager] quorum error: " + e.getMessage());
         }
     }
+
+    /** H21: game-side hook for quorum verdicts (set by GameEngine). */
+    public void setQuorumVerdictCallback(java.util.function.Consumer<String> cb) {
+        this.onQuorumVerdict = cb;
+    }
+    private java.util.function.Consumer<String> onQuorumVerdict;
 
     /** Agents autonomously claim and complete one DePIN job per cycle. */
     private void runDePINWork() {
