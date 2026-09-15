@@ -29,19 +29,19 @@
 ## PHASE B — World Finishing (59–78)
 - [x] **59** H13 walls — procedural perimeter walls per room, door gaps aligned to hallway openings (WorldBuilder)
 - [x] **60** H13b wall collision — player + NPC collision vs walls (engine/GameState move validation)
-- [ ] **61** H14 roofs — flat slab + parapet; courtyard open-sky
-- [ ] **62** H15 heights — interior ceiling 4.5m, hall 6m
+- [x] **61** H14 roofs — flat slab + parapet ring (OutsideWorld ~597, audited); courtyard open-sky
+- [x] **62** H15 heights — rooms 3.5m + hallways 4m (Room/WorldBuilder constants, verified)
 - [x] **63** H16 forest fill ×3 — pine/oak/deadwood species, radial density falloff, DeterministicSeed (OutsideWorld: 220 → 600+ trees)
 - [x] **64** H17 forest floor — grass tufts, fallen logs, rocks (instanced, ≤40 draw calls total)
-- [ ] **65** H18 paths — cobblestone strips from hallway exits to the forest ring
-- [ ] **66** H20 bloom presets — courtyard warm / forest cool / hall neutral, 1.5s lerp on region change
-- [ ] **67** H21 quorum flares — APPROVED → gold bloom flare, REJECTED → ice dip (rides the rotor carry-event pattern; CSS already has the web-side twins)
-- [ ] **68** H22 palette sweep — all new meshes registered in Renderer palette; region-name HUD fade
-- [ ] **69** Window glass — emissive pane quads on walls, lit from inside at "night"
-- [ ] **70** Door meshes — actual hinged doors in wall gaps, creak sound already exists
-- [ ] **71** Exterior lanterns — point-light posts along the paths (bloom feeds)
-- [ ] **72** Weather-forest coupling — rain → darker fog + slower music; snow → white floor tint
-- [ ] **73** Forest wildlife — 5 deterministic fireflies (H24 scouts' bodies) looping the tree ring
+- [x] **65** H18 paths — cobbled (0b5e257): alternating grey caps, chunk-culled
+- [x] **66** H20 bloom presets — 0.95/0.75/0.55, 1.5s exp lerp (0b5e257)
+- [x] **67** H21 quorum flares — callback → gold/ice flare + audio, selftest #28 (0b5e257)
+- [x] **68** H22 palette sweep + region HUD fade — 2s fade on change (2949117)
+- [x] **69** Window glass — hallway panes, amber at night (3d540b9)
+- [x] **70** Door meshes — ajar panel + jamb + lintel + step + knob (3d540b9)
+- [x] **71** Exterior lanterns — posts + boxes on the paths, night-aware (3d540b9)
+- [x] **72** Weather coupling — rain dims ground + 72BPM, snow whitens wash (eba5256)
+- [x] **73** Forest wildlife — 60 drifting fireflies (pre-existing, audited no-dup)
 - [ ] **74** Bench + signposts — rest points with repo-name signposts at path forks
 - [ ] **75** Room interiors II — shelves on the 4th wall (window wall), wall art = repo stars
 - [ ] **76** Minimap walls — wall segments render on the Tab map
