@@ -2,7 +2,7 @@
 # build-warm-installer.sh — build the warm-GUI installer (Inno Setup).
 #
 # Pipeline: jar → jpackage app-image → wizard banner → Inno Setup .exe.
-# Produces installer/MindPalace-Setup-1.0.0.exe with a branded welcome page,
+# Produces installer/MindPalace-Setup-1.1.0-beta1.exe with a branded welcome page,
 # file-location chooser, Ollama + models accessory picker, and shortcuts.
 set -euo pipefail
 
@@ -16,7 +16,7 @@ WIX="/c/Program Files (x86)/WiX Toolset v3.14/bin"
 cd "$REPO"
 
 # 1. Build the jar if missing
-if [ ! -f target/mindpalace-1.0.0.jar ]; then
+if [ ! -f target/mindpalace-1.1.0-beta1.jar ]; then
     echo "jar missing — building..."
     export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
     "$JAVA_HOME/bin/java" -cp "$M2_HOME/boot/plexus-classworlds-2.11.0.jar" \
@@ -27,8 +27,8 @@ fi
 
 # 2. jpackage app-image (bundled JRE + launcher)
 export PATH="$WIX:$PATH"
-"$JPACKAGE" --type app-image --name MindPalace --app-version 1.0.0 \
-  --input "$REPO_WIN\\target" --main-jar mindpalace-1.0.0.jar \
+"$JPACKAGE" --type app-image --name MindPalace --app-version 1.1.0-beta1 \
+  --input "$REPO_WIN\\target" --main-jar mindpalace-1.1.0-beta1.jar \
   --main-class com.mindpalace.Main --dest "$REPO_WIN\\installer" \
   --java-options "-Dprism.order=sw -Dprism.vsync=false -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m"
 
@@ -39,4 +39,4 @@ python gen-wizard-bmp.py
 "$ISCC" MindPalace.iss
 
 echo ""
-echo "Warm installer built: installer/MindPalace-Setup-1.0.0.exe"
+echo "Warm installer built: installer/MindPalace-Setup-1.1.0-beta1.exe"

@@ -5,7 +5,7 @@
 | | `build-installer.sh` | `build-warm-installer.sh` |
 |---|---|---|
 | Tool | jpackage + WiX | jpackage + Inno Setup |
-| Output | `MindPalace-1.0.0.exe` | `MindPalace-Setup-1.0.0.exe` |
+| Output | `MindPalace-1.1.0-beta1.exe` | `MindPalace-Setup-1.1.0-beta1.exe` |
 | Look | plain | **warm, branded welcome page** |
 | File-location chooser | yes (`--win-dir-chooser`) | yes (default `{autopf}\MindPalace`) |
 | Accessory picker (Ollama + models) | no | **yes** (opt-in tasks) |
@@ -32,7 +32,7 @@ Build it:
 
 ```bash
 bash build-warm-installer.sh
-# → installer/MindPalace-Setup-1.0.0.exe
+# → installer/MindPalace-Setup-1.1.0-beta1.exe
 ```
 
 ## Accessories (Ollama + models)

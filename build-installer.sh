@@ -17,9 +17,9 @@ REPO="/c/Users/viper/AIGEN_SYS/repos/mindpalace"
 REPO_WIN="C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace"
 JAVA_HOME="C:/Program Files/Java/jdk-17"
 JPACKAGE="$JAVA_HOME/bin/jpackage.exe"
-JAR="$REPO/target/mindpalace-1.0.0.jar"
+JAR="$REPO/target/mindpalace-1.1.0-beta1.jar"
 APP_NAME="MindPalace"
-APP_VERSION="1.1.0"
+APP_VERSION="1.1.0-beta1"
 MAIN_CLASS="com.mindpalace.Main"
 OUT_DIR="$REPO/installer"
 OUT_DIR_WIN="C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\installer"
@@ -51,7 +51,7 @@ ICON_ARG=()
   --name "$APP_NAME" \
   --app-version "$APP_VERSION" \
   --input "$REPO_WIN\\target" \
-  --main-jar "mindpalace-1.0.0.jar" \
+  --main-jar "mindpalace-1.1.0-beta1.jar" \
   --main-class "$MAIN_CLASS" \
   --dest "$OUT_DIR_WIN" \
   --win-shortcut \
