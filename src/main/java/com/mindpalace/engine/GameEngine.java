@@ -27,6 +27,7 @@ import com.mindpalace.audio.MusicEngine;
 import com.mindpalace.audio.StepSequencer;
 import com.mindpalace.agent.AgentManager;
 import com.mindpalace.agent.AgentChat;
+import com.mindpalace.agent.BdiBridge;
 import com.mindpalace.agent.LexicalAnalyzer;
 import com.mindpalace.agent.sims.*;
 import com.mindpalace.world.LegacyRepoClassifier;
@@ -77,6 +78,7 @@ public class GameEngine {
     private AgentManager agentManager;
     private DePIN depin;   // Phase 5.3 economy — wallets, blackboard jobs, skill loop
     private AgentChat agentChat;
+    private BdiBridge bdiBridge; // step 81: null in demo mode (hermetic selftest)
     private DeployManager deployManager;
     private AnimationSystem animationSystem;
     private LiveUpdateManager liveUpdateManager;
@@ -575,6 +577,14 @@ public class GameEngine {
         } else {
             System.out.println("[Backup] demo mode - cold backup suppressed (hermetic selftest, refs #47)");
         }
+        // Step 81 (H27): BDI bridge - polls BDI_FSM_AGENT webui; never constructed in demo mode (hermetic selftest)
+        bdiBridge = null;
+        if (!demoMode) {
+            bdiBridge = new BdiBridge(agentChat, npcs, world.getRooms());
+            bdiBridge.start();
+        } else {
+            System.out.println("[BDI] demo mode - bridge suppressed (hermetic selftest, step 81)");
+        }
 
         loadingText = "Ready.";
         loadingProgress = 1.0f;
@@ -1061,6 +1071,8 @@ public class GameEngine {
             for (Room room : world.getRooms()) {
                 room.updateDoorAnimation((float) dt);
             }
+
+            if (bdiBridge != null) bdiBridge.drain(); // step 81: game-thread drain
 
             // Update agent NPCs (bodies + behaviors)
             for (AgentNPC npc : npcs) {
@@ -3004,6 +3016,7 @@ public class GameEngine {
 
     private void cleanup() {
         if (backupManager != null) backupManager.stop();
+        if (bdiBridge != null) bdiBridge.stop();
         if (memoryManager != null) memoryManager.stop();
         if (liveUpdateManager != null) liveUpdateManager.stop();
         if (deployManager != null) deployManager.shutdown();
@@ -4209,13 +4222,15 @@ public class GameEngine {
                 || !java.nio.file.Files.exists(java.nio.file.Path.of(
                     System.getProperty("user.home"), "AIGEN_SYS", "mindpalace_memory"));
             hermeticOk = hermeticOk && aigenUntouched; // #49: nothing written under AIGEN_SYS in demo
+            boolean bdiUntouched = (bdiBridge == null); // step 81: demo must never construct BdiBridge
+            hermeticOk = hermeticOk && bdiUntouched;
             System.out.println((hermeticOk ? "PASS" : "FAIL")
-                + " demo hermeticity (no auth, no live poller, no backup crawl, no AIGEN_SYS writes)");
+                + " demo hermeticity (no auth, no live poller, no backup crawl, no AIGEN_SYS writes, no BDI poller)");
             if (!hermeticOk) {
                 System.out.println("  hermeticity detail: auth=" + github.isAuthenticated()
                     + " pollerRunning=" + liveUpdateManager.isRunning()
                     + " backupWired=" + (!backupUntouched)
-                    + " aigenTouched=" + (!aigenUntouched) + " (refs #47 #49)");
+                    + " aigenTouched=" + (!aigenUntouched) + " bdiWired=" + (!bdiUntouched) + " (refs #47 #49 81)");
             }
         } else {
             hermeticOk = true;
