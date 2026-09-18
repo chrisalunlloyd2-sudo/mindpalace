@@ -1504,27 +1504,6 @@ public class GameEngine {
 
     private static float clamp(float v, float lo, float hi) { return Math.max(lo, Math.min(hi, v)); }
 
-    private Vector3f rayAABB(Vector3f origin, Vector3f dir, float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
-        float tMin = 0f, tMax = 10f;
-        float[] bounds = {minX, maxX, minY, maxY, minZ, maxZ};
-        float[] origins = {origin.x, origin.y, origin.z};
-        float[] dirs = {dir.x, dir.y, dir.z};
-
-        for (int i = 0; i < 3; i++) {
-            if (Math.abs(dirs[i]) < 0.0001f) {
-                if (origins[i] < bounds[i * 2] || origins[i] > bounds[i * 2 + 1]) return null;
-            } else {
-                float invD = 1f / dirs[i];
-                float t0 = (bounds[i * 2] - origins[i]) * invD;
-                float t1 = (bounds[i * 2 + 1] - origins[i]) * invD;
-                if (t0 > t1) { float tmp = t0; t0 = t1; t1 = tmp; }
-                tMin = Math.max(tMin, t0);
-                tMax = Math.min(tMax, t1);
-                if (tMin > tMax) return null;
-            }
-        }
-        return new Vector3f(origin).add(dir.x * tMin, dir.y * tMin, dir.z * tMin);
-    }
 
     // H20 (step 66): region bloom presets — courtyard warm, forest cool,
     // hallway neutral; 1.5s lerp on region change so transitions feel

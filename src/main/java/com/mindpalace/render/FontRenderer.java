@@ -155,31 +155,6 @@ public class FontRenderer {
     }
 
 
-    /**
-     * Cylindrical billboard matrix: keeps text UPRIGHT (unrotated on world-up axis)
-     * yet faces the camera horizontally. Built from the view matrix's right/up/forward
-     * so the glyph +X always points to the camera's screen-right, which means the
-     * text NEVER reads backwards even when the camera is behind it. This is the fix
-     * for the mirrored-backwards 3D text bug (rotateY(atan2) mirrored glyphs when
-     * |angle| > 90deg; a pure single-axis Y-rotation cannot face camera AND stay
-     * left-to-right at all angles). The old rotateY billboard path is left intact
-     * (never delete) and only used as a fallback when a view matrix is unavailable.
-     */
-    private static Matrix4f cylindricalBillboard(Matrix4f view, Vector3f position) {
-        // Pull the camera's LOCAL right and forward (horizontal plane only,
-        // ignore pitch so text does not tilt up/down — stays upright).
-        Vector3f camRight = new Vector3f(view.transpose().getColumn(0, new Vector3f()).x, 0f, view.transpose().getColumn(0, new Vector3f()).z).normalize();
-        Vector3f camForward = new Vector3f(view.transpose().getColumn(2, new Vector3f()).x, 0f, view.transpose().getColumn(2, new Vector3f()).z).normalize();
-        // +X -> camera screen-right, +Z -> camera forward (into view). Both on floor plane.
-        Matrix4f m = new Matrix4f();
-        m.set(
-            camRight.x,        0f, camRight.z,       position.x,
-            0f,                1f, 0f,               position.y,
-            camForward.x,      0f, camForward.z,     position.z,
-            0f,                0f, 0f,               1f
-        );
-        return m;
-    }
 
     /** Wall-facing text. */
     public void renderText(String text, Vector3f position, float charSize, Vector3f color,

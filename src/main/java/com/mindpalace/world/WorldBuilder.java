@@ -340,12 +340,6 @@ public class WorldBuilder {
         return Math.abs(camPos.x) < HALLWAY_WIDTH + 5 && Math.abs(camPos.z - midZ) < len / 2f + 40;
     }
 
-    private boolean isInFront(Vector3f camPos, Vector3f camFront, Vector3f target, float dist) {
-        float dx = target.x - camPos.x, dz = target.z - camPos.z;
-        float len = (float) Math.sqrt(dx * dx + dz * dz);
-        if (len < 0.01f) return true;
-        return (dx / len) * camFront.x + (dz / len) * camFront.z > -0.3f || dist < 8.0f;
-    }
 
     // ── Hallway ──
 
@@ -659,17 +653,6 @@ public class WorldBuilder {
         }
     }
 
-    /** Cosine-interpolated sky color at height t (0=top, 1=horizon). */
-    private float[] skyColor(float t, boolean night, boolean dusk) {
-        // Smooth cosine ramp between palette stops.
-        float c = 0.5f - 0.5f * (float) Math.cos(t * (float) Math.PI); // 0→1 ease
-        float[] top, mid, low;
-        if (night)      { top = new float[]{0.02f,0.03f,0.10f}; mid = new float[]{0.04f,0.06f,0.16f}; low = new float[]{0.06f,0.08f,0.20f}; }
-        else if (dusk)  { top = new float[]{0.20f,0.15f,0.40f}; mid = new float[]{0.55f,0.30f,0.55f}; low = new float[]{0.95f,0.55f,0.30f}; }
-        else            { top = new float[]{0.10f,0.25f,0.55f}; mid = new float[]{0.35f,0.60f,0.85f}; low = new float[]{0.75f,0.85f,0.95f}; }
-        float[] a = c < 0.5f ? lerp(top, mid, c * 2f) : lerp(mid, low, (c - 0.5f) * 2f);
-        return a;
-    }
 
     private float[] lerp(float[] a, float[] b, float t) {
         return new float[]{ a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t };
