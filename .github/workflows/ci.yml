@@ -36,7 +36,10 @@ jobs:
       - name: Demo selftest (hermetic, Xvfb)
         run: |
           set +e
-          xvfb-run -a -s "-screen 0 1280x720x24" java -jar target/mindpalace-1.0.0.jar --demo --selftest > selftest.log 2>&1
+          JARFILE=$(ls target/mindpalace-*.jar | head -n 1)
+          if [ -z "$JARFILE" ]; then echo ::error::no jar in target/ after package; exit 1; fi
+          echo jar: $JARFILE
+          xvfb-run -a -s "-screen 0 1280x720x24" java -jar "$JARFILE" --demo --selftest > selftest.log 2>&1
           rc=$?
           tail -n 40 selftest.log
           tail -n 15 selftest.log >> "$GITHUB_STEP_SUMMARY"
