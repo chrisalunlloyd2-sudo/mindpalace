@@ -42,11 +42,11 @@
 - [x] **71** Exterior lanterns — posts + boxes on the paths, night-aware (3d540b9)
 - [x] **72** Weather coupling — rain dims ground + 72BPM, snow whitens wash (eba5256)
 - [x] **73** Forest wildlife — 60 drifting fireflies (pre-existing, audited no-dup)
-- [ ] **74** Bench + signposts — rest points with repo-name signposts at path forks
-- [ ] **75** Room interiors II — shelves on the 4th wall (window wall), wall art = repo stars
-- [ ] **76** Minimap walls — wall segments render on the Tab map
-- [ ] **77** E2E waypoints 14–16 — forest path, room interior w/ walls, night window view
-- [ ] **78** Perf pass — HD 510 ≥30fps at all 16 waypoints, profile + tune LOD/fog
+- [x] **74** Bench + signposts — rest points with repo-name signposts at path forks (e6ba132)
+- [x] **75** Room interiors II — shelves on the 4th wall (window wall), wall art = repo stars (02df8e0)
+- [x] **76** Minimap walls — wall segments render on the Tab map (02df8e0)
+- [x] **77** E2E waypoints 14–16 — forest path, room interior w/ walls, night window view (02df8e0)
+- [x] **78** Perf pass — HD 510 ≥30fps at all 16 waypoints, profile + tune LOD/fog (02df8e0; measured 120fps all 16)
 
 ## PHASE C — Bots & Scouts (79–88)
 - [ ] **79** H24 Scout NPC — firefly bot visiting rooms, `[Scout] VISIT <room> <book>` chat lines
