@@ -1644,6 +1644,7 @@ public class GameEngine {
                 renderBookSpineText();
                 renderRoomPoster();
                 renderFloorSigns();
+                renderSignpostText();   // H23 (step 74): repo names on the path-fork signposts
             } else {
                 // 2D read mode — pin the key world text into a fixed screen panel.
                 renderTwoDTextPanel();
@@ -2146,6 +2147,34 @@ public class GameEngine {
             Vector3f pos = new Vector3f(book.getWorldX(), book.getWorldY(), book.getWorldZ());
             fontRenderer.renderBillboard(name, pos, 0.03f,
                 new Vector3f(0.9f, 0.9f, 0.9f), proj, view, camPos);
+        }
+    }
+
+    /** H23 (step 74): repo-name labels on the path-fork signposts (OutsideWorld).
+     *  Each of the 5 radial paths maps to a real repo from the world's room
+     *  list (deterministic pick), rendered on the sign's boards. Text only —
+     *  the boards themselves are drawn by OutsideWorld.renderBenchesAndSignposts. */
+    private void renderSignpostText() {
+        if (world.getOutsideWorld() == null || world.getRooms().isEmpty()) return;
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        float floorY = world.getHallways().isEmpty() ? 0f : world.getHallways().get(0).getStart().y;
+
+        java.util.List<Room> rooms = world.getRooms();
+        for (int i = 0; i < 5; i++) {
+            float sx = (i - 2) * 30f + 1.55f, sz = -110f;
+            if (camPos.distance(new Vector3f(sx, floorY + 1.3f, sz)) > 30f) continue;
+            // Deterministic repo pick for this path: rooms are stable in build order
+            Room repo = rooms.get(i % rooms.size());
+            String name = repo.getRepoName() != null ? repo.getRepoName() : "?";
+            if (name.length() > 12) name = name.substring(0, 10) + "..";
+            // Upper board = the path's repo (faces +Z), lower = "PALACE" (faces -Z)
+            fontRenderer.renderText(name, new Vector3f(sx, floorY + 1.5f, sz - 0.06f),
+                0.09f, new Vector3f(0.95f, 0.8f, 0.45f), proj, view, new Vector3f(0, 0, -1));
+            fontRenderer.renderText("PALACE", new Vector3f(sx, floorY + 1.2f, sz + 0.06f),
+                0.07f, new Vector3f(0.55f, 0.9f, 1.0f), proj, view, new Vector3f(0, 0, 1));
         }
     }
 

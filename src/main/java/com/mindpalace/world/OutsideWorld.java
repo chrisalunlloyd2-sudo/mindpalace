@@ -172,6 +172,8 @@ public class OutsideWorld {
         renderLake(r, floorY, time);
         // Steps 71+73: path lanterns (night-aware) + firefly scouts looping the tree ring
         renderPathLanterns(r, floorY, night);
+        // H23 (step 74): rest benches + repo-name signposts at the path forks
+        renderBenchesAndSignposts(r, floorY, night);
         renderForest(r, floorY, time, s);
         renderFlowers(r, floorY, time, s);
         if (night) renderFireflies(r, floorY, time);
@@ -940,6 +942,46 @@ public class OutsideWorld {
                 r.drawCubeColor(new Vector3f(lx, floorY + 1.68f, lz),
                     new Vector3f(0.3f, 0.05f, 0.3f), 0.3f, 0.2f, 0.12f);
             }
+        }
+    }
+
+    /** H23 (step 74): rest benches + repo-name signposts at the path forks.
+     *  A bench (seat + legs + backrest) sits beside every other cobble
+     *  segment's fork point, and a signpost (post + two direction boards)
+     *  stands where the radial paths branch. Deterministic placement —
+     *  same benches every boot (E2E stable). Cheap: 6 cubes per bench,
+     *  3 per signpost, chunk-culled. The repo-name text rides on the sign
+     *  via GameEngine's FontRenderer (renderPathSignposts). */
+    private void renderBenchesAndSignposts(Renderer r, float floorY, boolean night) {
+        // Benches: one per path, ~midway along the cobble run, alternating side
+        for (int i = 0; i < 5; i++) {
+            float px = (i - 2) * 30f;
+            float bz = -92.5f + (i % 2) * 20f;   // two rows, staggered per path
+            float bx = px + ((i % 2 == 0) ? 2.6f : -2.6f);
+            if (!chunkVisible(bx, bz)) continue;
+            // Seat (wood plank) + 2 legs + backrest
+            r.drawCube(new Vector3f(bx, floorY + 0.45f, bz),
+                new Vector3f(0.5f, 0.07f, 1.8f), Renderer.TEX_WOOD);
+            for (int s2 = -1; s2 <= 1; s2 += 2) {
+                r.drawCube(new Vector3f(bx, floorY + 0.22f, bz + s2 * 0.42f),
+                    new Vector3f(0.42f, 0.45f, 0.08f), Renderer.TEX_BARK);
+            }
+            r.drawCube(new Vector3f(bx + ((i % 2 == 0) ? 0.22f : -0.22f), floorY + 0.72f, bz),
+                new Vector3f(0.07f, 0.55f, 1.5f), Renderer.TEX_WOOD);
+        }
+        // Signposts at the forks — where the radial paths cross the ring path
+        // (z = -110, the cobble cap's first segment boundary)
+        for (int i = 0; i < 5; i++) {
+            float px = (i - 2) * 30f;
+            float sx = px + 1.55f, sz = -110f;
+            if (!chunkVisible(sx, sz)) continue;
+            // Post + two opposing direction boards (arrow-plate shapes)
+            r.drawCube(new Vector3f(sx, floorY + 0.9f, sz),
+                new Vector3f(0.1f, 1.8f, 0.1f), Renderer.TEX_BARK);
+            r.drawCubeColor(new Vector3f(sx, floorY + 1.45f, sz),
+                new Vector3f(0.06f, 0.28f, 1.1f), 0.85f, 0.72f, 0.45f);   // pointing ahead
+            r.drawCubeColor(new Vector3f(sx, floorY + 1.15f, sz),
+                new Vector3f(0.06f, 0.28f, 1.1f), 0.75f, 0.62f, 0.38f);   // pointing behind
         }
     }
 
