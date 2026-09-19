@@ -2914,6 +2914,32 @@ public class GameEngine {
                 ? String.valueOf(mapIdx)   // numbered = teletransportable via 1..9
                 : "o";
             fontRenderer.renderBillboard(dot, dotPos, 0.05f, col, proj, view, camPos);
+
+            // H25 (step 76): wall segments on the map — the room's perimeter
+            // as a box of glyphs (corners = '#', edges = '-'), so a room reads
+            // as a walled square, not a bare dot. Fog-filtered rooms skip.
+            float rw = Room.ROOM_WIDTH * scale, rd = Room.ROOM_DEPTH * scale;
+            Vector3f rc = room.getRoomCenter();
+            float rx = (rc.x - camPos.x) * scale;
+            float rz = (rc.z - camPos.z) * scale;
+            for (int wx = -1; wx <= 1; wx += 2) {
+                for (float edge = -rd; edge <= rd + 0.001f; edge += rd) {
+                    Vector3f wp = new Vector3f(center).add(
+                        camRight.x * (rx + wx * rw) + camFront.x * (rz + edge) + camFront.z * (rz + edge),
+                        camRight.y * (rx + wx * rw) + camFront.y * (rz + edge),
+                        camRight.z * (rx + wx * rw) + camFront.z * (rz + edge));
+                    fontRenderer.renderBillboard("#", wp, 0.04f, col, proj, view, camPos);
+                }
+            }
+            for (int wz = -1; wz <= 1; wz += 2) {
+                for (float edge = -rw; edge <= rw + 0.001f; edge += rw) {
+                    Vector3f wp = new Vector3f(center).add(
+                        camRight.x * (rx + edge) + camFront.x * (rz + wz * rd) + camFront.z * (rz + wz * rd),
+                        camRight.y * (rx + edge) + camFront.y * (rz + wz * rd),
+                        camRight.z * (rx + edge) + camFront.z * (rz + wz * rd));
+                    fontRenderer.renderBillboard("#", wp, 0.04f, col, proj, view, camPos);
+                }
+            }
         }
 
         // Agents
@@ -3057,6 +3083,13 @@ public class GameEngine {
         String path = screenshotDir + "/" + label + "_" + String.format("%02d", shotCounter++) + ".png";
         String written = Screenshot.capture(width, height, path);
         if (written != null) System.out.println("[E2E-SHOT] " + label + " -> " + written);
+        // H26 (step 78): per-waypoint FPS evidence — after the 3s settle the
+        // rolling average is the waypoint's real perf, logged next to the shot.
+        double sum = 0; int n = 0;
+        for (Double ft : frameTimes) { sum += ft; n++; }
+        double avgFps = n > 0 ? n / Math.max(sum, 1e-9) : 0;
+        System.out.println("[E2E-FPS] " + label + " -> " + String.format("%.1f", avgFps)
+            + " fps (target >=30, budget SUCCESS_METRICS.md step 78)");
     }
 
     /**
@@ -4300,6 +4333,11 @@ public class GameEngine {
     private void updateAutodrive(double dt) {
         world.tick((float) dt);
         updatePatches(dt);
+        // H26 (step 78): the rolling FPS deque is fed in update(), but the E2E
+        // tour runs on updateAutodrive() — feed it here too or every waypoint
+        // reports 0.0 fps and the perf budget has no evidence.
+        frameTimes.addLast(dt);
+        if (frameTimes.size() > 120) frameTimes.removeFirst();
 
         // ── E2E waypoint tour: named stops, labeled shots, clean exit ──
         if (e2eMode) {
@@ -4464,8 +4502,58 @@ public class GameEngine {
                 cam.setYaw(75); cam.setPitch(0);
                 if (shoot) { captureLabeled("13_plugboard"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            case 13 -> { // forest path — cobbled path with benches + signposts (steps 65+74)
+                // Stand ON the cobble path (x=0) looking down its length: the
+                // center strip leads to the TOC tree, benches/signposts sit
+                // beside the outer strips at the forks. Face down-path (-Z) so
+                // the furniture reads in depth with the forest behind.
+                p.set(0f, hallY + 1.7f, hallZ0 - 42f);
+                cam.setYaw(180); cam.setPitch(-6);
+                if (shoot) { captureLabeled("14_forest_path"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 14 -> { // room interior — walls + front-wall shelves + star art (steps 59+75)
+                // Stand inside the first room, looking across it at the front
+                // wall (door + display shelves + star row).
+                Room firstRoom = null;
+                for (Room rm : world.getRooms()) {
+                    if (rm.getRoomCenter() != null) { firstRoom = rm; break; }
+                }
+                if (firstRoom != null) {
+                    Vector3f rc = firstRoom.getRoomCenter();
+                    int side = firstRoom.getHallwaySide();
+                    // yaw 0 faces +Z (Camera.updateVectors flat-world basis), so
+                    // a side-0 room (front wall at c.z - d/2) needs yaw=180 to
+                    // look at the door wall; side-1 (wall at c.z + d/2) needs 0.
+                    p.set(rc.x, rc.y - Room.ROOM_HEIGHT / 2f + 1.7f, rc.z + (side == 0 ? 1.8f : -1.8f));
+                    cam.setYaw(side == 0 ? 180 : 0); cam.setPitch(2f);
+                } else {
+                    p.set(0f, hallY + 1.7f, hallZ0 + 18f);
+                    cam.setYaw(90); cam.setPitch(0);
+                }
+                if (shoot) { captureLabeled("15_room_interior"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 15 -> { // hallway window panes (step 69) — aimed at the first door
+                // Aim from the hall center at the FIRST room's door (the
+                // waypoint-12 pattern): door + neon sign + doorframe in frame,
+                // and the emissive pane on the adjacent wall segment right
+                // beside it. FOV-proof — no assumptions about hFOV needed.
+                Vector3f door0 = null;
+                for (Room rm : world.getRooms()) {
+                    if (rm.getDoorPosition() != null && rm.getHallwaySide() == 0) { door0 = rm.getDoorPosition(); break; }
+                }
+                if (door0 != null) {
+                    p.set(0f, door0.y + 0.7f, door0.z + 2.2f);
+                    Vector3f aim = new Vector3f(door0.x - 0.6f, door0.y + 0.6f, door0.z - 1.2f).sub(p).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                } else {
+                    p.set(0f, hallY + 1.7f, hallZ0 + 12f);
+                    cam.setYaw(-75); cam.setPitch(4f);
+                }
+                if (shoot) { captureLabeled("16_hall_windows"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 13 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 16 waypoints captured. Exiting.");
                 cleanup();
                 System.exit(0);
             }

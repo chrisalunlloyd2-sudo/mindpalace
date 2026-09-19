@@ -4,7 +4,7 @@
   <groupId>com.mindpalace</groupId>
   <artifactId>mindpalace</artifactId>
   <name>MindPalace</name>
-  <version>1.0.0</version>
+  <version>1.1.0-beta1</version>
   <description>3D First-Person GitHub Repository Explorer — Doom-style walkthrough of your code universe</description>
   <build>
     <plugins>

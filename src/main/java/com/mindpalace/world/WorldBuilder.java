@@ -910,12 +910,68 @@ public class WorldBuilder {
         // Lab devices — test files as glowing devices in the back corner
         renderLabDevices(r, room, c, w, d, h, side);
 
-        // Bookcases on 3 walls
+        // Bookcases on 3 walls — the 4th (front/door) wall gets its own
+        // display shelving + star wall art (step 75), so no wall is bare.
         renderBookcase(r, room, 0);
         renderBookcase(r, room, -1);
         renderBookcase(r, room, 1);
+        renderFrontWallDisplay(r, room, c, w, d, h, side);
 
         r.setTint(1.0f, 1.0f, 1.0f); // reset to neutral
+    }
+
+    /** H24 (step 75): room interiors II — display shelves + star wall art on
+     *  the 4th wall (the front/door wall). The two wall flanks beside the
+     *  door get one floating shelf each (glass-plaque slab + 2 mini brackets),
+     *  and the over-door wall strip carries the repo's star rating rendered
+     *  as a row of gold stars (1-5, from the repo's real starCount). Reads as
+     *  curated merch wall, mirrors the bookcase recipe, cheap (3 cubes/shelf
+     *  flank + stars = 1 cube each, max 5). */
+    private void renderFrontWallDisplay(Renderer r, Room room, Vector3f c, float w, float d, float h, int side) {
+        float floorY = c.y - h / 2f;
+        float fz = side == 0 ? c.z - d / 2f : c.z + d / 2f;
+        float inZ = side == 0 ? fz + 0.12f : fz - 0.12f;   // just inside the front wall
+        float dh = Room.DOOR_WIDTH / 2f;
+
+        // One floating display shelf per door flank (left + right), eye height
+        for (int fl = -1; fl <= 1; fl += 2) {
+            float shx = c.x + fl * (dh + (w / 2f - dh) / 2f);
+            r.drawCubeColor(new Vector3f(shx, floorY + 1.5f, inZ),
+                new Vector3f(1.1f, 0.05f, 0.4f), 0.72f, 0.58f, 0.32f);
+            // Brackets
+            r.drawCubeColor(new Vector3f(shx - 0.4f, floorY + 1.36f, inZ),
+                new Vector3f(0.05f, 0.14f, 0.08f), 0.4f, 0.3f, 0.18f);
+            r.drawCubeColor(new Vector3f(shx + 0.4f, floorY + 1.36f, inZ),
+                new Vector3f(0.05f, 0.14f, 0.08f), 0.4f, 0.3f, 0.18f);
+            // Shelf cargo: 2 mini books + a trophy cube, colors from the room tint
+            float[] tint = room.getTint();
+            r.drawCubeColor(new Vector3f(shx - 0.22f, floorY + 1.65f, inZ),
+                new Vector3f(0.12f, 0.26f, 0.08f), 0.2f + tint[0] * 0.6f, 0.2f + tint[1] * 0.6f, 0.25f + tint[2] * 0.6f);
+            r.drawCubeColor(new Vector3f(shx - 0.07f, floorY + 1.63f, inZ),
+                new Vector3f(0.1f, 0.22f, 0.14f), 0.25f + tint[2] * 0.6f, 0.2f + tint[0] * 0.5f, 0.2f + tint[1] * 0.5f);
+            r.drawCubeColor(new Vector3f(shx + 0.3f, floorY + 1.62f, inZ),
+                new Vector3f(0.14f, 0.2f, 0.14f), 0.95f, 0.8f, 0.3f);   // gold trophy
+        }
+
+        // Star wall art — the repo's starCount as gold star cubes (1-5),
+        // stacked in flanking columns beside the door (the over-door strip is
+        // fully occupied by the poster board, and ROOM_HEIGHT 3.5 leaves no
+        // headroom above it — stars up there would be embedded in the ceiling).
+        int stars = Math.max(0, Math.min(5, (int) Math.ceil(Math.log10(Math.max(1, room.getStarCount() + 1)) * 2.2f)));
+        int left = (stars + 1) / 2, right = stars / 2;
+        for (int fl = -1; fl <= 1; fl += 2) {
+            int count = fl < 0 ? left : right;
+            float colX = c.x + fl * (dh + 0.35f);
+            for (int s2 = 0; s2 < count; s2++) {
+                float sy = floorY + 1.85f + s2 * 0.3f;
+                // Star = gold core + 4 tiny points (plus-shape), reads as a star at room scale
+                r.drawCubeColor(new Vector3f(colX, sy, inZ), new Vector3f(0.16f, 0.16f, 0.04f), 1.0f, 0.85f, 0.3f);
+                r.drawCubeColor(new Vector3f(colX, sy + 0.11f, inZ), new Vector3f(0.05f, 0.08f, 0.03f), 1.0f, 0.85f, 0.3f);
+                r.drawCubeColor(new Vector3f(colX, sy - 0.11f, inZ), new Vector3f(0.05f, 0.08f, 0.03f), 1.0f, 0.85f, 0.3f);
+                r.drawCubeColor(new Vector3f(colX - 0.11f, sy, inZ), new Vector3f(0.08f, 0.05f, 0.03f), 1.0f, 0.85f, 0.3f);
+                r.drawCubeColor(new Vector3f(colX + 0.11f, sy, inZ), new Vector3f(0.08f, 0.05f, 0.03f), 1.0f, 0.85f, 0.3f);
+            }
+        }
     }
 
     /**
