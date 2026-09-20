@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import com.mindpalace.agent.ModelScheduler;
 
 /**
  * WeightedQuorumVote — FOW-gated quorum voting with a time pulse.
@@ -154,6 +155,48 @@ public class WeightedQuorumVote {
                 castVote(p.id, mp.name, isVisible(p.hex, mp.name)
                     ? (Math.random() > 0.3 ? Vote.APPROVE : Vote.REJECT)
                     : Vote.BLIND);
+    }
+
+    /**
+     * Vote by routing proposals through the model scheduler. Each model reasons
+     * about each visible proposal and returns APPROVE/REJECT; falls back to RNG
+     * on timeout or parse error. Blind votes (FOW-blocked) are automatic.
+     */
+    public void actualVoteAll(ModelScheduler scheduler) {
+        for (Proposal p : proposals.values()) {
+            for (ModelPosition mp : models.values()) {
+                if (!isVisible(p.hex, mp.name)) {
+                    castVote(p.id, mp.name, Vote.BLIND);
+                    continue;
+                }
+                try {
+                    String prompt = buildVotingPrompt(p, mp.name);
+                    var future = scheduler.submit(mp.name, prompt, null);
+                    String resp = future.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                    Vote vote = parseVote(resp);
+                    castVote(p.id, mp.name, vote);
+                } catch (java.util.concurrent.TimeoutException e) {
+                    castVote(p.id, mp.name, Math.random() > 0.3 ? Vote.APPROVE : Vote.REJECT);
+                } catch (Exception e) {
+                    castVote(p.id, mp.name, Math.random() > 0.3 ? Vote.APPROVE : Vote.REJECT);
+                }
+            }
+        }
+    }
+
+    private String buildVotingPrompt(Proposal p, String modelName) {
+        return "You are " + modelName + " in a multi-agent governance system.\n\n" +
+               "Proposal: " + p.text + "\n" +
+               "Type: " + p.proposalType + "\n\n" +
+               "Respond with ONLY 'APPROVE' or 'REJECT'. No explanation.";
+    }
+
+    private Vote parseVote(String response) {
+        if (response == null) return Vote.REJECT;
+        String s = response.trim().toUpperCase();
+        if (s.contains("APPROVE")) return Vote.APPROVE;
+        if (s.contains("REJECT")) return Vote.REJECT;
+        return Math.random() > 0.3 ? Vote.APPROVE : Vote.REJECT;
     }
 
     public Proposal getProposal(String id) { return proposals.get(id); }

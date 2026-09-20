@@ -422,7 +422,7 @@ public class AgentManager {
             String text = "Act on " + (currentRoom != null ? currentRoom.getRepoName() : "?");
             quorum.registerProposal(id, text, new HexCoord(0, 0), "system_health_check");
             quorum.advanceTimePulse(0.1);
-            quorum.autoVoteAll();
+            quorum.actualVoteAll(modelScheduler);
             WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
             if (r != null) {
                 log("[AgentManager] quorum: " + r);
@@ -529,7 +529,7 @@ public class AgentManager {
             String id = "lex-" + System.currentTimeMillis() + "-" + (proposals++);
             quorum.registerProposal(id, topic, new HexCoord(0, 0), "feature_iteration");
             quorum.advanceTimePulse(0.05);
-            quorum.autoVoteAll();
+            quorum.actualVoteAll(modelScheduler);
             WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
             if (r != null && "APPROVED".equals(r.status)) {
                 approvedTopics.add(topic);
@@ -695,7 +695,7 @@ public class AgentManager {
             String id = "solve-" + System.currentTimeMillis() + "-" + issue.repo.hashCode();
             quorum.registerProposal(id, "Solve: " + issue.text, new HexCoord(0, 0), "code_quality");
             quorum.advanceTimePulse(0.05);
-            quorum.autoVoteAll();
+            quorum.actualVoteAll(modelScheduler);
             WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
             if (r == null || !"APPROVED".equals(r.status)) {
                 log("[AgentManager] solve REJECTED: " + issue);
