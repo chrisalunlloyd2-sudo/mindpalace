@@ -1039,8 +1039,12 @@ public class AgentManager {
     private void log(String msg) {
         String timestamp = java.time.Instant.now().toString();
         String logLine = "[" + timestamp + "] " + msg;
-        if (onConsoleLog != null) onConsoleLog.accept(logLine);
-        System.out.println(logLine);
+        if (onConsoleLog != null) {
+            onConsoleLog.accept(logLine);
+        } else {
+            // Fallback if callback not set
+            System.out.println(logLine);
+        }
     }
 
     // ── Tool definitions ──
