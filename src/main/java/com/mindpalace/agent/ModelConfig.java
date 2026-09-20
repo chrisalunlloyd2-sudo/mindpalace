@@ -4,9 +4,10 @@ package com.mindpalace.agent;
  * Central model configuration — single source of truth for which local SLMs
  * drive the agents. Tune here, not scattered across the codebase.
  *
- * Chosen for coherence-per-token on CPU: llama3.2:3b (tool) and gemma2:2b
- * (critic) hold a conversation thread far better than phi3:mini/tinyllama:1.1b,
- * while still running comfortably on a local machine.
+ * Chosen for coherence-per-token on CPU: llama3.2:1b (tool) and
+ * qwen2.5:0.5b (critic) hold a conversation thread far better than
+ * phi3:mini/tinyllama:1.1b, while still running comfortably on a local
+ * machine. llama3.2:3b serves direct user chat.
  */
 public final class ModelConfig {
     private ModelConfig() {}
