@@ -432,6 +432,14 @@ public class AgentManager {
                 // verdict to the game so the world flares (gold for APPROVED,
                 // ice dip for REJECTED). The web-side CSS twins already exist.
                 if (onQuorumVerdict != null) onQuorumVerdict.accept(r.status);
+                // TASK_0125: Spawn TASK file for APPROVED proposals
+                if ("APPROVED".equals(r.status)) {
+                    try {
+                        com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r);
+                    } catch (Exception e) {
+                        log("[AgentManager] TASK spawn failed: " + e.getMessage());
+                    }
+                }
             }
         } catch (Exception e) {
             log("[AgentManager] quorum error: " + e.getMessage());
@@ -1029,8 +1037,10 @@ public class AgentManager {
     }
 
     private void log(String msg) {
-        if (onConsoleLog != null) onConsoleLog.accept(msg);
-        System.out.println(msg);
+        String timestamp = java.time.Instant.now().toString();
+        String logLine = "[" + timestamp + "] " + msg;
+        if (onConsoleLog != null) onConsoleLog.accept(logLine);
+        System.out.println(logLine);
     }
 
     // ── Tool definitions ──

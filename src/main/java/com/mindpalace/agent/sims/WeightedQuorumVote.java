@@ -36,10 +36,13 @@ public class WeightedQuorumVote {
         public final HexCoord hex;
         public final double timeSlot; // preferred pulse phase 0.0–1.0
         public final Map<String, Vote> votes = new ConcurrentHashMap<>();
+        public final String proposalType; // TASK_0124: proposal category (system_health_check, feature_iteration, etc)
+        public final Map<String, List<String>> suggestedActions = new ConcurrentHashMap<>(); // TASK_0126: agent suggestions
 
-        Proposal(String id, String text, HexCoord hex, double timeSlot) {
-            this.id = id; this.text = text; this.hex = hex; this.timeSlot = timeSlot;
+        Proposal(String id, String text, HexCoord hex, double timeSlot, String proposalType) {
+            this.id = id; this.text = text; this.hex = hex; this.timeSlot = timeSlot; this.proposalType = proposalType;
         }
+        Proposal(String id, String text, HexCoord hex, double timeSlot) { this(id, text, hex, timeSlot, "system_health_check"); }
         Proposal(String id, String text, HexCoord hex) { this(id, text, hex, 0.5); }
 
         public int approveCount() { return (int) votes.values().stream().filter(v -> v == Vote.APPROVE).count(); }
@@ -95,8 +98,16 @@ public class WeightedQuorumVote {
         proposals.put(id, p);
         return p;
     }
+    public Proposal registerProposal(String id, String text, HexCoord hex, String proposalType) {
+        Proposal p = new Proposal(id, text, hex, 0.5, proposalType);
+        proposals.put(id, p);
+        return p;
+    }
     public Proposal registerProposal(String id, String text, int q, int r) {
         return registerProposal(id, text, new HexCoord(q, r));
+    }
+    public Proposal registerProposal(String id, String text, int q, int r, String proposalType) {
+        return registerProposal(id, text, new HexCoord(q, r), proposalType);
     }
 
     /** Advance the time pulse: oscillate every model's phase by delta. */
@@ -157,13 +168,14 @@ public class WeightedQuorumVote {
     public boolean isFowEnabled() { return fowEnabled; }
 
     public static final class QuorumResult {
-        public final String proposalId, text, hexKey, status;
+        public final String proposalId, text, hexKey, status, proposalType;
         public final int approve, reject, blind, visible, total;
         public final double weightedApprove, avgPulsePhase;
         public final List<String> visibleModels, blindModels;
+        public final Map<String, List<String>> suggestedActions;
 
         QuorumResult(Proposal p, Map<String, ModelPosition> models, int qMin, int aMin) {
-            proposalId = p.id; text = p.text; hexKey = p.hex.key();
+            proposalId = p.id; text = p.text; hexKey = p.hex.key(); proposalType = p.proposalType; suggestedActions = p.suggestedActions;
             approve = p.approveCount(); reject = p.rejectCount(); blind = p.blindCount();
             total = p.totalVotes(); visible = p.visibleTotal();
             weightedApprove = p.weightedApprove(models);
@@ -181,7 +193,7 @@ public class WeightedQuorumVote {
 
         @Override public String toString() {
             return String.format("Quorum[#%s: %s] %s ✓%d ✗%d 🌫%d (w:%.2f) pulse:%.2f visible:%s",
-                proposalId, text, status, approve, reject, blind, weightedApprove, avgPulsePhase, visibleModels);
+                proposalId, proposalType, status, approve, reject, blind, weightedApprove, avgPulsePhase, visibleModels);
         }
     }
 
