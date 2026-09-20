@@ -192,8 +192,9 @@ public class WeightedQuorumVote {
         }
 
         @Override public String toString() {
+            String typeAndText = proposalType + (text != null && !text.isEmpty() ? " | " + text : "");
             return String.format("Quorum[#%s: %s] %s ✓%d ✗%d 🌫%d (w:%.2f) pulse:%.2f visible:%s",
-                proposalId, proposalType, status, approve, reject, blind, weightedApprove, avgPulsePhase, visibleModels);
+                proposalId, typeAndText, status, approve, reject, blind, weightedApprove, avgPulsePhase, visibleModels);
         }
     }
 
