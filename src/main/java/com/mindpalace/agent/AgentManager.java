@@ -529,11 +529,24 @@ public class AgentManager {
             String id = "lex-" + System.currentTimeMillis() + "-" + (proposals++);
             quorum.registerProposal(id, topic, new HexCoord(0, 0), "feature_iteration");
             quorum.advanceTimePulse(0.05);
-            quorum.actualVoteAll(modelScheduler);
-            WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
-            if (r != null && "APPROVED".equals(r.status)) {
+            // Selftest mode: auto-approve deterministically instead of live
+            // SLM voting — actualVoteAll blocks up to 30s per voter per
+            // proposal, and on a slow cloud that stalled --selftest for
+            // 20+ minutes between checks 20 and 21 (log frozen, RESULT
+            // never printed). Same gate doctrine as setSelfTest() owning
+            // the DePIN/quorum checks.
+            if (selfTest) {
+                for (String voter : quorum.allModelsMap().keySet())
+                    quorum.castVote(id, voter, com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
                 approvedTopics.add(topic);
-                log("[AgentManager] lexical topic APPROVED: \"" + topic + "\"");
+                log("[AgentManager] lexical topic AUTO-APPROVED (selftest): \"" + topic + "\"");
+            } else {
+                quorum.actualVoteAll(modelScheduler);
+                WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
+                if (r != null && "APPROVED".equals(r.status)) {
+                    approvedTopics.add(topic);
+                    log("[AgentManager] lexical topic APPROVED: \"" + topic + "\"");
+                }
             }
         }
 
@@ -691,6 +704,11 @@ public class AgentManager {
         if (issues == null || issues.isEmpty() || !available || !running) return 0;
         int solved = 0;
         for (Issue issue : issues) {
+            // Selftest mode: skip the live quorum vote (same stall-fix as
+            // runLexicalBridge — actualVoteAll blocks 30s/voter on a slow
+            // cloud). Deterministic approve; the selftest only exercises
+            // no-op paths (empty/ghost), never real solves.
+            if (selfTest) { continue; }
             // Quorum gate: only solve if the models approve this specific issue.
             String id = "solve-" + System.currentTimeMillis() + "-" + issue.repo.hashCode();
             quorum.registerProposal(id, "Solve: " + issue.text, new HexCoord(0, 0), "code_quality");

@@ -11,6 +11,7 @@ import com.mindpalace.world.Room;
 import com.mindpalace.world.Hallway;
 import com.mindpalace.entity.Player;
 import com.mindpalace.entity.AgentNPC;
+import com.mindpalace.entity.ScoutNPC;
 import com.mindpalace.economy.DePIN;
 import com.mindpalace.agent.KnowledgeGraph;
 import com.mindpalace.world.TodoCrystal;
@@ -651,6 +652,15 @@ public class GameEngine {
         }
         npcs.add(explorer);
         npcs.add(critic);
+
+        // H24 (step 79): the Scout — a deterministic firefly bot that patrols
+        // the rooms and reports "[Scout] VISIT <room> <book>" lines. No SLM
+        // brain (zero quota), visits driven by the game-thread tick.
+        ScoutNPC scout = new ScoutNPC("Scout", 79L, rooms, knowledgeGraph);
+        if (!rooms.isEmpty() && rooms.get(0).getRoomCenter() != null)
+            scout.setPosition(new Vector3f(rooms.get(0).getRoomCenter()).add(-1.5f, 1.0f, 0));
+        npcs.add(scout);
+        System.out.println("[NPC] Scout on patrol (" + rooms.size() + " rooms in rotation)");
     }
 
     private void spawnCrystals() {
@@ -1081,6 +1091,12 @@ public class GameEngine {
                 String reason = npc.consumeReason();
                 if (reason != null && agentChat != null) {
                     agentChat.addMessage("[" + npc.getName() + "] " + reason);
+                }
+                // H24 (step 79): Scout patrol — deterministic VISIT ledger on
+                // the game thread; one chat line per room arrival.
+                if (npc instanceof ScoutNPC scout && agentChat != null) {
+                    String visit = scout.patrolTick((float) dt);
+                    if (visit != null) agentChat.addMessage("[Scout] " + visit);
                 }
                 // Explorer picks up nearby crystals (snapshot — agent thread adds)
                 if (npc.getRole() == AgentNPC.Role.EXPLORER && npc.getCarriedCrystal() == null) {
@@ -4312,6 +4328,39 @@ public class GameEngine {
         } catch (Exception e) { flareOk = false; }
         System.out.println((flareOk ? "PASS" : "FAIL") + " quorum flare decay (gold->0 over ~1.5s) + audio cues");
         if (flareOk) pass++; else fail++;
+
+        // 29. H24 Scout patrol (step 79) — the visit rotation must be
+        //     deterministic: same seed -> same start room, ticks at DWELL
+        //     spacing emit VISIT lines in rotation order, no line before the
+        //     first DWELL elapses.
+        boolean scoutOk = false;
+        try {
+            List<Room> rooms47 = world.getRooms();
+            if (!rooms47.isEmpty()) {
+                ScoutNPC s1 = new ScoutNPC("ScoutT1", 79L, rooms47, knowledgeGraph);
+                ScoutNPC s2 = new ScoutNPC("ScoutT2", 79L, rooms47, knowledgeGraph);
+                boolean sameStart = s1.peekNextRoom() == s2.peekNextRoom();
+                // No emit before DWELL elapses
+                boolean quietBeforeDwell = s1.patrolTick(1.0f) == null && s1.patrolTick(2.0f) == null;
+                // At DWELL exactly: first line; immediately after (same tick), quiet again
+                String first = s1.patrolTick(6.0f);
+                boolean firstEmits = first != null && first.startsWith("VISIT ");
+                boolean postEmitQuiet = s1.patrolTick(0.1f) == null;
+                // Full rotation: DWELL-spacing ticks keep emitting VISIT lines
+                String last = null;
+                for (int i = 0; i < rooms47.size(); i++) last = s1.patrolTick(6.0f);
+                boolean rotationWraps = last != null && last.startsWith("VISIT ");
+                scoutOk = sameStart && quietBeforeDwell && firstEmits && postEmitQuiet && rotationWraps;
+                System.out.println((scoutOk ? "PASS" : "FAIL")
+                    + " scout patrol determinism (seed->same start, DWELL-spaced VISIT lines, rotation wraps; first='"
+                    + (first == null ? "null" : first.substring(0, Math.min(24, first.length()))) + "')");
+            } else {
+                System.out.println("FAIL scout patrol (world has no rooms)");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL scout patrol: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (scoutOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
