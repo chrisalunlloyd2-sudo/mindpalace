@@ -266,5 +266,6 @@ AgentNPC.pickDestination() ──▶ KG.neighbors() / randomRoomInDistrict()
 | llama3.2:3b | User chat (guide) | ModelScheduler.submitImmediate |
 | nomic-embed-text | Drift detection + RAG | ModelLifespan.embed |
 
-Also installed (unused by MindPalace): mistral:7b, codellama:7b, gemma2:2b,
-deepseek-r1:1.5b, phi3:mini, tinyllama:1.1b, phi:latest.
+Also installed but unused: mistral:7b, codellama:7b, gemma2:2b, phi3:mini,
+tinyllama:1.1b, phi:latest. deepseek-r1:1.5b is used as TIE_MODEL, the
+quorum tie-breaker (see ModelConfig.TIE_MODEL and AGENTS.md).
