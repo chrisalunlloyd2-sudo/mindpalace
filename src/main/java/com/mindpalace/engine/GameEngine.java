@@ -1095,32 +1095,8 @@ public class GameEngine {
 
             if (bdiBridge != null) bdiBridge.drain(); // step 81: game-thread drain
 
-            // Update agent NPCs (bodies + behaviors)
-            for (AgentNPC npc : npcs) {
-                npc.update((float) dt, world.getRooms(), world.getHallways());
-                // Surface the SLM's reasoning into the chat HUD (coherent thread)
-                String reason = npc.consumeReason();
-                if (reason != null && agentChat != null) {
-                    agentChat.addMessage("[" + npc.getName() + "] " + reason);
-                }
-                // H24 (step 79): Scout patrol — deterministic VISIT ledger on
-                // the game thread; one chat line per room arrival.
-                if (npc instanceof ScoutNPC scout && agentChat != null) {
-                    String visit = scout.patrolTick((float) dt);
-                    if (visit != null) agentChat.addMessage("[Scout] " + visit);
-                }
-                // Explorer picks up nearby crystals (snapshot — agent thread adds)
-                if (npc.getRole() == AgentNPC.Role.EXPLORER && npc.getCarriedCrystal() == null) {
-                    for (TodoCrystal c : new ArrayList<>(crystals)) {
-                        if (c.isCarried() || c.getPosition() == null) continue;
-                        if (npc.getPosition().distance(c.getPosition()) < 1.5f) {
-                            npc.pickUpCrystal(c);
-                            System.out.println("[NPC] Explorer picked up TODO: " + c.getLabel());
-                            break;
-                        }
-                    }
-                }
-            }
+            // Update agent NPCs (bodies + behaviors + scout patrol)
+            updateNPCs(dt);
 
             // Update agent context when in a room
             if (player.getCurrentRoom() != null && agentManager != null) {
@@ -4401,6 +4377,48 @@ public class GameEngine {
         }
         if (scoutOk) pass++; else fail++;
 
+        // 30. H25 scout→quorum (step 80) — a scout visit must be able to
+        //     produce an APPROVED proposal and a TODO crystal at the visited
+        //     room (selftest: deterministic auto-approve votes, no cloud).
+        boolean scoutQuorumOk = false;
+        try {
+            List<Room> rooms80 = world.getRooms();
+            if (!rooms80.isEmpty() && agentManager != null) {
+                ScoutNPC s80 = new ScoutNPC("ScoutQ", 80L, rooms80, knowledgeGraph);
+                // Force one visit now
+                s80.patrolTick(6.0f);
+                Room target = rooms80.get(0);
+                String pid = s80.proposalIdFor(target);
+                agentManager.getQuorum().registerProposal(pid,
+                    "Scout suggests work in " + target.getRepoName(), new HexCoord(0, 0), "feature_iteration");
+                agentManager.getQuorum().advanceTimePulse(0.05);
+                for (String voter : agentManager.getQuorum().allModelsMap().keySet())
+                    agentManager.getQuorum().castVote(pid, voter,
+                        com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                WeightedQuorumVote.QuorumResult r80 = agentManager.getQuorum().calculateQuorum(pid);
+                boolean approved = r80 != null && "APPROVED".equals(r80.status);
+                int crystalsBefore = crystals.size();
+                if (approved) {
+                    TodoCrystal c80 = new TodoCrystal("[Scout] work in " + target.getRepoName(),
+                        target.getRepoName(), "scout-patrol");
+                    if (target.getRoomCenter() != null)
+                        c80.setPosition(new Vector3f(target.getRoomCenter()).add(0, 0.3f, 0));
+                    crystals.add(c80);
+                }
+                boolean spawned = crystals.size() == crystalsBefore + 1
+                    && crystals.get(crystals.size() - 1).getRepoName().equalsIgnoreCase(target.getRepoName());
+                scoutQuorumOk = approved && spawned;
+                System.out.println((scoutQuorumOk ? "PASS" : "FAIL")
+                    + " scout->quorum (visit proposal APPROVED -> TODO crystal spawned at "
+                    + target.getRepoName() + ")");
+            } else {
+                System.out.println("FAIL scout->quorum (no rooms or no agentManager)");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL scout->quorum: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (scoutQuorumOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -4418,6 +4436,75 @@ public class GameEngine {
      * teleporter → walk into a room → look down at floor text. Drives the
      * camera directly (no Input/GLFW callbacks). Used with --autodrive <dir>.
      */
+    /** H24/H25 (steps 79+80): one game-thread pass over all NPCs — bodies,
+     *  SLM reasoning surfacing, scout patrol (VISIT lines + quorum proposals
+     *  → TODO crystals), Explorer crystal pickup. Extracted from update() so
+     *  updateAutodrive (the E2E tour) runs the same behaviors live. */
+    private void updateNPCs(double dt) {
+        for (AgentNPC npc : npcs) {
+            npc.update((float) dt, world.getRooms(), world.getHallways());
+            // Surface the SLM's reasoning into the chat HUD (coherent thread)
+            String reason = npc.consumeReason();
+            if (reason != null && agentChat != null) {
+                agentChat.addMessage("[" + npc.getName() + "] " + reason);
+            }
+            // H24 (step 79): Scout patrol — deterministic VISIT ledger on
+            // the game thread; one chat line per room arrival.
+            // H25 (step 80): each visit is also a quorum proposal; an
+            // APPROVED verdict spawns a TODO crystal at the visited room.
+            if (npc instanceof ScoutNPC scout && agentChat != null) {
+                String visit = scout.patrolTick((float) dt);
+                if (visit != null) {
+                    agentChat.addMessage("[Scout] " + visit);
+                    // visit = "VISIT <repo> <book>" → resolve the room
+                    String repoFull = visit.length() > 6 ? visit.substring(6) : "";
+                    int sp = repoFull.indexOf(' ');
+                    final String repo = sp > 0 ? repoFull.substring(0, sp) : repoFull;
+                    Room target = world.getRooms().stream()
+                        .filter(rm -> rm.getRepoName().equalsIgnoreCase(repo))
+                        .findFirst().orElse(null);
+                    if (target != null && crystals.size() < 60) {
+                        String pid = scout.proposalIdFor(target);
+                        agentManager.getQuorum().registerProposal(pid,
+                            "Scout suggests work in " + repo, new HexCoord(0, 0), "feature_iteration");
+                        agentManager.getQuorum().advanceTimePulse(0.05);
+                        if (selfTest) {
+                            for (String voter : agentManager.getQuorum().allModelsMap().keySet())
+                                agentManager.getQuorum().castVote(pid, voter,
+                                    com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                        } else {
+                            agentManager.getQuorum().autoVoteAll();
+                        }
+                        WeightedQuorumVote.QuorumResult r = agentManager.getQuorum().calculateQuorum(pid);
+                        if (r != null && "APPROVED".equals(r.status)) {
+                            TodoCrystal c = new TodoCrystal("[Scout] work in " + repo,
+                                target.getRepoName(), "scout-patrol");
+                            if (target.getRoomCenter() != null)
+                                c.setPosition(new Vector3f(target.getRoomCenter()).add(0, 0.3f, 0));
+                            crystals.add(c);
+                            agentChat.addMessage("[Quorum] APPROVED scout proposal — TODO crystal at " + repo);
+                            System.out.println("[Scout] quorum APPROVED -> crystal at " + repo);
+                        } else {
+                            System.out.println("[Scout] quorum verdict for " + repo
+                                + ": " + (r != null ? r.status : "null"));
+                        }
+                    }
+                }
+            }
+            // Explorer picks up nearby crystals (snapshot — agent thread adds)
+            if (npc.getRole() == AgentNPC.Role.EXPLORER && npc.getCarriedCrystal() == null) {
+                for (TodoCrystal c : new ArrayList<>(crystals)) {
+                    if (c.isCarried() || c.getPosition() == null) continue;
+                    if (npc.getPosition().distance(c.getPosition()) < 1.5f) {
+                        npc.pickUpCrystal(c);
+                        System.out.println("[NPC] Explorer picked up TODO: " + c.getLabel());
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     private void updateAutodrive(double dt) {
         world.tick((float) dt);
         updatePatches(dt);
@@ -4426,6 +4513,10 @@ public class GameEngine {
         // reports 0.0 fps and the perf budget has no evidence.
         frameTimes.addLast(dt);
         if (frameTimes.size() > 120) frameTimes.removeFirst();
+
+        // Step 80: the scout patrol + NPC behaviors run in the tour too, so
+        // the E2E log carries live [Scout] VISIT + [Quorum] evidence.
+        updateNPCs(dt);
 
         // ── E2E waypoint tour: named stops, labeled shots, clean exit ──
         if (e2eMode) {

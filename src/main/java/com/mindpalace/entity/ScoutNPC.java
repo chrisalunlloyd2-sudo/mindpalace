@@ -66,4 +66,16 @@ public class ScoutNPC extends AgentNPC {
     }
 
     public float getEmitCooldown() { return emitCooldown; }
+
+    // ── Step 80 (H25): scout → quorum ──────────────────────────────────────
+    // Each visit also becomes a quorum proposal ("scout suggests room X as a
+    // work target"). The proposal rides the house quorum like any other; an
+    // APPROVED verdict lets GameEngine spawn a TODO crystal at that room.
+    // Deterministic: proposals are keyed visit-scope + room, auto-voted in
+    // selftest mode (no cloud), live-voted in play.
+
+    /** Wrap the last visit into a quorum proposal id (stable per visit). */
+    public String proposalIdFor(Room room) {
+        return "scout-" + Integer.toHexString(room.getRepoName().hashCode()) + "-" + visitIndex;
+    }
 }
