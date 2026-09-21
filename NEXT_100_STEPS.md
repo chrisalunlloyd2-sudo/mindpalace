@@ -49,7 +49,7 @@
 - [x] **78** Perf pass — HD 510 ≥30fps at all 16 waypoints, profile + tune LOD/fog (02df8e0; measured 120fps all 16)
 
 ## PHASE C — Bots & Scouts (79–88)
-- [ ] **79** H24 Scout NPC — firefly bot visiting rooms, `[Scout] VISIT <room> <book>` chat lines
+- [x] **79** H24 Scout NPC — firefly bot visiting rooms, `[Scout] VISIT <room> <book>` chat lines (f9d608a; selftest 47/0)
 - [ ] **80** H25 scout→quorum — scout reports become quorum proposals → TODO crystals
 - [x] **81** H27 BDI bridge v0 — poll BDI_FSM_AGENT webui HTTP; render state as NPC + `[BDI]` chat events
 - [ ] **82** H28 unified bot chat format — scout/BDI/SLM share one log schema; quorum reads all
