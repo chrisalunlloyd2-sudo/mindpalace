@@ -28,9 +28,9 @@ JVM = ["-Dprism.order=sw", "-Dprism.vsync=false",
 EXPECTED_LABELS = ["01_spawn_view", "02_rotor_rings", "03_turing_tape",
                    "04_banburismus_gauge", "05_main_hall", "06_room_doorway",
                    "07_todo_crystals", "08_hall_lookback", "09_agents",
-                   "10_portal_pad", "11_nash_fountain", "12_door_prompt",
-                   "13_plugboard", "14_forest_path", "15_room_interior",
-                   "16_hall_windows"]
+                   "10_portal_pad", "11_floor2_picker", "11_nash_fountain",
+                   "13_door_prompt", "14_plugboard", "15_forest_path",
+                   "16_room_interior", "17_hall_windows"]
 # shots are written as NN_label_MM.png (waypoint + frame index)
 
 

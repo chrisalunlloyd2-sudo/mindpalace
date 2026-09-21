@@ -3615,33 +3615,45 @@ public class GameEngine {
         // the real input→picker→confirm path (not a direct teleportTo* call).
         // Mirrors real play: stand on the pad for one tick (padFloor detected in
         // player.update), THEN press Enter.
-        boolean teleportBehaviorOk = false;
+        // #15: driven on EVERY pad (all floors), not just floor 0 — the picker
+        // must open+confirm on floor 2+ too (the original bug report).
+        boolean teleportBehaviorOk = true;
         try {
-            teleportMenu = false;
             state = GameState.PLAYING;
             List<Vector3f> tpads = world.getTeleporterPads();
-            if (!tpads.isEmpty()) {
-                Vector3f p0 = tpads.get(0);
-                player.getCamera().setPosition(p0.x, p0.y + 1.6f, p0.z);
-            }
-            update(1.5);   // tick 1: decay teleportCooldown (1.0→0) + detect pad
-            boolean onPad = player.getPadFloor() >= 0;
-            input.injectKeyPress(GLFW.GLFW_KEY_ENTER);
-            update(0.0);   // tick 2: Enter opens the picker
-            boolean openedPicker = teleportMenu;
-            update(0.0);   // release tick: resets keysPrev so the next Enter edges
-            if (onPad && openedPicker) {
-                teleportSel = 0;
+            int padsChecked = 0;
+            for (int pi = 0; pi < tpads.size() && padsChecked < 3; pi++, padsChecked++) {
+                teleportMenu = false;
+                Vector3f pad = tpads.get(pi);
+                player.teleportToFloor(pi, world); // arrive ON pad i, cooldown armed
+                player.getCamera().setPosition(pad.x, pad.y + 1.6f, pad.z);
+                update(1.5);   // tick 1: decay teleportCooldown (1.0→0) + detect pad
+                boolean onPad = player.getPadFloor() == pi;
                 input.injectKeyPress(GLFW.GLFW_KEY_ENTER);
-                update(0.0);   // tick 3: Enter confirms → picker closes
-                teleportBehaviorOk = !teleportMenu;
+                update(0.0);   // tick 2: Enter opens the picker
+                boolean openedPicker = teleportMenu;
+                update(0.0);   // release tick: resets keysPrev so the next Enter edges
+                boolean confirmed = false;
+                if (onPad && openedPicker) {
+                    teleportSel = 0;
+                    input.injectKeyPress(GLFW.GLFW_KEY_ENTER);
+                    update(0.0);   // tick 3: Enter confirms → picker closes
+                    confirmed = !teleportMenu;
+                }
+                if (!(onPad && openedPicker && confirmed)) {
+                    teleportBehaviorOk = false;
+                    System.err.println("[SelfTest] teleporter behavior failed on pad " + pi
+                        + " (floor " + (pi + 1) + "): onPad=" + onPad + " opened=" + openedPicker);
+                }
             }
+            teleportMenu = false;
+            if (padsChecked < Math.min(3, tpads.size())) teleportBehaviorOk = false;
         } catch (Exception e) {
             teleportBehaviorOk = false;
             System.err.println("[SelfTest] teleporter behavior threw: " + e);
         }
         System.out.println((teleportBehaviorOk ? "PASS" : "FAIL")
-            + " teleporter behavior (Enter opens list, second Enter confirms)");
+            + " teleporter behavior (Enter opens list, second Enter confirms, floors 1-3 pads)");
         if (teleportBehaviorOk) pass++; else fail++;
 
         // 24. Outside-world chunked streaming — near chunks render, far chunks
@@ -4543,12 +4555,34 @@ public class GameEngine {
                 cam.setYaw(0); cam.setPitch(-12f);
                 if (shoot) { captureLabeled("10_portal_pad"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 10 -> { // nash fountain — courtyard pool beside the rotor rings
+            case 10 -> { // floor-2 pad + picker open (#15 verification shot)
+                // Stand on the floor-2 pad and open the destination picker —
+                // proves the picker renders correctly on higher floors
+                // (the #15 report). Real path: teleport to floor 2, stand on
+                // its pad, rebuild destinations, open the menu. Face DOWN-HALL
+                // so the 2.5m text anchor sits in open corridor, not in the
+                // wall the pad backs onto (depth-tested billboard would hide).
+                List<Vector3f> pads15 = world.getTeleporterPads();
+                if (pads15.size() > 2) {
+                    Vector3f pad2 = pads15.get(2);
+                    player.teleportToFloor(2, world);
+                    player.getCamera().setPosition(pad2.x, pad2.y + 1.7f, pad2.z);
+                    cam.setYaw(180); cam.setPitch(-8);
+                    rebuildTeleportDestinations();
+                    teleportMenu = true;
+                    teleportSel = 0;
+                } else {
+                    p.set(0f, hallY + 1.7f, hallZ1 - 7f);
+                    cam.setYaw(0); cam.setPitch(-12f);
+                }
+                if (shoot) { captureLabeled("11_floor2_picker"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 11 -> { // nash fountain — courtyard pool beside the rotor rings
                 p.set(3.5f, hallY + 1.7f, hallZ0 - 10f);
                 cam.setYaw(0); cam.setPitch(-5);
                 if (shoot) { captureLabeled("11_nash_fountain"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 11 -> { // door prompt — the unified interaction prompt at a repo door
+            case 12 -> { // door prompt — the unified interaction prompt at a repo door
                 // Stand ~1.5m in front of the FIRST room's door (side 0 doors
                 // sit at x=-1.75; the prompt renders HUD-anchored above center
                 // whenever a door is within 3m reach + facing).
@@ -4571,23 +4605,23 @@ public class GameEngine {
                     p.set(0f, hallY + 1.7f, hallZ0 + 4f);
                     cam.setYaw(0); cam.setPitch(0);
                 }
-                if (shoot) { captureLabeled("12_door_prompt"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("13_door_prompt"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 12 -> { // enigma plugboard — puzzle board on the hall's right wall
+            case 13 -> { // enigma plugboard — puzzle board on the hall's right wall
                 p.set(0f, hallY + 1.7f, hallZ0 + 7f);
                 cam.setYaw(75); cam.setPitch(0);
-                if (shoot) { captureLabeled("13_plugboard"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("14_plugboard"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 13 -> { // forest path — cobbled path with benches + signposts (steps 65+74)
+            case 14 -> { // forest path — cobbled path with benches + signposts (steps 65+74)
                 // Stand ON the cobble path (x=0) looking down its length: the
                 // center strip leads to the TOC tree, benches/signposts sit
                 // beside the outer strips at the forks. Face down-path (-Z) so
                 // the furniture reads in depth with the forest behind.
                 p.set(0f, hallY + 1.7f, hallZ0 - 42f);
                 cam.setYaw(180); cam.setPitch(-6);
-                if (shoot) { captureLabeled("14_forest_path"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("15_forest_path"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 14 -> { // room interior — walls + front-wall shelves + star art (steps 59+75)
+            case 15 -> { // room interior — walls + front-wall shelves + star art (steps 59+75)
                 // Stand inside the first room, looking across it at the front
                 // wall (door + display shelves + star row).
                 Room firstRoom = null;
@@ -4606,9 +4640,9 @@ public class GameEngine {
                     p.set(0f, hallY + 1.7f, hallZ0 + 18f);
                     cam.setYaw(90); cam.setPitch(0);
                 }
-                if (shoot) { captureLabeled("15_room_interior"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("16_room_interior"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 15 -> { // hallway window panes (step 69) — aimed at the first door
+            case 16 -> { // hallway window panes (step 69) — aimed at the first door
                 // Aim from the hall center at the FIRST room's door (the
                 // waypoint-12 pattern): door + neon sign + doorframe in frame,
                 // and the emissive pane on the adjacent wall segment right
@@ -4626,10 +4660,10 @@ public class GameEngine {
                     p.set(0f, hallY + 1.7f, hallZ0 + 12f);
                     cam.setYaw(-75); cam.setPitch(4f);
                 }
-                if (shoot) { captureLabeled("16_hall_windows"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("17_hall_windows"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 16 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 17 waypoints captured. Exiting.");
                 cleanup();
                 System.exit(0);
             }
