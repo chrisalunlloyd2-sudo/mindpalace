@@ -371,13 +371,13 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(signX, signY, signZ),
             new Vector3f(1.5f, 0.4f, 0.08f), Renderer.TEX_NEON_GREEN);
 
-        // Teleporter pad at hallway end (to next floor) — cool animated portal,
-        // themed with this floor's complementary color pair (pad index == floor
-        // index, see getTeleporterPads) so its menu entry is visually matchable.
-        if (hw.getFloor() < hallways.size() - 1) {
-            float padZ = hw.getEnd().z - 1.0f;
-            renderTeleporter(r, s.y, padZ, PortalTheme.forPad(hw.getFloor()));
-        }
+        // Teleporter pad at hallway end — every floor gets one, including the
+        // top, so the pads form a fully connected network rather than a set of
+        // one-way emitters with a dead end at the top. Themed with this floor's
+        // complementary color pair (pad index == floor index, see
+        // getTeleporterPads) so its menu entry is visually matchable.
+        float padZ = hw.getEnd().z - 1.0f;
+        renderTeleporter(r, s.y, padZ, PortalTheme.forPad(hw.getFloor()));
 
         // Poster frames on walls between doors
         renderPosters(r, s, hw);
