@@ -2,6 +2,7 @@ package com.mindpalace.agent;
 
 import com.google.gson.*;
 import com.mindpalace.agent.sims.*;
+import com.mindpalace.integration.*;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.LegacyRepoClassifier;
@@ -67,6 +68,14 @@ public class AgentManager {
     private final WeightedQuorumVote quorum = new WeightedQuorumVote();
     private final FOWGate fow = new FOWGate();
     private volatile String routedModel = TOOL_MODEL; // set by the router each cycle
+
+    // ── Reddit → Quorum feedback loop ──────────────────────────────────
+    // Community suggestions → OAuth → Reddit polling → quorum proposals
+    // This closes the E2E loop: community votes on Reddit → system votes
+    // on proposals → Hermes executes approved features.
+    private RedditOAuthClient redditClient;
+    private RedditToQuorumBridge redditBridge;
+    private OAuthCallbackServer oauthServer;
 
     /**
      * The tool round's concrete actions (tool name → result lines), published
@@ -1234,4 +1243,42 @@ public class AgentManager {
     public WeightedQuorumVote getQuorum() { return quorum; }
     public FOWGate getFow() { return fow; }
     public String getRoutedModel() { return routedModel; }
+
+    // ── Reddit integration ──
+    public RedditToQuorumBridge getRedditBridge() { return redditBridge; }
+
+    /**
+     * Initialize Reddit OAuth. Call this after start() if you have credentials.
+     * Returns the auth URL to visit; user grants permission → OAuth callback
+     * triggers token exchange → polling begins.
+     */
+    public String initReddit(String clientId, String clientSecret, String subreddit) {
+        try {
+            String callbackUrl = "http://localhost:8899";
+            redditClient = new RedditOAuthClient(clientId, clientSecret, callbackUrl, subreddit);
+            String state = UUID.randomUUID().toString();
+
+            oauthServer = new OAuthCallbackServer(8899, redditClient, () -> {
+                try {
+                    // After token exchange, start polling Reddit every 5 minutes
+                    String ledgerPath = System.getProperty("user.home") != null
+                        ? Paths.get(System.getProperty("user.home"), "AIGEN_SYS", ".hermes", "reddit_ledger.txt").toAbsolutePath().toFile().getAbsolutePath()
+                        : "/tmp/reddit_ledger.txt";
+                    redditBridge = new RedditToQuorumBridge(redditClient, quorum, ledgerPath, 5 * 60 * 1000);
+                    redditBridge.startPolling();
+                    log("[Reddit] Polling started: fetching suggestions every 5 minutes");
+                } catch (Exception e) {
+                    log("[Reddit] ERROR starting bridge: " + e.getMessage());
+                }
+            });
+            oauthServer.start();
+            String authUrl = redditClient.getAuthorizationUrl(state);
+            log("[Reddit] OAuth initialized. Visit this URL to authorize:");
+            log(authUrl);
+            return authUrl;
+        } catch (Exception e) {
+            log("[Reddit] ERROR initializing OAuth: " + e.getMessage());
+            return null;
+        }
+    }
 }
