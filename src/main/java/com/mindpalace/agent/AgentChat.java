@@ -36,7 +36,15 @@ public class AgentChat {
 
     public void addMessage(String msg) {
         if (msg == null || msg.isEmpty()) return;
-        // Truncate + wrap long messages
+        renderMessage(msg);
+        persist(msg);
+    }
+
+    /** HUD render + rolling window only (no persistence) — addBotEvent uses
+     *  this then persists ONE structured line, so a bot event writes a single
+     *  JSONL record instead of the legacy msg line + envelope duplicate. */
+    private void renderMessage(String msg) {
+        if (msg == null || msg.isEmpty()) return;
         String clean = msg.replace('\n', ' ').replace('\r', ' ');
         while (clean.length() > MAX_LEN) {
             messages.add(clean.substring(0, MAX_LEN));
@@ -45,7 +53,55 @@ public class AgentChat {
         messages.add(clean);
         while (messages.size() > MAX_MESSAGES) messages.remove(0);
         System.out.println("[AgentChat] " + msg);
-        persist(msg);
+    }
+
+    // ── H28 (step 82): unified bot event format ─────────────────────────────
+    // One schema for ALL bot chatter — scout, BDI bridge, SLM agents — so the
+    // quorum's lexical bridge can read structured events instead of parsing
+    // "[Tag] free text". Envelope: {"ts","bot","kind","text"}. The rendered
+    // chat still shows "[Bot] text" (addMessage), so the HUD is unchanged;
+    // only the on-disk JSONL line gains the structured fields.
+
+    /** Emit a structured bot event: HUD shows "[bot] text", log line carries
+     *  {"ts","bot","kind","text"}. Kind is a free tag: VISIT, DIRECTIVE,
+     *  REASONING, APPROVED... Never throws. */
+    public void addBotEvent(String bot, String kind, String text) {
+        if (bot == null || bot.isBlank()) bot = "unknown";
+        if (kind == null || kind.isBlank()) kind = "EVENT";
+        String clean = text == null ? "" : text.replace('\n', ' ').replace('\r', ' ').trim();
+        if (clean.isEmpty()) return;
+        renderMessage("[" + bot + "] " + clean);
+        persistStructured(bot, kind.toUpperCase(), clean);
+    }
+
+    /** Append the structured envelope line to today's JSONL (best-effort). */
+    private void persistStructured(String bot, String kind, String text) {
+        try {
+            Files.createDirectories(CHAT_LOG_DIR);
+            String ts = java.time.Instant.now().toString();
+            StringBuilder esc = new StringBuilder(text.length() + 16);
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                switch (c) {
+                    case '"':  esc.append("\\\""); break;
+                    case '\\': esc.append("\\\\"); break;
+                    case '\n': esc.append("\\n");  break;
+                    case '\r': esc.append("\\r");  break;
+                    case '\t': esc.append("\\t");  break;
+                    case '\b': esc.append("\\b");  break;
+                    case '\f': esc.append("\\f");  break;
+                    default:
+                        if (c < 0x20) esc.append(String.format("\\u%04x", (int) c));
+                        else esc.append(c);
+                }
+            }
+            Files.writeString(todayLog(),
+                "{\"ts\":\"" + ts + "\",\"bot\":\"" + bot + "\",\"kind\":\"" + kind
+                    + "\",\"text\":\"" + esc + "\"}\n",
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            // Chat must never crash the game over a log write.
+        }
     }
 
     /** Per-day log file name, e.g. chat-2026-08-20.jsonl. */

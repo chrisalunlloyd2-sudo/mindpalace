@@ -120,7 +120,10 @@ public class BdiBridge {
         Directive directive;
         while ((directive = inbox.poll()) != null) {
             if (directive.chat != null && agentChat != null) {
-                agentChat.addMessage(directive.chat);
+                // H28 (step 82): structured envelope — bot="BDI", kind=DIRECTIVE
+                String chat = directive.chat;
+                if (chat.startsWith("[BDI] ")) chat = chat.substring(6);
+                agentChat.addBotEvent("BDI", "DIRECTIVE", chat);
             }
             if (directive.room != null && directive.npcName != null && npcs != null) {
                 for (AgentNPC npc : npcs) {

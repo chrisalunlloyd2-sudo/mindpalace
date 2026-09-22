@@ -4419,6 +4419,46 @@ public class GameEngine {
         }
         if (scoutQuorumOk) pass++; else fail++;
 
+        // 31. H28 unified bot event format (step 82) — addBotEvent writes a
+        //     {"ts","bot","kind","text"} line to today's JSONL; read it back
+        //     and verify the envelope fields (round-trip through the real
+        //     per-day log path, demo dataRoot).
+        boolean schemaOk = false;
+        try {
+            if (agentChat != null) {
+                String day = java.time.LocalDate.now().toString();
+                java.nio.file.Path log80 = java.nio.file.Paths.get("chat_logs",
+                    "chat-" + day + ".jsonl");
+                int linesBefore = java.nio.file.Files.isRegularFile(log80)
+                    ? java.nio.file.Files.readAllLines(log80).size() : 0;
+                agentChat.addBotEvent("Scout", "VISIT", "schema round-trip probe");
+                if (java.nio.file.Files.isRegularFile(log80)) {
+                    List<String> all = java.nio.file.Files.readAllLines(log80);
+                    if (all.size() == linesBefore + 1) {
+                        String line = all.get(all.size() - 1);
+                        boolean hasBot = line.contains("\"bot\":\"Scout\"");
+                        boolean hasKind = line.contains("\"kind\":\"VISIT\"");
+                        boolean hasText = line.contains("schema round-trip probe");
+                        boolean hasTs = line.contains("\"ts\":\"");
+                        boolean jsonShape = line.startsWith("{\"ts\":\"") && line.endsWith("\"}");
+                        schemaOk = hasBot && hasText && hasTs && jsonShape && hasKind;
+                        System.out.println((schemaOk ? "PASS" : "FAIL")
+                            + " unified bot event schema (bot/kind/text/ts envelope round-trip)");
+                    } else {
+                        System.out.println("FAIL unified schema (line count " + linesBefore
+                            + "->" + all.size() + ", expected +1)");
+                    }
+                } else {
+                    System.out.println("FAIL unified schema (log file missing)");
+                }
+            } else {
+                System.out.println("FAIL unified schema (agentChat null)");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL unified schema: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (schemaOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -4446,7 +4486,7 @@ public class GameEngine {
             // Surface the SLM's reasoning into the chat HUD (coherent thread)
             String reason = npc.consumeReason();
             if (reason != null && agentChat != null) {
-                agentChat.addMessage("[" + npc.getName() + "] " + reason);
+                agentChat.addBotEvent(npc.getName(), "REASONING", reason);
             }
             // H24 (step 79): Scout patrol — deterministic VISIT ledger on
             // the game thread; one chat line per room arrival.
@@ -4455,7 +4495,7 @@ public class GameEngine {
             if (npc instanceof ScoutNPC scout && agentChat != null) {
                 String visit = scout.patrolTick((float) dt);
                 if (visit != null) {
-                    agentChat.addMessage("[Scout] " + visit);
+                    agentChat.addBotEvent("Scout", "VISIT", visit);
                     // visit = "VISIT <repo> <book>" → resolve the room
                     String repoFull = visit.length() > 6 ? visit.substring(6) : "";
                     int sp = repoFull.indexOf(' ');
@@ -4482,7 +4522,7 @@ public class GameEngine {
                             if (target.getRoomCenter() != null)
                                 c.setPosition(new Vector3f(target.getRoomCenter()).add(0, 0.3f, 0));
                             crystals.add(c);
-                            agentChat.addMessage("[Quorum] APPROVED scout proposal — TODO crystal at " + repo);
+                            agentChat.addBotEvent("Quorum", "APPROVED", "scout proposal — TODO crystal at " + repo);
                             System.out.println("[Scout] quorum APPROVED -> crystal at " + repo);
                         } else {
                             System.out.println("[Scout] quorum verdict for " + repo
