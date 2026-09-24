@@ -53,7 +53,7 @@
 - [x] **80** H25 scout→quorum — scout reports become quorum proposals → TODO crystals (a5cecea; selftest 48/0; live loop: scout→quorum→crystal→Explorer pickup verified in E2E)
 - [x] **81** H27 BDI bridge v0 — poll BDI_FSM_AGENT webui HTTP; render state as NPC + `[BDI]` chat events
 - [x] **82** H28 unified bot chat format — scout/BDI/SLM share one log schema; quorum reads all (1fe9dc5; selftest 49/0; envelope round-trip verified)
-- [ ] **83** H29 stress bot — rapid teleport/interaction bursts, CME hunt on live console
+- [x] **83** H29 stress bot — rapid teleport/interaction bursts, CME hunt on live console (code live via 1a77ec2; stress 5 rounds CLEAN, STRESS_EXIT=0; selftest 49/0)
 - [ ] **84** H30 scout economy — DePIN credits for unique visits; never-twice dedupe
 - [ ] **85** H31 bot lifecycle — TTL, graceful retire, fresh-seed respawn; HUD bot board (H32)
 - [ ] **86** H265 self-test harness in cascade — test_bot --run-selftest JSON posted to step-log
