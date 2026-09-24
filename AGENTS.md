@@ -51,7 +51,7 @@ package` alone is not proof of anything working.
   `LabDevice`, `Constellation`, `TodoCrystal`.
 - **ui/** — `HUD` (door prompts), `InteractionPromptSystem` (nearby-
   interactable prompts, in progress), `BookViewer`, `BookEditor`,
-  `SettingsMenu`, `DressingRoom`.
+  `DressingRoom`.
 - **render/** — `Renderer`, `Camera`, `Shader`, `Mesh`, `Texture`,
   `FontRenderer`, `BloomEffect`, `Screenshot`.
 - **agent/** — `AgentManager` (the autonomous cycle), `OllamaClient`,

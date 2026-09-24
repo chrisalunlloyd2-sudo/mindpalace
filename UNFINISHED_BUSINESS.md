@@ -56,8 +56,6 @@ Fix path: install himalaya → configure account (needs Architect's email creds)
         AgentManager.executeToolRound() -> OllamaClient.chatWithTools() ->
         executeTool() -> submitToolRound() (AgentManager.java:230-272). The tool
         agent can now read/edit/create/delete a file end-to-end.
-[STUB]  rayAABB() is dead code (left in place per "never delete, only merge").
-[STUB]  SettingsMenu.musicVolume field was dead (noted earlier).
 [DONE]  AgentManager autonomous cycle now acts on tool proposals via the
         critic→tool→execute loop (executeToolRound).
 
