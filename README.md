@@ -502,8 +502,7 @@ mindpalace/
 │   │   └── PatchManager.java  # live patch poll + apply
 │   ├── ui/
 │   │   ├── HUD.java
-│   │   ├── BookEditor.java
-│   │   └── SettingsMenu.java
+│   │   └── BookEditor.java
 │   └── audio/
 │       └── AudioEngine.java
 ├── src/main/resources/shaders/
