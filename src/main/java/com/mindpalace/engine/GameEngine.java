@@ -4546,14 +4546,14 @@ public class GameEngine {
                 boolean nullSafe = !scoutEco.awardUniqueVisit(null);
                 // Wallet round-trip: register + earn + balance reflect
                 DePIN.Participant pEco = depin.register("Scout", 0.0);
-                double before = pEco.wallet.getBalance();
+                double balBefore = pEco.wallet.getBalance();
                 pEco.wallet.earn(5.0, "eco selftest probe");
-                double after = pEco.wallet.getBalance();
-                ecoOk = first && !repeat && other && nullSafe && (after == before + 5.0);
+                double balAfter = pEco.wallet.getBalance();
+                ecoOk = first && !repeat && other && nullSafe && (balAfter == balBefore + 5.0);
                 System.out.println((ecoOk ? "PASS" : "FAIL")
                     + " scout economy (unique-visit dedupe first=" + first + " repeat=" + repeat
-                    + " other=" + other + "; wallet " + String.format("%.1f", before) + " -> "
-                    + String.format("%.1f", after) + ")");
+                    + " other=" + other + "; wallet " + String.format("%.1f", balBefore) + " -> "
+                    + String.format("%.1f", balAfter) + ")");
             } else {
                 System.out.println("FAIL scout economy (agentManager null)");
             }
