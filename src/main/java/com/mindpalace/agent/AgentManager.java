@@ -77,6 +77,12 @@ public class AgentManager {
     private RedditToQuorumBridge redditBridge;
     private OAuthCallbackServer oauthServer;
 
+    // ── GitHub → Local TASK bridge ────────────────────────────────────
+    // Cloud oversight routine files GitHub issues with 'hermes-queue' label.
+    // Local bridge polls those issues and converts to TASK files for Hermes.
+    // This connects cloud analysis (360 oversight) to local execution.
+    private GitHubPollBridge githubBridge;
+
     /**
      * The tool round's concrete actions (tool name → result lines), published
      * by the scheduler worker at the end of {@link #executeToolRound} and read
@@ -1281,4 +1287,31 @@ public class AgentManager {
             return null;
         }
     }
+
+    /**
+     * Initialize GitHub issue polling bridge. Polls GitHub for issues labeled
+     * 'hermes-queue' (filed by the 360 oversight cloud routine) and converts
+     * them to local TASK files for Hermes execution.
+     *
+     * Requires GitHub Personal Access Token with 'repo' scope.
+     */
+    public void initGitHub(String repoOwner, String repoName, String githubToken) {
+        try {
+            String taskDir = System.getProperty("user.home") != null
+                ? Paths.get(System.getProperty("user.home"), "AIGEN_SYS", "todo_management").toString()
+                : "/tmp/tasks";
+            String ledgerPath = System.getProperty("user.home") != null
+                ? Paths.get(System.getProperty("user.home"), "AIGEN_SYS", ".hermes", "github_ledger.txt").toString()
+                : "/tmp/github_ledger.txt";
+
+            githubBridge = new GitHubPollBridge(repoOwner, repoName, githubToken, taskDir, ledgerPath, 30 * 60 * 1000);
+            githubBridge.startPolling();
+            log("[GitHub] Bridge initialized: polling every 30 minutes");
+            log("[GitHub] Repo: " + repoOwner + "/" + repoName);
+        } catch (Exception e) {
+            log("[GitHub] ERROR initializing bridge: " + e.getMessage());
+        }
+    }
+
+    public GitHubPollBridge getGitHubBridge() { return githubBridge; }
 }

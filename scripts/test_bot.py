@@ -162,34 +162,35 @@ def run_selftest():
 
 
 def stress(n):
-    """H29: launch the game with synthetic rapid input via autodrive-ish
-    burst, then scan the console log for CME/freeze signatures."""
-    console = REPO / "game_console.log"
-    size_before = console.stat().st_size if console.exists() else 0
-    print(f"stress: launching burst n={n} (watching console for exceptions)")
-    # The game reads synthetic input only via --e2e/--autodrive; the burst
-    # mode is the E2E tour run twice back-to-back (max motion the engine
-    # supports headless) — good enough to trip CME-class bugs.
-    for i in range(min(n, 3)):
-        try:
-            subprocess.run([JAVA, *JVM, "-jar", str(REPO / "mindpalace-live.jar"),
-                           "--e2e", str(REPO / "target" / f"stress-shots-{i}")],
-                          capture_output=True, text=True, timeout=130, cwd=str(REPO))
-        except subprocess.TimeoutExpired:
-            print(f"stress: round {i} TIMEOUT — possible freeze")
-            return 1
+    """H29: run the game's real --stress mode (rapid teleport/door/picker
+    bursts on the game thread), capture the console to a file, and scan it
+    for CME/exception signatures. Rounds are clamped by the engine (max 10)."""
+    rounds = max(1, min(n, 10))
+    console = REPO / "target" / f"stress-console.log"
+    print(f"stress: launching {rounds} burst rounds (watching for exceptions)")
+    try:
+        r = subprocess.run(
+            [JAVA, *JVM, "-cp", str(REPO / "target" / "mindpalace-1.1.0-beta1.jar"),
+             "com.mindpalace.Main", "--demo", "--stress", str(rounds)],
+            capture_output=True, timeout=300, cwd=str(REPO))
+        blob = ((r.stdout or b"") + (r.stderr or b"")).decode("utf-8", errors="replace")
+        console.write_text(blob, encoding="utf-8")
+    except subprocess.TimeoutExpired:
+        print("stress: TIMEOUT — possible freeze")
+        return 1
+    clean = "STRESS_RESULT: CLEAN" in blob
     bad = []
-    if console.exists():
-        with console.open("r", encoding="utf-8", errors="replace") as f:
-            f.seek(size_before)
-            for line in f:
-                if ("ConcurrentModificationException" in line
-                        or "Exception in thread" in line):
-                    bad.append(line.strip()[:120])
-    print("stress: CLEAN" if not bad else "stress: EXCEPTIONS FOUND")
+    for line in blob.splitlines():
+        if ("ConcurrentModificationException" in line
+                or "Exception in thread" in line
+                or "[Stress] EXCEPTION" in line):
+            bad.append(line.strip()[:120])
+    verdict = clean and not bad
+    print(f"stress: rounds={rounds} clean_flag={clean} exceptions={len(bad)}")
     for b in bad[:10]:
         print("  " + b)
-    return 1 if bad else 0
+    print("stress: CLEAN" if verdict else "stress: EXCEPTIONS FOUND")
+    return 0 if verdict else 1
 
 
 if __name__ == "__main__":

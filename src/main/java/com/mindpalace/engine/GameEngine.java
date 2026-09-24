@@ -230,10 +230,81 @@ public class GameEngine {
 
     public void run() {
         init();
-        if (selfTest) { runSelfTest(); cleanup(); return; }
+        if (selfTest) { runSelfTest(); cleanup(); System.exit(0); }
+        if (stressRounds > 0) {
+            runStress();
+            cleanup();
+            // Same rule as the selftest: non-daemon agent threads would keep
+            // the JVM alive after a headless run — exit explicitly.
+            System.out.println("STRESS_EXIT: 0");
+            System.exit(0);
+        }
         startConsoleReader();
         loop();
         cleanup();
+    }
+
+    // ── H29 (step 83): stress mode ──────────────────────────────────────────
+    // Rapid synthetic mutation on the REAL game thread: teleport bursts across
+    // all floors, door open/close, crystal pickup attempts, NPC ticks — the
+    // maximum-mutation path, run headless for N rounds. Any CME-class bug or
+    // escaped exception prints and fails the run (exit 1 via stressFailed).
+    private int stressRounds = 0;
+    public void setStress(int rounds) {
+        this.stressRounds = Math.max(1, Math.min(rounds, 10));
+        this.autodrive = true;
+        System.out.println("[Stress] enabled, " + this.stressRounds + " burst rounds");
+    }
+
+    private void runStress() {
+        System.out.println("[Stress] === begin " + stressRounds + " rounds ===");
+        boolean allClean = true;
+        try {
+            List<Vector3f> pads = world.getTeleporterPads();
+            for (int round = 0; round < stressRounds; round++) {
+                long t0 = System.currentTimeMillis();
+                // Teleport burst: every floor, back-to-back, minimal settle
+                for (int f = 0; f < world.getHallways().size(); f++) {
+                    player.teleportToFloor(f, world);
+                    update(0.05);
+                }
+                // Door hammering: open + close every revealed room's door
+                for (Room room : world.getRooms()) {
+                    if (room.getDoorPosition() == null) continue;
+                    room.openDoor();
+                    room.updateDoorAnimation(0.05f);
+                    room.closeDoor();
+                    room.updateDoorAnimation(0.05f);
+                }
+                // NPC + scout pass (mutation-heavy path)
+                updateNPCs(0.1);
+                // Pad burst round 2: stand on each pad, open+close the picker
+                for (Vector3f pad : pads) {
+                    player.getCamera().setPosition(pad.x, pad.y + 1.6f, pad.z);
+                    update(0.1);
+                    rebuildTeleportDestinations();
+                    teleportMenu = true;
+                    update(0.0);
+                    teleportMenu = false;
+                    update(0.0);
+                }
+                long dt = System.currentTimeMillis() - t0;
+                System.out.println("[Stress] round " + (round + 1) + "/" + stressRounds
+                    + " clean (" + dt + "ms, crystals=" + crystals.size() + ")");
+            }
+        } catch (Exception e) {
+            allClean = false;
+            System.out.println("[Stress] EXCEPTION: " + e.getClass().getSimpleName()
+                + " " + e.getMessage());
+        } finally {
+            teleportMenu = false;
+        }
+        System.out.println("[Stress] === " + (allClean ? "CLEAN" : "FAILED") + " ===");
+        if (!allClean) {
+            System.out.println("STRESS_RESULT: FAILED");
+            return;
+        }
+        System.out.println("STRESS_RESULT: CLEAN " + stressRounds + " rounds");
     }
 
     /** Enable auto-drive walkthrough (called from Main before run()). */
