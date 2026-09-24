@@ -65,6 +65,24 @@ public class ScoutNPC extends AgentNPC {
         return visitOrder.isEmpty() ? null : visitOrder.get(visitIndex % visitOrder.size());
     }
 
+    // ── H30 (step 84): scout economy — DePIN credits for UNIQUE visits ─────
+    // Never-twice dedupe: a room pays only on its FIRST visit. Repeat
+    // visits patrol but earn nothing (patrol ≠ exploration). Thread-safe:
+    // only mutated on the game thread (updateNPCs).
+    private final java.util.Set<String> creditedRooms = new java.util.HashSet<>();
+
+    /** True if this room's repo was unvisited (credits awarded), false on
+     *  repeat visits. Pure — no wallet side effects here. */
+    public boolean awardUniqueVisit(Room room) {
+        if (room == null || room.getRepoName() == null) return false;
+        return creditedRooms.add(room.getRepoName());
+    }
+
+    /** Rooms credited so far (ledger read). */
+    public int uniqueRoomsCredited() {
+        return creditedRooms.size();
+    }
+
     public float getEmitCooldown() { return emitCooldown; }
 
     // ── Step 80 (H25): scout → quorum ──────────────────────────────────────

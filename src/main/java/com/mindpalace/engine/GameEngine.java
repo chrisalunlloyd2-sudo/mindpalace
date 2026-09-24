@@ -4530,6 +4530,38 @@ public class GameEngine {
         }
         if (schemaOk) pass++; else fail++;
 
+        // 32. H30 scout economy (step 84) — awardUniqueVisit dedupe: first
+        //     visit pays (true), repeat visit doesn't (false), and the DePIN
+        //     wallet actually received the credits.
+        boolean ecoOk = false;
+        try {
+            if (agentManager != null) {
+                com.mindpalace.entity.ScoutNPC scoutEco = new com.mindpalace.entity.ScoutNPC(
+                    "ScoutEco", 42L, world.getRooms(), null);
+                Room roomA = world.getRooms().get(0);
+                Room roomB = world.getRooms().size() > 1 ? world.getRooms().get(1) : roomA;
+                boolean first = scoutEco.awardUniqueVisit(roomA);
+                boolean repeat = scoutEco.awardUniqueVisit(roomA);
+                boolean other = scoutEco.awardUniqueVisit(roomB);
+                boolean nullSafe = !scoutEco.awardUniqueVisit(null);
+                // Wallet round-trip: register + earn + balance reflect
+                DePIN.Participant pEco = depin.register("Scout", 0.0);
+                double before = pEco.wallet.getBalance();
+                pEco.wallet.earn(5.0, "eco selftest probe");
+                double after = pEco.wallet.getBalance();
+                ecoOk = first && !repeat && other && nullSafe && (after == before + 5.0);
+                System.out.println((ecoOk ? "PASS" : "FAIL")
+                    + " scout economy (unique-visit dedupe first=" + first + " repeat=" + repeat
+                    + " other=" + other + "; wallet " + String.format("%.1f", before) + " -> "
+                    + String.format("%.1f", after) + ")");
+            } else {
+                System.out.println("FAIL scout economy (agentManager null)");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL scout economy: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (ecoOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -4567,13 +4599,22 @@ public class GameEngine {
                 String visit = scout.patrolTick((float) dt);
                 if (visit != null) {
                     agentChat.addBotEvent("Scout", "VISIT", visit);
-                    // visit = "VISIT <repo> <book>" → resolve the room
+                    // H30 (step 84): DePIN economy — pay the scout only
+                    // for UNIQUE rooms (never-twice dedupe).
                     String repoFull = visit.length() > 6 ? visit.substring(6) : "";
                     int sp = repoFull.indexOf(' ');
                     final String repo = sp > 0 ? repoFull.substring(0, sp) : repoFull;
                     Room target = world.getRooms().stream()
                         .filter(rm -> rm.getRepoName().equalsIgnoreCase(repo))
                         .findFirst().orElse(null);
+                    if (target != null && scout.awardUniqueVisit(target) && depin != null) {
+                        DePIN.Participant scoutWallet = depin.register("Scout", 0.0);
+                        if (scoutWallet.wallet.earn(5.0, "unique visit: " + repo)) {
+                            System.out.println("[DePIN] Scout earned 5.0 for unique visit: "
+                                + repo + " (wallet=" + String.format("%.1f", scoutWallet.wallet.getBalance())
+                                + ", rooms=" + scout.uniqueRoomsCredited() + "/" + world.getRooms().size() + ")");
+                        }
+                    }
                     if (target != null && crystals.size() < 60) {
                         String pid = scout.proposalIdFor(target);
                         agentManager.getQuorum().registerProposal(pid,
