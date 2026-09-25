@@ -24,8 +24,13 @@ if [ -n "$(git status --porcelain)" ]; then
     git commit -q -m "auto-sync: $(date '+%Y-%m-%d %H:%M')" 2>/dev/null
 fi
 
-# 4. Rebuild (kill running game to release the jar lock)
-wmic process where "name='java.exe'" get processid 2>/dev/null | grep -E "[0-9]" | while read p; do taskkill /F /PID $p 2>/dev/null; done
+# 4. Rebuild (kill running game to release the jar lock).
+#    Must cover javaw.exe too: step 8 launches the game with javaw, and a
+#    survivor keeps running while `clean package` rewrites the jar under it
+#    -> lazy class loads fail (NoClassDefFoundError kotlin/okhttp, gist-wall-fetch).
+for img in java.exe javaw.exe; do
+    wmic process where "name='$img'" get processid 2>/dev/null | grep -E "[0-9]" | while read p; do taskkill //F //PID $p 2>/dev/null; done
+done
 sleep 2
 BUILD_OUT=$("$JAVA_HOME/bin/java" -cp "$M2_HOME/boot/plexus-classworlds-2.11.0.jar" \
   "-Dclassworlds.conf=$M2_HOME/bin/m2.conf" \
@@ -37,8 +42,16 @@ if ! echo "$BUILD_OUT" | grep -q "BUILD SUCCESS"; then
     exit 1
 fi
 
+# Resolve the built jar by glob: the pom version moved 1.0.0 -> 1.1.0-beta1
+# and the hardcoded name silently broke selftest/release/relaunch.
+BUILD_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE 'original-|-shaded' | head -1)
+if [ -z "$BUILD_JAR" ]; then
+    echo "mindpalace-sync: no built jar in target/ — not pushing"
+    exit 1
+fi
+
 # 5. Self-test gate
-SELFTEST=$("$JAVA_HOME/bin/java" -jar target/mindpalace-1.0.0.jar --selftest 2>&1)
+SELFTEST=$("$JAVA_HOME/bin/java" -jar "$BUILD_JAR" --selftest 2>&1)
 if ! echo "$SELFTEST" | grep -q "0 failed"; then
     echo "mindpalace-sync: SELFTEST FAILED — not pushing"
     exit 1
@@ -92,8 +105,8 @@ if [ -n "$TOKEN" ]; then
     fi
     curl -s -X POST -H "Authorization: token $TOKEN" \
       -H "Content-Type: application/java-archive" \
-      --data-binary "@target/mindpalace-1.0.0.jar" \
-      "https://uploads.github.com/repos/chrisalunlloyd2-sudo/mindpalace/releases/$RELEASE_ID/assets?name=mindpalace-1.0.0.jar" -o /dev/null
+      --data-binary "@$BUILD_JAR" \
+      "https://uploads.github.com/repos/chrisalunlloyd2-sudo/mindpalace/releases/$RELEASE_ID/assets?name=$(basename "$BUILD_JAR")" -o /dev/null
 fi
 
 echo "mindpalace-sync: pushed + release binary refreshed ($(date '+%H:%M'))"
@@ -104,8 +117,10 @@ echo "mindpalace-sync: pushed + release binary refreshed ($(date '+%H:%M'))"
 #    any java.exe still alive here is stale. Without this, a rebuild leaves
 #    the world dark (no live AgentManager/quorum loop) until someone
 #    notices and launches it by hand.
-if ! tasklist //FI "IMAGENAME eq java.exe" 2>/dev/null | grep -q java.exe; then
-    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar "$REPO/target/mindpalace-1.0.0.jar" \
+#    Frozen-jar rule: run a COPY, never target/ (next rebuild would swap it).
+if ! tasklist 2>/dev/null | grep -qiE "^java(w)?\.exe"; then
+    cp -f "$BUILD_JAR" "$REPO/mindpalace-live.jar"
+    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar "$REPO/mindpalace-live.jar" \
         > "$REPO/game_console.log" 2>&1 &
     disown
     echo "mindpalace-sync: relaunched live game (was not running)"

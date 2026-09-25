@@ -40,7 +40,7 @@ case "${1:-status}" in
     fi
     if [ ! -f "$LIVE" ]; then
       echo "[swarm] no frozen jar — copying from target"
-      cp -f "$REPO/target/mindpalace-1.0.0.jar" "$LIVE" || exit 1
+      cp -f "$(ls "$REPO"/target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)" "$LIVE" || exit 1
     fi
     echo "[swarm] launching frozen jar: $LIVE"
     cd "$REPO" || exit 1
