@@ -15,14 +15,20 @@ public class OAuthCallbackServer {
     private final int port;
     private final RedditOAuthClient reddit;
     private final Runnable onTokenReceived;
+    private final String expectedState;
     private ServerSocket serverSocket;
     private volatile boolean running = false;
     private ExecutorService executor;
 
     public OAuthCallbackServer(int port, RedditOAuthClient reddit, Runnable onTokenReceived) {
+        this(port, reddit, onTokenReceived, null);
+    }
+
+    public OAuthCallbackServer(int port, RedditOAuthClient reddit, Runnable onTokenReceived, String expectedState) {
         this.port = port;
         this.reddit = reddit;
         this.onTokenReceived = onTokenReceived;
+        this.expectedState = expectedState;
     }
 
     public void start() throws IOException {
@@ -73,6 +79,13 @@ public class OAuthCallbackServer {
             if (code == null || state == null) {
                 log("Missing code or state in callback");
                 sendError(writer, "Missing code or state");
+                return;
+            }
+
+            // CSRF validation: callback state must equal the state issued with the auth URL, fail-closed, refs #93
+            if (!state.equals(expectedState)) {
+                log("OAuth state mismatch - possible CSRF, rejecting callback");
+                sendError(writer, "Invalid state parameter");
                 return;
             }
 
