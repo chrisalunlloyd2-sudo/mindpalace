@@ -49,19 +49,16 @@ if ! cmd.exe /c "$MVN -DskipTests package" > "$LOGDIR/build.log" 2>&1; then
 fi
 log "build: OK"
 
-# ── 4. selftest ──────────────────────────────────────────────────────
-log "selftest: running"
-cp -f target/mindpalace-1.0.0.jar mindpalace-live.jar
-if ! timeout 110 "$JAVA" -Dprism.order=sw -Dprism.vsync=false \
-    -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
-    -jar mindpalace-live.jar --selftest > "$LOGDIR/selftest.log" 2>&1; then
-  log "SELFTEST FAILED — tail:"
-  tail -15 "$LOGDIR/selftest.log"
+# ── 4. selftest (H265: via test_bot — writes target/selftest_result.json) ──
+log "selftest: running (test_bot --run-selftest)"
+cp -f target/mindpalace-1.1.0-beta1-shaded.jar mindpalace-live.jar
+if ! timeout 110 python scripts/test_bot.py --run-selftest; then
+  log "SELFTEST FAILED — JSON evidence in target/selftest_result.json"
+  python scripts/test_bot.py --steplog || true   # post the failure too
   exit 1
 fi
-RESULT=$(grep -a "RESULT" "$LOGDIR/selftest.log" | tail -1)
+RESULT=$(grep -a "result" target/selftest_result.json | head -1)
 log "selftest: $RESULT"
-echo "$RESULT" | grep -q "PASS" || { log "selftest did not PASS"; exit 1; }
 
 # ── 5. E2E waypoint tour ────────────────────────────────────────────
 log "e2e: waypoint tour"
@@ -111,4 +108,9 @@ else
 fi
 
 log "CASCADE COMPLETE: $H_ID verified + shipped"
+
+# ── 8. H265 (step 86): selftest JSON → step-log ─────────────────────
+# The JSON was written in step 4 by test_bot --run-selftest; post it as
+# evidence. Failure here must not fail the cascade (evidence is bonus).
+python scripts/test_bot.py --steplog || log "steplog: post failed (non-fatal)"
 python scripts/scout_bot.py --metrics >/dev/null 2>&1 || true

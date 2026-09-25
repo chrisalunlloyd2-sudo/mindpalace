@@ -8,13 +8,17 @@ Modes:
                        unique colors > min). Exit 1 on failure.
   --run-selftest       Launch the frozen jar with --selftest, parse RESULT,
                        write target/selftest_result.json. Exit 1 on FAIL.
+  --steplog            (step 86) post the latest target/selftest_result.json
+                       to the step-log issue #9 as evidence. Reads the PAT
+                       from git credential manager (same path as scout_bot).
+                       Exit 1 on failure to post or missing JSON.
   --stress N           (H29) rapid synthetic teleport/input burst against
                        a LIVE game via the autodrive path — reports CME /
                        freeze detection from game_console.log.
 
 Quota-free: pure stdlib image + subprocess work. No LLM.
 """
-import json, struct, subprocess, sys, time, zlib
+import json, os, struct, subprocess, sys, time, zlib
 from pathlib import Path
 
 for _s in (sys.stdout, sys.stderr):
@@ -143,16 +147,18 @@ def run_selftest():
         jar = REPO / "target" / "mindpalace-1.0.0.jar"
     try:
         r = subprocess.run([JAVA, *JVM, "-jar", str(jar), "--selftest"],
-                           capture_output=True, text=True, timeout=120,
-                           cwd=str(REPO))
+                           capture_output=True, timeout=120, cwd=str(REPO))
     except subprocess.TimeoutExpired:
         r = None
     line = ""
-    blob = (r.stdout or "") + (r.stderr or "") if r else ""
+    # Console can carry non-UTF8 glyphs (box-drawing from game banners) —
+    # decode bytes with replacement instead of crashing the parse (found
+    # in step 86: 0x97 inside the loading banner killed the whole check).
+    blob = ((r.stdout or b"") + (r.stderr or b"")).decode("utf-8", errors="replace") if r else ""
     for l in blob.splitlines():
         if "RESULT" in l:
             line = l.strip()
-    ok = bool(r) and r.returncode == 0 and "PASS" in line
+    ok = bool(r) and r.returncode == 0 and "0 failed" in line
     out = {"ok": ok, "result": line, "returncode": r.returncode if r else None,
            "t": time.strftime("%Y-%m-%d %H:%M:%S")}
     (REPO / "target" / "selftest_result.json").write_text(
@@ -193,12 +199,57 @@ def stress(n):
     return 0 if verdict else 1
 
 
+def steplog():
+    """Step 86 (H265): post the latest selftest JSON to step-log issue #9.
+
+    Reads target/selftest_result.json (written by --run-selftest), renders
+    a compact evidence card, posts via gh. PAT from git credential manager
+    (same self-sufficient path as scout_bot --steplog). Quota-free.
+    """
+    jf = REPO / "target" / "selftest_result.json"
+    if not jf.exists():
+        print("no selftest_result.json — run --run-selftest first")
+        return 1
+    d = json.loads(jf.read_text(encoding="utf-8"))
+    verdict = "SELFTEST GREEN" if d.get("ok") else "SELFTEST FAILED"
+    body = (f"H265 selftest evidence — {d.get('t', '?')}\n\n"
+            f"- result: {d.get('result', '?')}\n"
+            f"- returncode: {d.get('returncode', '?')}\n"
+            f"- {verdict}\n\n"
+            f"Source: target/selftest_result.json (test_bot --run-selftest, quota-free).")
+    cmd = ["gh", "issue", "comment", "9", "-R", "chrisalunlloyd2-sudo/mindpalace", "--body", body]
+    env = {**os.environ}
+    if not env.get("GH_TOKEN") and not env.get("GITHUB_TOKEN"):
+        try:
+            r = subprocess.run(["git", "credential", "fill"],
+                               input="protocol=https\nhost=github.com\n\n",
+                               capture_output=True, text=True, timeout=30, cwd=str(REPO))
+            for line in r.stdout.splitlines():
+                if line.startswith("password="):
+                    env["GH_TOKEN"] = line.split("=", 1)[1].strip()
+                    break
+        except Exception as e:
+            print("credential lookup failed:", str(e)[:80])
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
+        if r.returncode == 0:
+            print("steplog posted:", r.stdout.strip()[-80:])
+            return 0
+        print("gh failed:", (r.stderr or r.stdout).strip()[:200])
+        return 1
+    except FileNotFoundError:
+        print("gh not on PATH")
+        return 1
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     if "--verify-shots" in args:
         sys.exit(verify_shots(args[args.index("--verify-shots") + 1]))
     elif "--run-selftest" in args:
         sys.exit(run_selftest())
+    elif "--steplog" in args:
+        sys.exit(steplog())
     elif "--stress" in args:
         sys.exit(stress(int(args[args.index("--stress") + 1])))
     else:
