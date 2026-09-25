@@ -16,6 +16,10 @@ import java.util.*;
  *                     is never written twice (via MemoryManager).
  *   2. TELEMETRY     — every operation is recorded on the append-only ledger.
  *   3. DETERMINISTIC — no randomness; the same call always does the same thing.
+ *   4. AST GATE      — agent-written Python is scanned for unresolved slots
+ *                     (syntax errors, `pass`/`raise NotImplementedError`
+ *                     stubs) before it can land — step 87 (BDI hardening),
+ *                     mirroring bdi_fsm.daemon.ASTInspector upstream.
  *
  * KISS: one class, one base path, four verbs. No GitHub here — that stays in
  * AgentManager; this is the local-checkout executor.
@@ -74,8 +78,20 @@ public final class ToolExecutor {
         if (mustBeNew && Files.exists(p)) return new ToolResult(false, "already exists: " + filename);
 
         // Never-twice: refuse to write identical content twice.
-        if (memory != null && !memory.recordCode(content, langOf(filename))) {
+        if (memory != null && !memory.recordCode(content, langOf(filename)))) {
             return new ToolResult(false, "never-twice: identical code already written");
+        }
+
+        // Step 87 (BDI hardening): AST gate on agent-written Python. Any
+        // unresolved slot (syntax error / pass / NotImplementedError stub)
+        // blocks the write, mirroring bdi_fsm.daemon.ASTInspector upstream.
+        if ("py".equals(langOf(filename)))) {
+            String gate = AstGate.scan(content);
+            if (gate != null) {
+                if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE,
+                    "ast-blocked", filename);
+                return new ToolResult(false, "ast-gate: " + gate);
+            }
         }
 
         Files.createDirectories(p.getParent());
