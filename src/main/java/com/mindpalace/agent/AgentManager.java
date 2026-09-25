@@ -1276,7 +1276,7 @@ public class AgentManager {
                 } catch (Exception e) {
                     log("[Reddit] ERROR starting bridge: " + e.getMessage());
                 }
-            });
+            }, state);
             oauthServer.start();
             String authUrl = redditClient.getAuthorizationUrl(state);
             log("[Reddit] OAuth initialized. Visit this URL to authorize:");
