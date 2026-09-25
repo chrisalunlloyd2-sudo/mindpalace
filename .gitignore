@@ -44,3 +44,6 @@ selftest_alice.log
 /commit_msg*.txt
 /pr_payload.json
 /pr_resp.json
+
+# hermes kanban worktrees (never commit)
+.worktrees/
