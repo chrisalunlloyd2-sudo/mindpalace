@@ -13,7 +13,7 @@ FLAGS="-Dprism.order=sw -Dprism.vsync=false -XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
 echo "[dev] building..."
 JAVA_HOME="$JAVA_HOME" "$MVN" -q -DskipTests package
-cp -f target/mindpalace-1.0.0.jar mindpalace-live.jar   # frozen-jar rule
+cp -f "$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE "original-|-shaded" | head -1)" mindpalace-live.jar   # frozen-jar rule
 
 case "${1:-run}" in
   selftest)

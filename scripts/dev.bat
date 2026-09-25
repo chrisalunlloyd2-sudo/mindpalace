@@ -19,7 +19,10 @@ if errorlevel 1 (
 )
 
 REM frozen-jar rule: run the copy, not the target artifact
-copy /Y target\mindpalace-1.0.0.jar mindpalace-live.jar >nul
+REM resolve by pattern (pom version bumps broke the hardcoded 1.0.0 name)
+for %%J in (target\mindpalace-*.jar) do (
+    echo %%~nxJ | findstr /I /C:"original-" /C:"-shaded" >nul || copy /Y "%%J" mindpalace-live.jar >nul
+)
 
 if "%1"=="selftest" (
     "%JAVA_HOME%\bin\java" %FLAGS% -jar mindpalace-live.jar --demo --selftest

@@ -19,18 +19,21 @@ echo "=== [1/4] BUILD ==="
 export JAVA_HOME
 cmd.exe /c "$MVN -DskipTests package" 2>&1 | grep -E "BUILD SUCCESS|BUILD FAILURE|ERROR" | tail -3
 grep -q "BUILD FAILURE" /dev/null 2>/dev/null; # noop
+# Resolve by glob: pom version changes (1.0.0 -> 1.1.0-beta1) broke the hardcoded name.
+BUILD_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE "original-|-shaded" | head -1)
+[ -n "$BUILD_JAR" ] || { echo "e2e: no built jar in target/"; exit 1; }
 
 echo "=== [2/4] SELFTEST ==="
 timeout 110 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
-  -jar target/mindpalace-1.0.0.jar --selftest > /tmp/e2e_selftest.log 2>&1
+  -jar "$BUILD_JAR" --selftest > /tmp/e2e_selftest.log 2>&1
 grep -a "RESULT" /tmp/e2e_selftest.log | tail -1
 
 echo "=== [3/4] E2E WAYPOINT TOUR ==="
 rm -rf "$DIR"; mkdir -p "$DIR"
 timeout 120 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
-  -jar target/mindpalace-1.0.0.jar --e2e "$DIR" > /tmp/e2e_tour.log 2>&1
+  -jar "$BUILD_JAR" --e2e "$DIR" > /tmp/e2e_tour.log 2>&1
 grep -aE "\[E2E\]|\[E2E-SHOT\]" /tmp/e2e_tour.log
 
 echo "=== [4/4] VERIFY SHOTS (exist + non-black) ==="
