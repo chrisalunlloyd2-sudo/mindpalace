@@ -32,6 +32,7 @@ public class ScoutNPC extends AgentNPC {
      *  starting index (same seed -> same start, same cycle thereafter). */
     public ScoutNPC(String name, long seed, List<Room> rooms, KnowledgeGraph kg) {
         super(name, Role.EXPLORER, seed, kg);
+        this.baseSeed = seed;
         this.visitOrder = rooms;
         Random rng = new Random(seed);
         this.visitIndex = rooms.isEmpty() ? 0 : rng.nextInt(rooms.size());
@@ -84,6 +85,56 @@ public class ScoutNPC extends AgentNPC {
     }
 
     public float getEmitCooldown() { return emitCooldown; }
+
+    // ── H31 (step 85): bot lifecycle — TTL, graceful retire, fresh respawn ─
+    // A bot is not immortal: after BOT_TTL_SECONDS of patrol it retires
+    // gracefully (one farewell line, wallet kept, never-twice ledger KEPT —
+    // credits survive the body), and a fresh-seeded successor spawns so the
+    // palace always has exactly one scout. Generation counter tracks lineage;
+    // the new seed = baseSeed + generation*1000 keeps patrol deterministic
+    // per generation while guaranteeing each generation starts somewhere new.
+    public static final float BOT_TTL_SECONDS = 180f; // 3 minutes of duty
+
+    private final long baseSeed;   // the seed given at first spawn
+    private int generation = 0;    // 0 = original, 1 = first respawn, ...
+    private float ageSeconds = 0f; // duty time this generation
+    private boolean retired = false; // graceful-retire flag (drains patrol)
+
+    /** Advance the duty clock. Call once per game-thread tick BEFORE
+     *  patrolTick. Returns true the tick this bot gracefully retires
+     *  (caller: emit farewell + spawn successor with the next generation). */
+    public boolean ageTick(float dt) {
+        if (retired) return false;
+        ageSeconds += dt;
+        if (ageSeconds >= BOT_TTL_SECONDS) {
+            retired = true;
+            return true;
+        }
+        return false;
+    }
+
+    /** True after ageTick() reported retirement — the NPC stops patrolling
+     *  but stays in the world one frame so the farewell line can render. */
+    public boolean isRetired() { return retired; }
+
+    /** The successor seed for this bot's next generation (deterministic). */
+    public long successorSeed() { return baseSeed + (generation + 1) * 1000L; }
+
+    /** Promote this instance to the next generation: new patrol start, duty
+     *  clock reset, retire flag cleared, lineage +1. The unique-visit ledger
+     *  is INTENTIONALLY kept — an economy memory must survive respawns. */
+    public void respawn() {
+        generation++;
+        Random rng = new Random(baseSeed + generation * 1000L);
+        this.visitIndex = visitOrder.isEmpty() ? 0 : rng.nextInt(visitOrder.size());
+        this.emitCooldown = DWELL;
+        this.ageSeconds = 0f;
+        this.retired = false;
+    }
+
+    public int getGeneration() { return generation; }
+    public float getAgeSeconds() { return ageSeconds; }
+    public float getTtlSeconds() { return BOT_TTL_SECONDS; }
 
     // ── Step 80 (H25): scout → quorum ──────────────────────────────────────
     // Each visit also becomes a quorum proposal ("scout suggests room X as a

@@ -252,14 +252,21 @@ public class FontRenderer {
                 // so text is NEVER mirrored/backwards regardless of viewing angle.
                 // Each glyph is offset along the camera's screen-right so the string
                 // lays out correctly in screen space.
-                float gy = position.y + i * charSize * 0f; // billboard stays flat upright; x advances along cameraRight
+                // H31-fix (step 85): JOML Matrix4f.set() is COLUMN-major — the
+                // translation (bx, gy, bz) MUST go in the 4th ARGUMENT GROUP
+                // (m30..m32). The old layout put it in the bottom ROW (w
+                // components), which transformPosition ignores for w=1 points,
+                // so EVERY billboard glyph rendered at the world origin —
+                // billboard text was effectively invisible from most of the
+                // map (the long-standing "no HUD text in screenshots" bug).
                 float bx = position.x + cameraRight.x * (i * charSize);
+                float by = position.y;
                 float bz = position.z + cameraRight.z * (i * charSize);
                 model.set(
-                    cameraRight.x,           0f, cameraForward.x,     bx,
-                    0f,                      1f, 0f,                      gy,
-                    cameraRight.z,           0f, cameraForward.z,       bz,
-                    0f,                      0f, 0f,                      1f
+                    cameraRight.x, 0f,               0f,               0f,
+                    0f,             1f,              0f,               0f,
+                    cameraForward.x, 0f,             cameraForward.z,  0f,
+                    bx,             by,              bz,               1f
                 );
                 model.scale(charSize, charSize * 1.6f, 1f);
             } else {

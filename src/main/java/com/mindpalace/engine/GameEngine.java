@@ -1799,6 +1799,11 @@ public class GameEngine {
             agentChat.render(renderer, fontRenderer, player.getCamera(), width, height);
         }
 
+        // H32 (step 85): bot roster — always-on lifecycle board, top-right.
+        if (state != GameState.MENU) {
+            renderBotBoard();
+        }
+
         // Render deploy animations
         if (animationSystem != null && animationSystem.isActive()) {
             animationSystem.render(renderer);
@@ -3104,6 +3109,58 @@ public class GameEngine {
             fontRenderer.renderBillboard(line, linePos, 0.05f,
                 new Vector3f(0.7f, 0.9f, 1.0f), proj, view, camPos);
             y -= 0.12f;
+        }
+    }
+
+    /** H32 (step 85): HUD bot board — the palace's always-on roster of bots.
+     *  Rendered top-right like the map overlay style: one line per bot NPC
+     *  with state, generation, duty age vs TTL, and (for the scout) the
+     *  never-twice ledger. Zero quota — pure read of live engine state on
+     *  the render thread. */
+    private void renderBotBoard() {
+        if (npcs.isEmpty()) return;
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+        Vector3f camFront = cam.getFront();
+        Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
+
+        // Anchor: top-right of the view, 2.5m ahead (mirrors the chat feed's
+        // depth so both HUD panels read at the same focal plane).
+        Vector3f anchor = new Vector3f(camPos)
+            .add(camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f)
+            .add(camRight.x * 1.35f, camRight.y * 1.35f, camRight.z * 1.35f)
+            .add(0f, 0.95f, 0f);
+
+        DePIN.Participant scoutWallet = depin != null ? depin.participant("Scout") : null;
+        int line = 0;
+        // renderBillboardOverlay (not renderBillboard): the roster is HUD — it
+        // must win over world geometry. With the depth-tested variant the
+        // 2.5m-anchored text z-fights the wall band at the top of the frame
+        // and vanishes (found in the step-85 e2e: ticks ran, zero pixels).
+        fontRenderer.renderBillboardOverlay("── BOT ROSTER ──",
+            new Vector3f(anchor.x, anchor.y - line * 0.10f, anchor.z), 0.045f,
+            new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
+        line++;
+        for (AgentNPC npc : npcs) {
+            String l;
+            Vector3f color = new Vector3f(0.8f, 0.8f, 0.8f);
+            if (npc instanceof ScoutNPC scout) {
+                l = String.format("%s  g%d  %3.0f/%3.0fs  %s  rooms %d  %.1fcr",
+                    scout.getName(), scout.getGeneration(), scout.getAgeSeconds(),
+                    scout.getTtlSeconds(), scout.getState(), scout.uniqueRoomsCredited(),
+                    scoutWallet != null ? scoutWallet.wallet.getBalance() : 0.0);
+                color = scout.isRetired()
+                    ? new Vector3f(1.0f, 0.4f, 0.3f)   // retiring = ember red
+                    : new Vector3f(1.0f, 0.9f, 0.3f);  // on patrol = firefly gold
+            } else {
+                l = String.format("%s  %s", npc.getName(), npc.getState());
+            }
+            fontRenderer.renderBillboardOverlay(l,
+                new Vector3f(anchor.x, anchor.y - line * 0.10f, anchor.z), 0.042f,
+                color, proj, view, camPos);
+            line++;
         }
     }
 
@@ -4562,6 +4619,49 @@ public class GameEngine {
         }
         if (ecoOk) pass++; else fail++;
 
+        // 33. H31 bot lifecycle (step 85) — ageTick reaches TTL exactly once,
+        //     retire flag set, respawn resets duty + advances generation with
+        //     a DETERMINISTIC new start (successorSeed math), and the
+        //     never-twice ledger survives the respawn (economy memory).
+        boolean lifeOk = false;
+        try {
+            com.mindpalace.entity.ScoutNPC scoutLife = new com.mindpalace.entity.ScoutNPC(
+                "ScoutLife", 77L, world.getRooms(), null);
+            Room roomL = world.getRooms().isEmpty() ? null : world.getRooms().get(0);
+            if (roomL != null) scoutLife.awardUniqueVisit(roomL); // ledger entry
+            int gen0 = scoutLife.getGeneration();
+            boolean preTtl = scoutLife.ageTick(1.0f);   // 1s — no retire
+            boolean noEarlyRetire = !preTtl && !scoutLife.isRetired();
+            boolean retireTick = scoutLife.ageTick(scoutLife.getTtlSeconds()); // jump past TTL
+            boolean retiredOnce = retireTick && scoutLife.isRetired();
+            boolean noDoubleRetire = !scoutLife.ageTick(10f); // drained: no second event
+            long seedNext = scoutLife.successorSeed();
+            boolean seedMath = seedNext == 77L + 1000L; // base + (0+1)*1000
+            scoutLife.respawn();
+            boolean genAdvanced = scoutLife.getGeneration() == gen0 + 1;
+            boolean dutyReset = scoutLife.getAgeSeconds() == 0f && !scoutLife.isRetired();
+            // Fresh generation must patrol again (cooldown reset) and the
+            // ledger must STILL contain the pre-respawn room (wallet memory).
+            boolean ledgerKept = scoutLife.uniqueRoomsCredited() >= 1;
+            boolean patrolsAgain = true;
+            float t = 0f;
+            for (int i = 0; i < 700 && patrolsAgain; i++) {
+                t += 0.1f;
+                patrolsAgain = scoutLife.patrolTick(0.1f) == null; // until first line
+                if (t > scoutLife.getTtlSeconds() + 1f) break;     // hard stop
+            }
+            lifeOk = noEarlyRetire && retiredOnce && noDoubleRetire && seedMath
+                && genAdvanced && dutyReset && ledgerKept && !patrolsAgain;
+            System.out.println((lifeOk ? "PASS" : "FAIL")
+                + " bot lifecycle (TTL once=" + retiredOnce + " drain=" + noDoubleRetire
+                + " seed " + seedNext + " gen=" + scoutLife.getGeneration()
+                + " duty reset=" + dutyReset + " ledger kept=" + ledgerKept
+                + " patrol resumed=" + !patrolsAgain + ")");
+        } catch (Exception e) {
+            System.out.println("FAIL bot lifecycle: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (lifeOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -4595,7 +4695,23 @@ public class GameEngine {
             // the game thread; one chat line per room arrival.
             // H25 (step 80): each visit is also a quorum proposal; an
             // APPROVED verdict spawns a TODO crystal at the visited room.
-            if (npc instanceof ScoutNPC scout && agentChat != null) {
+            if (npc instanceof ScoutNPC scout) {
+                // H31 (step 85): bot lifecycle — duty clock, graceful retire,
+                // fresh-seed respawn. Farewell line on the retire tick; the
+                // instance itself is promoted to the next generation (same
+                // body object, new seed, ledger kept — wallet survives).
+                if (scout.ageTick((float) dt)) {
+                    if (agentChat != null)
+                        agentChat.addBotEvent("Scout", "RETIRED",
+                            "generation " + scout.getGeneration() + " retiring after "
+                                + String.format("%.0f", scout.getAgeSeconds())
+                                + "s — wallet kept, fresh scout rising");
+                    System.out.println("[Scout] generation " + scout.getGeneration()
+                        + " retired (TTL " + String.format("%.0f", scout.getTtlSeconds())
+                        + "s, unique rooms credited=" + scout.uniqueRoomsCredited() + ")");
+                    scout.respawn();
+                }
+                if (agentChat != null && !scout.isRetired()) {
                 String visit = scout.patrolTick((float) dt);
                 if (visit != null) {
                     agentChat.addBotEvent("Scout", "VISIT", visit);
@@ -4642,6 +4758,7 @@ public class GameEngine {
                         }
                     }
                 }
+                } // close agentChat patrol guard (H31: retired bots skip patrol)
             }
             // Explorer picks up nearby crystals (snapshot — agent thread adds)
             if (npc.getRole() == AgentNPC.Role.EXPLORER && npc.getCarriedCrystal() == null) {
