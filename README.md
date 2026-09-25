@@ -282,7 +282,7 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
   org.codehaus.plexus.classworlds.launcher.Launcher clean package
 
 # Run
-"$JAVA_HOME/bin/java" -jar target/mindpalace-1.0.0.jar
+"$JAVA_HOME/bin/java" -jar "$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)"
 ```
 
 ### CLI Flags

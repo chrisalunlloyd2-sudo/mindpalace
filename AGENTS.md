@@ -33,7 +33,7 @@ system — the world is running right now, most hours of most days.
 ## Build & verify
 ```
 mvn clean compile              # compile check
-java -jar target/mindpalace-1.0.0.jar --selftest   # must report "0 failed"
+java -jar "$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)" --selftest   # must report "0 failed"
 bash e2e.sh                    # full build+selftest+waypoint-tour+screenshot verify
 ```
 `e2e.sh` and the game's own self-test are the real gate — a clean `mvn

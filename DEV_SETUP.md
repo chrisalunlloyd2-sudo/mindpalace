@@ -27,7 +27,7 @@ java -jar target/mindpalace-1.0.0.jar --selftest   # → 40 passed, 0 failed
 ```bash
 java -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
-  -jar target/mindpalace-1.0.0.jar
+  -jar mindpalace-live.jar   # frozen-jar rule: never run target/ (see below)
 ```
 
 Flags matter: `prism.order=sw` keeps Intel HD 510 stable; the G1GC floor
@@ -48,7 +48,8 @@ launch the game from `target/`, a mid-session rebuild swaps the jar under
 you → silent freeze. Always:
 
 ```bash
-cp target/mindpalace-1.0.0.jar mindpalace-live.jar
+JAR="$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)"
+cp "$JAR" mindpalace-live.jar
 java -jar mindpalace-live.jar   # run this
 ```
 

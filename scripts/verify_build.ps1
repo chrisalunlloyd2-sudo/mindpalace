@@ -57,9 +57,9 @@ Write-Host "`n== 5. BUILD SHADED JAR ==" -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { Write-Host "PACKAGE FAILED" -ForegroundColor Red; exit 1 }
 
 Write-Host "`n== 6. LAUNCH THE GAME ==" -ForegroundColor Cyan
-java -jar target\mindpalace-1.0.0.jar
+java -jar target\mindpalace-*.jar
 
 # one-liners if you prefer:
 #   compile+test only:  .\mvnw.cmd -q clean verify
 #   build only:         .\mvnw.cmd -q package -DskipTests
-#   run after build:    java -jar target\mindpalace-1.0.0.jar
+#   run after build:    java -jar target\mindpalace-*.jar
