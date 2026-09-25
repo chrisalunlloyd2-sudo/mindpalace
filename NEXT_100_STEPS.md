@@ -55,7 +55,7 @@
 - [x] **82** H28 unified bot chat format — scout/BDI/SLM share one log schema; quorum reads all (1fe9dc5; selftest 49/0; envelope round-trip verified)
 - [x] **83** H29 stress bot — rapid teleport/interaction bursts, CME hunt on live console (code live via 1a77ec2; stress 5 rounds CLEAN, STRESS_EXIT=0; selftest 49/0)
 - [x] **84** H30 scout economy — DePIN credits for unique visits; never-twice dedupe (f7c172e; selftest 50/0; wallet climbs 5.0/room live)
-- [ ] **85** H31 bot lifecycle — TTL, graceful retire, fresh-seed respawn; HUD bot board (H32)
+- [x] **85** H31 bot lifecycle — TTL, graceful retire, fresh-seed respawn; HUD bot board (H32) (568e7b2; selftest 51/0; + FIX: JOML column-major bug — billboard text drew at world origin, now all HUD text (roster, chat, prompts) renders; roster verified in e2e shot)
 - [ ] **86** H265 self-test harness in cascade — test_bot --run-selftest JSON posted to step-log
 - [ ] **87** BDI hardening — sync bdi_fsm tests green in cascade; ASTInspector gate on agent-written Python
 - [ ] **88** Bot metrics → step-log — weekly bot activity report comment (visits, credits, retirements)
