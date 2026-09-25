@@ -9,12 +9,49 @@ M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
 RELEASE_ID="372054705"
 cd "$REPO" || exit 1
 
+# 6b as a function so BOTH the nothing-to-ship early exit and the
+# after-push path can run it. Pushes model chat logs to the PRIVATE
+# archive repo (never public). Per-day files (chat-YYYY-MM-DD.jsonl) +
+# legacy chat.jsonl. Uses a PERSISTENT path under AIGEN_SYS (NOT /tmp,
+# which is wiped on reboot and silently dropped 4 days of logs). Uses
+# token auth + branch -M main so the push always targets the repo's
+# real default branch.
+sync_chat_logs() {
+    CHAT_REPO="/c/Users/viper/AIGEN_SYS/mindpalace-chat-logs"
+    if [ -d "chat_logs" ] && [ -n "$(ls chat_logs/*.jsonl 2>/dev/null)" ]; then
+        mkdir -p "$CHAT_REPO"
+        cp chat_logs/*.jsonl "$CHAT_REPO/" 2>/dev/null
+        if [ ! -d "$CHAT_REPO/.git" ]; then
+            git -C "$CHAT_REPO" init -q 2>/dev/null
+            git -C "$CHAT_REPO" remote add origin "https://github.com/chrisalunlloyd2-sudo/mindpalace-chat-logs.git" 2>/dev/null
+            git -C "$CHAT_REPO" pull -q origin main 2>/dev/null
+        fi
+        git -C "$CHAT_REPO" branch -M main 2>/dev/null
+        git -C "$CHAT_REPO" add -A 2>/dev/null
+        if ! git -C "$CHAT_REPO" diff --cached --quiet 2>/dev/null; then
+            git -C "$CHAT_REPO" commit -q -m "auto-sync chat logs $(date '+%Y-%m-%d %H:%M')" 2>/dev/null
+        fi
+        # Token-authenticated push so it can't fail on credential prompt / wrong branch.
+        TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | \
+          "C:/Users/viper/AppData/Local/hermes/git/mingw64/bin/git-credential-manager.exe" get 2>/dev/null | \
+          grep -E "^password=" | cut -d= -f2-)
+        if [ -n "$TOKEN" ]; then
+            git -C "$CHAT_REPO" push -q "https://chrisalunlloyd2-sudo:$TOKEN@github.com/chrisalunlloyd2-sudo/mindpalace-chat-logs.git" main 2>/dev/null \
+                && echo "mindpalace-sync: chat logs pushed ($(ls chat_logs/*.jsonl 2>/dev/null | wc -l) files)" \
+                || echo "mindpalace-sync: chat log push FAILED"
+        fi
+    fi
+}
+
 # 1. Pull remote (fast-forward only, never clobber local work)
 git pull --ff-only origin main >/dev/null 2>&1
 
 # 2. Any local changes to ship?
 if [ -z "$(git status --porcelain)" ] && [ -z "$(git log --oneline origin/main..HEAD 2>/dev/null)" ]; then
-    # Nothing to do — stay quiet (watchdog pattern: empty stdout = silent)
+    # Nothing to ship — but chat logs still sync on their own schedule
+    # (fix 2026-09-25: early exit used to skip step 6b entirely, so logs
+    # only landed on GitHub on days when source code also changed).
+    sync_chat_logs
     exit 0
 fi
 
@@ -60,35 +97,9 @@ fi
 # 6. Push source
 git push origin main >/dev/null 2>&1
 
-# 6b. Push model chat logs to the PRIVATE archive repo (never public).
-#     Per-day files (chat-YYYY-MM-DD.jsonl) + legacy chat.jsonl.
-#     Uses a PERSISTENT path under AIGEN_SYS (NOT /tmp, which is wiped on reboot
-#     and silently dropped 4 days of logs). Uses token auth + branch -M main so
-#     the push always targets the repo's real default branch.
-CHAT_REPO="/c/Users/viper/AIGEN_SYS/mindpalace-chat-logs"
-if [ -d "chat_logs" ] && [ -n "$(ls chat_logs/*.jsonl 2>/dev/null)" ]; then
-    mkdir -p "$CHAT_REPO"
-    cp chat_logs/*.jsonl "$CHAT_REPO/" 2>/dev/null
-    if [ ! -d "$CHAT_REPO/.git" ]; then
-        git -C "$CHAT_REPO" init -q 2>/dev/null
-        git -C "$CHAT_REPO" remote add origin "https://github.com/chrisalunlloyd2-sudo/mindpalace-chat-logs.git" 2>/dev/null
-        git -C "$CHAT_REPO" pull -q origin main 2>/dev/null
-    fi
-    git -C "$CHAT_REPO" branch -M main 2>/dev/null
-    git -C "$CHAT_REPO" add -A 2>/dev/null
-    if ! git -C "$CHAT_REPO" diff --cached --quiet 2>/dev/null; then
-        git -C "$CHAT_REPO" commit -q -m "auto-sync chat logs $(date '+%Y-%m-%d %H:%M')" 2>/dev/null
-    fi
-    # Token-authenticated push so it can't fail on credential prompt / wrong branch.
-    TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | \
-      "C:/Users/viper/AppData/Local/hermes/git/mingw64/bin/git-credential-manager.exe" get 2>/dev/null | \
-      grep -E "^password=" | cut -d= -f2-)
-    if [ -n "$TOKEN" ]; then
-        git -C "$CHAT_REPO" push -q "https://chrisalunlloyd2-sudo:$TOKEN@github.com/chrisalunlloyd2-sudo/mindpalace-chat-logs.git" main 2>/dev/null \
-            && echo "mindpalace-sync: chat logs pushed ($(ls chat_logs/*.jsonl 2>/dev/null | wc -l) files)" \
-            || echo "mindpalace-sync: chat log push FAILED"
-    fi
-fi
+# 6b. Push model chat logs to the PRIVATE archive repo (same logic as the
+#     early-exit path — see sync_chat_logs() at top).
+sync_chat_logs
 
 # 7. Refresh release binary (delete old asset, upload new)
 TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | \
