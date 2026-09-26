@@ -171,14 +171,21 @@ public class OllamaClient {
                             JsonObject tc = el.getAsJsonObject();
                             JsonObject fn = tc.getAsJsonObject("function");
                             String name = fn.get("name").getAsString();
-                            String args = fn.has("arguments") ? fn.get("arguments").getAsString() : "{}";
+                            // CARD-Q1 F1: Ollama returns arguments as a JSON
+                            // OBJECT; getAsString() throws and killed every
+                            // tool round. Accept both shapes.
+                            JsonElement a = fn.has("arguments") ? fn.get("arguments") : null;
+                            String args = (a == null || a.isJsonNull()) ? "{}"
+                                : a.isJsonPrimitive() ? a.getAsString() : a.toString();
                             calls.add(new ToolCall(name, args));
                         }
                     }
                     return new ToolResult(content, calls);
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // CARD-Q1 F1: RuntimeException (UnsupportedOperationException,
+            // NPE, JsonSyntaxException) must not silently kill the round.
             return new ToolResult(null, List.of());
         }
     }

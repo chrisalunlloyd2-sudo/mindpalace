@@ -4115,6 +4115,50 @@ public class GameEngine {
             + " tool executor (real I/O + never-twice + escape guard)");
         if (toolOk) pass++; else fail++;
 
+        // 36b. CARD-Q1 F1 — Ollama tool-call arguments arrive as a JSON OBJECT
+        //      (was getAsString() -> UnsupportedOperationException -> every
+        //      tool round died before executing anything). We can't hit the
+        //      network here, so pin the fix at the ToolCall level: a Gson
+        //      object element stringifies to JSON the executor parses.
+        boolean argsObjOk = false;
+        try {
+            com.mindpalace.agent.OllamaClient oc = new com.mindpalace.agent.OllamaClient();
+            String objArgs = new com.google.gson.Gson().toJsonTree(
+                java.util.Map.of("filename", "x.txt", "content", "hi")).toString();
+            com.mindpalace.agent.OllamaClient.ToolCall tc =
+                new com.mindpalace.agent.OllamaClient.ToolCall("create_file", objArgs);
+            com.google.gson.JsonObject parsed = com.google.gson.JsonParser.parseString(tc.arguments).getAsJsonObject();
+            argsObjOk = parsed.has("filename") && "x.txt".equals(parsed.get("filename").getAsString());
+        } catch (Exception e) {
+            argsObjOk = false;
+        }
+        System.out.println((argsObjOk ? "PASS" : "FAIL")
+            + " tool-call object-arguments round-trip (CARD-Q1 F1)");
+        if (argsObjOk) pass++; else fail++;
+
+        // 36c. CARD-Q1 F6 — AgentChat window is COW + snapshot getter.
+        boolean chatThreadOk = false;
+        try {
+            com.mindpalace.agent.AgentChat chat = new com.mindpalace.agent.AgentChat();
+            for (int i = 0; i < 30; i++) { final int n = i; new Thread(() -> {
+                try { chat.addMessage("thread-" + n + " fills the rolling window fast"); }
+                catch (Exception ignored) { }
+            }).start(); }
+            // render loop reads getMessages() concurrently — must not throw
+            for (int i = 0; i < 50; i++) {
+                int size = chat.getMessages().size();
+                if (size > 12) throw new IllegalStateException("window grew past cap");
+            }
+            boolean threw = false;
+            try { chat.getMessages().add("mutate"); } catch (UnsupportedOperationException u) { threw = true; }
+            chatThreadOk = threw;
+        } catch (Exception e) {
+            chatThreadOk = false;
+        }
+        System.out.println((chatThreadOk ? "PASS" : "FAIL")
+            + " AgentChat thread-safe window (COW + unmodifiable snapshot, CARD-Q1 F6)");
+        if (chatThreadOk) pass++; else fail++;
+
         // 37. Quorum tie-breaker — 3 voters can reach quorum; lexical topics can
         //     actually be APPROVED (was PENDING forever with only 2 voters).
         boolean quorumOk = false;

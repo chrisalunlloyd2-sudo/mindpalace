@@ -19,7 +19,11 @@ import java.nio.file.*;
  * private repo — the "LLM model chats" archive.
  */
 public class AgentChat {
-    private final List<String> messages = new ArrayList<>();
+    // CARD-Q1 F6: written from three non-game threads (scheduler drain
+    // worker, userWorker, critic callback) while render() iterates on the
+    // game thread. CopyOnWriteArrayList + snapshot getter closes the
+    // CME/IndexOutOfBounds window; 12-entry rolling window makes COW free.
+    private final List<String> messages = new java.util.concurrent.CopyOnWriteArrayList<>();
     private static final int MAX_MESSAGES = 12;   // rolling window
     private static final int MAX_LEN = 96;        // truncate long lines
 
@@ -213,5 +217,6 @@ public class AgentChat {
     }
 
     public boolean isOpen() { return true; } // always on
-    public List<String> getMessages() { return messages; }
+    /** CARD-Q1 F6: unmodifiable snapshot — callers must not mutate the live window. */
+    public List<String> getMessages() { return java.util.Collections.unmodifiableList(messages); }
 }

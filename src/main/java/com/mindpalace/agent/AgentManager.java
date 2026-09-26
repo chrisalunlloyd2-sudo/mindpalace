@@ -909,7 +909,8 @@ public class AgentManager {
                     }
                     // Local fallback
                     if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Path fp = java.nio.file.Path.of(currentRoom.getLocalPath(), filename);
+                        java.nio.file.Path fp = jailedLocalPath(filename);
+                        if (fp == null) return "path escapes repo: " + filename;
                         if (java.nio.file.Files.exists(fp)) {
                             String c = java.nio.file.Files.readString(fp);
                             if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "read", filename);
@@ -954,7 +955,9 @@ public class AgentManager {
                         return ok ? "edited " + filename : "edit failed";
                     }
                     if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), finalContent);
+                        java.nio.file.Path fp = jailedLocalPath(filename);
+                        if (fp == null) return "path escapes repo: " + filename;
+                        java.nio.file.Files.writeString(fp, finalContent);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
                         return "edited " + filename + " (local)";
                     }
@@ -971,7 +974,9 @@ public class AgentManager {
                         return ok ? "created " + filename : "create failed";
                     }
                     if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), content);
+                        java.nio.file.Path fp = jailedLocalPath(filename);
+                        if (fp == null) return "path escapes repo: " + filename;
+                        java.nio.file.Files.writeString(fp, content);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename);
                         return "created " + filename + " (local)";
                     }
@@ -984,7 +989,9 @@ public class AgentManager {
                         return ok ? "deleted " + filename : "delete failed";
                     }
                     if (currentRoom.getLocalPath() != null) {
-                        boolean ok = java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(currentRoom.getLocalPath(), filename));
+                        java.nio.file.Path fp = jailedLocalPath(filename);
+                        if (fp == null) return "path escapes repo: " + filename;
+                        boolean ok = java.nio.file.Files.deleteIfExists(fp);
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
                         return ok ? "deleted " + filename + " (local)" : "delete failed (no such file)";
                     }
@@ -1082,6 +1089,24 @@ public class AgentManager {
 
     // ── Tool definitions ──
 
+    /**
+     * CARD-Q1 F9 (path jail): resolve a model-supplied filename against the
+     * current room's local checkout, refusing escapes. Mirrors ToolExecutor's
+     * invariant: normalize() must stay inside the repo root; absolute paths
+     * and {@code ../} traversals are rejected. Returns null when the filename
+     * escapes (caller reports and refuses the operation).
+     */
+    private java.nio.file.Path jailedLocalPath(String filename) {
+        if (filename == null || currentRoom == null || currentRoom.getLocalPath() == null) return null;
+        try {
+            java.nio.file.Path root = java.nio.file.Path.of(currentRoom.getLocalPath()).toAbsolutePath().normalize();
+            java.nio.file.Path p = root.resolve(filename).normalize();
+            return p.startsWith(root) ? p : null;
+        } catch (Exception e) {
+            return null; // invalid path (e.g. absolute with wrong root)
+        }
+    }
+
     /** H05: fetch current file content (github first, then local) for patch edits. */
     private String readCurrentFile(String repo, String filename) {
         if (github != null && github.isAuthenticated()) {
@@ -1091,8 +1116,8 @@ public class AgentManager {
         }
         if (currentRoom != null && currentRoom.getLocalPath() != null) {
             try {
-                java.nio.file.Path fp = java.nio.file.Path.of(currentRoom.getLocalPath(), filename);
-                if (java.nio.file.Files.exists(fp)) return java.nio.file.Files.readString(fp);
+                java.nio.file.Path fp = jailedLocalPath(filename);
+                if (fp != null && java.nio.file.Files.exists(fp)) return java.nio.file.Files.readString(fp);
             } catch (Exception ignored) { }
         }
         return null;
