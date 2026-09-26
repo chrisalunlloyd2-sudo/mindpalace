@@ -42,7 +42,7 @@ import sys, os, struct, zlib
 d = sys.argv[1]
 labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gauge","05_main_hall",
           "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad",
-          "11_nash_fountain","12_door_prompt","13_plugboard"]
+          "11_floor2_picker","12_nash_fountain","13_door_prompt","14_plugboard"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:
@@ -110,16 +110,16 @@ else:
           + ("OK" if ok else "HUE-FAIL"))
     if not ok: fail += 1
 
-# Unified interaction prompt hue assertion (TASK 0002) — the 12_door_prompt
+# Unified interaction prompt hue assertion (TASK 0002) — the 13_door_prompt
 # shot stands 1.5m from a repo door facing it, so the magenta prompt
 # ("[ENTER] Open door: ...") must render HUD-anchored above view center.
 # Prompt color = (1.0, 0.2, 0.9) — the ONLY magenta HUD text (wallet is gold,
 # room info cyan, hotkeys grey), so b and r both high with g low is a clean
 # signature. Sample the middle band; require >40 hits (a text line at
 # 1920x1080 with 0.065 char size yields hundreds; control shots have ~0).
-prompt = [f for f in os.listdir(d) if f.startswith("12_door_prompt")] if os.path.isdir(d) else []
+prompt = [f for f in os.listdir(d) if f.startswith("13_door_prompt")] if os.path.isdir(d) else []
 if not prompt:
-    print("MISSING 12_door_prompt hue check"); fail += 1
+    print("MISSING 13_door_prompt hue check"); fail += 1
 else:
     w, h, raw, stride = load_png(os.path.join(d, prompt[0]))
     magenta = 0

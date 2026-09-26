@@ -4940,7 +4940,7 @@ public class GameEngine {
             case 11 -> { // nash fountain — courtyard pool beside the rotor rings
                 p.set(3.5f, hallY + 1.7f, hallZ0 - 10f);
                 cam.setYaw(0); cam.setPitch(-5);
-                if (shoot) { captureLabeled("11_nash_fountain"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("12_nash_fountain"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 12 -> { // door prompt — the unified interaction prompt at a repo door
                 // Stand ~1.5m in front of the FIRST room's door (side 0 doors

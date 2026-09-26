@@ -78,14 +78,13 @@ public final class ToolExecutor {
         if (mustBeNew && Files.exists(p)) return new ToolResult(false, "already exists: " + filename);
 
         // Never-twice: refuse to write identical content twice.
-        if (memory != null && !memory.recordCode(content, langOf(filename)))) {
+        if (memory != null && !memory.recordCode(content, langOf(filename))) {
             return new ToolResult(false, "never-twice: identical code already written");
         }
-
         // Step 87 (BDI hardening): AST gate on agent-written Python. Any
         // unresolved slot (syntax error / pass / NotImplementedError stub)
         // blocks the write, mirroring bdi_fsm.daemon.ASTInspector upstream.
-        if ("py".equals(langOf(filename)))) {
+        if ("py".equals(langOf(filename))) {
             String gate = AstGate.scan(content);
             if (gate != null) {
                 if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE,
