@@ -28,17 +28,22 @@ sync_chat_logs() {
         fi
         git -C "$CHAT_REPO" branch -M main 2>/dev/null
         git -C "$CHAT_REPO" add -A 2>/dev/null
+        COMMITTED=0
         if ! git -C "$CHAT_REPO" diff --cached --quiet 2>/dev/null; then
-            git -C "$CHAT_REPO" commit -q -m "auto-sync chat logs $(date '+%Y-%m-%d %H:%M')" 2>/dev/null
+            git -C "$CHAT_REPO" commit -q -m "auto-sync chat logs $(date '+%Y-%m-%d %H:%M')" 2>/dev/null && COMMITTED=1
         fi
         # Token-authenticated push so it can't fail on credential prompt / wrong branch.
+        # Push runs every tick (idempotent, catches up failed pushes), but stay
+        # watchdog-silent when there was nothing new to commit.
         TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | \
           "C:/Users/viper/AppData/Local/hermes/git/mingw64/bin/git-credential-manager.exe" get 2>/dev/null | \
           grep -E "^password=" | cut -d= -f2-)
         if [ -n "$TOKEN" ]; then
-            git -C "$CHAT_REPO" push -q "https://chrisalunlloyd2-sudo:$TOKEN@github.com/chrisalunlloyd2-sudo/mindpalace-chat-logs.git" main 2>/dev/null \
-                && echo "mindpalace-sync: chat logs pushed ($(ls chat_logs/*.jsonl 2>/dev/null | wc -l) files)" \
-                || echo "mindpalace-sync: chat log push FAILED"
+            if [ "$COMMITTED" = "1" ]; then
+                git -C "$CHAT_REPO" push -q "https://chrisalunlloyd2-sudo:$TOKEN@github.com/chrisalunlloyd2-sudo/mindpalace-chat-logs.git" main 2>/dev/null \
+                    && echo "mindpalace-sync: chat logs pushed ($(ls chat_logs/*.jsonl 2>/dev/null | wc -l) files)" \
+                    || echo "mindpalace-sync: chat log push FAILED"
+            fi
         fi
     fi
 }
