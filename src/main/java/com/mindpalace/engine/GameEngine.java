@@ -396,7 +396,14 @@ public class GameEngine {
         // Size the window to the ACTUAL monitor, not a hardcoded 1920x1080.
         // On a 1536x864 display (125% DPI) a 1920x1080 window is larger than the
         // screen and gets cropped into a zoomed "tunnel" view that reads as VR.
-        var vm0 = GLFW.glfwGetVideoMode(GLFW.glfwGetPrimaryMonitor());
+        // Session-0 note: services / headless shells have NO monitor —
+        // glfwGetPrimaryMonitor() returns NULL and passing NULL into
+        // glfwGetVideoMode NPEs. Guard the HANDLE (not just the result) so
+        // --selftest can run from headless sessions; windowed creation still
+        // works there (hidden window station), console sessions keep the
+        // monitor-accurate sizing.
+        long mon0 = GLFW.glfwGetPrimaryMonitor();
+        var vm0 = mon0 != MemoryUtil.NULL ? GLFW.glfwGetVideoMode(mon0) : null;
         if (vm0 != null) {
             width = vm0.width();
             height = vm0.height();
@@ -5598,6 +5605,79 @@ public class GameEngine {
             }
         }
         if (ledgerOk) pass++; else fail++;
+
+        // 54. Doors — Enter opens the facing door and it NEVER auto-closes
+        //     (t_cf0c461b spec: "open on Enter, never auto-close").
+        //     Drive the REAL Enter path (injectKeyPress → player.update) to
+        //     open the nearest door, then simulate 10 seconds of game ticks
+        //     and assert the door is still fully open — exitRoom() must
+        //     never call closeDoor() (regression guard for the old
+        //     open/close hammering cycle).
+        boolean doorOk = false;
+        try {
+            Room doorRoom = null;
+            for (Room rm : world.getRooms()) {
+                if (rm.getDoorPosition() != null) { doorRoom = rm; break; }
+            }
+            if (doorRoom != null) {
+                state = GameState.PLAYING;
+                // Hermetic reset: teleportToPad clears currentRoom (earlier
+                // selftests may leave the player inside a room — Enter would
+                // then take the exitRoom branch and never reach findDoor),
+                // and update(1.5) decays teleportCooldown/interactCooldown
+                // to 0. Mirrors the passing teleporter-behavior test's setup.
+                player.teleportToPad(0, world);
+                update(1.5);
+                // Stand within findDoor()'s 3m reach of the door, outside
+                // the room (currentRoom == null), matching exitRoom()'s
+                // convention: side-0 doors approached from dp.x + 1.2.
+                Vector3f dp0 = doorRoom.getDoorPosition();
+                // Reveal the door hex — findDoor() skips fogged rooms whose
+                // hex is unrevealed, and update(1.5) revealed the pad area.
+                world.getFogOfWar().reveal(dp0);
+                float approachX = doorRoom.getHallwaySide() == 0 ? dp0.x + 1.2f : dp0.x - 1.2f;
+                player.getCamera().setPosition(approachX, 1.6f, dp0.z);
+                player.getCamera().setYaw(doorRoom.getHallwaySide() == 0 ? 0f : 180f);
+                player.update(0.016, input, world); // settle physics/ground clamp
+                input.injectKeyPress(GLFW.GLFW_KEY_ENTER);
+                input.update(0.016);                // merge into keys[]
+                player.update(0.016, input, world); // Enter → findDoor → enterRoom → openDoor
+                boolean opened = player.getCurrentRoom() == doorRoom
+                    && doorRoom.getDoorAnimTarget() >= 1f;
+                // 10s wall-clock sim (100 × 0.1s ticks): door must STAY open.
+                // Full dt path also exercises updateDoorAnimation in update().
+                // Persistence invariant: doorAnimTarget stays 1 for the whole
+                // 10s — an auto-close would revert it to 0. The panel slides
+                // at 3 u/s (~0.4s to fully open), so doorOpenAmount is only
+                // checked AFTER the full 10s: checking it per-tick would break
+                // out while the open animation is still in flight (which also
+                // stranded interactCooldown > 0 and swallowed the exit Enter).
+                boolean stillOpen = true;
+                for (int i = 0; i < 100; i++) {
+                    update(0.1); // real update(): door animation ticks live
+                    if (doorRoom.getDoorAnimTarget() < 1f) { stillOpen = false; break; }
+                }
+                boolean fullyOpen10s = doorRoom.getDoorAnimTarget() >= 1f
+                    && doorRoom.getDoorOpenAmount() > 0.99f;
+                // Second Enter (exit) must ALSO leave the door open.
+                input.injectKeyPress(GLFW.GLFW_KEY_ENTER);
+                input.update(0.016);
+                player.update(0.016, input, world);
+                update(0.1);
+                boolean exitKeptOpen = player.getCurrentRoom() == null
+                    && doorRoom.getDoorOpenAmount() > 0.99f;
+                doorOk = opened && stillOpen && fullyOpen10s && exitKeptOpen;
+                System.out.println((doorOk ? "PASS" : "FAIL")
+                    + " door open-on-Enter never-auto-close (opened=" + opened
+                    + " stillOpen10s=" + stillOpen + " exitKeptOpen=" + exitKeptOpen + ")");
+            } else {
+                System.out.println("FAIL door persistence (no room with a door)");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL door persistence: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (doorOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

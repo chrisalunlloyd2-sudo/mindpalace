@@ -106,6 +106,7 @@ public class Room {
 
     // Door animation
     public float getDoorOpenAmount() { return doorOpenAmount; }
+    public float getDoorAnimTarget() { return doorAnimTarget; }
     public void openDoor() { doorAnimTarget = 1f; }
     public void closeDoor() { doorAnimTarget = 0f; }
     public void updateDoorAnimation(float dt) {
