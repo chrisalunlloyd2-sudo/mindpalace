@@ -32,20 +32,29 @@ sync_chat_logs() {
         if ! git -C "$CHAT_REPO" diff --cached --quiet 2>/dev/null; then
             git -C "$CHAT_REPO" commit -q -m "auto-sync chat logs $(date '+%Y-%m-%d %H:%M')" 2>/dev/null && COMMITTED=1
         fi
-        # Token-authenticated push so it can't fail on credential prompt / wrong branch.
-        # Push runs every tick (idempotent, catches up failed pushes), but stay
-        # watchdog-silent when there was nothing new to commit.
+        # Token-authenticated push so it can't fail on credential prompt / wrong
+        # branch. Push when there is new data OR when an earlier push failed and
+        # commits are still pending (catch-up). Stay watchdog-silent otherwise —
+        # a silent tick means nothing changed and nothing is pending.
         TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | \
           "C:/Users/viper/AppData/Local/hermes/git/mingw64/bin/git-credential-manager.exe" get 2>/dev/null | \
           grep -E "^password=" | cut -d= -f2-)
-        if [ -n "$TOKEN" ]; then
-            if [ "$COMMITTED" = "1" ]; then
-                git -C "$CHAT_REPO" push -q "https://chrisalunlloyd2-sudo:$TOKEN@github.com/chrisalunlloyd2-sudo/mindpalace-chat-logs.git" main 2>/dev/null \
-                    && echo "mindpalace-sync: chat logs pushed ($(ls chat_logs/*.jsonl 2>/dev/null | wc -l) files)" \
-                    || echo "mindpalace-sync: chat log push FAILED"
+        NEED_PUSH=$COMMITTED
+        if [ "$(git -C "$CHAT_REPO" rev-list --count origin/main..main 2>/dev/null)" != "0" ]; then
+            NEED_PUSH=1
+        fi
+        if [ -n "$TOKEN" ] && [ "$NEED_PUSH" = "1" ]; then
+            if git -C "$CHAT_REPO" push -q "https://chrisalunlloyd2-sudo:$TOKEN@github.com/chrisalunlloyd2-sudo/mindpalace-chat-logs.git" main 2>/dev/null; then
+                [ "$COMMITTED" = "1" ] && echo "mindpalace-sync: chat logs pushed ($(ls chat_logs/*.jsonl 2>/dev/null | wc -l) files)"
+            else
+                echo "mindpalace-sync: chat log push FAILED"
             fi
         fi
     fi
+    # Explicit rc: the trailing `[ ... ] && echo` pattern would otherwise leak
+    # a 1 on catch-up pushes with no new commit. Both call sites tolerate it,
+    # but the function should not have a surprise contract.
+    return 0
 }
 
 # 1. Pull remote (fast-forward only, never clobber local work)
