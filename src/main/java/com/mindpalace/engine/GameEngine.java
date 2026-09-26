@@ -3396,9 +3396,9 @@ public class GameEngine {
         float hitRate = placedBooks > 0 ? (float) clickableBooks / placedBooks : 0f;
         if (clickableRooms > 0 && hitRate >= 0.9f) pass++; else fail++;
 
-        // 3. Teleporter pads exist (one per floor, including the top)
-        int pads = world.getHallways().size();
-        boolean padsOk = pads == world.getHallways().size() && pads > 0;
+        // 3. Teleporter pads exist (one per floor except top; count from WorldBuilder)
+        int pads = world.getTeleporterPads().size();
+        boolean padsOk = pads == world.getHallways().size() - 1 && pads > 0;
         System.out.println((padsOk ? "PASS" : "FAIL") + " teleporter pads: " + pads
             + "/" + world.getHallways().size() + " floors");
         if (padsOk) pass++; else fail++;
