@@ -31,6 +31,8 @@ public class BloomEffect {
     private int sceneFbo, sceneTex, sceneDepthRbo;
     private int blurFboA, blurTexA;
     private int blurFboB, blurTexB;
+    // offscreen composite-test target (default-FB readbacks are flaky on HD 510)
+    private int compTestFbo, compTestTex;
     private int quadVao, quadVbo, quadEbo;
 
     private Shader brightShader, blurShader, compositeShader;
@@ -300,9 +302,19 @@ public class BloomEffect {
         return sum / (float) (width * height);
     }
 
-    /** Diagnostic: composite scene+bloom to the default framebuffer, read GL_BACK. */
+    /** Diagnostic: composite scene+bloom into a scratch OFFSCREEN FBO and read
+     *  it back. Reading the default framebuffer here proved flaky on Intel
+     *  HD 510: when the game window is occluded during selftest, the driver
+     *  returns black for default-FB readbacks (seen as composite=0.0001 vs
+     *  125.41 on identical code/jar — nondeterministic across runs). The
+     *  visible composite still happens in end(); this validates that the
+     *  composite shader itself produces non-black scene+bloom output. */
     public float debugCompositeLuminance() {
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+        if (compTestFbo == 0) {
+            compTestTex = createTexture();
+            compTestFbo = createFbo(compTestTex, false);
+        }
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, compTestFbo);
         GL11.glViewport(0, 0, width, height);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
@@ -317,9 +329,10 @@ public class BloomEffect {
         drawQuad();
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glEnable(GL11.GL_CULL_FACE);
-        GL11.glReadBuffer(GL11.GL_BACK);
+        GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
         java.nio.ByteBuffer bb = org.lwjgl.BufferUtils.createByteBuffer(width * height * 4);
         GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, bb);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
         long sum = 0;
         for (int i = 0; i < width * height * 4; i++) sum += (bb.get(i) & 0xFF);
         return sum / (float) (width * height * 4);
@@ -333,6 +346,11 @@ public class BloomEffect {
         GL30.glDeleteFramebuffers(blurFboA);
         GL30.glDeleteFramebuffers(blurFboB);
         if (sceneDepthRbo != 0) GL30.glDeleteRenderbuffers(sceneDepthRbo);
+        if (compTestFbo != 0) {
+            GL30.glDeleteFramebuffers(compTestFbo);
+            GL11.glDeleteTextures(compTestTex);
+            compTestFbo = 0; compTestTex = 0;
+        }
     }
 
     public void cleanup() {
