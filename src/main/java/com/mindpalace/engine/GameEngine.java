@@ -170,6 +170,7 @@ public class GameEngine {
     private boolean e2eMode;
     private int e2eWaypoint = 0;
     private double e2ePhaseTimer = 0;
+    private boolean e2eMansionDone; // waypoint 17: one-shot teleport so logs print once
     private String screenshotDir;
     private int shotCounter;
     private double shotTimer;
@@ -431,8 +432,19 @@ public class GameEngine {
         world.setDemoMode(demoMode);
         world.build();
 
+        // t_b2e9bc3f: register the static building boxes NOW, not on the first
+        // culled render pass — spawn validation below (and the selftest) must
+        // see real colliders. Idempotent; the render path calls it again safely.
+        world.getOutsideWorld().registerStaticColliders();
+
         // Start the day at the mansion (player home) in the outside world.
         player.teleportToMansion(world);
+        // t_b2e9bc3f: the mansion teleport used to land ON the mansion box's
+        // +Z face (z = -172 with the box ending there) — insideSolid()'s
+        // player-radius pad made the spawn cell solid and resolveAxis() kept
+        // reverting every frame, so WASD was dead from frame one. Validate the
+        // spawn cell and BFS-nudge to the nearest free cell when it's solid.
+        player.ensureSpawnFree(world);
 
         loadingText = "Populating bookshelves...";
         loadingProgress = 0.7f;
@@ -4408,6 +4420,69 @@ public class GameEngine {
             + " spawn validation (position + WASD movement: z " + before.z + " -> " + after.z + ")");
         if (spawnOk) pass++; else fail++;
 
+        // 26b. t_b2e9bc3f: spawn position is not inside collision geometry —
+        //     across all fixture rooms + outside. Checks: (a) the mansion
+        //     teleport spawn (startup path) is walkable; (b) every teleporter
+        //     pad destination; (c) every fixture room's interior teleport
+        //     point; (d) the legacy hallway spawn (0, -50). Eager collider
+        //     registration guarantees the boxes exist regardless of render
+        //     culling order.
+        boolean spawnGeoOk = true;
+        world.getOutsideWorld().registerStaticColliders(); // idempotent
+        OutsideWorld owGeo = world.getOutsideWorld();
+        float rGeo = 0.35f;
+        // (a) startup spawn: re-run the real teleport + validation pair
+        player.teleportToMansion(world);
+        boolean mansionNudged = player.ensureSpawnFree(world);
+        Vector3f mSpawn = player.getPosition();
+        if (owGeo.insideSolid(mSpawn.x, mSpawn.z, rGeo)
+            || owGeo.insideHouseSolid(mSpawn.x, mSpawn.z, rGeo)) {
+            spawnGeoOk = false;
+            System.out.println("  mansion spawn STILL solid at ("
+                + mSpawn.x + ", " + mSpawn.z + ")");
+        }
+        if (mansionNudged) System.out.println("  (mansion spawn was solid and was BFS-nudged free)");
+        // (b) every teleporter pad must land the player on a walkable cell
+        int padChecked = 0;
+        for (Vector3f pad : world.getTeleporterPads()) {
+            float padTopZ = Math.max(OutsideWorld.MIN_Z, Math.min(OutsideWorld.MAX_Z, pad.z));
+            if (owGeo.insideSolid(pad.x, padTopZ, rGeo)
+                || owGeo.insideHouseSolid(pad.x, padTopZ, rGeo)) {
+                spawnGeoOk = false;
+                System.out.println("  pad solid at (" + pad.x + ", " + pad.z + ")");
+            }
+            padChecked++;
+        }
+        // (c) every fixture room's interior point (the teleportIntoRoom spot)
+        //     must land inside the room footprint — exercises the real API.
+        int roomChecked = 0;
+        for (Room rm : world.getRooms()) {
+            if (rm.getRoomCenter() == null) continue;
+            player.teleportIntoRoom(rm);
+            Vector3f pp = player.getPosition();
+            Vector3f c = rm.getRoomCenter();
+            float rw = Room.ROOM_WIDTH / 2f;
+            float rd = Room.ROOM_DEPTH / 2f;
+            if (Math.abs(pp.x - c.x) > rw || Math.abs(pp.z - c.z) > rd) {
+                spawnGeoOk = false;
+                System.out.println("  room interior point outside footprint: " + rm.getDisplayLabel()
+                    + " (player " + pp.x + "," + pp.z + " vs center " + c.x + "," + c.z + ")");
+            }
+            roomChecked++;
+        }
+        // (d) legacy hallway spawn (0, -50) — deep in the hall, must stay free
+        if (owGeo.insideSolid(0f, -50f, rGeo) || owGeo.insideHouseSolid(0f, -50f, rGeo)) {
+            spawnGeoOk = false;
+            System.out.println("  legacy hall spawn (0, -50) solid");
+        }
+        System.out.println((spawnGeoOk ? "PASS" : "FAIL")
+            + " spawn geometry: mansion spawn + " + padChecked + " pads + "
+            + roomChecked + " rooms + legacy hall spawn all walkable (t_b2e9bc3f)");
+        if (spawnGeoOk) pass++; else fail++;
+        // Restore the real startup spawn for any later check that reads it
+        player.teleportToMansion(world);
+        player.ensureSpawnFree(world);
+
         // #39 hermeticity: --demo must be zero-network end to end (refs #39, #40).
         // #43 (Alice 2026-09-14): the assert is ABOUT demo mode - live-mode auth+poller
         // are correct behavior, so gate the check on demoMode instead of failing live
@@ -5022,8 +5097,22 @@ public class GameEngine {
                 }
                 if (shoot) { captureLabeled("17_hall_windows"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            case 17 -> { // t_b2e9bc3f — real mansion spawn, post-nudge view
+                // One-shot: run the exact startup path (teleport + BFS spawn
+                // validation) so the shot proves the player is OUTSIDE the
+                // mansion shell, not stuck in the collider face at z=-172.
+                // Face the mansion (yaw 180 = -Z in flat-world basis… actually
+                // the spawn sits south of the mansion, +Z toward it, so yaw 0).
+                if (!e2eMansionDone) {
+                    player.teleportToMansion(world);
+                    player.ensureSpawnFree(world);
+                    e2eMansionDone = true;
+                }
+                cam.setYaw(0); cam.setPitch(2f); // face the mansion front
+                if (shoot) { captureLabeled("18_mansion_spawn"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 17 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 18 waypoints captured. Exiting.");
                 cleanup();
                 System.exit(0);
             }

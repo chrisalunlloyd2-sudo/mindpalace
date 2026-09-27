@@ -70,6 +70,24 @@ public class OutsideWorld {
     private final java.util.List<Box> colliders = new java.util.ArrayList<>();
     private final java.util.List<Box> houses = new java.util.ArrayList<>(); // doorway boxes
 
+    /**
+     * Register the three static building boxes (mansion, hospital, factory).
+     * Idempotent. Previously these were registered lazily during their first
+     * CULLED render pass (colliders.size()==N guards in the render methods),
+     * so a spawn validation at init time saw an empty collider list and the
+     * mansion spawn (t_b2e9bc3f: camera landed on the mansion's +Z face) went
+     * unvalidated. Call before any gameplay or validation reads colliders;
+     * the render paths also call it, so registration order no longer matters.
+     */
+    private boolean staticCollidersRegistered = false;
+    public void registerStaticColliders() {
+        if (staticCollidersRegistered) return;
+        staticCollidersRegistered = true;
+        addBox(colliders, mansionPos.x, mansionPos.z, 22f, 16f);   // matches renderMansion shell
+        addBox(colliders, hospitalPos.x, hospitalPos.z, 18f, 12f); // matches renderHospital
+        addBox(colliders, factoryPos.x, factoryPos.z, 30f, 20f);   // matches renderFactory
+    }
+
     /** Register a solid building box. Called during scene build. */
     private void addBox(java.util.List<Box> list, float cx, float cz, float w, float d) {
         list.add(new Box(cx, cz, w, d));
@@ -518,8 +536,9 @@ public class OutsideWorld {
         float w = 22f, d = 16f, h = 7f;
         float cy = floorY + h / 2f, t = 0.3f;
 
-        // Collider (registered once — H13b: the mansion is solid)
-        if (colliders.isEmpty()) addBox(colliders, mx, mz, w, d);
+        // Collider registered eagerly in registerStaticColliders() (H13b: the
+        // mansion is solid; t_b2e9bc3f: registration must not depend on a
+        // culled render pass).
 
         // Foundation
         r.drawCube(new Vector3f(mx, floorY + 0.1f, mz), new Vector3f(w, 0.2f, d), Renderer.TEX_CONCRETE);
@@ -558,7 +577,7 @@ public class OutsideWorld {
         float hx = hospitalPos.x, hz = hospitalPos.z;
         float w = 18f, d = 12f, h = 6f;
         float cy = floorY + h / 2f, t = 0.3f;
-        if (colliders.size() == 1) addBox(colliders, hx, hz, w, d); // H13b: solid
+        // Collider registered eagerly in registerStaticColliders() (H13b: solid)
         r.drawCube(new Vector3f(hx, floorY + 0.1f, hz), new Vector3f(w, 0.2f, d), Renderer.TEX_CONCRETE);
         r.drawCube(new Vector3f(hx, cy, hz - d / 2f), new Vector3f(w, h, t), Renderer.TEX_WHITE);
         r.drawCube(new Vector3f(hx, cy, hz + d / 2f), new Vector3f(w, h, t), Renderer.TEX_WHITE);
@@ -582,7 +601,7 @@ public class OutsideWorld {
         float fx = factoryPos.x, fz = factoryPos.z;
         float w = 30f, d = 20f, h = 8f;
         float cy = floorY + h / 2f, t = 0.3f;
-        if (colliders.size() == 2) addBox(colliders, fx, fz, w, d); // H13b: solid
+        // Collider registered eagerly in registerStaticColliders() (H13b: solid)
         // Industrial shell
         r.drawCube(new Vector3f(fx, floorY + 0.1f, fz), new Vector3f(w, 0.2f, d), Renderer.TEX_CONCRETE);
         r.drawCube(new Vector3f(fx, cy, fz - d / 2f), new Vector3f(w, h, t), Renderer.TEX_METAL);
