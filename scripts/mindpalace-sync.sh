@@ -57,7 +57,31 @@ sync_chat_logs() {
     return 0
 }
 
-# 1. Pull remote (fast-forward only, never clobber local work)
+# 1. Pre-flight sweep (nothing lives forever / one game at a time).
+#    The early-exit path below used to leave stray java alive for hours:
+#    2026-09-27 a hung --selftest java sat for 3h — blocked relaunch, froze
+#    telemetry, fooled the monitor's game_running check. Kill ANY java
+#    older than 30 min at tick start; the real game gets relaunched in
+#    step 8 if it was legitimately running.
+for img in java.exe javaw.exe; do
+    wmic process where "name='$img'" get processid,creationdate 2>/dev/null \
+      | grep -E "20[0-9]{12}" \
+      | while read -r cdate pid; do
+            # wmic CreationDate: 20260927074420.xxx-420 → compare as epoch
+            y=${cdate:0:4}; mo=${cdate:4:2}; d=${cdate:6:2}
+            h=${cdate:8:2}; mi=${cdate:10:2}; s=${cdate:12:2}
+            cepoch=$(date -d "$y-$mo-$d $h:$mi:$s" +%s 2>/dev/null) || continue
+            now=$(date +%s)
+            age=$(( now - cepoch ))
+            if [ "$age" -gt 1800 ]; then
+                taskkill //F //PID "$pid" 2>/dev/null \
+                  && echo "mindpalace-sync: reaped stale $img pid=$pid (age ${age}s)"
+            fi
+        done
+done
+sleep 2
+
+# 1b. Pull remote (fast-forward only, never clobber local work)
 git pull --ff-only origin main >/dev/null 2>&1
 
 # 2. Any local changes to ship?
@@ -101,8 +125,12 @@ if [ -z "$BUILD_JAR" ]; then
     exit 1
 fi
 
-# 5. Self-test gate
-SELFTEST=$("$JAVA_HOME/bin/java" -jar "$BUILD_JAR" --selftest 2>&1)
+# 5. Self-test gate — HARD TIMEOUT. A hung selftest used to wedge this
+#    pipeline forever (2026-09-27: zombie java for 3h, telemetry frozen,
+#    real game never relaunched). 420s ≈ 3x the measured normal run
+#    (2m16s on 2026-09-27); `timeout` kills the process tree on hang.
+#    Slow is fine — but nothing runs forever.
+SELFTEST=$(timeout 420 "$JAVA_HOME/bin/java" -jar "$BUILD_JAR" --selftest 2>&1)
 if ! echo "$SELFTEST" | grep -q "0 failed"; then
     echo "mindpalace-sync: SELFTEST FAILED — not pushing"
     exit 1
@@ -143,7 +171,12 @@ echo "mindpalace-sync: pushed + release binary refreshed ($(date '+%H:%M'))"
 #    the world dark (no live AgentManager/quorum loop) until someone
 #    notices and launches it by hand.
 #    Frozen-jar rule: run a COPY, never target/ (next rebuild would swap it).
-if ! tasklist 2>/dev/null | grep -qiE "^java(w)?\.exe"; then
+#    Gate on a REAL game process (mindpalace jar on the command line), not
+#    bare tasklist: a stray java (selftest, build helper) used to count as
+#    "game running" and silently suppressed relaunch for hours.
+GAME_PID=$(wmic process where "name='javaw.exe' or name='java.exe'" get processid,commandline 2>/dev/null \
+  | grep -i "mindpalace" | grep -oE "[0-9]+\s*$" | head -1)
+if [ -z "$GAME_PID" ]; then
     cp -f "$BUILD_JAR" "$REPO/mindpalace-live.jar"
     JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar "$REPO/mindpalace-live.jar" \
         > "$REPO/game_console.log" 2>&1 &

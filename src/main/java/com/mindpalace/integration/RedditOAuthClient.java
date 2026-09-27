@@ -23,7 +23,12 @@ public class RedditOAuthClient {
     private final String subreddit;
     private String accessToken;
     private long tokenExpiresAt = 0;
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    // connectTimeout so a dead/hung endpoint can never wedge the caller
+    // forever (java.net.http defaults to NO timeout). readTimeout is set
+    // per-request at the send() sites via HttpRequest.timeout().
+    private final HttpClient httpClient = HttpClient.newBuilder()
+        .connectTimeout(java.time.Duration.ofSeconds(10))
+        .build();
 
     public RedditOAuthClient(String clientId, String clientSecret, String redirectUri, String subreddit) {
         this.clientId = clientId;
@@ -57,6 +62,7 @@ public class RedditOAuthClient {
             .uri(URI.create(REDDIT_AUTH_URL))
             .header("User-Agent", USER_AGENT)
             .header("Authorization", basicAuth(clientId, clientSecret))
+            .timeout(java.time.Duration.ofSeconds(30))
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build();
 
@@ -78,6 +84,7 @@ public class RedditOAuthClient {
             .uri(URI.create(REDDIT_AUTH_URL))
             .header("User-Agent", USER_AGENT)
             .header("Authorization", basicAuth(clientId, clientSecret))
+            .timeout(java.time.Duration.ofSeconds(30))
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build();
 
@@ -103,6 +110,7 @@ public class RedditOAuthClient {
             .uri(URI.create(url))
             .header("User-Agent", USER_AGENT)
             .header("Authorization", "Bearer " + accessToken)
+            .timeout(java.time.Duration.ofSeconds(30))
             .GET()
             .build();
 
