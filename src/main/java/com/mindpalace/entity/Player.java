@@ -39,6 +39,7 @@ public class Player {
     private int padFloor = -1;      // floor of the pad the player is standing on (-1 = none)
     private boolean onPlanetPad = false; // standing on the planet's return pad
     private boolean noclip = false;  // free-fly (no collision, no gravity) for testing
+    private boolean mansionInterior = false; // H13c: inside the mansion shell
 
     public Player() {
         camera = new Camera();
@@ -54,6 +55,8 @@ public class Player {
     public void setChatTyping(boolean t) { this.chatTyping = t; }
     public void setNoclip(boolean n) { this.noclip = n; }
     public boolean isNoclip() { return noclip; }
+    /** H13c: mansion interior mode — collide() clamps to the shell, not solids. */
+    public void setMansionInterior(boolean m) { this.mansionInterior = m; }
 
     public void update(double dt, Input input, WorldBuilder world) {
         float dtf = (float) dt;
@@ -211,6 +214,20 @@ public class Player {
         float hw = WorldBuilder.HALLWAY_WIDTH / 2f - 0.1f;
 
         if (currentRoom == null) {
+            // H13c mansion interior: the shell is ONE solid AABB with no
+            // doorway strip, so H13b resolution freezes every spot inside.
+            // While interior mode is on, skip solids and clamp to the inner
+            // shell face — same pattern as the room clamp further down.
+            if (mansionInterior) {
+                Vector3f m = world.getOutsideWorld().getMansionPos();
+                float iw = 11f - r - 0.15f;  // half-width minus wall half-thickness
+                float id = 8f - r - 0.15f;   // half-depth minus wall half-thickness
+                if (next.x < m.x - iw) next.x = m.x - iw;
+                if (next.x > m.x + iw) next.x = m.x + iw;
+                if (next.z < m.z - id) next.z = m.z - id;
+                if (next.z > m.z + id) next.z = m.z + id;
+                return next;
+            }
             // Open world: free roam within the big outside bounds (no corridor
             // clamp). The player can walk the full 300×250m world.
             if (world.isInOpenWorld(next.x, next.z)) {
@@ -361,6 +378,7 @@ public class Player {
         if (floor < 0 || floor >= world.getHallways().size()) return;
         Hallway hw = world.getHallways().get(floor);
         currentRoom = null;
+        mansionInterior = false;
         // Arrive standing on the destination floor's pad, facing back down the
         // hallway. Landing at the hallway start meant pads emitted but never
         // received, so they never formed a network. The teleportCooldown below
@@ -382,6 +400,7 @@ public class Player {
         if (padIndex < 0 || padIndex >= pads.size()) return;
         Vector3f pad = pads.get(padIndex);
         currentRoom = null;
+        mansionInterior = false;
         camera.setPosition(pad.x, pad.y + EYE_HEIGHT, pad.z);
         camera.setYaw(0);
         camera.setPitch(0);
@@ -397,7 +416,14 @@ public class Player {
     public void teleportToMansion(WorldBuilder world) {
         Vector3f m = world.getOutsideWorld().getMansionPos();
         currentRoom = null;
-        camera.setPosition(m.x, m.y + EYE_HEIGHT, m.z + 8f);
+        mansionInterior = false; // spawn is the front yard, not the shell
+        // Spawn 4m in front of the grand door (-Z face). The old +Z offset
+        // (m.z + 8) landed exactly ON the mansion wall face — inside the
+        // H13b collider — so resolveAxis saw every escape blocked and
+        // reverted all movement: player spawned in a wall, could not move.
+        // -12 clears the collider (footprint ends at m.z - 8) AND the
+        // door re-trigger zone (m.z - 9 ± 3).
+        camera.setPosition(m.x, m.y + EYE_HEIGHT, m.z - 12f);
         camera.setYaw(0);
         camera.setPitch(0);
         velocity.set(0, 0, 0);
@@ -412,6 +438,7 @@ public class Player {
         if (world.getHallways().isEmpty()) return;
         Hallway hw = world.getHallways().get(0);
         currentRoom = null;
+        mansionInterior = false;
         // Outside sits at frontZ - 48 on floor 0 (see WorldBuilder.renderOutside)
         float outZ = hw.getStart().z - 2.0f - 48.0f + 12.0f;
         camera.setPosition(0f, hw.getStart().y + EYE_HEIGHT, outZ);
@@ -427,6 +454,7 @@ public class Player {
     /** Teleport onto the planet surface (radial gravity open world). */
     public void teleportToPlanet(WorldBuilder world) {
         currentRoom = null;
+        mansionInterior = false;
         world.setPlanetActive(true);
         Vector3f c = world.getPlanetCenter();
         float R = world.getPlanetRadius();

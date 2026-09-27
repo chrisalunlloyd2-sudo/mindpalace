@@ -951,10 +951,13 @@ public class GameEngine {
                     inMansion = !inMansion;
                     mansionCooldown = 0.5;
                     if (inMansion) {
+                        // H13c: interior mode frees the shell (one solid AABB).
+                        player.setMansionInterior(true);
                         player.getCamera().setPosition(m.x, m.y + 1.6f, m.z + 2f);
                         player.getCamera().setYaw(180);
                         System.out.println("[MANSION] Entered the mansion");
                     } else {
+                        player.setMansionInterior(false);
                         player.getCamera().setPosition(m.x, m.y + 1.6f, m.z - 10f);
                         player.getCamera().setYaw(0);
                         System.out.println("[MANSION] Left the mansion");
@@ -4451,6 +4454,39 @@ public class GameEngine {
         System.out.println((spawnOk ? "PASS" : "FAIL")
             + " spawn validation (position + WASD movement: z " + before.z + " -> " + after.z + ")");
         if (spawnOk) pass++; else fail++;
+
+        // 26b. H13c regression — the REAL spawn path. Test #26 only exercises
+        // the constructor spawn; the shipped bug was teleportToMansion landing
+        // ON the mansion collider face (m.z + 8 → fully boxed in, W did
+        // nothing) while 53/0 stayed green. Verify: (1) the mansion spawn is
+        // outside the H13b collider and a W-frame moves; (2) interior mode
+        // makes the shell walkable from the Enter-toggle entry point.
+        boolean mansionOk = true;
+        float radius = 0.3f; // Player.RADIUS (private)
+        player.teleportToMansion(world);
+        Vector3f atMansion = player.getPosition();
+        if (world.getOutsideWorld().insideSolid(atMansion.x, atMansion.z, radius)) {
+            mansionOk = false; // spawned inside a solid → every move reverts
+        }
+        Vector3f mBefore = new Vector3f(player.getPosition()); // yaw=0 → front +Z
+        input.injectKeyPress(GLFW.GLFW_KEY_W);
+        input.update(0.016);
+        player.update(0.016, input, world);
+        if (player.getPosition().z <= mBefore.z) mansionOk = false;
+        // Interior mode: the Enter-toggle entry point must be walkable.
+        Vector3f mPos = world.getOutsideWorld().getMansionPos();
+        player.setMansionInterior(true);
+        player.getCamera().setPosition(mPos.x, 1.6f, mPos.z + 2f);
+        player.getCamera().setYaw(0);
+        Vector3f iBefore = new Vector3f(player.getPosition());
+        input.injectKeyPress(GLFW.GLFW_KEY_W);
+        input.update(0.016);
+        player.update(0.016, input, world);
+        if (player.getPosition().z <= iBefore.z) mansionOk = false;
+        player.setMansionInterior(false);
+        System.out.println((mansionOk ? "PASS" : "FAIL")
+            + " mansion spawn regression (teleport outside collider + interior walkable)");
+        if (mansionOk) pass++; else fail++;
 
         // #39 hermeticity: --demo must be zero-network end to end (refs #39, #40).
         // #43 (Alice 2026-09-14): the assert is ABOUT demo mode - live-mode auth+poller
