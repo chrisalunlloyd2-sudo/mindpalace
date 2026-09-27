@@ -89,10 +89,15 @@ sleep 2
 #     crashed hours ago while ticks kept taking the nothing-to-ship exit —
 #     2026-09-27 the world sat dark all morning because only the rebuild
 #     path relaunched it. Slow is fine; dark forever is not.
-GAME_PID=$(wmic process where "name='javaw.exe' or name='java.exe'" get processid,commandline 2>/dev/null \
-  | grep -i "mindpalace" | grep -oE "[0-9]+\s*$" | head -1)
+GAME_PID=$(wmic process where "name='javaw.exe' or name='java.exe'" get processid,commandline,threadcount 2>/dev/null \
+  | grep -i "mindpalace" | awk '$NF==1{next} {print $(NF-1)}' | head -1)
 if [ -z "$GAME_PID" ] && [ -f "mindpalace-live.jar" ]; then
-    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar "$REPO/mindpalace-live.jar" \
+    # Windows javaw cannot open MSYS paths (/c/Users/...) — pass the jar
+    # RELATIVE (cwd is $REPO). 2026-09-27: every relaunch used "$REPO/..."
+    # → 'Unable to access jarfile' → 1-thread javaw error dialog that sat
+    # there forever AND fooled game_running. The world was never dark
+    # because of a crash — it was dark because relaunch always failed.
+    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar mindpalace-live.jar \
         >> "$REPO/game_console.log" 2>&1 &
     disown
     echo "mindpalace-sync: world was dark — relaunched live game (self-heal)"
@@ -192,11 +197,12 @@ echo "mindpalace-sync: pushed + release binary refreshed ($(date '+%H:%M'))"
 #    Gate on a REAL game process (mindpalace jar on the command line), not
 #    bare tasklist: a stray java (selftest, build helper) used to count as
 #    "game running" and silently suppressed relaunch for hours.
-GAME_PID=$(wmic process where "name='javaw.exe' or name='java.exe'" get processid,commandline 2>/dev/null \
-  | grep -i "mindpalace" | grep -oE "[0-9]+\s*$" | head -1)
+GAME_PID=$(wmic process where "name='javaw.exe' or name='java.exe'" get processid,commandline,threadcount 2>/dev/null \
+  | grep -i "mindpalace" | awk '$NF==1{next} {print $(NF-1)}' | head -1)
 if [ -z "$GAME_PID" ]; then
-    cp -f "$BUILD_JAR" "$REPO/mindpalace-live.jar"
-    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar "$REPO/mindpalace-live.jar" \
+    cp -f "$BUILD_JAR" mindpalace-live.jar
+    # jar path RELATIVE (Windows javaw can't open MSYS /c/... paths — see step 1b)
+    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar mindpalace-live.jar \
         > "$REPO/game_console.log" 2>&1 &
     disown
     echo "mindpalace-sync: relaunched live game (was not running)"

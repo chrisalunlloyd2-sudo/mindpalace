@@ -75,7 +75,8 @@ package` alone is not proof of anything working.
   `AnimationSystem`.
 
 ## Where data lives
-- `mindpalace_memory/telemetry.db` — SQLite, table `events(id, ts, category,
+- `AIGEN_SYS/mindpalace_memory/telemetry.db` (i.e. `C:\Users\viper\AIGEN_SYS\mindpalace_memory\telemetry.db`,
+  NOT inside the repo) — SQLite, table `events(id, ts, category,`
   event, detail)`, categories: agent/quorum/depin/system. Append-only ledger.
 - `mindpalace_memory/memory.db`, `mindpalace_memory/evolution/` — GA archive
   (gen-N.json/.wav pairs), grows over time; not yet pruned.
