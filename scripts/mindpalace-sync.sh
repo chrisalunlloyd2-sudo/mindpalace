@@ -60,12 +60,15 @@ sync_chat_logs() {
 # 1. Pre-flight sweep (nothing lives forever / one game at a time).
 #    The early-exit path below used to leave stray java alive for hours:
 #    2026-09-27 a hung --selftest java sat for 3h — blocked relaunch, froze
-#    telemetry, fooled the monitor's game_running check. Kill ANY java
-#    older than 30 min at tick start; the real game gets relaunched in
-#    step 8 if it was legitimately running.
+#    telemetry, fooled the monitor's game_running check.
+#    Reap any java older than 30 min EXCEPT the real live game
+#    (mindpalace-live.jar / mindpalace-*.jar on its command line) — killing
+#    the game here would cycle the world every 30 min on the early-exit
+#    path where step 8 never runs. Strays die; the game lives.
 for img in java.exe javaw.exe; do
-    wmic process where "name='$img'" get processid,creationdate 2>/dev/null \
+    wmic process where "name='$img'" get processid,creationdate,commandline 2>/dev/null \
       | grep -E "20[0-9]{12}" \
+      | grep -ivE "mindpalace" \
       | while read -r cdate pid; do
             # wmic CreationDate: 20260927074420.xxx-420 → compare as epoch
             y=${cdate:0:4}; mo=${cdate:4:2}; d=${cdate:6:2}
@@ -81,7 +84,22 @@ for img in java.exe javaw.exe; do
 done
 sleep 2
 
-# 1b. Pull remote (fast-forward only, never clobber local work)
+# 1b. Self-heal: if the world is dark (no real mindpalace game process),
+#     relaunch the live jar BEFORE the early-exit test. The game may have
+#     crashed hours ago while ticks kept taking the nothing-to-ship exit —
+#     2026-09-27 the world sat dark all morning because only the rebuild
+#     path relaunched it. Slow is fine; dark forever is not.
+GAME_PID=$(wmic process where "name='javaw.exe' or name='java.exe'" get processid,commandline 2>/dev/null \
+  | grep -i "mindpalace" | grep -oE "[0-9]+\s*$" | head -1)
+if [ -z "$GAME_PID" ] && [ -f "mindpalace-live.jar" ]; then
+    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar "$REPO/mindpalace-live.jar" \
+        >> "$REPO/game_console.log" 2>&1 &
+    disown
+    echo "mindpalace-sync: world was dark — relaunched live game (self-heal)"
+    sleep 5
+fi
+
+# 1c. Pull remote (fast-forward only, never clobber local work)
 git pull --ff-only origin main >/dev/null 2>&1
 
 # 2. Any local changes to ship?
