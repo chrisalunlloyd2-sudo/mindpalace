@@ -57,9 +57,14 @@ Write-Host "`n== 5. BUILD SHADED JAR ==" -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { Write-Host "PACKAGE FAILED" -ForegroundColor Red; exit 1 }
 
 Write-Host "`n== 6. LAUNCH THE GAME ==" -ForegroundColor Cyan
-java -jar target\mindpalace-*.jar
+# PowerShell does NOT expand globs in command arguments — java.exe would
+# receive a literal '*' and fail. Resolve the jar with Get-ChildItem.
+$jar = Get-ChildItem target\mindpalace-*.jar |
+    Where-Object { $_.Name -notmatch 'original-|-shaded' } |
+    Select-Object -First 1
+java -jar $jar.FullName
 
 # one-liners if you prefer:
 #   compile+test only:  .\mvnw.cmd -q clean verify
 #   build only:         .\mvnw.cmd -q package -DskipTests
-#   run after build:    java -jar target\mindpalace-*.jar
+#   run after build:    resolve $jar as in step 6, then java -jar $jar.FullName

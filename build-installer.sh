@@ -17,9 +17,21 @@ REPO="/c/Users/viper/AIGEN_SYS/repos/mindpalace"
 REPO_WIN="C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace"
 JAVA_HOME="C:/Program Files/Java/jdk-17"
 JPACKAGE="$JAVA_HOME/bin/jpackage.exe"
-JAR="$REPO/target/mindpalace-1.1.0-beta1.jar"
+# Resolve jar by glob — the pom version moves (1.0.0 -> 1.1.0-beta1 -> ...)
+# and hardcoded names silently break the installer (same bug class as the
+# jar-swap fix cbb33ad).
+JAR=$(ls "$REPO"/target/mindpalace-*.jar 2>/dev/null | grep -vE 'original-|-shaded' | head -1)
+if [ -z "$JAR" ]; then
+    echo "no built jar in target/ (build step below produces it) — will retry after build"
+    JAR=""
+fi
 APP_NAME="MindPalace"
-APP_VERSION="1.1.0-beta1"
+# Derive the app version from the resolved jar name (mindpalace-<ver>.jar).
+if [ -n "$JAR" ]; then
+    APP_VERSION=$(basename "$JAR" .jar | sed 's/^mindpalace-//')
+else
+    APP_VERSION=$(sed -n 's|<version>\(.*\)</version>|\1|p' "$REPO/pom.xml" | head -1)
+fi
 MAIN_CLASS="com.mindpalace.Main"
 OUT_DIR="$REPO/installer"
 OUT_DIR_WIN="C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\installer"
@@ -30,7 +42,7 @@ ICON_WIN="C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\installer\\MindPalace\
 cd "$REPO"
 
 # 1. Ensure the jar is built
-if [ ! -f "$JAR" ]; then
+if [ -z "$JAR" ]; then
     echo "jar not found — building first..."
     export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
     "$JAVA_HOME/bin/java" -cp "$M2_HOME/boot/plexus-classworlds-2.11.0.jar" \
@@ -38,7 +50,11 @@ if [ ! -f "$JAR" ]; then
       "-Dmaven.home=$M2_HOME" \
       "-Dmaven.multiModuleProjectDirectory=$REPO" \
       org.codehaus.plexus.classworlds.launcher.Launcher clean package
+    JAR=$(ls "$REPO"/target/mindpalace-*.jar 2>/dev/null | grep -vE 'original-|-shaded' | head -1)
+    APP_VERSION=$(basename "$JAR" .jar | sed 's/^mindpalace-//')
 fi
+[ -n "$JAR" ] || { echo "build ran but no jar in target/ — aborting"; exit 1; }
+JAR_NAME=$(basename "$JAR")
 
 mkdir -p "$OUT_DIR"
 
@@ -51,7 +67,7 @@ ICON_ARG=()
   --name "$APP_NAME" \
   --app-version "$APP_VERSION" \
   --input "$REPO_WIN\\target" \
-  --main-jar "mindpalace-1.1.0-beta1.jar" \
+  --main-jar "$JAR_NAME" \
   --main-class "$MAIN_CLASS" \
   --dest "$OUT_DIR_WIN" \
   --win-shortcut \

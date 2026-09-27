@@ -51,7 +51,12 @@ log "build: OK"
 
 # ── 4. selftest (H265: via test_bot — writes target/selftest_result.json) ──
 log "selftest: running (test_bot --run-selftest)"
-cp -f target/mindpalace-1.1.0-beta1-shaded.jar mindpalace-live.jar
+# Version-proof glob (jar-swap bug class cbb33ad): the shade plugin REPLACES
+# the main artifact, so the runnable jar is target/mindpalace-<ver>.jar —
+# the old hardcoded -1.1.0-beta1-shaded.jar name was a fossil.
+LIVE_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE 'original-|-shaded' | head -1)
+[ -n "$LIVE_JAR" ] || { log "no built jar in target/ — build failed?"; exit 1; }
+cp -f "$LIVE_JAR" mindpalace-live.jar
 if ! timeout 110 python scripts/test_bot.py --run-selftest; then
   log "SELFTEST FAILED — JSON evidence in target/selftest_result.json"
   python scripts/test_bot.py --steplog || true   # post the failure too

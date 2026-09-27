@@ -19,7 +19,7 @@ gotchas that cost us hours. (Windows 10/11 is the dev+target platform.)
 ```bash
 export JAVA_HOME="C:/Program Files/Java/jdk-17"
 mvn -DskipTests package          # → BUILD SUCCESS gate
-java -jar target/mindpalace-1.0.0.jar --selftest   # → 40 passed, 0 failed
+java -jar "$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)" --selftest   # → N passed, 0 failed
 ```
 
 ## Run
