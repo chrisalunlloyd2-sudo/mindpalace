@@ -24,7 +24,9 @@ BUILD_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE "original-|-shaded
 [ -n "$BUILD_JAR" ] || { echo "e2e: no built jar in target/"; exit 1; }
 
 echo "=== [2/4] SELFTEST ==="
-timeout 110 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# 420s cap: the selftest suite grew past 2m (53→54 checks; the sync script
+# got the same raise 2026-09-27 after a cap-110 run silently truncated it).
+timeout 420 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --selftest > /tmp/e2e_selftest.log 2>&1
 grep -a "RESULT" /tmp/e2e_selftest.log | tail -1

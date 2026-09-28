@@ -235,8 +235,20 @@ public class FontRenderer {
         // Precompute a proper cylindrical-billboard basis ONCE per string from the
         // view matrix. cameraRight/Up are the view's local right/up (transposed
         // inverse = for a pure rigid view, the transpose is the inverse rotation).
-        Vector3f cameraRight = new Vector3f(view.transpose().getColumn(0, new Vector3f()).x, 0f, view.transpose().getColumn(0, new Vector3f()).z).normalize();
-        Vector3f cameraForward = new Vector3f(view.transpose().getColumn(2, new Vector3f()).x, 0f, view.transpose().getColumn(2, new Vector3f()).z).normalize();
+        // H33-fix: transpose a COPY — JOML transpose() mutates in place, and
+        // the old chained view.transpose() calls mutated the caller's view
+        // (accidentally restored by transposing an even number of times).
+        // Screen-right in world space = view^T column 0; the old glyph span
+        // used only its x component (col0 = (right.x, 0, 0)), so at yaw≈±90°
+        // the span collapsed to zero width and EVERY text quad vanished —
+        // e2e shots 13/14 lost the whole HUD facing doors (yaw ≈ -90/75).
+        // Span the full horizontal screen-right instead: correct at every
+        // yaw, never mirrored (screen-x = dot(P-cam, right) ∝ +local x).
+        Matrix4f rt = new Matrix4f(view).transpose();
+        Vector3f r0 = rt.getColumn(0, new Vector3f());
+        Vector3f cameraRight = new Vector3f(r0.x, 0f, r0.z).normalize();
+        Vector3f f2 = rt.getColumn(2, new Vector3f());
+        Vector3f cameraForward = new Vector3f(f2.x, 0f, f2.z).normalize();
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             int gi = glyphIndex.getOrDefault(c, questionIdx);
@@ -263,7 +275,7 @@ public class FontRenderer {
                 float by = position.y;
                 float bz = position.z + cameraRight.z * (i * charSize);
                 model.set(
-                    cameraRight.x, 0f,               0f,               0f,
+                    cameraRight.x, 0f,               cameraRight.z,    0f,
                     0f,             1f,              0f,               0f,
                     cameraForward.x, 0f,             cameraForward.z,  0f,
                     bx,             by,              bz,               1f

@@ -5023,7 +5023,7 @@ public class GameEngine {
                 if (shoot) { captureLabeled("12_nash_fountain"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 12 -> { // door prompt — the unified interaction prompt at a repo door
-                // Stand ~1.5m in front of the FIRST room's door (side 0 doors
+                // Stand ~2.5m in front of the FIRST room's door (side 0 doors
                 // sit at x=-1.75; the prompt renders HUD-anchored above center
                 // whenever a door is within 3m reach + facing).
                 Vector3f door0 = null;
@@ -5031,10 +5031,12 @@ public class GameEngine {
                     if (rm.getDoorPosition() != null) { door0 = rm.getDoorPosition(); break; }
                 }
                 if (door0 != null) {
-                    // face the door from the hall center-line, ~1.5m away
+                    // face the door from the hall center-line, ~2.5m away
                     // (side-0 doors sit at x=-1.75, side-1 at x=+1.75 — stand
-                    // toward the hall interior, i.e. toward x=0)
-                    float towardHall = door0.x < 0 ? 1.5f : -1.5f;
+                    // toward the hall interior, i.e. toward x=0). 1.5m jammed
+                    // the slab into the whole frame (dark shot 13); 2.5m keeps
+                    // the door in prompt reach (<3m DOOR_RANGE) but in context.
+                    float towardHall = door0.x < 0 ? 2.5f : -2.5f;
                     Vector3f stand = new Vector3f(door0.x + towardHall, door0.y + 0.7f, door0.z);
                     p.set(stand);
                     Vector3f aim = new Vector3f(door0).sub(stand).normalize();
