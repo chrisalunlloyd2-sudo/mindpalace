@@ -52,6 +52,9 @@ public class OutsideWorld {
 
     // ── Feature anchor positions (fixed, so towns/teleporters are stable) ──
     private final Vector3f mansionPos = new Vector3f(20f, 0f, -180f);
+    // Mansion shell dims (renderMansion + Player interior clamp must agree).
+    public static final float MANSION_W = 22f;
+    public static final float MANSION_D = 16f;
     private final Vector3f hospitalPos = new Vector3f(-60f, 0f, -120f);
     private final Vector3f factoryPos = new Vector3f(80f, 0f, -150f);
     private final Vector3f tocTreePos = new Vector3f(0f, 0f, -250f);
@@ -515,7 +518,7 @@ public class OutsideWorld {
 
     private void renderMansion(Renderer r, float floorY, boolean night) {
         float mx = mansionPos.x, mz = mansionPos.z;
-        float w = 22f, d = 16f, h = 7f;
+        float w = MANSION_W, d = MANSION_D, h = 7f;
         float cy = floorY + h / 2f, t = 0.3f;
 
         // Collider (registered once — H13b: the mansion is solid)

@@ -220,8 +220,8 @@ public class Player {
             // shell face — same pattern as the room clamp further down.
             if (mansionInterior) {
                 Vector3f m = world.getOutsideWorld().getMansionPos();
-                float iw = 11f - r - 0.15f;  // half-width minus wall half-thickness
-                float id = 8f - r - 0.15f;   // half-depth minus wall half-thickness
+                float iw = OutsideWorld.MANSION_W / 2f - r - 0.15f; // half-width minus wall half-thickness
+                float id = OutsideWorld.MANSION_D / 2f - r - 0.15f; // half-depth minus wall half-thickness
                 if (next.x < m.x - iw) next.x = m.x - iw;
                 if (next.x > m.x + iw) next.x = m.x + iw;
                 if (next.z < m.z - id) next.z = m.z - id;
