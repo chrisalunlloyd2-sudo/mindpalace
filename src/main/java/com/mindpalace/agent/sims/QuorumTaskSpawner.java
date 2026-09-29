@@ -27,7 +27,10 @@ public class QuorumTaskSpawner {
             aigenHome = System.getProperty("user.home") + "/AIGEN_SYS";
         }
         Path base = Paths.get(aigenHome);
-        TASK_DIR = base.resolve("todo_management/todo_files/mindpalace");
+        // CARD-Q1 F10: quorum-spawned files go in their OWN inbox — writing
+        // TASK_*.md into the live queue broke the one-TASK-at-a-time rule
+        // (AGENTS.md hard rule 4) and raced the hourly TASK sweep.
+        TASK_DIR = base.resolve("todo_management/todo_files/mindpalace/quorum_inbox");
         WATCH_LOG = base.resolve("todo_management/task_watch.log");
         QUORUM_LEDGER = base.resolve("quorum_ledger.jsonl");
     }
@@ -58,14 +61,18 @@ public class QuorumTaskSpawner {
                 }
             }
             result.suggestedActions.putAll(suggestions);
+            // (CARD-Q1 F10: result now OWNS a copy of the map, so extending it
+            // here no longer mutates the live Proposal.)
 
             // Build TASK content
             String taskContent = buildTaskContent(result, taskNum, suggestions);
 
-            // Write TASK file
+            // Write TASK file (CARD-Q1 F10: TRUNCATE_EXISTING — task numbers
+            // hash-collide, and WRITE-without-TRUNCATE left a longer file's
+            // old tail behind, corrupting the task)
             Path taskPath = TASK_DIR.resolve(taskName);
             Files.createDirectories(TASK_DIR);
-            Files.write(taskPath, taskContent.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            Files.write(taskPath, taskContent.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
 
             // Log spawning
             logSpawning(result, taskName, taskNum);
@@ -88,7 +95,7 @@ public class QuorumTaskSpawner {
 
         sb.append("## Voting Details\n\n");
         sb.append(String.format("| Field | Value |\n|-------|-------|\n"));
-        sb.append(String.format("| Vote Tally | ?%d ?%d ?%d |\n", result.approve, result.reject, result.blind));
+        sb.append(String.format("| Vote Tally | ✓%d ✗%d 🌫%d |\n", result.approve, result.reject, result.blind));
         sb.append(String.format("| Agents | %s |\n", String.join(", ", result.visibleModels)));
         sb.append(String.format("| Weight | %.2f |\n", result.weightedApprove));
         sb.append(String.format("| Pulse | %.2f |\n", result.avgPulsePhase));

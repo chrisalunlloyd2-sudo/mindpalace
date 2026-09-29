@@ -23,9 +23,10 @@ public class TodoCrystal {
         this.complexity = Math.max(1, text.split("\\s+").length);
     }
 
-    /** Crystal height in world units — complexity mapped to [0.15, 0.6]. */
+    /** Crystal height in world units — complexity mapped to [0.3, 0.6]. */
     public float getHeight() {
-        return Math.min(0.6f, 0.15f + complexity * 0.02f);
+        // CARD-Q2 F3: min 0.15→0.3 — a 15cm stick was ~8-20px at 1080p from 3m
+        return Math.min(0.6f, 0.3f + complexity * 0.02f);
     }
 
     public String getText() { return text; }

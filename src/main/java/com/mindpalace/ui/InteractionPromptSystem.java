@@ -119,6 +119,9 @@ public class InteractionPromptSystem {
             for (Room room : world.getRooms()) {
                 Vector3f dp = room.getDoorPosition();
                 if (dp == null) continue;
+                // CARD-Q2 F6: fogged rooms have NO visible door (WorldBuilder
+                // skips drawing them) — don't offer to open an invisible door.
+                if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
                 float d = origin.distance(dp);
                 if (d > DOOR_RANGE || d >= bestDist) continue;
                 Vector3f to = new Vector3f(dp).sub(origin).normalize();

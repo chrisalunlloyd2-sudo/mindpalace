@@ -120,8 +120,12 @@ public class ModelScheduler {
      */
     private void drainImmediateLoop() {
         while (!Thread.currentThread().isInterrupted()) {
+            // CARD-Q1 F13: `job` is hoisted so the catch below can complete its
+            // future exceptionally — otherwise an exception in lifespan.chat /
+            // ollama.chat leaves the user's future hanging forever.
+            Job job = null;
             try {
-                Job job = userQueue.take();
+                job = userQueue.take();
                 if (!resourcesAvailable()) {
                     fencedCount.incrementAndGet();
                     lastFenceAt.set(System.currentTimeMillis());
@@ -146,10 +150,15 @@ public class ModelScheduler {
                 lastStatus = "idle";
                 job.future.complete(resp);
             } catch (InterruptedException e) {
+                // CARD-Q1 F13: still release a caller waiting on THIS job
+                if (job != null && job.future != null) job.future.completeExceptionally(e);
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
                 lastStatus = "error: " + e.getMessage();
+                // CARD-Q1 F13: complete the future exceptionally so user-chat
+                // callers get an immediate failure instead of hanging forever.
+                if (job != null && job.future != null) job.future.completeExceptionally(e);
             }
         }
     }
@@ -157,8 +166,11 @@ public class ModelScheduler {
     /** The single drain loop — one call at a time, spaced 5 min apart (unless immediate). */
     private void drainLoop() {
         while (!Thread.currentThread().isInterrupted()) {
+            // CARD-Q1 F13: same hoist — vote callers (30s timeout) must never
+            // wait the whole budget on a dropped runtime error.
+            Job job = null;
             try {
-                Job job = queue.take();
+                job = queue.take();
                 queueDepth.set(queue.size());
 
                 // Enforce spacing: wait until spacingMs since the last call.
@@ -213,10 +225,14 @@ public class ModelScheduler {
                 lastStatus = "idle";
                 job.future.complete(resp);
             } catch (InterruptedException e) {
+                // CARD-Q1 F13: release this job's caller before dying
+                if (job != null && job.future != null) job.future.completeExceptionally(e);
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
                 lastStatus = "error: " + e.getMessage();
+                // CARD-Q1 F13: vote callers get their 30s back — fail fast
+                if (job != null && job.future != null) job.future.completeExceptionally(e);
             }
         }
     }

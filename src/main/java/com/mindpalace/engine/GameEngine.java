@@ -1957,17 +1957,20 @@ public class GameEngine {
             if (cam.getPosition().distance(p) > 20f) continue;
 
             // Hex crystal — a tall thin cube (height = complexity)
+            // CARD-Q2 F3: dedicated emissive white-cyan (was shared neon green);
+            // footprint 0.15→0.25 so it doesn't vanish from 3m at 1080p.
             float h = c.getHeight();
             renderer.drawCube(new Vector3f(p.x, p.y + h / 2f, p.z),
-                new Vector3f(0.15f, h, 0.15f), Renderer.TEX_NEON_GREEN);
+                new Vector3f(0.25f, h, 0.25f), Renderer.TEX_CRYSTAL);
 
             // Label
             if (fontRenderer != null && fontRenderer.isReady()) {
                 Matrix4f proj = cam.getProjectionMatrix((float) width / height);
                 Matrix4f view = cam.getViewMatrix();
                 Vector3f labelPos = new Vector3f(p.x, p.y + h + 0.15f, p.z);
-                fontRenderer.renderBillboard(c.getLabel(), labelPos, 0.03f,
-                    new Vector3f(0.3f, 1.0f, 0.4f), proj, view, cam.getPosition());
+                // 0.03→0.045: ~NPC-label size; white-cyan to match the crystal
+                fontRenderer.renderBillboard(c.getLabel(), labelPos, 0.045f,
+                    new Vector3f(0.55f, 1.0f, 1.0f), proj, view, cam.getPosition());
             }
         }
     }
@@ -2484,10 +2487,10 @@ public class GameEngine {
         float vx = cx - 7f, vz = cz + 4f;
         renderer.drawCube(new Vector3f(vx, y + 1.2f, vz), new Vector3f(4f, 2.4f, 4f), Renderer.TEX_METAL);
         renderer.drawCube(new Vector3f(vx, y + 1.2f, vz + 2.05f), new Vector3f(3.4f, 1.8f, 0.1f), Renderer.TEX_NEON_CYAN);
-        // A few glowing crystals inside the vault
+        // A few glowing crystals inside the vault (TEX_CRYSTAL CARD-Q2 F3)
         for (int i = 0; i < 3; i++) {
             renderer.drawCube(new Vector3f(vx - 1f + i * 1f, y + 1.4f, vz + 1.5f),
-                new Vector3f(0.3f, 0.6f, 0.3f), Renderer.TEX_NEON_GREEN);
+                new Vector3f(0.3f, 0.6f, 0.3f), Renderer.TEX_CRYSTAL);
         }
 
         // ── War-room (back-right): quorum vote table ──
@@ -4975,9 +4978,13 @@ public class GameEngine {
                 cam.setYaw(90); cam.setPitch(0);
                 if (shoot) { captureLabeled("06_room_doorway"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 6 -> { // crystals — TODO field from above-ish
-                p.set(-2.0f, hallY + 1.7f, (hallZ0 + hallZ1) / 2f);
-                cam.setYaw(180); cam.setPitch(20f);
+            case 6 -> { // crystals — TODO field down the hall, on-axis
+                // CARD-Q2 F1: stand ON the hall center-line (x=0; x=-2.0 was
+                // 0.25m past the side-0 wall line, frame of wall+ceiling) and
+                // look DOWN-hall slightly (pitch=-20; positive pitch looks
+                // UP here — Camera.front.y = sin(pitch)).
+                p.set(0f, hallY + 1.7f, (hallZ0 + hallZ1) / 2f);
+                cam.setYaw(180); cam.setPitch(-20f);
                 if (shoot) { captureLabeled("07_todo_crystals"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 7 -> { // end of hall — looking back (whole mansion)
@@ -5028,6 +5035,10 @@ public class GameEngine {
                 // whenever a door is within 3m reach + facing).
                 Vector3f door0 = null;
                 for (Room rm : world.getRooms()) {
+                    // CARD-Q2 F5: WorldBuilder skips drawing fogged doors
+                    // (world/WorldBuilder.java:671) — a fogged-door shot is a
+                    // plain wall with a floating prompt. Skip like it does.
+                    if (rm.isFogged() && !world.getFogOfWar().isRoomRevealed(rm)) continue;
                     if (rm.getDoorPosition() != null) { door0 = rm.getDoorPosition(); break; }
                 }
                 if (door0 != null) {

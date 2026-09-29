@@ -56,7 +56,8 @@ public class Renderer {
     public static final int TEX_WATER = 24;
     public static final int TEX_WOOD = 25;
     public static final int TEX_BARK = 26;
-    private static final int TEX_COUNT = 28;
+    public static final int TEX_CRYSTAL = 28;  // CARD-Q2 F3: TODO crystals' own emissive slot
+    private static final int TEX_COUNT = 29;
 
     private Texture[] textures = new Texture[TEX_COUNT];
 
@@ -92,6 +93,7 @@ public class Renderer {
         textures[TEX_NEON_CYAN]  = new Texture(0.0f, 0.9f, 1.0f);
         textures[TEX_NEON_PINK]  = new Texture(1.0f, 0.2f, 0.6f);
         textures[TEX_NEON_GREEN] = new Texture(0.1f, 1.0f, 0.3f);
+        textures[TEX_CRYSTAL] = new Texture(0.55f, 1.0f, 1.0f); // white-cyan, crystals only
         textures[TEX_NEON_AMBER] = new Texture(1.0f, 0.7f, 0.1f);
         textures[TEX_NEON_RED] = new Texture(1.0f, 0.2f, 0.15f);
         textures[TEX_HARDWOOD] = new Texture(0.35f, 0.20f, 0.10f);

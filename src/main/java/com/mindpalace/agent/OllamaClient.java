@@ -98,12 +98,16 @@ public class OllamaClient {
                 try (Response resp = http.newCall(r).execute()) {
                     if (!resp.isSuccessful() || resp.body() == null) return null;
                     JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
+                    // CARD-Q1 F13: bodies with no `message` object (or a
+                    // malformed JSON) NPE / throw JsonSyntaxException — both
+                    // are RuntimeExceptions and escaped the IOException catch.
+                    if (result == null || result.getAsJsonObject("message") == null) return null;
                     JsonObject msg = result.getAsJsonObject("message");
                     if (msg.has("content") && !msg.get("content").isJsonNull()) return msg.get("content").getAsString();
                     return "";
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             return null;
         }
     }

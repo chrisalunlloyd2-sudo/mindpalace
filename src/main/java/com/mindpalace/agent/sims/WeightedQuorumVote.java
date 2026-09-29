@@ -218,7 +218,10 @@ public class WeightedQuorumVote {
         public final Map<String, List<String>> suggestedActions;
 
         QuorumResult(Proposal p, Map<String, ModelPosition> models, int qMin, int aMin) {
-            proposalId = p.id; text = p.text; hexKey = p.hex.key(); proposalType = p.proposalType; suggestedActions = p.suggestedActions;
+            proposalId = p.id; text = p.text; hexKey = p.hex.key(); proposalType = p.proposalType;
+            // CARD-Q1 F10: COPY the proposal's live map — aliasing it let the
+            // spawner mutate the proposal after tallying.
+            suggestedActions = new ConcurrentHashMap<>(p.suggestedActions);
             approve = p.approveCount(); reject = p.rejectCount(); blind = p.blindCount();
             total = p.totalVotes(); visible = p.visibleTotal();
             weightedApprove = p.weightedApprove(models);

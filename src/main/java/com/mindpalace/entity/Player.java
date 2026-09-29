@@ -320,6 +320,9 @@ public class Player {
         for (Room room : world.getRooms()) {
             Vector3f dp = room.getDoorPosition();
             if (dp == null) continue;
+            // CARD-Q2 F6: keep Enter consistent with the fog-gated prompt —
+            // fogged rooms have no drawn door to walk through.
+            if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
             float d = origin.distance(dp);
             if (d < bestDist) { bestDist = d; best = room; }
         }
