@@ -4429,7 +4429,7 @@ public class GameEngine {
         }
         if (layoutOk) pass++; else fail++;
 
-        // 26. Spawn point validation — player spawns in open hallway, not inside
+        // 42. Spawn point validation — player spawns in open hallway, not inside
         //     buildings or colliders (H13b regression: spawn was too close to mansion).
         //     Verify: position at spawn, first W input moves the player forward.
         //     Real APIs: EYE_HEIGHT is private → literal 1.6f; engine's own `input`
@@ -4521,7 +4521,7 @@ public class GameEngine {
         }
         if (hermeticOk) pass++; else fail++;
 
-        // 27. H04 budgets — read_file returns head+tail 150 lines (test via
+        // 43. H04 budgets — read_file returns head+tail 150 lines (test via
         //     AgentManager.truncateHeadTail through a 400-line synthetic file:
         //     expect 150 + elision marker + 150, and short files untouched).
         boolean h04Ok = false;
@@ -4539,7 +4539,7 @@ public class GameEngine {
         System.out.println((h04Ok ? "PASS" : "FAIL") + " H04 head/tail truncation (400-line file elides middle)");
         if (h04Ok) pass++; else fail++;
 
-        // 28. H21 quorum flare — the verdict callback flips quorumFlare and
+        // 44. H21 quorum flare — the verdict callback flips quorumFlare and
         //     the bloom loop decays it; verify the decay reaches ~0 (1.5s
         //     exp @60fps) and that the audio cue methods exist and don't throw.
         boolean flareOk = false;
@@ -4555,7 +4555,7 @@ public class GameEngine {
         System.out.println((flareOk ? "PASS" : "FAIL") + " quorum flare decay (gold->0 over ~1.5s) + audio cues");
         if (flareOk) pass++; else fail++;
 
-        // 29. H24 Scout patrol (step 79) — the visit rotation must be
+        // 45. H24 Scout patrol (step 79) — the visit rotation must be
         //     deterministic: same seed -> same start room, ticks at DWELL
         //     spacing emit VISIT lines in rotation order, no line before the
         //     first DWELL elapses.
@@ -4588,7 +4588,7 @@ public class GameEngine {
         }
         if (scoutOk) pass++; else fail++;
 
-        // 30. H25 scout→quorum (step 80) — a scout visit must be able to
+        // 46. H25 scout→quorum (step 80) — a scout visit must be able to
         //     produce an APPROVED proposal and a TODO crystal at the visited
         //     room (selftest: deterministic auto-approve votes, no cloud).
         boolean scoutQuorumOk = false;
@@ -4630,7 +4630,7 @@ public class GameEngine {
         }
         if (scoutQuorumOk) pass++; else fail++;
 
-        // 31. H28 unified bot event format (step 82) — addBotEvent writes a
+        // 47. H28 unified bot event format (step 82) — addBotEvent writes a
         //     {"ts","bot","kind","text"} line to today's JSONL; read it back
         //     and verify the envelope fields (round-trip through the real
         //     per-day log path, demo dataRoot).
@@ -4670,7 +4670,7 @@ public class GameEngine {
         }
         if (schemaOk) pass++; else fail++;
 
-        // 32. H30 scout economy (step 84) — awardUniqueVisit dedupe: first
+        // 48. H30 scout economy (step 84) — awardUniqueVisit dedupe: first
         //     visit pays (true), repeat visit doesn't (false), and the DePIN
         //     wallet actually received the credits.
         boolean ecoOk = false;
@@ -4702,7 +4702,7 @@ public class GameEngine {
         }
         if (ecoOk) pass++; else fail++;
 
-        // 33. H31 bot lifecycle (step 85) — ageTick reaches TTL exactly once,
+        // 49. H31 bot lifecycle (step 85) — ageTick reaches TTL exactly once,
         //     retire flag set, respawn resets duty + advances generation with
         //     a DETERMINISTIC new start (successorSeed math), and the
         //     never-twice ledger survives the respawn (economy memory).

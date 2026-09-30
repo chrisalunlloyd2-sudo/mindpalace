@@ -29,10 +29,14 @@ JAR="$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)"
 "$JAVA_HOME/bin/java" -jar "$JAR" --selftest
 ```
 
-13 checks: world build, book raycast, teleporter pads, agents, crystals, KG,
+54 checks (run-report; the source organizes them under 49 numbered sections):
+world build, book raycast, teleporter pads, agents, crystals, KG,
 font, editor-open, teleporter destinations, ESC menu, bloom, map toggle,
-immediate chat. Exit 0 = green. **This is the source of truth** — the system
-verification tracker is stale (replays a deleted `hermes-verify-raycast.py`).
+immediate chat — and more covering mouse turn radius, room personality,
+solve loop, DePIN economy, model shops, genetics/evolution, telemetry,
+quorum tie-breaker, TimeMachine, layout determinism, spawn validation, H-series
+(H04/H21/H24/H25/H28/H30/H31). Exit 0 = green. **Count lives in GameEngine.runSelfTest()** —
+this file quotes it, not the other way round.
 
 ## Bloom testing (the hard-won procedure)
 

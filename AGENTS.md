@@ -104,9 +104,11 @@ else — including the models above that the game actually depends on. Fixed
 2026-09-01 to keep everything installed. If you ever touch that function
 again, keep the allowlist matching reality, not a guess.
 
-## Known race (mitigated, stay aware)
-`mindpalace-sync.sh` (no-agent, every 30 min) kills every `java.exe` before
-rebuilding. If your own session is mid-build/mid-selftest when that fires,
-you'll see a spurious "BUILD FAILED" that isn't your code's fault — commit
-what's good, and if a build fails for no reason you can find in your own
+## Known race (fixed 2026-09-27, stay aware)
+`mindpalace-sync.sh` (no-agent, every 30 min) reaps stale `java.exe` processes
+before rebuilding. Commit 7226a10 changed the sweep: only javas older than
+30 min whose command line lacks 'mindpalace' get killed — the live game is never
+a target, and hung selftests still die. A session java of your own that outlives
+30 min still counts as stale by that rule, so the spurious-kill theory survives,
+just far less likely. If a build fails for no reason you can find in your own
 diff, suspect this race before suspecting your code.

@@ -116,9 +116,9 @@ editor with a keystroke. The databases grow massive — that's the point.
 - **Backup + Memory** — cold backup to D:, never-make-code-twice / never-make-mistakes-twice SQLite DBs
 - **Model Lifespan** — token-budgeted context, drift detection, rolling summary, RAG memory
 - **Live patching** — drop a `patch.json` and the game ships rooms/books/texts/graphics without restarting
-- **Self-test harness** — `--selftest` runs 40 automated checks (world, books,
+- **Self-test harness** — `--selftest` runs 54 automated checks (world, books,
   teleporters, agents, crystals, KG, font, editor, bloom, invert-Y, map,
-  chat, mouse turn radius, room personality, finesse) and exits 0/1
+  chat, mouse turn radius, room personality, genetics, telemetry, quorum …) and exits 0/1
 
 ---
 
@@ -290,7 +290,7 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
 | Flag | Effect |
 |------|--------|
 | `--autodrive <dir>` | Scripted walkthrough that captures PNG frames to `<dir>` (lets an agent SEE the world) |
-| `--selftest` | 40 automated checks headlessly, PASS/FAIL, exit 0/1 (CI gate) |
+| `--selftest` | 54 automated checks headlessly, PASS/FAIL, exit 0/1 (CI gate) |
 | `--e2e <dir>` | 13 labeled waypoints captured as PNGs (visual regression proof) |
 | `--demo` | Full palace from a bundled JSON snapshot — no GitHub auth, no network (see docs/DEMO_MODE.md; lands as step 112) |
 
