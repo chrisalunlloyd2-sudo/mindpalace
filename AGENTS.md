@@ -104,6 +104,17 @@ else — including the models above that the game actually depends on. Fixed
 2026-09-01 to keep everything installed. If you ever touch that function
 again, keep the allowlist matching reality, not a guess.
 
+## Known landmine: taskkill //flags (fixed 2026-09-30, stay aware)
+`taskkill //F //PID <pid>` DOES NOT WORK in this Git Bash — there is no
+MSYS-style `//`→`/` conversion here, so Windows receives literal `//F` and
+rejects it ("Invalid argument"), silently, whenever `2>/dev/null` swallows
+stderr. Consequence in `mindpalace-sync.sh`: the kill-before-rebuild loop
+never actually killed the game (a full 12:06 sync cycle left the old game
+running), and the pre-flight sweep never reaped stale javas. All kill sites
+now use single-slash `/F /PID` (commit 73f888a, proven: 12:12 cycle show
+`SUCCESS: terminated` before `clean package`). When adding Windows process
+management to a new script, use single-slash taskkill always.
+
 ## Known race (fixed 2026-09-27, stay aware)
 `mindpalace-sync.sh` (no-agent, every 30 min) reaps stale `java.exe` processes
 before rebuilding. Commit 7226a10 changed the sweep: only javas older than
