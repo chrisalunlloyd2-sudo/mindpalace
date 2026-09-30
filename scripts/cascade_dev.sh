@@ -33,7 +33,7 @@ log() { printf '[cascade %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 log "guard: sweeping orphan game processes"
 tasklist | grep -iE "^java(w)?\.exe" | awk '{print $2}' | while read -r pid; do
   log "guard: killing orphan java pid $pid"
-  taskkill //PID "$pid" //F >/dev/null 2>&1 || true
+  taskkill /PID "$pid" /F >/dev/null 2>&1 || true
 done
 
 # ── 2. freeze live jar ──────────────────────────────────────────────

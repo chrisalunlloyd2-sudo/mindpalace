@@ -27,7 +27,7 @@ case "${1:-status}" in
   sweep)
     tasklist | grep -iE "^java(w)?\.exe" | awk '{print $2}' | while read -r pid; do
       echo "[swarm] killing orphan java pid $pid"
-      taskkill //PID "$pid" //F >/dev/null 2>&1 || true
+      taskkill /PID "$pid" /F >/dev/null 2>&1 || true
     done
     echo "[swarm] sweep complete — no java game processes remain"
     ;;

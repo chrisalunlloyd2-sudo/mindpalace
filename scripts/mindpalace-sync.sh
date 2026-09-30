@@ -87,7 +87,14 @@ for img in java.exe javaw.exe; do
             now=$(date +%s)
             age=$(( now - cepoch ))
             if [ "$age" -gt 1800 ]; then
-                taskkill //F //PID "$pid" 2>/dev/null \
+            # taskkill flags are SINGLE-slash: this Git Bash does NOT perform
+            # the // -> / MSYS conversion, so `taskkill //F //PID` reaches
+            # Windows literally and fails with "Invalid argument" (silently,
+            # stderr discarded) — the sweep then never reaps anything.
+            # Proven 2026-09-30: the live game survived a full sync cycle;
+            # taskkill /F /PID works. Redirect inside the pipe (not 2>&1):
+            # taskkill's stderr must not join the wmic pid/cdate stream.
+            taskkill /F /PID "$pid" 2>/dev/null \
                   && echo "mindpalace-sync: reaped stale $img pid=$pid (age ${age}s)"
             fi
         done
@@ -135,9 +142,12 @@ fi
 #    Must cover javaw.exe too: step 8 launches the game with javaw, and a
 #    survivor keeps running while `clean package` rewrites the jar under it
 #    -> lazy class loads fail (NoClassDefFoundError kotlin/okhttp, gist-wall-fetch).
-for img in java.exe javaw.exe; do
-    wmic process where "name='$img'" get processid 2>/dev/null | grep -E "[0-9]" | while read p; do taskkill //F //PID $p 2>/dev/null; done
-done
+    # taskkill flags are SINGLE-slash (see step-4 note below): `//F //PID`
+    # reaches Windows literally and fails with "Invalid argument" (silently,
+    # stderr discarded) — a javaw survivor keeps holding the jar open.
+    for img in java.exe javaw.exe; do
+        wmic process where "name='$img'" get processid 2>/dev/null | grep -E "[0-9]" | while read p; do taskkill /F /PID $p 2>/dev/null; done
+    done
 sleep 2
 BUILD_OUT=$("$JAVA_HOME/bin/java" -cp "$M2_HOME/boot/plexus-classworlds-2.11.0.jar" \
   "-Dclassworlds.conf=$M2_HOME/bin/m2.conf" \
