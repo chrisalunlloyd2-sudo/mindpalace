@@ -47,3 +47,8 @@ selftest_alice.log
 
 # hermes kanban worktrees (never commit)
 .worktrees/
+
+# python bytecode — auto-sync commits kept resurrecting test_bot.pyc (removed in 2fecc91); stop tracking it
+__pycache__/
+*.pyc
+
