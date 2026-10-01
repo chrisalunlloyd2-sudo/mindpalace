@@ -130,9 +130,12 @@ sleep 2
 #     crashed hours ago while ticks kept taking the nothing-to-ship exit —
 #     2026-09-27 the world sat dark all morning because only the rebuild
 #     path relaunched it. Slow is fine; dark forever is not.
+# ONE-GAME enforcement runs UNCONDITIONALLY first (user emphatic): a
+# duplicate only exists when GAME_PID is non-empty — exactly when the
+# dark-world branch below never fires — so the guard must not live there.
+enforce_one_game
 GAME_PID=$(real_game_pid)
 if [ -z "$GAME_PID" ] && [ -f "mindpalace-live.jar" ]; then
-    enforce_one_game
     # Windows javaw cannot open MSYS paths (/c/Users/...) — pass the jar
     # RELATIVE (cwd is $REPO). 2026-09-27: every relaunch used "$REPO/..."
     # → 'Unable to access jarfile' → 1-thread javaw error dialog that sat
@@ -243,7 +246,6 @@ echo "mindpalace-sync: pushed + release binary refreshed ($(date '+%H:%M'))"
 #    "game running" and silently suppressed relaunch for hours.
 GAME_PID=$(real_game_pid)
 if [ -z "$GAME_PID" ]; then
-    enforce_one_game
     cp -f "$BUILD_JAR" mindpalace-live.jar
     # jar path RELATIVE (Windows javaw can't open MSYS /c/... paths — see step 1b)
     JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar mindpalace-live.jar \
