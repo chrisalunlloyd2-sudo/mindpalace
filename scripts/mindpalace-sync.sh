@@ -26,6 +26,30 @@ real_game_pid() {
       | grep -i "mindpalace" | awk '$NF==1{next} {print $(NF-1)}' | head -1
 }
 
+# real_game_pids — ALL mindpalace game pids (plural). The ONE-GAME rule
+# (user emphatic): only one instance may ever run. 2026-09-30 two lived
+# side-by-side for hours because one launch skipped the sweep. Both the
+# self-heal path and the relaunch path must run enforce_one_game() first.
+real_game_pids() {
+    wmic process where "name='javaw.exe' or name='java.exe'" get processid,commandline,threadcount 2>/dev/null \
+      | grep -i "mindpalace" | awk '$NF==1{next} {print $(NF-1)}'
+}
+
+# enforce_one_game — kill the youngest duplicates, keep the oldest (it owns
+# the longest-lived world state). Single-slash taskkill only (see 73f888a).
+enforce_one_game() {
+    local pids oldest pid
+    pids=$(real_game_pids | sort -n)
+    [ "$(echo "$pids" | grep -c .)" -le 1 ] && return 0
+    oldest=$(echo "$pids" | head -1)
+    for pid in $pids; do
+        [ "$pid" = "$oldest" ] && continue
+        taskkill /F /T /PID "$pid" >/dev/null 2>&1
+        echo "mindpalace-sync: ONE-GAME rule — killed duplicate game PID $pid (kept oldest $oldest)"
+    done
+    sleep 2
+}
+
 sync_chat_logs() {
     CHAT_REPO="/c/Users/viper/AIGEN_SYS/mindpalace-chat-logs"
     if [ -d "chat_logs" ] && [ -n "$(ls chat_logs/*.jsonl 2>/dev/null)" ]; then
@@ -108,6 +132,7 @@ sleep 2
 #     path relaunched it. Slow is fine; dark forever is not.
 GAME_PID=$(real_game_pid)
 if [ -z "$GAME_PID" ] && [ -f "mindpalace-live.jar" ]; then
+    enforce_one_game
     # Windows javaw cannot open MSYS paths (/c/Users/...) — pass the jar
     # RELATIVE (cwd is $REPO). 2026-09-27: every relaunch used "$REPO/..."
     # → 'Unable to access jarfile' → 1-thread javaw error dialog that sat
@@ -218,6 +243,7 @@ echo "mindpalace-sync: pushed + release binary refreshed ($(date '+%H:%M'))"
 #    "game running" and silently suppressed relaunch for hours.
 GAME_PID=$(real_game_pid)
 if [ -z "$GAME_PID" ]; then
+    enforce_one_game
     cp -f "$BUILD_JAR" mindpalace-live.jar
     # jar path RELATIVE (Windows javaw can't open MSYS /c/... paths — see step 1b)
     JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar mindpalace-live.jar \
