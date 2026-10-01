@@ -31,22 +31,33 @@ real_game_pid() {
 # side-by-side for hours because one launch skipped the sweep. Both the
 # self-heal path and the relaunch path must run enforce_one_game() first.
 real_game_pids() {
-    wmic process where "name='javaw.exe' or name='java.exe'" get processid,commandline,threadcount 2>/dev/null \
-      | grep -i "mindpalace" | awk '$NF==1{next} {print $(NF-1)}'
+    # Alphabetical wmic table columns: CommandLine, CreationDate, ProcessId,
+    # ThreadCount → "$(NF-1)" = pid, "$(NF-2)" = creation date. The $NF==1
+    # filter drops the 1-thread 'Unable to access jarfile' error dialog.
+    wmic process where "name='javaw.exe' or name='java.exe'" get processid,creationdate,commandline,threadcount 2>/dev/null \
+      | grep -i "mindpalace" | awk '$NF==1{next} {print $(NF-1), $(NF-2)}'
 }
 
-# enforce_one_game — kill the youngest duplicates, keep the oldest (it owns
-# the longest-lived world state). Single-slash taskkill only (see 73f888a).
+# enforce_one_game — kill every duplicate, keep the OLDEST by wmic
+# CreationDate (longest-lived world state). NOT lowest pid: Windows reuses
+# pids, so pid order says nothing about age — 2026-09-30's real pair proved
+# it (older game had the higher pid: 13756 spawned 12:12 vs 10664 22:45).
+# CreationDate is fixed-width, so a plain string compare sorts
+# chronologically. Single-slash taskkill (73f888a).
 enforce_one_game() {
-    local pids oldest pid
-    pids=$(real_game_pids | sort -n)
-    [ "$(echo "$pids" | grep -c .)" -le 1 ] && return 0
-    oldest=$(echo "$pids" | head -1)
-    for pid in $pids; do
-        [ "$pid" = "$oldest" ] && continue
-        taskkill /F /T /PID "$pid" >/dev/null 2>&1
-        echo "mindpalace-sync: ONE-GAME rule — killed duplicate game PID $pid (kept oldest $oldest)"
-    done
+    local entries pid cdate oldest_pid="" oldest_cdate=""
+    entries=$(real_game_pids)
+    [ "$(echo "$entries" | grep -c .)" -le 1 ] && return 0
+    while read -r pid cdate; do
+        if [ -z "$oldest_cdate" ] || [ "$cdate" \< "$oldest_cdate" ]; then
+            oldest_pid="$pid"; oldest_cdate="$cdate"
+        fi
+    done <<< "$entries"
+    while read -r pid cdate; do
+        [ "$pid" = "$oldest_pid" ] && continue
+        taskkill /F /T /PID "$pid" >/dev/null 2>&1 \
+          && echo "mindpalace-sync: ONE-GAME rule — killed duplicate game PID $pid (kept oldest $oldest_pid)"
+    done <<< "$entries"
     sleep 2
 }
 
