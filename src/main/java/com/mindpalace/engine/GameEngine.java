@@ -1613,7 +1613,9 @@ public class GameEngine {
     private String bloomRegion = "hall";
     private float bloomRegionFade = 0f; // >0 while the region name shows (step 68)
     // H21: quorum flare — +1.0 gold .. -1.0 ice, decays to 0 over ~1.5s
-    private float quorumFlare = 0f;
+    // volatile: written from the agent drain thread (verdict callback),
+    // read every frame on the render thread (#106).
+    private volatile float quorumFlare = 0f;
 
     private void updateRegionBloom(double dt) {
         if (bloom == null) return;

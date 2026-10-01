@@ -30,8 +30,10 @@ public final class ContextKit {
         this.kv = new KVTree(model, kvSeed);
     }
 
-    /** Set the KG neighborhood (called when the room changes / FOW lifts). */
-    public void setKgNodes(List<String> nodes) {
+    /** Set the KG neighborhood (called when the room changes / FOW lifts).
+     *  Synchronized (#106): setKgNodes (clear→addAll) races render()/kgNodes()
+     *  from worker threads — clear-during-iterate would corrupt the render. */
+    public synchronized void setKgNodes(List<String> nodes) {
         kgNodes.clear();
         if (nodes != null) kgNodes.addAll(nodes);
     }
@@ -52,7 +54,9 @@ public final class ContextKit {
     public Map<String, Float> kvSnapshot() { return kv.snapshot(); }
 
     public com.mindpalace.agent.sims.AdapterType loraAdapter() { return loraAdapter; }
-    public List<String> kgNodes() { return Collections.unmodifiableList(kgNodes); }
+    /** Snapshot of the KG neighborhood (#106): callers must not iterate the
+     *  live list while another thread calls setKgNodes. */
+    public List<String> kgNodes() { synchronized (kgNodes) { return new ArrayList<>(kgNodes); } }
     public long turns() { return turns; }
 
     /**

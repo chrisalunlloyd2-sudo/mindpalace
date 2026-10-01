@@ -46,11 +46,13 @@ public class AgentManager {
     private final ModelLifespan criticLifespan;
     private final ModelLifespan chatLifespan;   // direct conversational thread
 
-    // Current context
-    private Room currentRoom;
-    private Book currentBook;
-    private String lastUserMessage;
-    private final Set<String> discoveredRepos = new HashSet<>();
+    // Current context — written by the game thread, read from agent/drain
+    // threads: volatile scalars + concurrent collections (#106).
+    private volatile Room currentRoom;
+    private volatile Book currentBook;
+    private volatile String lastUserMessage;
+    /** Concurrent: written by the game thread (setContext), read/copied by agent threads (#106). */
+    private final Set<String> discoveredRepos = ConcurrentHashMap.newKeySet();
 
     // Tool execution — the missing half of the tool loop. The tool agent can now
     // actually read/edit/create/delete files in the current room's repo via the
@@ -102,8 +104,9 @@ public class AgentManager {
     //     → dominant topics → quorum proposals → FOW-gated vote
     //     → APPROVED topics → scan non-legacy repos for matching TODO/FIXME
     //     → spawn/activate TODO crystals → tool agent solves (quorum-gated)
-    private final List<String> approvedTopics = new ArrayList<>();  // topics the quorum approved
-    private long lastLexicalScan = 0;                                // throttle chat-log reads
+    /** Copy-on-write: agent thread writes, game thread reads via getApprovedTopics (#106). */
+    private final List<String> approvedTopics = new CopyOnWriteArrayList<>();  // topics the quorum approved
+    private volatile long lastLexicalScan = 0;                                // throttle chat-log reads
     private static final long LEXICAL_SCAN_MS = 60_000;              // re-scan chat logs every 60s
     private static final Path CHAT_LOG_DIR = Paths.get("chat_logs");
 
@@ -113,10 +116,10 @@ public class AgentManager {
     private Consumer<String> onConsoleLog;
     private Consumer<List<Issue>> onIssues;   // fired when the lexical bridge finds issues
 
-    // State
-    private boolean running;
-    private boolean available;
-    private long lastAutoCycle;
+    // State — read from agent/drain threads while the game thread writes (#106).
+    private volatile boolean running;
+    private volatile boolean available;
+    private volatile long lastAutoCycle;
     private static final long CYCLE_MS = 5 * 60 * 1000; // 5 minutes
 
     // Tool definitions for the tool-calling agent
@@ -197,9 +200,9 @@ public class AgentManager {
     public void setContext(Room room, Book book) {
         this.currentRoom = room;
         this.currentBook = book;
-        // Track discovery: when a fogged room is revealed, agents "discover" it
-        if (room != null && !discoveredRepos.contains(room.getRepoName())) {
-            discoveredRepos.add(room.getRepoName());
+        // Track discovery: when a fogged room is revealed, agents "discover" it.
+        // ConcurrentSet.add is atomic — replaces the contains→add check-then-act (#106).
+        if (room != null && discoveredRepos.add(room.getRepoName())) {
             log("[AgentManager] Discovered repo: " + room.getRepoName()
                 + (room.isFogged() ? " (fog lifted)" : ""));
         }
@@ -250,7 +253,9 @@ public class AgentManager {
 
     // ── Context kits (per-model wrapper: LoRA + KG + KV, never mixed) ──
 
-    private final Map<String, ContextKit> kits = new LinkedHashMap<>();
+    /** Concurrent: game thread (onUserChat→ctx), agent thread (solveOne), drain worker
+     *  (executeToolRound→ctx/kit) all race computeIfAbsent here (#106). */
+    private final Map<String, ContextKit> kits = new ConcurrentHashMap<>();
 
     /** The kit for a model — created on first use, persistent thereafter. */
     private ContextKit kit(String model) {
@@ -265,11 +270,13 @@ public class AgentManager {
     /** Render the riding context prefix for a model (LoRA+KG+KV in one line). */
     private String ctx(String model) {
         ContextKit k = kit(model);
-        // Refresh the KG neighborhood when a room is present.
-        if (currentRoom != null && knowledgeGraph != null) {
+        // Refresh the KG neighborhood when a room is present. Room snapshotted
+        // once: a mid-call room change must not misattribute the neighborhood (#106).
+        Room room = currentRoom;
+        if (room != null && knowledgeGraph != null) {
             List<String> nodes = new ArrayList<>();
-            for (Room nb : knowledgeGraph.neighbors(currentRoom)) nodes.add(nb.getRepoName());
-            nodes.add(currentRoom.getRepoName());
+            for (Room nb : knowledgeGraph.neighbors(room)) nodes.add(nb.getRepoName());
+            nodes.add(room.getRepoName());
             k.setKgNodes(nodes);
         }
         return k.render();
@@ -289,9 +296,10 @@ public class AgentManager {
      * closed, edited, or deleted. Returns the number of issues raised.
      */
     public int raiseApprovedTopics() {
+        Room room = currentRoom; // snapshot once per call (#106)
         if (issueStream == null || approvedTopics.isEmpty()) return 0;
-        if (currentRoom == null) return 0;
-        String repo = currentRoom.getRepoName();
+        if (room == null) return 0;
+        String repo = room.getRepoName();
         int raised = 0;
         for (String topic : approvedTopics) {
             int n = issueStream.raise(repo,
@@ -702,7 +710,7 @@ public class AgentManager {
     }
 
     /** The topics the quorum has approved (for telemetry + self-test). */
-    public List<String> getApprovedTopics() { return approvedTopics; }
+    public List<String> getApprovedTopics() { return new ArrayList<>(approvedTopics); }
 
     // ── Solve loop ─────────────────────────────────────────────────────
 
@@ -893,8 +901,11 @@ public class AgentManager {
 
     /** Execute a single tool call against the current room's repo. */
     private String executeTool(OllamaClient.ToolCall call) {
-        if (currentRoom == null) return "no room context";
-        String repo = currentRoom.getRepoName();
+        // Single read: currentRoom changing mid-call must not misattribute a
+        // file op to the wrong repo (the issue's double-read race, #106).
+        Room room = currentRoom;
+        if (room == null) return "no room context";
+        String repo = room.getRepoName();
         try {
             JsonObject args = gson.fromJson(call.arguments, JsonObject.class);
             String filename = args.has("filename") ? args.get("filename").getAsString() : null;
@@ -908,8 +919,8 @@ public class AgentManager {
                         return content != null ? truncateHeadTail(filename, content) : "read failed";
                     }
                     // Local fallback
-                    if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Path fp = jailedLocalPath(filename);
+                    if (room.getLocalPath() != null) {
+                        java.nio.file.Path fp = jailedLocalPath(room, filename);
                         if (fp == null) return "path escapes repo: " + filename;
                         if (java.nio.file.Files.exists(fp)) {
                             String c = java.nio.file.Files.readString(fp);
@@ -931,7 +942,7 @@ public class AgentManager {
                     String finalContent = content;
                     if (oldStr != null && !oldStr.isEmpty()) {
                         String newStr = args.has("new_string") ? args.get("new_string").getAsString() : "";
-                        String current = readCurrentFile(repo, filename);
+                        String current = readCurrentFile(room, repo, filename);
                         if (current == null) return "edit failed (cannot read current " + filename + ")";
                         if (!current.contains(oldStr))
                             return "edit failed: old_string not found in " + filename
@@ -954,8 +965,8 @@ public class AgentManager {
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
                         return ok ? "edited " + filename : "edit failed";
                     }
-                    if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Path fp = jailedLocalPath(filename);
+                    if (room.getLocalPath() != null) {
+                        java.nio.file.Path fp = jailedLocalPath(room, filename);
                         if (fp == null) return "path escapes repo: " + filename;
                         java.nio.file.Files.writeString(fp, finalContent);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
@@ -973,8 +984,8 @@ public class AgentManager {
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename);
                         return ok ? "created " + filename : "create failed";
                     }
-                    if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Path fp = jailedLocalPath(filename);
+                    if (room.getLocalPath() != null) {
+                        java.nio.file.Path fp = jailedLocalPath(room, filename);
                         if (fp == null) return "path escapes repo: " + filename;
                         java.nio.file.Files.writeString(fp, content);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename);
@@ -988,8 +999,8 @@ public class AgentManager {
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
                         return ok ? "deleted " + filename : "delete failed";
                     }
-                    if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Path fp = jailedLocalPath(filename);
+                    if (room.getLocalPath() != null) {
+                        java.nio.file.Path fp = jailedLocalPath(room, filename);
                         if (fp == null) return "path escapes repo: " + filename;
                         boolean ok = java.nio.file.Files.deleteIfExists(fp);
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
@@ -1053,9 +1064,10 @@ public class AgentManager {
         return false;
     }
 
-    private final java.util.Set<String> rephraseAttempts = java.util.Collections.newSetFromMap(new java.util.LinkedHashMap<>() {
+    /** Synchronized: drain worker + userWorker (chat model) both emit concurrently (#106). */
+    private final java.util.Set<String> rephraseAttempts = java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.LinkedHashMap<>() {
         protected boolean removeEldestEntry(java.util.Map.Entry<String, Boolean> e) { return size() > 24; }
-    });
+    }));
 
     private void emit(Consumer<String> cb, String msg) {
         if (cb == null) return;
@@ -1096,10 +1108,10 @@ public class AgentManager {
      * and {@code ../} traversals are rejected. Returns null when the filename
      * escapes (caller reports and refuses the operation).
      */
-    private java.nio.file.Path jailedLocalPath(String filename) {
-        if (filename == null || currentRoom == null || currentRoom.getLocalPath() == null) return null;
+    private java.nio.file.Path jailedLocalPath(Room room, String filename) {
+        if (filename == null || room == null || room.getLocalPath() == null) return null;
         try {
-            java.nio.file.Path root = java.nio.file.Path.of(currentRoom.getLocalPath()).toAbsolutePath().normalize();
+            java.nio.file.Path root = java.nio.file.Path.of(room.getLocalPath()).toAbsolutePath().normalize();
             java.nio.file.Path p = root.resolve(filename).normalize();
             return p.startsWith(root) ? p : null;
         } catch (Exception e) {
@@ -1108,15 +1120,15 @@ public class AgentManager {
     }
 
     /** H05: fetch current file content (github first, then local) for patch edits. */
-    private String readCurrentFile(String repo, String filename) {
+    private String readCurrentFile(Room room, String repo, String filename) {
         if (github != null && github.isAuthenticated()) {
             try {
                 return github.fetchFileContent(repo, filename);
             } catch (Exception ignored) { }
         }
-        if (currentRoom != null && currentRoom.getLocalPath() != null) {
+        if (room != null && room.getLocalPath() != null) {
             try {
-                java.nio.file.Path fp = jailedLocalPath(filename);
+                java.nio.file.Path fp = jailedLocalPath(room, filename);
                 if (fp != null && java.nio.file.Files.exists(fp)) return java.nio.file.Files.readString(fp);
             } catch (Exception ignored) { }
         }
