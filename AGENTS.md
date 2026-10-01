@@ -29,6 +29,14 @@ system — the world is running right now, most hours of most days.
 5. **Perf budget**: target hardware is Intel HD 510 / GeForce 945M-class,
    OpenGL 3.3. Cheap adds only — material/color/text changes over new
    geometry or particle systems, unless a task says otherwise.
+6. **ONE game open at a time — the user's emphatic rule.** Before launching
+   the game (or any java/javaw), sweep every existing java process first
+   (`tasklist | grep -iE java`); kill strays with single-slash taskkill
+   (`taskkill /F /PID <pid>` — never `//F`). Never assume a cron script
+   guards this for you: 2026-09-30 two mindpalace-live.jar instances ran
+   side-by-side for hours because a launch skipped the sweep. After any
+   launch you perform, verify `tasklist` shows exactly ONE java process
+   before finishing the turn.
 
 ## Build & verify
 ```
