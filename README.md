@@ -205,6 +205,7 @@ telemetry leaves the machine.
 |---|---|
 | ![Main hall](docs/screenshots/main_hall.png) | ![Agents](docs/screenshots/agents.png) |
 | ![Rotor rings](docs/screenshots/rotor_rings.png) | The courtyard's Enigma rotor — carries tick, chime, and bell every second |
+| ![Interaction prompt with drop-shadow](docs/screenshots/prompt_drop_shadow.png) | The unified interaction prompt — magenta HUD text with a black drop-shadow (`#113`), readable even over the door's bloom |
 
 
 

@@ -59,6 +59,16 @@ public class InteractionPromptSystem {
     // control shot — no other element or toast uses it.
     private static final Vector3f PROMPT_COLOR = new Vector3f(1.0f, 0.2f, 0.9f);
 
+    // CARD-Q2 F7 (#113): the prompt is magenta in a world with bright emissive
+    // signage — under bloom glare it can wash out. Cheapest robust cure per the
+    // review (no new shaders, no FontRenderer changes): a 1px black drop-shadow
+    // drawn by rendering the SAME string twice — black copy offset ~1px toward
+    // screen-right/down-behind, magenta on top exactly at the anchor. The dark
+    // edge re-establishes contrast against any bright backdrop. ~1 extra glyph
+    // pass for one short line; the prompt scan stays FPS-neutral.
+    private static final float SHADOW_OFFSET = 0.012f; // world units (~1px at 3m)
+    private static final Vector3f SHADOW_COLOR = new Vector3f(0f, 0f, 0f);
+
     /** The currently selected prompt — null when nothing nearby. */
     private Prompt current;
     /** Last rendered text — log transitions only, not every frame. */
@@ -249,6 +259,15 @@ public class InteractionPromptSystem {
             .add(new Vector3f(camFront).mul(PROMPT_DIST))
             .add(new Vector3f(camUp).mul(PROMPT_RISE));
 
+        // CARD-Q2 F7 (#113) drop-shadow: black twin offset along camera
+        // screen-right (down would need the camera's forward·up mix; right
+        // alone already gives a clean dark edge). Drawn first so the magenta
+        // pass paints over it.
+        Vector3f camRight = new Matrix4f(view).transpose().getColumn(0, new Vector3f());
+        Vector3f shadowAnchor = new Vector3f(anchor).add(
+            new Vector3f(camRight.x, 0f, camRight.z).normalize().mul(SHADOW_OFFSET));
+        fontRenderer.renderBillboardOverlay(current.text(), shadowAnchor, 0.065f,
+            SHADOW_COLOR, proj, view, camPos);
         fontRenderer.renderBillboardOverlay(current.text(), anchor, 0.065f, PROMPT_COLOR, proj, view, camPos);
 
         // Text-change logging only (not per-frame). NOTE: a temporary
