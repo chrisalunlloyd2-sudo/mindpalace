@@ -24,6 +24,7 @@ public class AgentChat {
     // game thread. CopyOnWriteArrayList + snapshot getter closes the
     // CME/IndexOutOfBounds window; 12-entry rolling window makes COW free.
     private final List<String> messages = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final Object windowLock = new Object(); // serialises WRITERS only (see renderMessage)
     private static final int MAX_MESSAGES = 12;   // rolling window
     private static final int MAX_LEN = 96;        // truncate long lines
 
@@ -50,12 +51,22 @@ public class AgentChat {
     private void renderMessage(String msg) {
         if (msg == null || msg.isEmpty()) return;
         String clean = msg.replace('\n', ' ').replace('\r', ' ');
+        List<String> chunks = new ArrayList<>();
         while (clean.length() > MAX_LEN) {
-            messages.add(clean.substring(0, MAX_LEN));
+            chunks.add(clean.substring(0, MAX_LEN));
             clean = clean.substring(MAX_LEN);
         }
-        messages.add(clean);
-        while (messages.size() > MAX_MESSAGES) messages.remove(0);
+        chunks.add(clean);
+        // CARD-Q1 F6 (real fix): the old add() THEN trim-loop was two steps, so with several
+        // writers a lock-free reader could see the window at 13-15 (CI check 36c "window grew past
+        // cap", failing ~4 runs in 6). Make room BEFORE adding, one writer at a time; readers stay
+        // lock-free (COW), and can never observe more than MAX_MESSAGES.
+        synchronized (windowLock) {
+            for (String c : chunks) {
+                while (messages.size() >= MAX_MESSAGES) messages.remove(0);
+                messages.add(c);
+            }
+        }
         System.out.println("[AgentChat] " + msg);
     }
 
@@ -193,11 +204,13 @@ public class AgentChat {
             .add(up.x * 0.9f, up.y * 0.9f, up.z * 0.9f);
 
         // Show last N messages, newest at bottom
-        int start = Math.max(0, messages.size() - 8);
+        // Snapshot once: size() then get(i) on the live list can straddle a writer's remove(0).
+        List<String> snap = List.copyOf(messages);
+        int start = Math.max(0, snap.size() - 8);
         float lineH = 0.09f;
         float y = anchor.y;
-        for (int i = start; i < messages.size(); i++) {
-            String line = messages.get(i);
+        for (int i = start; i < snap.size(); i++) {
+            String line = snap.get(i);
             Vector3f pos = new Vector3f(anchor.x, y, anchor.z);
             Vector3f color = line.startsWith("[Critic]") ? new Vector3f(1.0f, 0.7f, 0.2f)
                           : line.startsWith("[Explorer]") ? new Vector3f(0.2f, 0.9f, 1.0f)
@@ -217,6 +230,7 @@ public class AgentChat {
     }
 
     public boolean isOpen() { return true; } // always on
-    /** CARD-Q1 F6: unmodifiable snapshot — callers must not mutate the live window. */
-    public List<String> getMessages() { return java.util.Collections.unmodifiableList(messages); }
+    /** CARD-Q1 F6: a real unmodifiable SNAPSHOT (was Collections.unmodifiableList(messages), which is
+     *  a live VIEW of the window, so a caller's size()/get(i) could straddle a writer). */
+    public List<String> getMessages() { return List.copyOf(messages); }
 }
