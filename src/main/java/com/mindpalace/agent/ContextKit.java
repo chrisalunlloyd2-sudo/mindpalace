@@ -56,7 +56,7 @@ public final class ContextKit {
     public com.mindpalace.agent.sims.AdapterType loraAdapter() { return loraAdapter; }
     /** Snapshot of the KG neighborhood (#106): callers must not iterate the
      *  live list while another thread calls setKgNodes. */
-    public List<String> kgNodes() { synchronized (kgNodes) { return new ArrayList<>(kgNodes); } }
+    public synchronized List<String> kgNodes() { return new ArrayList<>(kgNodes); }
     public long turns() { return turns; }
 
     /**
@@ -69,13 +69,14 @@ public final class ContextKit {
         StringBuilder sb = new StringBuilder(256);
         sb.append("[ctx model=").append(model)
           .append(" lora=").append(loraAdapter).append(']');
-        if (!kgNodes.isEmpty()) {
+        List<String> nodes = kgNodes();
+        if (!nodes.isEmpty()) {
             sb.append(" [kg ");
-            for (int i = 0; i < Math.min(kgNodes.size(), 5); i++) {
+            for (int i = 0; i < Math.min(nodes.size(), 5); i++) {
                 if (i > 0) sb.append(',');
-                sb.append(kgNodes.get(i));
+                sb.append(nodes.get(i));
             }
-            if (kgNodes.size() > 5) sb.append("…+").append(kgNodes.size() - 5);
+            if (nodes.size() > 5) sb.append("…+").append(nodes.size() - 5);
             sb.append(']');
         }
         Map<String, Float> snap = kv.snapshot();

@@ -202,7 +202,8 @@ public class AgentManager {
         this.currentBook = book;
         // Track discovery: when a fogged room is revealed, agents "discover" it.
         // ConcurrentSet.add is atomic — replaces the contains→add check-then-act (#106).
-        if (room != null && discoveredRepos.add(room.getRepoName())) {
+        // Null repo name guarded: ConcurrentHashMap key sets reject null (HashSet accepted it).
+        if (room != null && room.getRepoName() != null && discoveredRepos.add(room.getRepoName())) {
             log("[AgentManager] Discovered repo: " + room.getRepoName()
                 + (room.isFogged() ? " (fog lifted)" : ""));
         }
