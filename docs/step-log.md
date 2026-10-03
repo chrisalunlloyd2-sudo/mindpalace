@@ -13,3 +13,9 @@
 - Pixel proof: docs/screenshots/issue_crystals.png (e2e 07_todo_crystals, 1 drip cadence)
 - Live console (PID 4772): 8 crystals surfaced (#4/#3/#2 BDI_FSM_AGENT, #29/#28/#27 MatrixCE_GUI, #145/#144 mindpalace) — REAL tracker issues, 1 drip/60s
 - Selftest check 33 reflection gate preserved (new method names delete/close/edit-free)
+
+## 2026-10-03 — #119 SHIPPED (weekly bot activity report · step 88)
+- Local: 9417c01 pushed 38964fa..9417c01 · closes #119
+- --botmetrics 7d rollup (71,086 visits / 156 unique rooms / 2,440 retirements / wallet 124)
+- --botsteplog weekly-guarded post to #9 (first: comment 5970331415)
+- game_alive() javaw class-fix; cascade_dev step-8 wiring
