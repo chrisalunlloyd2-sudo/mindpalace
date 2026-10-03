@@ -20,6 +20,42 @@ public class OllamaClient {
     // invariant physical — a second caller blocks until the first model unloads.
     private final Object modelGate = new Object();
 
+    // Keep-alive window for the one resident model. "0" restores the old cold-shot
+    // (unload after every reply). Measured 2026-10-03: unload-per-call costs 3.8-5.6 s
+    // per call vs ~0.5 s hot (first disk-cold load up to 86 s). Override with
+    // -Dmindpalace.ollama.keepAlive=... or env MP_OLLAMA_KEEP_ALIVE (e.g. "0", "2m", "5m").
+    private static final String KEEP_ALIVE = resolveKeepAlive();
+    // The one hot model; guarded by modelGate. A different model evicts it first,
+    // so at most one model stays resident regardless of Ollama's own limits.
+    private String hotModel;
+
+    private static String resolveKeepAlive() {
+        String v = System.getProperty("mindpalace.ollama.keepAlive", System.getenv("MP_OLLAMA_KEEP_ALIVE"));
+        return (v == null || v.isBlank()) ? "5m" : v.trim();
+    }
+
+    private static void applyKeepAlive(JsonObject body) {
+        if (KEEP_ALIVE.matches("\\d+")) body.addProperty("keep_alive", Long.parseLong(KEEP_ALIVE));
+        else body.addProperty("keep_alive", KEEP_ALIVE);
+    }
+
+    /** Caller must hold modelGate. Unloads the previously hot model when switching. */
+    private void evictPreviousModelLocked(String model) {
+        String prev = hotModel;
+        hotModel = model;
+        if (prev == null || prev.equals(model) || "0".equals(KEEP_ALIVE)) return;
+        try {
+            JsonObject b = new JsonObject();
+            b.addProperty("model", prev);
+            b.addProperty("prompt", "");
+            b.addProperty("stream", false);
+            b.addProperty("keep_alive", 0);
+            Request r = new Request.Builder().url(BASE + "/generate")
+                .post(RequestBody.create(b.toString(), MediaType.parse("application/json"))).build();
+            try (Response resp = http.newCall(r).execute()) { /* best effort */ }
+        } catch (IOException ignored) { /* eviction is best effort; the next load still works */ }
+    }
+
     public OllamaClient() {
         http = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -69,10 +105,9 @@ public class OllamaClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
-        // COLD-SHOT: unload immediately after the reply — never more than one
-        // model resident in RAM. Slower (disk reload each turn) by design: the
-        // game's frames never compete with an idle model's memory footprint.
-        body.addProperty("keep_alive", 0);
+        // ONE-HOT: the model stays resident for KEEP_ALIVE (default 5m); a different
+        // model evicts it (see evictPreviousModelLocked). "0" = old cold-shot policy.
+        applyKeepAlive(body);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -91,6 +126,7 @@ public class OllamaClient {
 
         try {
             synchronized (modelGate) {
+                evictPreviousModelLocked(model);
                 Request r = new Request.Builder()
                     .url(BASE + "/chat")
                     .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
@@ -131,8 +167,8 @@ public class OllamaClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
-        // COLD-SHOT: same policy as chat() — one model resident, zero after.
-        body.addProperty("keep_alive", 0);
+        // Same one-hot keep-alive policy as chat().
+        applyKeepAlive(body);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -160,6 +196,7 @@ public class OllamaClient {
 
         try {
             synchronized (modelGate) {
+                evictPreviousModelLocked(model);
                 Request r = new Request.Builder()
                     .url(BASE + "/chat")
                     .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
