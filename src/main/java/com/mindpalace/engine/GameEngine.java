@@ -469,6 +469,19 @@ public class GameEngine {
             agentManager.setIssueStream(new com.mindpalace.github.GitHubIssueStream(
                 github.getToken(), "chrisalunlloyd2-sudo", 30_000L));
         }
+        // (#118, step 91) Every mapped room's repo joins the read feed — open
+        // issues surface in-world as crystals via the paced pull below.
+        if (!demoMode && github.isAuthenticated() && agentManager.getIssueStream() != null) {
+            java.util.LinkedHashSet<String> repoSet = new java.util.LinkedHashSet<>();
+            for (Room room : world.getRooms()) {
+                String repoName = room.getRepoName();
+                if (repoName != null && !"mansion".equals(repoName)) repoSet.add(repoName);
+            }
+            for (String repoName : repoSet)
+                agentManager.getIssueStream().watchRepo(repoName);
+            System.out.println("[IssueStream] " + repoSet.size()
+                + " repos in the in-world issue feed (1 read/60s, round-robin)");
+        }
         // Unified telemetry: agents record quorum/DePIN/issue events.
         agentManager.setTelemetry(telemetry);
         // H21 (step 67): quorum verdicts flare the world — gold bloom flash
@@ -739,6 +752,27 @@ public class GameEngine {
         System.out.println("[NPC] Scout on patrol (" + rooms.size() + " rooms in rotation)");
     }
 
+    /**
+     * (#118, step 91) Surface a GitHub-issue crystal near its repo's room.
+     * Called from the issue-stream daemon thread (same cross-thread contract
+     * as the lexical setIssuesCallback at setup) — hard cap 60 in-world
+     * crystals, duplicates pre-filtered by the stream's add-only dedup keys.
+     */
+    private void spawnIssueCrystal(com.mindpalace.world.TodoCrystal c) {
+        if (crystals.size() >= 60) return; // hard cap, one world
+        Room r = world.getRooms().stream()
+            .filter(rm -> rm.getRepoName() != null
+                && rm.getRepoName().equalsIgnoreCase(c.getRepoName()))
+            .findFirst().orElse(null);
+        if (r != null && r.getRoomCenter() != null) {
+            c.setPosition(new Vector3f(r.getRoomCenter()).add(0, 0.3f, 0));
+        } else {
+            c.setPosition(new Vector3f(0, 1.0f, 0));
+        }
+        crystals.add(c);
+        System.out.println("[IssueFeed] crystal: " + c.getLabel() + " @ " + c.getRepoName());
+    }
+
     private void spawnCrystals() {
         // Scan repo files for TODO/FIXME/HACK comments → spawn a crystal per hit (cap 40)
         int cap = 40;
@@ -891,6 +925,15 @@ public class GameEngine {
         if (factToastTimer > 0) factToastTimer -= dt;
         if (tocToastTimer > 0) tocToastTimer -= dt;
         if (tocCooldown > 0) tocCooldown -= dt;
+
+        // (#118, step 91) GitHub issue feed: paced daemon-thread drip — at
+        // most 1 repo read per 60s, crystals surface near their repo room.
+        // Never blocks the render loop (network runs on the daemon thread,
+        // same contract as GistWall); self-pacing makes per-frame calls cheap.
+        if (state == GameState.PLAYING && agentManager != null
+            && agentManager.getIssueStream() != null) {
+            agentManager.getIssueStream().refreshCrystals(this::spawnIssueCrystal);
+        }
 
         // TOC tree of knowledge — walk up to retrieve real system data
         if (tocCooldown <= 0 && player.getCurrentRoom() == null) {
@@ -4746,6 +4789,41 @@ public class GameEngine {
             System.out.println("FAIL bot lifecycle: " + e.getClass().getSimpleName() + " " + e.getMessage());
         }
         if (lifeOk) pass++; else fail++;
+
+        // 50. (#118, step 91) Issue read feed — pure label builder is
+        //     deterministic (PR skip, body truncation), pacing + dedup are
+        //     structural (60s drip, one (repo,#) emitted at most once), and
+        //     watch/queue counters stay honest. No network in selftest.
+        boolean feedOk = false;
+        try {
+            com.google.gson.JsonObject prJson = com.google.gson.JsonParser.parseString(
+                "{\"number\":7,\"title\":\"PR rider\",\"body\":\"b\",\"pull_request\":{}}").getAsJsonObject();
+            com.google.gson.JsonObject issueJson = com.google.gson.JsonParser.parseString(
+                "{\"number\":12,\"title\":\"Door prompt unreadable\",\"body\":\""
+                + "x".repeat(60) + "\"}").getAsJsonObject();
+            String prOut = com.mindpalace.github.GitHubIssueStream.crystalTextFor(prJson);
+            String okOut = com.mindpalace.github.GitHubIssueStream.crystalTextFor(issueJson);
+            boolean prSkipped = prOut == null;                       // PRs never surface
+            boolean fmtOk = okOut != null && okOut.startsWith("#12 ISSUE Door prompt unreadable")
+                && okOut.length() < 80 && okOut.endsWith(String.valueOf('x'));  // body truncated to 40
+            com.mindpalace.github.GitHubIssueStream feed =
+                new com.mindpalace.github.GitHubIssueStream(null, "t");  // no token → deterministic no-op
+            java.util.List<com.mindpalace.world.TodoCrystal> sink = new java.util.ArrayList<>();
+            feed.watchRepo("alpha");
+            feed.watchRepo("beta");
+            feed.watchRepo("alpha");                       // dup watch is idempotent
+            boolean counters = feed.watchedRepoCount() == 2
+                && feed.pendingReads() == 0;               // nothing pulled yet
+            feed.refreshCrystals(cx -> sink.add(cx));      // offline → zero crystals, no throw
+            boolean offlineSilent = sink.isEmpty();
+            feedOk = prSkipped && fmtOk && counters && offlineSilent;
+            System.out.println((feedOk ? "PASS" : "FAIL")
+                + " issue read feed (prSkip=" + prSkipped + " fmt=" + fmtOk
+                + " counters=" + counters + " offlineSilent=" + offlineSilent + ")");
+        } catch (Exception e) {
+            System.out.println("FAIL issue read feed: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (feedOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

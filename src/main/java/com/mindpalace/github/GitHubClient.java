@@ -215,6 +215,57 @@ public class GitHubClient {
     /**
      * Create or update a file in a repo.
      */
+    // ── Issue reads (#118, step 91): GitHubIssueStream is the ADD-ONLY write
+    // half (agents raise); this is the read half — pure GET, never wired to
+    // close/edit/delete. TTL-cached like the fetchers above so room visits
+    // and round-robin drains don't hammer the API.
+    private final java.util.Map<String, CacheEntry<List<OpenIssue>>> issueCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Minimal open-issue shape for in-world display + step-92 verdicts. */
+    public record OpenIssue(int number, String title, String body) {}
+
+    /**
+     * List open issues for a repo (newest first, cap 20). PRs (which ride
+     * this endpoint) are filtered out; an API error returns an empty list —
+     * the read path never blows up the caller.
+     */
+    public List<OpenIssue> listOpenIssues(String repoName) throws IOException {
+        CacheEntry<List<OpenIssue>> hit = issueCache.get(repoName);
+        if (hit != null && hit.fresh()) return hit.value;
+
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName
+                + "/issues?state=open&per_page=20&sort=created&direction=desc")
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+
+        List<OpenIssue> issues = new ArrayList<>();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return issues;
+            issues = parseOpenIssues(resp.body().string());
+        }
+        issueCache.put(repoName, new CacheEntry<>(issues));
+        return issues;
+    }
+
+    /** Pure parse of a GET /issues JSON array → OpenIssues (PR rows dropped). */
+    public static List<OpenIssue> parseOpenIssues(String body) {
+        List<OpenIssue> issues = new ArrayList<>();
+        JsonArray arr = JsonParser.parseString(body).getAsJsonArray();
+        for (JsonElement el : arr) {
+            JsonObject obj = el.getAsJsonObject();
+            if (obj.has("pull_request")) continue; // PRs ride the issues endpoint
+            String text = obj.has("body") && !obj.get("body").isJsonNull()
+                ? obj.get("body").getAsString() : "";
+            issues.add(new OpenIssue(
+                obj.get("number").getAsInt(),
+                obj.get("title").getAsString(),
+                text));
+        }
+        return issues;
+    }
+
     public boolean upsertFile(String repoName, String filePath, String content, String commitMessage, String sha) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("message", commitMessage);

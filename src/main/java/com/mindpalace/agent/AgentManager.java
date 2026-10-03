@@ -243,6 +243,9 @@ public class AgentManager {
         this.issueStream = stream;
     }
 
+    /** The add-only issue stream (read side wired by the engine; may be null). */
+    public com.mindpalace.github.GitHubIssueStream getIssueStream() { return issueStream; }
+
     // ── Telemetry ──────────────────────────────────────────────────────
 
     private com.mindpalace.backup.Telemetry telemetry;
