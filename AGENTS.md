@@ -124,10 +124,17 @@ now use single-slash `/F /PID` (commit 73f888a, proven: 12:12 cycle show
 management to a new script, use single-slash taskkill always.
 
 ## Known race (fixed 2026-09-27, stay aware)
-`mindpalace-sync.sh` (no-agent, every 30 min) reaps stale `java.exe` processes
-before rebuilding. Commit 7226a10 changed the sweep: only javas older than
-30 min whose command line lacks 'mindpalace' get killed — the live game is never
-a target, and hung selftests still die. A session java of your own that outlives
-30 min still counts as stale by that rule, so the spurious-kill theory survives,
-just far less likely. If a build fails for no reason you can find in your own
-diff, suspect this race before suspecting your code.
+`mindpalace-sync.sh` (no-agent, every 30 min) reaps stale java processes before
+rebuilding, but commit 7226a10 narrowed the sweep: only javas older than 30 min
+whose command line lacks 'mindpalace' get killed — and both the live game and
+your own build/selftest javas carry 'mindpalace' on their command line (repo
+path, jar name), so the live game and session work are never targets; this
+covers `java.exe` and `javaw.exe` alike. Hung selftests are bounded
+independently by `timeout 420` (step 5). The only reaping candidates left are
+javas >30 min with no 'mindpalace' in their command line (unrelated processes).
+Two more 2026-09-27 fixes in the same file: self-heal (step 1b) relaunches
+mindpalace-live.jar when the world is found dark — before the nothing-to-ship
+early exit, so the game never sits dark just because no new work shipped — and
+ONE-game enforcement (enforce_one_game) runs unconditionally on both relaunch
+and self-heal paths. If a build fails for no reason you can find in your own
+diff, suspect your diff, not this sweep.
