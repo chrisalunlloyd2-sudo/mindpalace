@@ -119,3 +119,5 @@ log "CASCADE COMPLETE: $H_ID verified + shipped"
 # evidence. Failure here must not fail the cascade (evidence is bonus).
 python scripts/test_bot.py --steplog || log "steplog: post failed (non-fatal)"
 python scripts/scout_bot.py --metrics >/dev/null 2>&1 || true
+python scripts/scout_bot.py --botmetrics >/dev/null 2>&1 || true
+python scripts/scout_bot.py --botsteplog || log "botsteplog: post failed (non-fatal)"
