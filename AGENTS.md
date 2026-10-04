@@ -47,6 +47,27 @@ bash e2e.sh                    # full build+selftest+waypoint-tour+screenshot ve
 `e2e.sh` and the game's own self-test are the real gate — a clean `mvn
 package` alone is not proof of anything working.
 
+## Release
+Use `scripts/release_phase.sh` from the configured Windows/Git Bash release
+workstation (the script uses machine-specific Java, Maven, and repository paths).
+Pass the full version, such as `1.2.0-beta1`:
+
+```
+bash scripts/release_phase.sh --dry-run 1.2.0-beta1
+bash scripts/release_phase.sh --rehearse 1.2.0-beta1
+bash scripts/release_phase.sh --cut 1.2.0-beta1
+```
+
+- `--dry-run` previews the version-file edits and restores the files; use it
+  before a release to check the proposed version stamp.
+- `--rehearse` runs the build, selftest, e2e tour, and installer gates, then
+  restores the version files. It makes no remote writes, but swaps in and
+  relaunches the freshly built game.
+- `--cut` runs the same gates, then commits and pushes the version, tags it,
+  creates the GitHub Release with the installer, and posts the release URL to
+  the configured step-log issue. Use only after a successful rehearsal; it
+  requires working GitHub CLI and Git credentials.
+
 ## Module map (`src/main/java/com/mindpalace/`)
 - **engine/** — `GameEngine` (main loop, rendering, input dispatch),
   `Input`, `GameState`, `ToolExecutor` (file read/edit/create/delete for the

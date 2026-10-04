@@ -35,6 +35,14 @@ bash build-warm-installer.sh
 # → installer/MindPalace-Setup-1.1.0-beta1.exe
 ```
 
+## Release and versioning
+
+The release pipeline stamps the project version and installer filename, then
+builds and verifies the release installer. Use
+[`scripts/release_phase.sh`](scripts/release_phase.sh) for a dry-run preview,
+full local rehearsal, or the final release cut; its modes and requirements are
+documented in [`AGENTS.md`](AGENTS.md#release).
+
 ## Accessories (Ollama + models)
 
 The installer's post-install step runs only if the user ticks the boxes:
