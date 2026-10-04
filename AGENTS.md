@@ -47,6 +47,20 @@ bash e2e.sh                    # full build+selftest+waypoint-tour+screenshot ve
 `e2e.sh` and the game's own self-test are the real gate — a clean `mvn
 package` alone is not proof of anything working.
 
+## Release
+`scripts/release_phase.sh` is the only release pipeline (H33/H33a, issue #121).
+Version format `X.Y.Z` or `X.Y.Z-betaN`; refuses an existing tag.
+```
+bash scripts/release_phase.sh --dry-run [VER]   # preview version edits only, no writes
+bash scripts/release_phase.sh --rehearse VER    # full pipeline, no remote writes, edits reverted
+bash scripts/release_phase.sh --cut VER         # rehearse + commit/tag/push/gh release/step-log post
+```
+Pipeline: bump/stamp pom.xml, INSTALLER.md, README.md -> build -> selftest ->
+e2e tour -> jpackage .exe -> swap `mindpalace-live.jar` and relaunch (sweeps
+all java first, one game only). Any failed gate aborts before tagging. Always
+`--dry-run`, then `--rehearse`, before `--cut`. The .exe is uploaded to the
+GitHub Release, not committed (`installer/` is gitignored). See `INSTALLER.md`.
+
 ## Module map (`src/main/java/com/mindpalace/`)
 - **engine/** — `GameEngine` (main loop, rendering, input dispatch),
   `Input`, `GameState`, `ToolExecutor` (file read/edit/create/delete for the
