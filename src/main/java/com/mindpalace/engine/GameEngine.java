@@ -39,6 +39,7 @@ import com.mindpalace.deploy.PatchManager;
 import com.mindpalace.backup.BackupManager;
 import com.mindpalace.backup.MemoryManager;
 import com.mindpalace.agent.IdleDetector;
+import com.mindpalace.integration.ContextBroadcaster;
 import org.joml.Vector3f;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
@@ -121,6 +122,7 @@ public class GameEngine {
     private BackupManager backupManager;
     private MemoryManager memoryManager;
     private IdleDetector idleDetector;
+    private ContextBroadcaster contextBroadcaster;
     private boolean searchMode;
     private String searchQuery = "";
     private boolean showHelp;
@@ -674,6 +676,21 @@ public class GameEngine {
             bdiBridge.start();
         } else {
             System.out.println("[BDI] demo mode - bridge suppressed (hermetic selftest, step 81)");
+        }
+
+        if (!demoMode && !selfTest) {
+            try {
+                contextBroadcaster = ContextBroadcaster.fromConfig();
+                if (contextBroadcaster != null) {
+                    contextBroadcaster.start();
+                    System.out.println("[Context] tailnet broadcaster listening on "
+                        + contextBroadcaster.port());
+                }
+            } catch (Exception e) {
+                System.err.println("[Context] broadcaster not started: " + e.getMessage());
+                if (contextBroadcaster != null) contextBroadcaster.close();
+                contextBroadcaster = null;
+            }
         }
 
         loadingText = "Ready.";
@@ -3248,6 +3265,7 @@ public class GameEngine {
     }
 
     private void cleanup() {
+        if (contextBroadcaster != null) contextBroadcaster.close();
         if (backupManager != null) backupManager.stop();
         if (bdiBridge != null) bdiBridge.stop();
         if (memoryManager != null) memoryManager.stop();
@@ -3399,9 +3417,96 @@ public class GameEngine {
      * against every room, plus teleporter/agent/world invariants, and prints
      * a PASS/FAIL report. No human driving — this is the definitive check.
      */
+    private boolean testContextBroadcaster() {
+        java.nio.file.Path temp = null;
+        ContextBroadcaster broadcaster = null;
+        try {
+            temp = java.nio.file.Files.createTempDirectory("mindpalace-context-test");
+            String shuttle = "{\"source\":\"selftest\"}";
+            String cards = "[{\"kind\":\"card\"}]";
+            String triplets = "[{\"kind\":\"triplet\"}]";
+            java.nio.file.Files.writeString(temp.resolve("shuttle.json"), shuttle,
+                java.nio.charset.StandardCharsets.UTF_8);
+            java.nio.file.Files.writeString(temp.resolve("cards.json"), cards,
+                java.nio.charset.StandardCharsets.UTF_8);
+            java.nio.file.Files.writeString(temp.resolve("triplets.json"), triplets,
+                java.nio.charset.StandardCharsets.UTF_8);
+            java.util.concurrent.atomic.AtomicReference<ContextBroadcaster.PeerIdentity> peer =
+                new java.util.concurrent.atomic.AtomicReference<>(
+                    new ContextBroadcaster.PeerIdentity("trusted@example.test",
+                        java.util.Set.of("tag:reader")));
+            broadcaster = new ContextBroadcaster(temp,
+                java.net.InetAddress.getByName("127.0.0.1"), 0,
+                java.util.Set.of("trusted@example.test"), java.util.Set.of("tag:reader"),
+                address -> peer.get());
+            broadcaster.start();
+
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(2)).build();
+            String base = "http://127.0.0.1:" + broadcaster.port();
+            var shuttleResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/shuttle"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            var cardsResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            var tripletsResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/triplets"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean served = shuttleResponse.statusCode() == 200 && shuttle.equals(shuttleResponse.body())
+                && cardsResponse.statusCode() == 200 && cards.equals(cardsResponse.body())
+                && tripletsResponse.statusCode() == 200 && triplets.equals(tripletsResponse.body());
+
+            peer.set(new ContextBroadcaster.PeerIdentity("intruder@example.test",
+                java.util.Set.of("tag:other")));
+            var deniedResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean denied = deniedResponse.statusCode() == 403;
+
+            peer.set(new ContextBroadcaster.PeerIdentity("trusted@example.test", java.util.Set.of()));
+            var missingResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/not-a-route"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean missingIsNotFound = missingResponse.statusCode() == 404;
+
+            ContextBroadcaster.PeerIdentity whoIs = ContextBroadcaster.parseWhoIs(
+                "{\"UserProfile\":{\"LoginName\":\"trusted@example.test\"},"
+                    + "\"Node\":{\"Tags\":[\"tag:reader\"]}}");
+            return served && denied && missingIsNotFound
+                && ContextBroadcaster.isAuthorized(whoIs, java.util.Set.of(), java.util.Set.of("tag:reader"))
+                && ContextBroadcaster.isAuthorized(whoIs, java.util.Set.of("TRUSTED@example.test"),
+                    java.util.Set.of())
+                && !ContextBroadcaster.isAuthorized(whoIs, java.util.Set.of("other@example.test"),
+                    java.util.Set.of("tag:other"));
+        } catch (Exception e) {
+            System.out.println("[Context] self-test error: " + e.getMessage());
+            return false;
+        } finally {
+            if (broadcaster != null) broadcaster.close();
+            if (temp != null) {
+                try (var paths = java.nio.file.Files.walk(temp)) {
+                    paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                        try { java.nio.file.Files.deleteIfExists(path); } catch (Exception ignored) {}
+                    });
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
     private void runSelfTest() {
         int pass = 0, fail = 0;
         System.out.println("\n===== MIND PALACE SELF-TEST =====");
+
+        boolean contextOk = testContextBroadcaster();
+        System.out.println((contextOk ? "PASS" : "FAIL")
+            + " context broadcaster (file routes, WhoIs user/tag allowlist, denial)");
+        if (contextOk) pass++; else fail++;
 
         // 1. World built
         if (world != null && !world.getRooms().isEmpty()) {
