@@ -67,6 +67,8 @@ public class GameEngine {
     private Renderer renderer;
     private FontRenderer fontRenderer;
     private BloomEffect bloom;
+    // MP-20 block-assembly: self-contained visual blocks minted at boot, composed at the bloom seam
+    private final com.mindpalace.blocks.BlockRegistry blocks = new com.mindpalace.blocks.BlockRegistry();
     private WorldBuilder world;
     private Player player;
     private DressingRoom dressingRoom;   // F7: avatar dressing room (360° orbit editor)
@@ -413,6 +415,7 @@ public class GameEngine {
         input = new Input(window);
         renderer = new Renderer(width, height);
         bloom = new BloomEffect(width, height);
+        blocks.register(com.mindpalace.blocks.FireBlock.seedDefault()); // MP-032 fire (flicker phase)
         fontRenderer = new FontRenderer();
         player = new Player();
         // Dressing room owns the player avatar — Cortana preset as the starting point.
@@ -1703,6 +1706,8 @@ public class GameEngine {
             bloomCurrent += quorumFlare * 0.6f;
             bloomCurrent = Math.max(0f, Math.min(2f, bloomCurrent));
         }
+        blocks.updateAll((float) dt, player.getPosition().x, player.getPosition().z, target);
+        bloomCurrent = blocks.applyLuma(bloomCurrent);
         bloom.setIntensity(bloomCurrent);
         // H22 (step 72): weather-music coupling — rain slows the score
         // (soaked-world feel), snow/clear restore. Cheap: only writes tempo
@@ -3275,6 +3280,7 @@ public class GameEngine {
         music.cleanup();
         renderer.cleanup();
         bloom.cleanup();
+        blocks.cleanup();
         GLFW.glfwDestroyWindow(window);
         GLFW.glfwTerminate();
         GLFW.glfwSetErrorCallback(null).free();
@@ -3507,6 +3513,10 @@ public class GameEngine {
         System.out.println((contextOk ? "PASS" : "FAIL")
             + " context broadcaster (file routes, WhoIs user/tag allowlist, denial)");
         if (contextOk) pass++; else fail++;
+        boolean blocksOk = blocks.selfTestAll();
+        System.out.println((blocksOk ? "PASS" : "FAIL")
+            + " render blocks (mp-20 registry, mp-032 fire flicker, bool-false gating)");
+        if (blocksOk) pass++; else fail++;
 
         // 1. World built
         if (world != null && !world.getRooms().isEmpty()) {
