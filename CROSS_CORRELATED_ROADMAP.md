@@ -386,3 +386,4 @@ registry toward "enough blocks to populate anything."
 - [x] MP-028 WeatherBlock (v1.1 envUpdate seam) — commit 1e39c71 (tau-math re-derived gates; registry 2/2 active)
 - [x] DePIN economy selftest: underfunded-reject proof now captured BEFORE Refund post — commit d07d3d2 (facet forensics [main=true skillGate=true held=false ...] proved ordering bug, not race; totalCount()==0 was asserted after the Refund post landed — check never passed on CI since the economy merge)
 - [x] CI verify: d07d3d2 GREEN on origin — first-ever CI pass for the DePIN check (58/0)
+- [x] MP-033 IceBlock phase 1 (frost shimmer + glint in bloom chain) — commit fefe219 (aux-engaged via WINTER season feed; P1-P7 first-run green; proof on openjdk 17.0.20.1: winter composite [0.5424,0.8502], bit-identical 3-block determinism; phase 2 = crystals+rim tint under #179)
