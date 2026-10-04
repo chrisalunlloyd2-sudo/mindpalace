@@ -3846,11 +3846,35 @@ public class GameEngine {
             // Skill gate: a tier-1 agent can't claim a difficulty-5 job.
             if (depinOk) {
                 com.mindpalace.economy.Blackboard.Job hard = depin.post("Hard job", "repo/hard", 50.0, 5);
-                depinOk = !depin.claim(hard.id, "Critic"); // Critic is still tier 1
+                depinOk = hard != null && !depin.claim(hard.id, "Critic"); // Critic is still tier 1
+            }
+            if (depinOk) {
+                com.mindpalace.economy.DePIN probe = new com.mindpalace.economy.DePIN(4.99);
+                com.mindpalace.economy.Blackboard.Job underfunded =
+                    probe.post("Unfunded", "selftest/unfunded", 5.0, 1);
+                com.mindpalace.economy.Blackboard.Job cancelled =
+                    probe.post("Refund", "selftest/refund", 4.5, 1);
+                boolean held = underfunded == null && probe.board().totalCount() == 0
+                    && cancelled != null && probe.escrow().held(cancelled.id) == 4.5
+                    && Math.abs(probe.treasury().balance() - 0.49) < 0.001;
+                boolean refunded = cancelled != null && probe.cancel(cancelled.id)
+                    && cancelled.status == com.mindpalace.economy.Blackboard.JobStatus.CANCELLED
+                    && Math.abs(probe.treasury().balance() - 4.99) < 0.001
+                    && probe.escrow().totalHeld() == 0;
+                com.mindpalace.economy.Blackboard.Job funded =
+                    probe.post("Payout", "selftest/payout", 4.5, 1);
+                double playerBefore = probe.participant("player").wallet.getBalance();
+                boolean paid = funded != null && probe.claim(funded.id, "player")
+                    && Math.abs(probe.complete(funded.id) - 4.5) < 0.001
+                    && probe.participant("player").wallet.getBalance() == playerBefore + 4.5
+                    && probe.escrow().held(funded.id) == 0
+                    && probe.ledger().transactionCount() == 6
+                    && probe.participant("player").wallet.transactionCount() == 2;
+                depinOk = held && refunded && paid;
             }
         }
         System.out.println((depinOk ? "PASS" : "FAIL")
-            + " DePIN economy (wallets + blackboard + skill gate + pay-for-work)");
+            + " DePIN economy (ledger + treasury + escrow + refunds + skill gate + payouts)");
         if (depinOk) pass++; else fail++;
 
         // 26. Model shops — proximity detection + buy with credits.
