@@ -41,8 +41,17 @@ public class GitHubClient {
             p.getOutputStream().write("protocol=https\nhost=github.com\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
             p.getOutputStream().flush();
             p.getOutputStream().close();
+            // t_b2e9bc3f gate fix: GCM intermittently wedges (observed twice
+            // this session — jstack showed the engine hung in readAllBytes on
+            // GCM's stdout). waitFor()/readAllBytes block forever, freezing
+            // startup. Bound the whole handshake to 12s and destroy the child
+            // on timeout — the engine already has a fallback path.
+            boolean finished = p.waitFor(12, TimeUnit.SECONDS);
+            if (!finished) {
+                p.destroyForcibly();
+                System.err.println("[GitHub] Credential Manager timed out after 12s — using fallback auth");
+            }
             String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-            p.waitFor();
 
             for (String line : out.split("\n")) {
                 if (line.toLowerCase().startsWith("password=")) {
