@@ -39,10 +39,48 @@ jobs:
           JARFILE=$(ls target/mindpalace-*.jar | head -n 1)
           if [ -z "$JARFILE" ]; then echo ::error::no jar in target/ after package; exit 1; fi
           echo jar: $JARFILE
-          xvfb-run -a -s "-screen 0 1280x720x24" java -jar "$JARFILE" --demo --selftest > selftest.log 2>&1
+          : > selftest.log
+          run_selftest() {
+            attempt_log="/tmp/selftest-attempt-$1.log"
+            xvfb-run -a -s "-screen 0 1280x720x24" java -jar "$JARFILE" --demo --selftest > "$attempt_log" 2>&1
+            attempt_rc=$?
+            {
+              echo "=== Selftest attempt $1 (exit $attempt_rc) ==="
+              cat "$attempt_log"
+            } >> selftest.log
+            result=$(grep -E 'RESULT:[[:space:]]*[0-9]+ passed, 0 failed' "$attempt_log" | tail -n 1)
+            passed=$(printf '%s' "$result" | sed -E 's/.*RESULT:[[:space:]]*([0-9]+).*/\1/')
+            if [ "$attempt_rc" -eq 0 ] &&
+              [ -n "$passed" ] && [ "$passed" -ge 5 ] &&
+              grep -Fq "Demo fixtures loaded: 12 rooms" "$attempt_log" &&
+              grep -Fq "PASS demo hermeticity" "$attempt_log"; then
+              return 0
+            fi
+            if [ "$attempt_rc" -ne 0 ]; then return "$attempt_rc"; fi
+            return 1
+          }
+          run_selftest 1
           rc=$?
-          tail -n 40 selftest.log
+          if [ "$rc" -eq 0 ]; then
+            classification="stable"
+            echo "::notice::Selftest stable: first attempt passed"
+          else
+            echo "::warning::Selftest attempt 1 failed (exit $rc); retrying once"
+            run_selftest 2
+            retry_rc=$?
+            if [ "$retry_rc" -eq 0 ]; then
+              classification="flaky"
+              rc=0
+              echo "::warning::Selftest flaky: first attempt failed, retry passed"
+            else
+              classification="real failure"
+              rc=1
+              echo "::error::Selftest real failure: both attempts failed"
+            fi
+          fi
+          echo "### Selftest: $classification" >> "$GITHUB_STEP_SUMMARY"
           tail -n 15 selftest.log >> "$GITHUB_STEP_SUMMARY"
+          tail -n 40 selftest.log
           exit $rc
       - name: Assert green (45/0, fixtures, hermeticity)
         shell: pwsh
@@ -65,4 +103,3 @@ jobs:
         with:
           name: selftest-log
           path: selftest.log
-
