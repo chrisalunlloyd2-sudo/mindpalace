@@ -2,6 +2,7 @@ package com.mindpalace.economy;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongPredicate;
 
 /**
  * Blackboard — the shared job board of the DePIN economy.
@@ -13,7 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * topic, exactly like a blackboard of TODO slips pinned in a room.
  */
 public class Blackboard {
-    public enum JobStatus { OPEN, CLAIMED, DONE }
+    public enum JobStatus { OPEN, CLAIMED, DONE, CANCELLED }
 
     /** A single job posting. */
     public static final class Job {
@@ -42,8 +43,23 @@ public class Blackboard {
 
     /** Post a new job. Returns the job. */
     public synchronized Job post(String title, String topic, double bounty, int difficulty) {
-        long id = nextId.getAndIncrement();
-        Job j = new Job(id, title, topic, bounty, Math.max(1, Math.min(5, difficulty)));
+        return post(title, topic, bounty, difficulty, id -> true);
+    }
+
+    synchronized Job post(String title, String topic, double bounty, int difficulty,
+                          LongPredicate reserveFunds) {
+        if (title == null || title.trim().isEmpty() || topic == null || topic.trim().isEmpty()) {
+            throw new IllegalArgumentException("Job title and topic must not be blank");
+        }
+        long bountyCents = EconomyLedger.toCents(bounty);
+        if (bountyCents <= 0) {
+            throw new IllegalArgumentException("Job bounty must be finite and positive");
+        }
+        double normalizedBounty = bountyCents / 100.0;
+        long id = nextId.get();
+        if (!reserveFunds.test(id)) return null;
+        nextId.incrementAndGet();
+        Job j = new Job(id, title, topic, normalizedBounty, Math.max(1, Math.min(5, difficulty)));
         jobs.put(id, j);
         byTopic.computeIfAbsent(topic, k -> new ArrayList<>()).add(id);
         return j;
@@ -64,6 +80,13 @@ public class Blackboard {
         if (j == null || j.status != JobStatus.CLAIMED) return null;
         j.status = JobStatus.DONE;
         return j;
+    }
+
+    synchronized boolean cancel(long id) {
+        Job j = jobs.get(id);
+        if (j == null || j.status != JobStatus.OPEN) return false;
+        j.status = JobStatus.CANCELLED;
+        return true;
     }
 
     public synchronized Job get(long id) { return jobs.get(id); }
