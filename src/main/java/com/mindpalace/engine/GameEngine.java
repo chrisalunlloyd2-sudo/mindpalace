@@ -3977,9 +3977,15 @@ public class GameEngine {
                 com.mindpalace.economy.DePIN probe = new com.mindpalace.economy.DePIN(4.99);
                 com.mindpalace.economy.Blackboard.Job underfunded =
                     probe.post("Unfunded", "selftest/unfunded", 5.0, 1);
+                // Reject proof must be captured BEFORE the Refund post: the
+                // old bundle asserted totalCount()==0 AFTER the Refund job was
+                // already on the board (count 1) -- unreachably false. The
+                // facet forensics run (86bd397: held=false, everything else
+                // true) exposed the ordering, not a race.
+                boolean underfundedRejected = underfunded == null && probe.board().totalCount() == 0;
                 com.mindpalace.economy.Blackboard.Job cancelled =
                     probe.post("Refund", "selftest/refund", 4.5, 1);
-                boolean held = underfunded == null && probe.board().totalCount() == 0
+                boolean held = underfundedRejected
                     && cancelled != null && probe.escrow().held(cancelled.id) == 4.5
                     && Math.abs(probe.treasury().balance() - 0.49) < 0.001;
                 boolean refunded = cancelled != null && probe.cancel(cancelled.id)
