@@ -52,6 +52,15 @@ public final class BlockRegistry {
         }
     }
 
+    /** Env feed to active blocks; runtime errors are contained, never fatal. */
+    public void envUpdateAll(float dt, String weather, float aux) {
+        for (Block b : blocks) {
+            if (!active.contains(b)) continue; // hidden blocks hear nothing
+            try { b.envUpdate(dt, weather, aux); }
+            catch (RuntimeException e) { System.out.println("[Blocks] " + b.id() + " env skipped: " + e); }
+        }
+    }
+
     /** The composition chain: hidden blocks are identity. Never throws. */
     public float applyLuma(float luma) {
         float out = luma;

@@ -26,6 +26,10 @@ public interface Block {
      * (defensive: a block never blows up the frame it rides in). */
     void update(float dt, float playerX, float playerZ, float regionBaseLuma);
 
+    /** Environmental feed (v1.1): engine hands ambient facts (weather name,
+     * aux). Default no-op so v1 blocks stay source-compatible. Active only. */
+    default void envUpdate(float dt, String weather, float aux) { }
+
     /** Layer this block's luma contribution onto the chain value. */
     float applyLuma(float luma);
 

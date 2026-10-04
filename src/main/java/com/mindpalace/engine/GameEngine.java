@@ -416,6 +416,7 @@ public class GameEngine {
         renderer = new Renderer(width, height);
         bloom = new BloomEffect(width, height);
         blocks.register(com.mindpalace.blocks.FireBlock.seedDefault()); // MP-032 fire (flicker phase)
+        blocks.register(new com.mindpalace.blocks.WeatherBlock()); // MP-028 weather (atmospheric light response)
         fontRenderer = new FontRenderer();
         player = new Player();
         // Dressing room owns the player avatar — Cortana preset as the starting point.
@@ -1713,6 +1714,7 @@ public class GameEngine {
         // (soaked-world feel), snow/clear restore. Cheap: only writes tempo
         // when it would change (MusicEngine.setTempo is an AtomicInt).
         com.mindpalace.world.OutsideWorld.Weather w = world.getOutsideWorld().weather();
+        blocks.envUpdateAll((float) dt, w.name(), 0f); // MP-028: the block chain hears the weather
         if (!"forest".equals(region)) {
             if (musicTempoWeather != 0) { musicTempoWeather = 0; music.setTempo(120); }
         } else if (w == com.mindpalace.world.OutsideWorld.Weather.RAIN) {
