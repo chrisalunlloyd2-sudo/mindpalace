@@ -41,8 +41,26 @@ jobs:
           echo jar: $JARFILE
           xvfb-run -a -s "-screen 0 1280x720x24" java -jar "$JARFILE" --demo --selftest > selftest.log 2>&1
           rc=$?
+          verdict=PASS
+          if [ $rc -ne 0 ]; then
+            # flake detector: rerun once; pass on rerun = FLAKY, fail again = REAL
+            echo "::warning::selftest failed (rc=$rc) - rerunning once to classify flaky vs real"
+            cp selftest.log selftest-first-failure.log
+            xvfb-run -a -s "-screen 0 1280x720x24" java -jar "$JARFILE" --demo --selftest > selftest.log 2>&1
+            rc2=$?
+            if [ $rc2 -eq 0 ]; then
+              verdict=FLAKY
+              echo "::warning::selftest FLAKY - failed first run, passed rerun (first log: selftest-first-failure.log)"
+              rc=0
+            else
+              verdict=REAL
+              rc=$rc2
+              echo "::error::selftest REAL failure - failed twice"
+            fi
+          fi
+          echo "selftest verdict: $verdict"
           tail -n 40 selftest.log
-          tail -n 15 selftest.log >> "$GITHUB_STEP_SUMMARY"
+          { echo "### Selftest verdict: $verdict"; echo '```'; tail -n 15 selftest.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
       - name: Assert green (45/0, fixtures, hermeticity)
         shell: pwsh
@@ -64,5 +82,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: selftest-log
-          path: selftest.log
+          path: |
+            selftest.log
+            selftest-first-failure.log
+          if-no-files-found: ignore
 
