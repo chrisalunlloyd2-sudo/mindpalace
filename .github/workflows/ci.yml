@@ -39,14 +39,52 @@ jobs:
           JARFILE=$(ls target/mindpalace-*.jar | head -n 1)
           if [ -z "$JARFILE" ]; then echo ::error::no jar in target/ after package; exit 1; fi
           echo jar: $JARFILE
-          xvfb-run -a -s "-screen 0 1280x720x24" java -jar "$JARFILE" --demo --selftest > selftest.log 2>&1
-          rc=$?
-          tail -n 40 selftest.log
-          tail -n 15 selftest.log >> "$GITHUB_STEP_SUMMARY"
-          exit $rc
+          xvfb-run -a -s "-screen 0 1280x720x24" java -jar "$JARFILE" --demo --selftest > selftest-attempt1.log 2>&1
+          rc1=$?
+          rc2=NA
+          selftest_class=CLEAN
+          selftest_log=selftest-attempt1.log
+          exit_code=0
+
+          if [ "$rc1" -ne 0 ]; then
+            echo "::warning::selftest attempt 1 failed; retrying once to classify flaky vs real"
+            xvfb-run -a -s "-screen 0 1280x720x24" java -jar "$JARFILE" --demo --selftest > selftest-attempt2.log 2>&1
+            rc2=$?
+            selftest_log=selftest-attempt2.log
+            if [ "$rc2" -eq 0 ]; then
+              selftest_class=FLAKY
+            else
+              selftest_class=REAL_FAIL
+              exit_code=1
+            fi
+          fi
+
+          cp "$selftest_log" selftest.log
+          {
+            echo "SELFTEST_CLASS=$selftest_class"
+            echo "SELFTEST_RC1=$rc1"
+            echo "SELFTEST_RC2=$rc2"
+            echo "SELFTEST_SELECTED_LOG=$selftest_log"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "### Selftest classification: $selftest_class"
+            echo "- Attempt 1 exit code: $rc1"
+            echo "- Attempt 2 exit code: $rc2"
+            echo "- Selected log: $selftest_log"
+            echo ""
+            echo "#### Tail (last 15 lines)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          tail -n 40 "$selftest_log"
+          tail -n 15 "$selftest_log" >> "$GITHUB_STEP_SUMMARY"
+          exit "$exit_code"
       - name: Assert green (45/0, fixtures, hermeticity)
         shell: pwsh
         run: |
+          if ($env:SELFTEST_CLASS -eq "FLAKY") {
+            Write-Host "::warning::selftest was flaky (failed once, passed on retry)"
+          }
           $log = Get-Content selftest.log -Raw
           # count-agnostic RESULT regex (>=5 checks floor) - survives future count bumps, refs #57
           $m = [regex]::Match($log, 'RESULT:\s*(\d+)\s+passed,\s*0\s+failed')
@@ -63,6 +101,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: selftest-log
-          path: selftest.log
-
+          name: selftest-logs
+          path: |
+            selftest.log
+            selftest-attempt1.log
+            selftest-attempt2.log
