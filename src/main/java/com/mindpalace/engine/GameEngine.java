@@ -3941,6 +3941,9 @@ public class GameEngine {
 
         // 25. DePIN economy — wallets, blackboard jobs, skill gate, pay-for-work.
         boolean depinOk = depin != null;
+        // Forensic facets for this known-racy check (sequential gates: the FIRST
+        // false facet is the culprit, later ones may be skipped-by-short-circuit).
+        boolean fMain=false, fSkillGate=false, fHeld=false, fRefunded=false, fPaid=false, fPrecision=false;
         if (depinOk) {
             depinOk = depin.participant("player") != null
                    && depin.participant("Explorer") != null
@@ -3952,10 +3955,14 @@ public class GameEngine {
                 if (depinOk) {
                     long jid = open.get(0).id;
                     double before = depin.participant("Explorer").wallet.getBalance();
-                    depinOk = depin.claim(jid, "Explorer")
-                           && depin.complete(jid) > 0
-                           && depin.participant("Explorer").wallet.getBalance() > before
+                    boolean cClaim = depin.claim(jid, "Explorer");
+                    double earned = cClaim ? depin.complete(jid) : -1.0; // parity with && guard
+                    double after = depin.participant("Explorer").wallet.getBalance();
+                    depinOk = cClaim
+                           && earned > 0
+                           && after > before
                            && depin.participant("Explorer").skill.get() >= 1;
+                    fMain = depinOk;
                 }
             }
             // Skill gate: a tier-1 agent can't claim a difficulty-5 job.
@@ -3963,6 +3970,7 @@ public class GameEngine {
                 com.mindpalace.economy.Blackboard.Job hard = depin.post("Hard job", "repo/hard", 50.0, 5);
                 depinOk = hard != null && !depin.claim(hard.id, "Critic"); // Critic is still tier 1
             }
+                fSkillGate = depinOk;
             if (depinOk) {
                 com.mindpalace.economy.DePIN probe = new com.mindpalace.economy.DePIN(4.99);
                 com.mindpalace.economy.Blackboard.Job underfunded =
@@ -3993,9 +4001,11 @@ public class GameEngine {
                     && precisionProbe.cancel(rounded.id)
                     && precisionProbe.treasury().balance() == 2.0;
                 depinOk = held && refunded && paid && precision;
+                fHeld = held; fRefunded = refunded; fPaid = paid; fPrecision = precision;
             }
         }
-        System.out.println((depinOk ? "PASS" : "FAIL")
+        System.out.println((depinOk ? "PASS" : "FAIL [main=" + fMain + " skillGate=" + fSkillGate
+            + " held=" + fHeld + " refunded=" + fRefunded + " paid=" + fPaid + " precision=" + fPrecision + "]")
             + " DePIN economy (ledger + treasury + escrow + refunds + skill gate + payouts)");
         if (depinOk) pass++; else fail++;
 
