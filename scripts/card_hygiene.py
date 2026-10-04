@@ -19,8 +19,7 @@ from pathlib import Path
 
 
 ACTIVE_STATUSES = {"claimed", "in_progress", "running", "started"}
-TERMINAL_STATUSES = {"complete", "completed", "done", "closed", "cancelled"}
-INFRA_REASONS = {"infra", "infrastructure", "infrastructure_failure"}
+INFRA_REASONS = {"infra", "infra_failure", "infrastructure", "infrastructure_failure"}
 
 
 def _field(card, *names):
