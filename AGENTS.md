@@ -149,3 +149,17 @@ early exit, so the game never sits dark just because no new work shipped — and
 ONE-game enforcement (enforce_one_game) runs unconditionally on both relaunch
 and self-heal paths. If a build fails for no reason you can find in your own
 diff, suspect your diff, not this sweep.
+
+## Hermes Kanban worktree base regression (MP-044)
+Hermes owns `hermes_cli/kanban_db.py`; it is not part of this repository, and
+`hermes update` can replace edits made only in the installed copy. The regression
+is tracked upstream in [issue #86574](https://github.com/NousResearch/hermes-agent/issues/86574)
+and [PR #86611](https://github.com/NousResearch/hermes-agent/pull/86611), which
+was still open on 2026-10-04; the PR is the recovery source until it merges. The
+required invariant is that a newly created project worktree uses a freshly
+fetched remote default branch, not a stale local `HEAD`; retries reuse their
+existing branch unchanged, and repositories without an `origin` may fall back
+to `HEAD`. After a Hermes update, verify the upstream change is still present
+and run `tests/hermes_cli/test_kanban_worktree_isolation.py` in the Hermes
+checkout. Keep the durable fix in Hermes upstream rather than copying its
+database module into MindPalace.
