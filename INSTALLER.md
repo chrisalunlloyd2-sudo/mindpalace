@@ -35,6 +35,18 @@ bash build-warm-installer.sh
 # → installer/MindPalace-Setup-1.1.0-beta1.exe
 ```
 
+## Release/versioning workflow
+
+Installer naming/version stamps are managed by the release pipeline in
+`scripts/release_phase.sh`:
+- `--dry-run` previews version/stamp changes only
+- `--rehearse` runs full release gates locally and reverts version edits
+- `--cut` performs the real release (commit/tag/push + GitHub release)
+
+Run the release script from repo root and use `--dry-run` before
+`--rehearse`/`--cut`. See `AGENTS.md` for the canonical release invocation
+sequence used by sessions.
+
 ## Accessories (Ollama + models)
 
 The installer's post-install step runs only if the user ticks the boxes:
