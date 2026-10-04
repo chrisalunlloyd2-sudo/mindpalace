@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Local task-card diagnostics and one-time infrastructure unblock."""
+"""Local task-card diagnostics and one-time infrastructure unblock.
+
+Run ``python scripts/card_hygiene.py diag`` once daily against the task queue.
+Cards are TASK_*.json objects with a ``status``/``state`` field; optional
+``blocked_reason``/``reason`` and retry-count fields drive repair/reporting.
+Set MINDPALACE_CARD_HYGIENE_TIER=repair (or pass ``--quality-tier repair``)
+to enable the deterministic, one-time infrastructure requeue. No model or
+network calls are made.
+"""
 
 import argparse
 import json
@@ -65,6 +73,10 @@ def scan_cards(task_dir, stale_hours=24, quality_tier="observe", now=None):
         "errors": [],
     }
 
+    if not task_dir.is_dir():
+        report["errors"].append({"card": str(task_dir), "error": "task directory does not exist"})
+        return report
+
     for path in sorted(task_dir.glob("TASK_*.json")):
         try:
             card = json.loads(path.read_text(encoding="utf-8"))
@@ -87,9 +99,8 @@ def scan_cards(task_dir, stale_hours=24, quality_tier="observe", now=None):
 
             reason_key = _field(card, "blocked_reason", "reason")
             reason = card.get(reason_key, "") if reason_key else ""
-            already_unblocked = bool(card.get("infra_unblock_attempted")) or int(
-                card.get("infra_unblock_count", 0) or 0
-            ) > 0
+            unblock_count = int(card.get("infra_unblock_count", 0) or 0)
+            already_unblocked = card.get("infra_unblock_attempted") is True or unblock_count > 0
             if (
                 quality_tier == "repair"
                 and status == "blocked"
@@ -100,8 +111,10 @@ def scan_cards(task_dir, stale_hours=24, quality_tier="observe", now=None):
                 status_key = status_key or "status"
                 card[status_key] = "queued"
                 card["infra_unblock_attempted"] = True
-                card["infra_unblock_count"] = 1
+                card["infra_unblock_count"] = unblock_count + 1
                 card["infra_unblocked_at"] = now.isoformat()
+                retry_key = _field(card, "retry_count", "retries", "attempts") or "retry_count"
+                card[retry_key] = retries + 1
                 _atomic_write(path, card)
                 report["infra_unblocked"].append(path.name)
                 continue

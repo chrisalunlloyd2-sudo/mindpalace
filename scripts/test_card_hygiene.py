@@ -49,7 +49,25 @@ class CardHygieneTests(unittest.TestCase):
 
         self.assertEqual(["TASK_0003.json"], first["infra_unblocked"])
         self.assertEqual([], second["infra_unblocked"])
-        self.assertEqual("queued", json.loads(card_path.read_text())["status"])
+        updated = json.loads(card_path.read_text())
+        self.assertEqual("queued", updated["status"])
+        self.assertEqual(2, updated["retry_count"])
+        self.assertEqual(1, updated["infra_unblock_count"])
+
+    def test_observe_tier_never_mutates_infrastructure_blocks(self):
+        card_path = self.write_card("TASK_0006.json", {
+            "status": "blocked", "blocked_reason": "infra", "retry_count": 0,
+        })
+        original = card_path.read_text(encoding="utf-8")
+
+        scan_cards(self.task_dir, quality_tier="observe")
+
+        self.assertEqual(original, card_path.read_text(encoding="utf-8"))
+
+    def test_missing_task_directory_is_reported(self):
+        report = scan_cards(self.root / "missing")
+
+        self.assertEqual(1, len(report["errors"]))
 
     def test_repair_does_not_override_max_retry_or_other_blocks(self):
         self.write_card("TASK_0004.json", {
