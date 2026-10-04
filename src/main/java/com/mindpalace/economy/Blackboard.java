@@ -51,13 +51,15 @@ public class Blackboard {
         if (title == null || title.trim().isEmpty() || topic == null || topic.trim().isEmpty()) {
             throw new IllegalArgumentException("Job title and topic must not be blank");
         }
-        if (!Double.isFinite(bounty) || bounty <= 0) {
+        long bountyCents = EconomyLedger.toCents(bounty);
+        if (bountyCents <= 0) {
             throw new IllegalArgumentException("Job bounty must be finite and positive");
         }
+        double normalizedBounty = bountyCents / 100.0;
         long id = nextId.get();
         if (!reserveFunds.test(id)) return null;
         nextId.incrementAndGet();
-        Job j = new Job(id, title, topic, bounty, Math.max(1, Math.min(5, difficulty)));
+        Job j = new Job(id, title, topic, normalizedBounty, Math.max(1, Math.min(5, difficulty)));
         jobs.put(id, j);
         byTopic.computeIfAbsent(topic, k -> new ArrayList<>()).add(id);
         return j;

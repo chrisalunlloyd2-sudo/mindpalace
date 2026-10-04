@@ -3870,7 +3870,14 @@ public class GameEngine {
                     && probe.escrow().held(funded.id) == 0
                     && probe.ledger().transactionCount() == 6
                     && probe.participant("player").wallet.transactionCount() == 2;
-                depinOk = held && refunded && paid;
+                com.mindpalace.economy.DePIN precisionProbe = new com.mindpalace.economy.DePIN(2.0);
+                com.mindpalace.economy.Blackboard.Job rounded =
+                    precisionProbe.post("Cent precision", "selftest/precision", 1.005, 1);
+                boolean precision = rounded != null && rounded.bounty == 1.01
+                    && precisionProbe.escrow().held(rounded.id) == rounded.bounty
+                    && precisionProbe.cancel(rounded.id)
+                    && precisionProbe.treasury().balance() == 2.0;
+                depinOk = held && refunded && paid && precision;
             }
         }
         System.out.println((depinOk ? "PASS" : "FAIL")
