@@ -58,7 +58,7 @@
 - [x] **85** H31 bot lifecycle — TTL, graceful retire, fresh-seed respawn; HUD bot board (H32) (568e7b2; selftest 51/0; + FIX: JOML column-major bug — billboard text drew at world origin, now all HUD text (roster, chat, prompts) renders; roster verified in e2e shot)
 - [x] **86** H265 self-test harness in cascade — test_bot --run-selftest JSON posted to step-log (test_bot --steplog → issue #9; cascade step 4 now uses test_bot JSON path + posts failures too; fixed UTF-8 crash + "PASS"→"0 failed" parse; live-verified: JSON ok:true, steplog posted)
 - [x] **87** BDI hardening — sync bdi_fsm tests green in cascade; ASTInspector gate on agent-written Python
-- [ ] **88** Bot metrics → step-log — weekly bot activity report comment (visits, credits, retirements)
+- [x] **88** Bot metrics → step-log — weekly bot activity report comment (visits, credits, retirements) (9417c01/27112b8; step-log posted)
 
 ## PHASE D — Quorum ↔ GitHub Deep (89–98)
 - [ ] **89** H33 GitHub releases — cascade tags v0.x.y per phase, builds installer exe, uploads to Release (gh release create; token from Credential Manager)
