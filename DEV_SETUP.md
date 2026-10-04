@@ -112,3 +112,28 @@ bash scripts/cascade_dev.sh Hxx   # ships it + posts evidence
 - `AIGEN task watch` (hourly): executes ONE `TASK_Hxx_*.md` from
   `todo_management/todo_files/mindpalace/` — the Autonomous Finishing
   Program's step pipeline.
+
+### Cron model pins (MP-042)
+
+Cron model pinning is tracked in:
+`scripts/hermes_cron_models.sh`
+
+Every cron job has an explicit model policy:
+- `auto-sync` → `none` (script-only)
+- `health-monitor` → `none` (script-only)
+- `scout-bot` → `none` (script-only)
+- `feedback-digest` → `none` (script-only)
+- `task-watch` → local pinned model by default (`llama3.2:3b`)
+
+Cloud use is opt-in only:
+- set `HERMES_CRON_ALLOW_CLOUD=1`
+- set `HERMES_CRON_CLOUD_APPROVAL=<ticket-or-decision-id>`
+- optional override `HERMES_CRON_TASK_WATCH_MODEL_CLOUD` (default `gpt-5.4`)
+
+Examples:
+```bash
+bash scripts/hermes_cron_models.sh list
+bash scripts/hermes_cron_models.sh model task-watch
+HERMES_CRON_ALLOW_CLOUD=1 HERMES_CRON_CLOUD_APPROVAL=MP-042 \
+  bash scripts/hermes_cron_models.sh model task-watch
+```
