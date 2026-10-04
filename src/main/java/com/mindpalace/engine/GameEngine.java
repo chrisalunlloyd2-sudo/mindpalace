@@ -4825,6 +4825,56 @@ public class GameEngine {
         }
         if (feedOk) pass++; else fail++;
 
+        // 52. MP-051 sprites may read the local KG, but only append pending
+        // proposals to their separate queue; disabled mode must be inert.
+        boolean spriteQueueOk = false;
+        java.nio.file.Path spriteTmp = null;
+        try {
+            spriteTmp = java.nio.file.Files.createTempDirectory("mp-sprite-queue");
+            java.nio.file.Path kgDb = spriteTmp.resolve("kg_graph.db");
+            try (java.sql.Connection c = java.sql.DriverManager.getConnection("jdbc:sqlite:" + kgDb);
+                 java.sql.Statement s = c.createStatement()) {
+                s.execute("CREATE TABLE github_todos (repo TEXT, todo_type TEXT, content TEXT, "
+                    + "status TEXT, priority_score INTEGER)");
+                s.execute("INSERT INTO github_todos VALUES "
+                    + "('demo-repo', 'TODO', 'review this item', 'open', 10)");
+            }
+            byte[] kgBefore = java.nio.file.Files.readAllBytes(kgDb);
+            java.nio.file.Path queue = spriteTmp.resolve("sprite-proposals.jsonl");
+            com.mindpalace.agent.sprites.SpriteProposalService disabled =
+                new com.mindpalace.agent.sprites.SpriteProposalService(false, kgDb, queue,
+                    com.mindpalace.agent.sprites.SpriteProposalService.Quality.LOW);
+            boolean disabledInert = disabled.collectProposals() == 0
+                && !java.nio.file.Files.exists(queue);
+            com.mindpalace.agent.sprites.SpriteProposalService enabled =
+                new com.mindpalace.agent.sprites.SpriteProposalService(true, kgDb, queue,
+                    com.mindpalace.agent.sprites.SpriteProposalService.Quality.LOW);
+            int added = enabled.collectProposals();
+            java.util.List<String> proposals = java.nio.file.Files.readAllLines(queue);
+            boolean spritesPresent = proposals.size() == 3
+                && proposals.stream().anyMatch(line -> line.contains("\"sprite\":\"Dispatcher\""))
+                && proposals.stream().anyMatch(line -> line.contains("\"sprite\":\"Linkwarden\""))
+                && proposals.stream().anyMatch(line -> line.contains("\"sprite\":\"Cartographer\""))
+                && proposals.stream().allMatch(line -> line.contains("\"status\":\"pending\""));
+            boolean deduplicated = new com.mindpalace.agent.sprites.SpriteProposalService(
+                true, kgDb, queue, com.mindpalace.agent.sprites.SpriteProposalService.Quality.LOW)
+                .collectProposals() == 0;
+            spriteQueueOk = disabledInert && added == 3 && spritesPresent && deduplicated
+                && java.util.Arrays.equals(kgBefore, java.nio.file.Files.readAllBytes(kgDb));
+        } catch (Exception e) {
+            System.out.println("MP-051 sprite proposal test error: " + e.getClass().getSimpleName()
+                + " " + e.getMessage());
+        } finally {
+            if (spriteTmp != null) {
+                try { java.nio.file.Files.walk(spriteTmp).sorted(java.util.Comparator.reverseOrder())
+                    .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) {} }); }
+                catch (Exception ignored) {}
+            }
+        }
+        System.out.println((spriteQueueOk ? "PASS" : "FAIL")
+            + " MP-051 sprites (read-only KG, opt-in pending proposal queue)");
+        if (spriteQueueOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains

@@ -3,6 +3,7 @@ package com.mindpalace.agent;
 import com.google.gson.*;
 import com.mindpalace.agent.sims.*;
 import com.mindpalace.integration.*;
+import com.mindpalace.agent.sprites.SpriteProposalService;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.LegacyRepoClassifier;
@@ -121,6 +122,7 @@ public class AgentManager {
     private volatile boolean available;
     private volatile long lastAutoCycle;
     private static final long CYCLE_MS = 5 * 60 * 1000; // 5 minutes
+    private SpriteProposalService spriteProposalService;
 
     // Tool definitions for the tool-calling agent
     private static final List<JsonObject> TOOLS = buildTools();
@@ -146,6 +148,22 @@ public class AgentManager {
         // FOW/quorum/LoRA populated even with no Ollama daemon reachable
         // (CI has none). Wiring must not depend on a live HTTP probe.
         initSimsParity();
+
+        // MP-051 sprites are opt-in and only read the local KG. Their output is
+        // appended to a separate review queue; no proposal is executed here.
+        if (!selfTest) {
+            spriteProposalService = SpriteProposalService.fromSystemProperties();
+            if (spriteProposalService.isEnabled()) {
+                scheduler.scheduleWithFixedDelay(() -> {
+                    try {
+                        int count = spriteProposalService.collectProposals();
+                        if (count > 0) log("[Sprites] queued " + count + " read-only proposals");
+                    } catch (Exception ex) {
+                        log("[Sprites] KG proposal scan failed: " + ex.getMessage());
+                    }
+                }, 0, spriteProposalService.intervalSeconds(), TimeUnit.SECONDS);
+            }
+        }
 
         available = ollama.isAvailable();
         if (!available) {
