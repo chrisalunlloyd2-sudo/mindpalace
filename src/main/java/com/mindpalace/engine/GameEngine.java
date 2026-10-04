@@ -3423,14 +3423,20 @@ public class GameEngine {
         try {
             temp = java.nio.file.Files.createTempDirectory("mindpalace-context-test");
             String shuttle = "{\"source\":\"selftest\"}";
+            String cards = "[{\"kind\":\"card\"}]";
+            String triplets = "[{\"kind\":\"triplet\"}]";
             java.nio.file.Files.writeString(temp.resolve("shuttle.json"), shuttle,
+                java.nio.charset.StandardCharsets.UTF_8);
+            java.nio.file.Files.writeString(temp.resolve("cards.json"), cards,
+                java.nio.charset.StandardCharsets.UTF_8);
+            java.nio.file.Files.writeString(temp.resolve("triplets.json"), triplets,
                 java.nio.charset.StandardCharsets.UTF_8);
             java.util.concurrent.atomic.AtomicReference<ContextBroadcaster.PeerIdentity> peer =
                 new java.util.concurrent.atomic.AtomicReference<>(
                     new ContextBroadcaster.PeerIdentity("trusted@example.test",
                         java.util.Set.of("tag:reader")));
             broadcaster = new ContextBroadcaster(temp,
-                java.net.InetAddress.getLoopbackAddress(), 0,
+                java.net.InetAddress.getByName("127.0.0.1"), 0,
                 java.util.Set.of("trusted@example.test"), java.util.Set.of("tag:reader"),
                 address -> peer.get());
             broadcaster.start();
@@ -3442,8 +3448,17 @@ public class GameEngine {
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/shuttle"))
                     .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
-            boolean served = shuttleResponse.statusCode() == 200
-                && shuttle.equals(shuttleResponse.body());
+            var cardsResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            var tripletsResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/triplets"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean served = shuttleResponse.statusCode() == 200 && shuttle.equals(shuttleResponse.body())
+                && cardsResponse.statusCode() == 200 && cards.equals(cardsResponse.body())
+                && tripletsResponse.statusCode() == 200 && triplets.equals(tripletsResponse.body());
 
             peer.set(new ContextBroadcaster.PeerIdentity("intruder@example.test",
                 java.util.Set.of("tag:other")));

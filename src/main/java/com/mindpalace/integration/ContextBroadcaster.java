@@ -64,16 +64,22 @@ public final class ContextBroadcaster implements AutoCloseable {
                               Set<String> allowedUsers, Set<String> allowedTags,
                               PeerIdentityResolver identityResolver) throws IOException {
         if (port < 0 || port > 65535) throw new IllegalArgumentException("invalid port");
+        if (artifactRoot == null) throw new IllegalArgumentException("artifact directory is required");
         if (bindAddress == null) throw new IllegalArgumentException("bind address is required");
+        if (allowedUsers == null || allowedTags == null)
+            throw new IllegalArgumentException("allowlists are required");
         if (identityResolver == null) throw new IllegalArgumentException("WhoIs resolver is required");
-        if (allowedUsers.isEmpty() && allowedTags.isEmpty())
+        Set<String> users = normalizedSet(allowedUsers);
+        Set<String> tags = normalizedSet(allowedTags);
+        if (users.isEmpty() && tags.isEmpty())
             throw new IllegalArgumentException("at least one Tailscale user or tag must be allowed");
-        this.artifactRoot = artifactRoot.toAbsolutePath().normalize();
-        Files.createDirectories(this.artifactRoot);
+        Path root = artifactRoot.toAbsolutePath().normalize();
+        Files.createDirectories(root);
+        this.artifactRoot = root.toRealPath();
         this.bindAddress = bindAddress;
         this.requestedPort = port;
-        this.allowedUsers = normalizedSet(allowedUsers);
-        this.allowedTags = normalizedSet(allowedTags);
+        this.allowedUsers = users;
+        this.allowedTags = tags;
         this.identityResolver = identityResolver;
     }
 
@@ -149,7 +155,7 @@ public final class ContextBroadcaster implements AutoCloseable {
             }
 
             Path file = artifactRoot.resolve(filename).toRealPath();
-            if (!file.startsWith(artifactRoot.toRealPath()) || !Files.isRegularFile(file)) {
+            if (!file.startsWith(artifactRoot) || !Files.isRegularFile(file)) {
                 respond(exchange, 404, "not found");
                 return;
             }
