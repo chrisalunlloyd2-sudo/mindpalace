@@ -112,3 +112,21 @@ bash scripts/cascade_dev.sh Hxx   # ships it + posts evidence
 - `AIGEN task watch` (hourly): executes ONE `TASK_Hxx_*.md` from
   `todo_management/todo_files/mindpalace/` — the Autonomous Finishing
   Program's step pipeline.
+
+### Model pinning (MP-042)
+
+Jobs skip when they inherit the global Hermes model and it drifts. Every
+job must carry an explicit model; never rely on the global default. Local
+Ollama models only unless the Architect approves cloud spend.
+
+| Job | Pinned model | Notes |
+|---|---|---|
+| MindPalace Auto-Sync | none (script only) | no LLM involved |
+| MindPalace Health Monitor | none (script only) | no LLM involved |
+| MindPalace Scout Bot | none (script only) | `scripts/scout_bot.py` uses no LLM |
+| AIGEN task watch | `ollama/mistral:7b` | needs code edits; local. Cloud upgrade = Architect decision |
+
+Pin with the Hermes cron CLI/config (stored outside this repo), e.g.
+`hermes cron edit <job-id> --model ollama/mistral:7b`, then confirm the
+job's next run is not skipped. Only models installed locally (see
+AGENTS.md) may be pinned.
