@@ -35,6 +35,13 @@ bash build-warm-installer.sh
 # → installer/MindPalace-Setup-1.1.0-beta1.exe
 ```
 
+## Releasing / versioning
+
+Version stamps in this file and `README.md` are written by
+`scripts/release_phase.sh` (`--dry-run`, `--rehearse`, `--cut VER`), which also
+builds the installer and publishes the GitHub Release. See the "Release"
+section of `AGENTS.md` for usage.
+
 ## Accessories (Ollama + models)
 
 The installer's post-install step runs only if the user ticks the boxes:
