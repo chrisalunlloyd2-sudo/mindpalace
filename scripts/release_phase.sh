@@ -21,7 +21,7 @@
 #      swap the fresh jar → mindpalace-live.jar and launch THAT — the one
 #      relaunch recipe from mindpalace-sync.sh step 8, verbatim.
 #   8. --cut only: git add (pom/INSTALLER/README + exe is NOT committed —
-#      installer/ is gitignored by design; the asset uploads to the Release),
+#      installer/ is gitignored by design; jar/exe upload as Release assets),
 #      commit, tag vX.Y.Z, push main + tag, gh release create with notes,
 #      post the release URL to the step-log issue in .cascade_issue
 #   9. rehearse: restore version files byte-exactly; cut: version commit
@@ -75,6 +75,34 @@ bump() {
   sed -i "/<artifactId>mindpalace<\/artifactId>/{n;s|<version>.*</version>|<version>$VER</version>|}" pom.xml
   sed -i "s|MindPalace-Setup-[0-9][0-9a-z.\-]*\.exe|MindPalace-Setup-$VER.exe|g; s|MindPalace-[0-9][0-9a-z.\-]*\.exe|MindPalace-$VER.exe|g" INSTALLER.md
   sed -i "s|\*\*v[0-9][0-9a-z.\-]*\*\*|**v$VER**|g" README.md
+}
+
+build_notes() {
+  local notes_file="$1"
+  local prev_tag=""
+  prev_tag=$(git tag --sort=-version:refname | grep -vx "$TAG" | head -1 || true)
+  {
+    echo "MindPalace **$VER** — autonomous cascade release (steps 89-90)."
+    echo ""
+    echo "## Validation"
+    echo "- selftest: PASS ($EVID_PASS/0) — target/selftest_result.json"
+    echo "- e2e: waypoint tour green, all shots non-black"
+    echo "- commit: $(git rev-parse --short HEAD)"
+    echo "- installer: bundled JRE, no Java needed on target"
+    echo ""
+    echo "## Assets"
+    echo "- jar: $(basename "$JAR")"
+    echo "- installer: $(basename "$EXE")"
+    echo ""
+    echo "## Changelog (commits)"
+    if [ -n "$prev_tag" ]; then
+      echo "Range: \`$prev_tag..$TAG\`"
+      git log --no-merges --pretty='- %s (%h)' "$prev_tag..HEAD"
+    else
+      echo "Range: initial history .. \`$TAG\` (latest 50 commits)"
+      git log --no-merges --pretty='- %s (%h)' -n 50
+    fi
+  } > "$notes_file"
 }
 
 if [ "$MODE" = "--dry-run" ]; then
@@ -210,15 +238,8 @@ if [ "$MODE" = "--cut" ]; then
   git tag "$TAG"
   git push origin HEAD:main >/dev/null 2>&1 && git push origin "$TAG" >/dev/null 2>&1 || die "push failed — tag stays local, rerun --cut after resolving"
   NOTES="$LOGDIR/notes-$VER.md"
-  {
-    echo "MindPalace **$VER** — autonomous cascade release (steps 89-90)."
-    echo ""
-    echo "- selftest: PASS ($EVID_PASS/0) — target/selftest_result.json"
-    echo "- e2e: waypoint tour green, all shots non-black"
-    echo "- commit: $(git rev-parse --short HEAD)"
-    echo "- installer: bundled JRE, no Java needed on target"
-  } > "$NOTES"
-  if gh release create "$TAG" "$EXE" --repo "$GH_REPO" --title "MindPalace v$VER" \
+  build_notes "$NOTES"
+  if gh release create "$TAG" "$EXE" "$JAR" --repo "$GH_REPO" --title "MindPalace v$VER" \
       --notes-file "$NOTES" > "$LOGDIR/gh_release.out" 2>&1; then
     RURL=$(head -1 "$LOGDIR/gh_release.out")
     log "release created: $RURL"
