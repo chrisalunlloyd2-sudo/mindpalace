@@ -47,6 +47,17 @@ bash e2e.sh                    # full build+selftest+waypoint-tour+screenshot ve
 `e2e.sh` and the game's own self-test are the real gate — a clean `mvn
 package` alone is not proof of anything working.
 
+## Release
+`scripts/release_phase.sh` is the H33/H33a release pipeline and supports
+three modes:
+```
+bash scripts/release_phase.sh --dry-run [VER]   # preview version/stamp edits only
+bash scripts/release_phase.sh --rehearse VER    # full release gates locally; reverts version edits
+bash scripts/release_phase.sh --cut VER         # rehearse + commit/tag/push + GitHub release
+```
+Use `--dry-run` first to confirm the target version update, `--rehearse` to
+prove the full pipeline is green without shipping, then `--cut` to publish.
+
 ## Module map (`src/main/java/com/mindpalace/`)
 - **engine/** — `GameEngine` (main loop, rendering, input dispatch),
   `Input`, `GameState`, `ToolExecutor` (file read/edit/create/delete for the
