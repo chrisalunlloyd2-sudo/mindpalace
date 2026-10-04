@@ -83,6 +83,18 @@ public final class BlockRegistry {
         }
     }
 
+    /** v1.2: aggregate render emissions across ACTIVE blocks (mirrors
+     * applyLuma containment: one block's failure emits 0 rows, never throws). */
+    public int emitAll(float[] out, int offsetRows, int maxRows) {
+        int written = 0;
+        for (Block b : blocks) {
+            if (written >= maxRows) break;
+            if (!active.contains(b)) continue;
+            try { written += b.emitRender(out, offsetRows + written, maxRows - written); }
+            catch (RuntimeException e) { System.out.println("[Blocks] " + b.id() + " emit skipped: " + e); }
+        }
+        return written;
+    }
     public int size() { return blocks.size(); }
     public int activeCount() { return active.size(); }
 }

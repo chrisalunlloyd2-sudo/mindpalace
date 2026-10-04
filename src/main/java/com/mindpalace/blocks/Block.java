@@ -30,6 +30,14 @@ public interface Block {
      * aux). Default no-op so v1 blocks stay source-compatible. Active only. */
     default void envUpdate(float dt, String weather, float aux) { }
 
+    /** v1.2 render contract: blocks EMIT data rows (x,y,z,size,extra,KIND) into
+     * `out` at (offsetRows + local)*6, up to maxRows, return rows written.
+     * KIND selects the engine-side color ramp (0 = ember heat, 1 = firefly glow;
+     * new kinds mint additively). Default = 0 rows (non-visual blocks). The
+     * ENGINE owns the GL: it converts rows to draw calls at a single seam, so
+     * the blocks package stays JOML-free and is provable under any toolchain. */
+    default int emitRender(float[] out, int offsetRows, int maxRows) { return 0; }
+
     /** Layer this block's luma contribution onto the chain value. */
     float applyLuma(float luma);
 

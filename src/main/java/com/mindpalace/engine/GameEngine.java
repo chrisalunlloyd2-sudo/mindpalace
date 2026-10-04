@@ -69,6 +69,8 @@ public class GameEngine {
     private BloomEffect bloom;
     // MP-20 block-assembly: self-contained visual blocks minted at boot, composed at the bloom seam
     private final com.mindpalace.blocks.BlockRegistry blocks = new com.mindpalace.blocks.BlockRegistry();
+    /** v1.2 emit-render buffer (flat rows x,y,z,size,warmth,KIND). */
+    private final float[] blockEmitRows = new float[96 * 6];
     private WorldBuilder world;
     private Player player;
     private DressingRoom dressingRoom;   // F7: avatar dressing room (360° orbit editor)
@@ -418,6 +420,7 @@ public class GameEngine {
         blocks.register(com.mindpalace.blocks.FireBlock.seedDefault()); // MP-032 fire (flicker phase)
         blocks.register(new com.mindpalace.blocks.WeatherBlock()); // MP-028 weather (atmospheric light response)
         blocks.register(new com.mindpalace.blocks.FrostBlock()); // MP-033 ice (frost shimmer; phase 2 = crystals + rim tint under #179)
+        blocks.register(new com.mindpalace.blocks.FireflyBlock()); // MP-031 fireflies (dusk/night Lissajous chorus)
         fontRenderer = new FontRenderer();
         player = new Player();
         // Dressing room owns the player avatar — Cortana preset as the starting point.
@@ -1881,6 +1884,25 @@ public class GameEngine {
         // Render deploy animations
         if (animationSystem != null && animationSystem.isActive()) {
             animationSystem.render(renderer);
+        }
+        // MP-032 p2 / MP-031: block EMIT-RENDER -- rows to billboards. Blocks
+        // emit data (deterministic), the engine owns the GL. Ember rows ride
+        // the heat ramp (white-gold -> deep orange), fireflies pulse glow.
+        int emitRows = blocks.emitAll(blockEmitRows, 0, 96);
+        for (int i = 0; i < emitRows; i++) {
+            int w6 = i * 6;
+            float ex = blockEmitRows[w6], ey = blockEmitRows[w6 + 1], ez = blockEmitRows[w6 + 2];
+            float sz = blockEmitRows[w6 + 3], en = blockEmitRows[w6 + 4], kind = blockEmitRows[w6 + 5];
+            if (kind == 0f) { // ember: white-gold core cooling to deep orange with age
+                float inv = 1f - en;
+                renderer.drawCubeColorYaw(new Vector3f(ex, ey, ez),
+                    new Vector3f(sz, sz, sz), (float) (i * 61 % 360),
+                    0.55f + 0.45f * inv, 0.25f + 0.35f * (1f - en * 0.5f), 0.08f);
+            } else if (kind == 1f) { // firefly: chartreuse glow, brightness from blink
+                renderer.drawCubeColorYaw(new Vector3f(ex, ey, ez),
+                    new Vector3f(sz, sz, sz), (float) (i * 61 % 360),
+                    0.55f * en, 0.85f * en, 0.20f * en);
+            }
         }
 
         // Help overlay
