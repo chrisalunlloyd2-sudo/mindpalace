@@ -61,8 +61,8 @@
 - [x] **88** Bot metrics → step-log — weekly bot activity report comment (visits, credits, retirements) (9417c01/27112b8; step-log posted)
 
 ## PHASE D — Quorum ↔ GitHub Deep (89–98)
-- [ ] **89** H33 GitHub releases — cascade tags v0.x.y per phase, builds installer exe, uploads to Release (gh release create; token from Credential Manager)
-- [ ] **90** H33a version bump automation — pom.xml version + INSTALLER.md stamp on every phase completion
+- [x] **89** H33 GitHub releases — cascade tags v0.x.y per phase, builds installer exe, uploads to Release (gh release create; token from Credential Manager)
+- [x] **90** H33a version bump automation — pom.xml version + INSTALLER.md stamp on every phase completion
 - [ ] **91** H34 open-issue crystals — GitHubClient.listIssues → TODO crystals; agents see repo issues in-world
 - [ ] **92** H35 issue verdicts — quorum votes on issues; verdict posted as comment (add-only, never close)
 - [ ] **93** H36 repo health rollup — issues/TODO-density/last-push age → KG attribute + room glow intensity
