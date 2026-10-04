@@ -388,4 +388,4 @@ registry toward "enough blocks to populate anything."
 - [x] CI verify: d07d3d2 GREEN on origin — first-ever CI pass for the DePIN check (58/0)
 - [x] MP-033 IceBlock phase 1 (frost shimmer + glint in bloom chain) — commit fefe219 (aux-engaged via WINTER season feed; P1-P7 first-run green; proof on openjdk 17.0.20.1: winter composite [0.5424,0.8502], bit-identical 3-block determinism; phase 2 = crystals+rim tint under #179)
 - [x] MP-032 phase 2 (HELIX EDITION) + MP-031 fireflies — commit 742307b (contract v1.2: emitRender rows KIND 0/1 + emitAll; helical closed-form embers [r=R0+RG*age, slow spiral omega 1.2-2.2], firefly Lissajous chorus w/ golden-angle phyllotaxis + real-clock night envelope; SLOT_EMPTY=-1 sentinel root-caused the P6 invisible-ember bug; engine draw pass at world-path seam; probes 4/4 on openjdk 17.0.20.1; PR #244 [WIP] spec superseded-by-landing)
-- [ ] Open CI verify: 742307b green on origin (Package + hermetic selftest + emit-render seam)
+- [x] CI verify: 14a0e6b GREEN on origin (Package + hermetic selftest + emit-render seam; 742307b run was cancelled by scheduler serialization, superseded)
