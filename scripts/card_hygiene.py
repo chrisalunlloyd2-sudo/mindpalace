@@ -139,6 +139,10 @@ def _default_home():
 
 
 def main(argv=None):
+    """Main.
+
+    Args: argv.
+    """
     parser = argparse.ArgumentParser(description="Run local task-card hygiene diagnostics.")
     parser.add_argument("command", choices=("diag",))
     parser.add_argument(
