@@ -49,6 +49,15 @@ public class RepoScanner {
                 // Remote-only repo — add it, fogged until explored
                 remote.setLocalPath(null); // no local copy
                 remote.setFogged(true);
+                // H37 (#122): remote-only rooms have no local git — engrave the
+                // last 10 commits from /commits (TTL-cached; empty on API error).
+                try {
+                    java.util.List<String> commits = client.listRecentCommits(remote.getRepoName());
+                    if (!commits.isEmpty()) remote.setCommitLedger(String.join("\n", commits));
+                } catch (IOException e) {
+                    System.err.println("[RepoScanner] commit ledger unavailable for "
+                        + remote.getRepoName() + ": " + e.getMessage());
+                }
                 localRooms.add(remote);
                 System.out.println("[RepoScanner] Added remote-only (fogged): " + remote.getRepoName());
             } else {

@@ -77,6 +77,17 @@ public class RepoMapper {
                 room.setLanguage(m.group(2));
                 room.setRepoDescription(m.group(3));
                 room.setPrivate(Boolean.parseBoolean(m.group(4)));
+                // H37 (#122): fixtures have no .git — a deterministic seed
+                // ledger keeps demo/selftest/e2e hermetic while still
+                // exercising the engraving path. Newest (10) first, like git log.
+                StringBuilder lb = new StringBuilder();
+                for (int ci = 10; ci >= 1; ci--) {
+                    String sha = String.format("%07x",
+                        Math.abs((m.group(1) + ci).hashCode()) & 0xFFFFFFF);
+                    if (lb.length() > 0) lb.append('\n');
+                    lb.append(sha, 0, 7).append(" seed commit ").append(ci);
+                }
+                room.setCommitLedger(lb.toString());
                 rooms.add(room);
             }
         } catch (Exception e) {
@@ -136,6 +147,15 @@ public class RepoMapper {
             room.setActivity30d(actOut.split("\n").length);
         }
 
+        // H37 (#122, step 95): commit engravings — the door plaque renders the
+        // last 10 commits. One bounded git call per repo at scan time (same
+        // no-per-frame-cost doctrine as the heatmap above); subjects capped so
+        // a plaque line never outgrows the wall segment between doors.
+        String ledgerOut = runGit(repoDir, "log", "-10", "--format=%h %s");
+        if (ledgerOut != null && !ledgerOut.isEmpty()) {
+            room.setCommitLedger(capLedgerLines(ledgerOut));
+        }
+
         // Detect primary language by file extensions (recursive, bounded depth + file
         // cap). A top-level-only scan mislabels most repos as "Markdown" — README.md
         // is often the only recognized file at the root, while the real source lives
@@ -148,6 +168,24 @@ public class RepoMapper {
         else if (js > 0) room.setLanguage("JavaScript");
         else if (html > 0) room.setLanguage("HTML");
         else if (md > 0) room.setLanguage("Markdown");
+    }
+
+    /** H37 (#122): cap each ledger line to a 7-char sha + 26 subject chars —
+     *  the plaque is ~3.4m wide at engraving scale and long subjects would
+     *  overrun the wall segment between doors. */
+    private String capLedgerLines(String ledger) {
+        StringBuilder out = new StringBuilder();
+        for (String line : ledger.split("\n")) {
+            if (line.isEmpty()) continue;
+            int sp = line.indexOf(' ');
+            String sha = sp > 0 ? line.substring(0, sp) : line;
+            if (sha.length() > 7) sha = sha.substring(0, 7);
+            String subject = sp > 0 && line.length() > sp + 1 ? line.substring(sp + 1) : "";
+            if (subject.length() > 26) subject = subject.substring(0, 24) + "..";
+            if (out.length() > 0) out.append('\n');
+            out.append(sha).append(' ').append(subject);
+        }
+        return out.toString();
     }
 
     /** Public bounded-timeout git runner — shared with TimeMachine (M3). */

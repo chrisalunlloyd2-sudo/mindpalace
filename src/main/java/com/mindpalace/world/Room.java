@@ -17,6 +17,7 @@ public class Room {
     private String localPath;
     private String remoteUrl;
     private String lastCommit;  // most recent commit message + date
+    private String commitLedger; // H37 (#122): last 10 commits "sha subject" (\n-separated, newest first) for the door engraving
     private boolean fogged;     // fog-of-war: hidden until explored (private/remote repos)
 
     // Position in world
@@ -70,6 +71,8 @@ public class Room {
     public void setRemoteUrl(String url) { this.remoteUrl = url; }
     public String getLastCommit() { return lastCommit; }
     public void setLastCommit(String c) { this.lastCommit = c; }
+    public String getCommitLedger() { return commitLedger; }
+    public void setCommitLedger(String l) { this.commitLedger = l; }
     public boolean isFogged() { return fogged; }
     public void setFogged(boolean f) { this.fogged = f; }
 

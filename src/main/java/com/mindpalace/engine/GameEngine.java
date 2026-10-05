@@ -1817,6 +1817,7 @@ public class GameEngine {
                 renderRoomPoster();
                 renderFloorSigns();
                 renderSignpostText();   // H23 (step 74): repo names on the path-fork signposts
+                renderCommitEngravings(); // H37 (#122, step 95): last-10-commits plaque beside each door
             } else {
                 // 2D read mode — pin the key world text into a fixed screen panel.
                 renderTwoDTextPanel();
@@ -2165,6 +2166,73 @@ public class GameEngine {
             // Bigger + brighter for legibility against the dark backing plate.
             Vector3f facing = new Vector3f(wallX > 0 ? -1 : 1, 0, 0);
             fontRenderer.renderText(name, signPos, 0.30f, color, proj, view, facing);
+        }
+    }
+
+    /** H37 (#122, step 95): commit engravings — each revealed room's door gets
+     *  a wall-facing "foundation stone" engraving OVER the door (lintel band
+     *  y 2.45→3.4, within the 1.2m door width), listing the repo's last 10
+     *  commits (newest first, 7-char sha + capped subject). Ledger sources:
+     *  real `git log -10` for local rooms, the /commits API for remote-only
+     *  rooms, deterministic seeds for demo fixtures. Placement: the over-door
+     *  band is the only collision-free slot — door-side walls also carry the
+     *  step-69 window panes (midpoint-centred, y≈1.8–2.65) and poster/note
+     *  traffic lower down; the lintel band has just the neon lintel bar at
+     *  y=2.4 (z-thin) and wallpaper above. Wall-facing renderText (neon-sign
+     *  recipe, glyphs advance along ±z on the wall plane) — the cylindrical
+     *  -billboard mirror bug class (#39) can't apply. e2e door waypoints
+     *  (13/17) frame this spot from the hall. */
+    private void renderCommitEngravings() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+
+        for (Room room : world.getRooms()) {
+            Vector3f dp = room.getDoorPosition();
+            if (dp == null) continue;
+            if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
+            String ledger = room.getCommitLedger();
+            if (ledger == null || ledger.isEmpty()) continue;
+
+            float dist = camPos.distance(dp);
+            if (dist > 14f) continue;   // legibility cutoff — same class as neon-sign 25/floor 15
+
+            float wallX = room.getHallwaySide() == 0
+                ? -WorldBuilder.HALLWAY_WIDTH / 2f
+                : WorldBuilder.HALLWAY_WIDTH / 2f;
+            // Over-door "foundation stone" band: wall spans door top (2.4) →
+            // ceiling (HALLWAY_HEIGHT 4.0). renderInternal stacks '\n' lines
+            // UPWARD (+li*lineH), so for a top-down read the block must be
+            // painted oldest-first (newest = last chunk = highest line) and
+            // the header rendered as its own call ABOVE the entry block.
+            // Both calls anchor centered on dp.z (renderInternal centers each
+            // line around position before advancing glyphs along the wall).
+            float baseY = (room.getFloor() == 0 ? 0f : WorldBuilder.HALLWAY_HEIGHT + 1.0f);
+            float stoneX = wallX + (wallX > 0 ? -0.03f : 0.03f);
+            Vector3f facing = new Vector3f(wallX > 0 ? -1 : 1, 0, 0);
+            // Palette: cool stone-gray entries + amber header, ledger ink.
+            Vector3f headCol = new Vector3f(1.0f, 0.72f, 0.25f);
+            Vector3f lineCol = new Vector3f(0.62f, 0.62f, 0.55f);
+
+            // Entries (0.08 → lineH 0.136; 10 lines span 2.50→3.72 on floor 0,
+            // clear of the neon lintel bar at 2.4 and the header below):
+            StringBuilder rows = new StringBuilder();
+            String[] ls = ledger.split("\n", -1);
+            for (int li = ls.length - 1; li >= 0; li--) {
+                if (ls[li].isEmpty()) continue;
+                if (rows.length() > 0) rows.append('\n');
+                rows.append(ls[li]);
+            }
+            fontRenderer.renderText(rows.toString(),
+                new Vector3f(stoneX, baseY + Room.DOOR_HEIGHT + 0.10f, dp.z),
+                0.08f, lineCol, proj, view, facing);
+            // Header on top (0.10 at y 3.90 → glyphs 3.82–3.98 < wall top 4.0).
+            // ASCII hyphen — em-dash U+2014 is outside the glyph atlas
+            // (ASCII/Latin-1/box-drawing/extras) and would render as '?'.
+            fontRenderer.renderText("commit ledger - last 10",
+                new Vector3f(stoneX, baseY + 3.90f, dp.z),
+                0.10f, headCol, proj, view, facing);
         }
     }
 

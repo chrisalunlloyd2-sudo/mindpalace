@@ -151,7 +151,7 @@ public class GitHubClient {
     private final java.util.Map<String, CacheEntry<String>> fileCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Clear all API caches (forces fresh fetches; used by the editor after writes). */
-    public void clearCache() { contentsCache.clear(); fileCache.clear(); clearRepoListCache(); }
+    public void clearCache() { contentsCache.clear(); fileCache.clear(); commitCache.clear(); clearRepoListCache(); }
 
     public List<Book> fetchRepoContents(String repoName) throws IOException {
         List<Book> books = new ArrayList<>();
@@ -264,6 +264,56 @@ public class GitHubClient {
                 text));
         }
         return issues;
+    }
+
+    // ── H37 (#122, step 95): commit engravings for remote-only rooms ──
+    // Door plaques engrave the last 10 commits. Local rooms read real
+    // `git log -10` in RepoMapper; remote-only rooms (no local clone) need
+    // this /commits read — same 10-minute TTL cache pattern as the other
+    // read paths, empty list on API error (read path never blows up the caller).
+    private final java.util.Map<String, CacheEntry<List<String>>> commitCache =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Last 10 commit one-liners for a repo ("sha subject", newest first).
+     * Cached 10 minutes; an API error returns an empty list. Pure-parse
+     * companion below mirrors parseOpenIssues for selftest coverage.
+     */
+    public List<String> listRecentCommits(String repoName) throws IOException {
+        CacheEntry<List<String>> hit = commitCache.get(repoName);
+        if (hit != null && hit.fresh()) return hit.value;
+
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/commits?per_page=10")
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+
+        List<String> commits = new ArrayList<>();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return commits;
+            commits = parseRecentCommits(resp.body().string());
+        }
+        commitCache.put(repoName, new CacheEntry<>(commits));
+        return commits;
+    }
+
+    /** Pure parse of a GET /commits JSON array → "sha subject" one-liners (last 10). */
+    public static List<String> parseRecentCommits(String body) {
+        List<String> out = new ArrayList<>();
+        JsonArray arr = JsonParser.parseString(body).getAsJsonArray();
+        for (JsonElement el : arr) {
+            if (out.size() >= 10) break;
+            JsonObject obj = el.getAsJsonObject();
+            String sha = obj.get("sha").getAsString();
+            if (sha.length() > 7) sha = sha.substring(0, 7);
+            JsonObject ci = obj.getAsJsonObject("commit");
+            String msg = ci.get("message").getAsString();
+            int nl = msg.indexOf('\n');
+            String subject = nl >= 0 ? msg.substring(0, nl) : msg;
+            out.add(sha + " " + subject);
+        }
+        return out;
     }
 
     public boolean upsertFile(String repoName, String filePath, String content, String commitMessage, String sha) throws IOException {
