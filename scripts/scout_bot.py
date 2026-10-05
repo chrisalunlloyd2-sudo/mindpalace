@@ -71,6 +71,7 @@ def read_chat(day=None):
 
 
 def today_stats():
+    """Today stats (function)."""
     msgs = read_chat(day=datetime.now().strftime("%Y-%m-%d"))
     if not msgs:
         return None
@@ -200,6 +201,10 @@ def progress():
     return 0 if n_pass == len(rows) else 1
 
 def console_tail(n=60):
+    """Console tail.
+
+    Args: n.
+    """
     try:
         lines = CONSOLE.read_text(encoding="utf-8", errors="replace").splitlines()
         return [l for l in lines[-n:]]
@@ -233,6 +238,7 @@ def console_stats():
 
 
 def telemetry_counts():
+    """Telemetry counts (function)."""
     db = MEMDIR / "telemetry.db"
     if not db.exists():
         return None
@@ -261,6 +267,7 @@ def telemetry_counts():
 
 
 def game_alive():
+    """Game alive (function)."""
     try:
         import subprocess
         out = subprocess.run(["tasklist"], capture_output=True, text=True, timeout=15).stdout
@@ -271,6 +278,7 @@ def game_alive():
 
 
 def ascii_map():
+    """Ascii map (function)."""
     rooms = []
     try:
         text = CONSOLE.read_text(encoding="utf-8", errors="replace")
@@ -291,6 +299,7 @@ def ascii_map():
 
 
 def report():
+    """Report (function)."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     alive = game_alive()
     ts = telemetry_counts()
@@ -318,6 +327,7 @@ def report():
 
 
 def metrics():
+    """Metrics (function)."""
     tod = today_stats()
     if not tod:
         print("no chat messages today yet")
@@ -521,6 +531,7 @@ def bot_steplog():
 
 
 def watch():
+    """Watch (function)."""
     print(f"scout_bot WATCH — tailing {CONSOLE} (Ctrl+C to stop)")
     try:
         with open(CONSOLE, "r", encoding="utf-8", errors="replace") as f:
