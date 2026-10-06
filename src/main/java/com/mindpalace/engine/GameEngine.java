@@ -65,6 +65,11 @@ public class GameEngine {
     private boolean running = true;
 
     private Renderer renderer;
+    // MP-028 (#174): batched particle drawing. null = OFF (legacy per-row cube drawing, unchanged).
+    private com.mindpalace.render.ParticleBatch particleBatch;
+    // Demo fountain in front of the camera (-Dmindpalace.particles.demo=true) to see the batched path.
+    private com.mindpalace.render.ParticlePool demoPool;
+    private com.mindpalace.render.ParticleEmitter demoEmitter;
     private FontRenderer fontRenderer;
     private BloomEffect bloom;
     // MP-20 block-assembly: self-contained visual blocks minted at boot, composed at the bloom seam
@@ -427,6 +432,26 @@ public class GameEngine {
 
         input = new Input(window);
         renderer = new Renderer(width, height);
+        com.mindpalace.render.ParticleQuality particleQuality = com.mindpalace.render.ParticleQuality.fromConfig();
+        if (particleQuality != com.mindpalace.render.ParticleQuality.OFF) {
+            try {
+                particleBatch = new com.mindpalace.render.ParticleBatch(particleQuality.cap);
+                System.out.println("[Particles] batched drawing on: quality=" + particleQuality + " cap=" + particleQuality.cap);
+                if (Boolean.getBoolean("mindpalace.particles.demo")) {
+                    demoPool = new com.mindpalace.render.ParticlePool(particleQuality.cap, 1337L);
+                    demoPool.drag = 0.3f;
+                    demoEmitter = new com.mindpalace.render.ParticleEmitter();
+                    demoEmitter.rate = 400f; demoEmitter.spread = 0.5f;
+                    demoEmitter.speedMin = 2.5f; demoEmitter.speedMax = 4.5f;
+                    demoEmitter.lifeMin = 1.0f; demoEmitter.lifeMax = 2.0f;
+                    demoEmitter.size = 0.14f; demoEmitter.r = 1f; demoEmitter.g = 0.75f; demoEmitter.b = 0.25f;
+                    System.out.println("[Particles] demo fountain enabled");
+                }
+            } catch (RuntimeException e) {
+                particleBatch = null;   // never let an effects problem stop the game: fall back to the cube path
+                System.err.println("[Particles] batch unavailable, using the cube path: " + e);
+            }
+        }
         bloom = new BloomEffect(width, height);
         blocks.register(com.mindpalace.blocks.FireBlock.seedDefault()); // MP-032 fire (flicker phase)
         blocks.register(new com.mindpalace.blocks.WeatherBlock()); // MP-028 weather (atmospheric light response)
@@ -1153,6 +1178,7 @@ public class GameEngine {
 
         // Continuous genetic-audio evolution — evolve the music in the background
         updateEvolution(dt);
+        updateParticleDemo((float) dt);
 
         // F12 — screenshot (agent "sees" the game)
         if (input.wasKeyPressed(GLFW.GLFW_KEY_F12)) {
@@ -1910,19 +1936,40 @@ public class GameEngine {
         // emit data (deterministic), the engine owns the GL. Ember rows ride
         // the heat ramp (white-gold -> deep orange), fireflies pulse glow.
         int emitRows = blocks.emitAll(blockEmitRows, 0, 96);
-        for (int i = 0; i < emitRows; i++) {
-            int w6 = i * 6;
-            float ex = blockEmitRows[w6], ey = blockEmitRows[w6 + 1], ez = blockEmitRows[w6 + 2];
-            float sz = blockEmitRows[w6 + 3], en = blockEmitRows[w6 + 4], kind = blockEmitRows[w6 + 5];
-            if (kind == 0f) { // ember: white-gold core cooling to deep orange with age
-                float inv = 1f - en;
-                renderer.drawCubeColorYaw(new Vector3f(ex, ey, ez),
-                    new Vector3f(sz, sz, sz), (float) (i * 61 % 360),
-                    0.55f + 0.45f * inv, 0.25f + 0.35f * (1f - en * 0.5f), 0.08f);
-            } else if (kind == 1f) { // firefly: chartreuse glow, brightness from blink
-                renderer.drawCubeColorYaw(new Vector3f(ex, ey, ez),
-                    new Vector3f(sz, sz, sz), (float) (i * 61 % 360),
-                    0.55f * en, 0.85f * en, 0.20f * en);
+        if (particleBatch != null) {
+            // MP-028: ALL rows in ONE draw call (was one cube draw + two Vector3f allocations per row).
+            org.joml.Matrix4f vm = renderer.getViewMatrix();
+            com.mindpalace.render.ParticleQuadBuffer qb = particleBatch.quads();
+            qb.begin(vm.m00(), vm.m10(), vm.m20(), vm.m01(), vm.m11(), vm.m21());
+            for (int i = 0; i < emitRows; i++) {
+                int w6 = i * 6;
+                float ex = blockEmitRows[w6], ey = blockEmitRows[w6 + 1], ez = blockEmitRows[w6 + 2];
+                float sz = blockEmitRows[w6 + 3], en = blockEmitRows[w6 + 4], kind = blockEmitRows[w6 + 5];
+                if (kind == 0f) {         // ember: same heat ramp as the cube path
+                    float inv = 1f - en;
+                    qb.add(ex, ey, ez, sz * 3f, 0.55f + 0.45f * inv, 0.25f + 0.35f * (1f - en * 0.5f), 0.08f, 0.9f);
+                } else if (kind == 1f) {  // firefly: chartreuse glow, brightness from blink
+                    qb.add(ex, ey, ez, sz * 3f, 0.55f * en, 0.85f * en, 0.20f * en, 1f);
+                }
+            }
+            if (demoPool != null) qb.addPool(demoPool, 0.9f);
+            particleBatch.end(renderer.getProjectionMatrix(), vm);
+            renderer.bindBasicShader();   // later draws expect the default shader bound
+        } else {
+            for (int i = 0; i < emitRows; i++) {
+                int w6 = i * 6;
+                float ex = blockEmitRows[w6], ey = blockEmitRows[w6 + 1], ez = blockEmitRows[w6 + 2];
+                float sz = blockEmitRows[w6 + 3], en = blockEmitRows[w6 + 4], kind = blockEmitRows[w6 + 5];
+                if (kind == 0f) { // ember: white-gold core cooling to deep orange with age
+                    float inv = 1f - en;
+                    renderer.drawCubeColorYaw(new Vector3f(ex, ey, ez),
+                        new Vector3f(sz, sz, sz), (float) (i * 61 % 360),
+                        0.55f + 0.45f * inv, 0.25f + 0.35f * (1f - en * 0.5f), 0.08f);
+                } else if (kind == 1f) { // firefly: chartreuse glow, brightness from blink
+                    renderer.drawCubeColorYaw(new Vector3f(ex, ey, ez),
+                        new Vector3f(sz, sz, sz), (float) (i * 61 % 360),
+                        0.55f * en, 0.85f * en, 0.20f * en);
+                }
             }
         }
 
@@ -3392,6 +3439,7 @@ public class GameEngine {
         if (deployManager != null) deployManager.shutdown();
         audio.cleanup();
         music.cleanup();
+        if (particleBatch != null) particleBatch.cleanup();
         renderer.cleanup();
         bloom.cleanup();
         blocks.cleanup();
@@ -3468,6 +3516,14 @@ public class GameEngine {
      * patches and splice the fittest patch into the live music. Fully
      * autonomous — no human rating, just the SonicFitness signal metrics.
      */
+    private void updateParticleDemo(float dt) {
+        if (demoPool == null) return;
+        org.joml.Vector3f cp = player.getCamera().getPosition(), cf = player.getCamera().getFront();
+        demoEmitter.at(cp.x + cf.x * 3f, cp.y - 0.8f, cp.z + cf.z * 3f);
+        demoEmitter.update(dt, demoPool);
+        demoPool.update(dt);
+    }
+
     private void updateEvolution(double dt) {
         if (audioEvolver == null) return;
 
@@ -4859,6 +4915,17 @@ public class GameEngine {
         }
         System.out.println((bridgeStarterOk ? "PASS" : "FAIL") + " #145 bridge starter reachable, opt-in, validated");
         if (bridgeStarterOk) pass++; else fail++;
+
+        // MP-028 (#174): particle core, proven headless (no GL): tiers, cap, compaction, physics,
+        // determinism, quad geometry, emitter, and MEASURED zero allocation per frame.
+        String particleWhy;
+        try { particleWhy = com.mindpalace.render.ParticleSelfCheck.run(); }
+        catch (Throwable t) { particleWhy = "threw " + t; }
+        boolean particleOk = particleWhy.isEmpty();
+        System.out.println((particleOk ? "PASS" : "FAIL")
+            + " MP-028 particle core: tiers, cap, swap-remove, physics, determinism, quads, emitter, zero-alloc"
+            + (particleOk ? "" : " -- " + particleWhy));
+        if (particleOk) pass++; else fail++;
 
         // 43. H04 budgets — read_file returns head+tail 150 lines (test via
         //     AgentManager.truncateHeadTail through a 400-line synthetic file:

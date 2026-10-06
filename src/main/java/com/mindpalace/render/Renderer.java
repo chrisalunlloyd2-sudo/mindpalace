@@ -15,6 +15,8 @@ public class Renderer {
     private Matrix4f viewMatrix = new Matrix4f();
 
     /** Matrices for the per-frame frustum culler (perf). */
+    /** Re-bind the default shader after a batch renderer (e.g. ParticleBatch) used its own. */
+    public void bindBasicShader() { basicShader.bind(); }
     public Matrix4f getProjectionMatrix() { return projectionMatrix; }
     public Matrix4f getViewMatrix() { return viewMatrix; }
     private Vector3f viewPos = new Vector3f();
