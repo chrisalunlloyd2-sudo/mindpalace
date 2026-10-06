@@ -246,7 +246,17 @@ public class GameEngine {
             System.exit(0);
         }
         startConsoleReader();
-        loop();
+        try {
+            loop();
+        } catch (Throwable t) {
+            // A crash in the loop used to skip cleanup and leave a window-less zombie JVM alive on
+            // its non-daemon threads (2026-10-03, 3 days "Not Responding"). Log, clean up, exit so
+            // a relauncher can restart the game.
+            System.err.println("[FATAL] game loop crashed: " + t);
+            t.printStackTrace();
+            try { cleanup(); } catch (Throwable ignored) { /* exiting anyway */ }
+            System.exit(1);
+        }
         cleanup();
     }
 
@@ -1191,8 +1201,12 @@ public class GameEngine {
             for (int k = GLFW.GLFW_KEY_1; k <= GLFW.GLFW_KEY_9; k++) {
                 if (input.wasKeyPressed(k)) {
                     java.util.List<Room> vis = new java.util.ArrayList<>();
+                    // getCurrentRoom() is null outside any room (mansion, hallway, outside):
+                    // that NPE killed the game loop on 2026-10-03. Same fallback as the map HUD.
+                    Room hereRoom = player.getCurrentRoom();
+                    int hereFloor = hereRoom != null ? hereRoom.getFloor() : 0;
                     for (Room room : world.getRooms()) {
-                        if (room.getFloor() != player.getCurrentRoom().getFloor()) continue;
+                        if (room.getFloor() != hereFloor) continue;
                         if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
                         if (room.getDoorPosition() == null) continue;
                         vis.add(room);
