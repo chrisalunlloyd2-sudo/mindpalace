@@ -34,6 +34,41 @@ public class OllamaClient {
         return (v == null || v.isBlank()) ? "5m" : v.trim();
     }
 
+    // model -> does Ollama report native tool-calling for it (cached; #144)
+    private final java.util.concurrent.ConcurrentHashMap<String, Boolean> toolSupport = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * True when Ollama's /api/show lists "tools" in the model's capabilities
+     * (e.g. llama3.2:1b yes, phi3:mini no). A model without it silently ignores
+     * the tools payload, so tool rounds must not be routed to it. If Ollama is
+     * unreachable or too old to report capabilities, the answer is not cached
+     * and only the configured TOOL_MODEL is assumed capable.
+     */
+    public boolean supportsTools(String model) {
+        Boolean cached = toolSupport.get(model);
+        if (cached != null) return cached;
+        try {
+            JsonObject b = new JsonObject();
+            b.addProperty("model", model);
+            Request r = new Request.Builder().url(BASE + "/show")
+                .post(RequestBody.create(b.toString(), MediaType.parse("application/json"))).build();
+            try (Response resp = http.newCall(r).execute()) {
+                if (resp.isSuccessful() && resp.body() != null) {
+                    JsonObject o = gson.fromJson(resp.body().string(), JsonObject.class);
+                    if (o != null && o.has("capabilities") && o.get("capabilities").isJsonArray()) {
+                        boolean yes = false;
+                        for (JsonElement e : o.getAsJsonArray("capabilities")) {
+                            if ("tools".equals(e.getAsString())) { yes = true; break; }
+                        }
+                        toolSupport.put(model, yes);
+                        return yes;
+                    }
+                }
+            }
+        } catch (IOException | RuntimeException ignored) { /* fall through to the safe default */ }
+        return ModelConfig.TOOL_MODEL.equals(model);
+    }
+
     private static void applyKeepAlive(JsonObject body) {
         if (KEEP_ALIVE.matches("\\d+")) body.addProperty("keep_alive", Long.parseLong(KEEP_ALIVE));
         else body.addProperty("keep_alive", KEEP_ALIVE);

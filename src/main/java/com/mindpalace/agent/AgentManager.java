@@ -835,14 +835,26 @@ public class AgentManager {
         modelScheduler.submitToolRound(() -> executeToolRound(context));
     }
 
+    /** Model for a tool round: the routed model when Ollama reports tool support, else TOOL_MODEL (#144). */
+    private String toolRoundModel() {
+        String m = routedModel;
+        if (ollama.supportsTools(m)) return m;
+        log("[AgentManager] " + m + " has no native tool calling; tool round uses " + TOOL_MODEL + " (#144)");
+        return TOOL_MODEL;
+    }
+
     /** One tool round-trip: model → tool_calls → execute → feed back → final text. */
     private void executeToolRound(String context) {
         try {
+            // #144: the router picks by complexity, but tiers like tinyllama/phi/phi3 have no
+            // native tool calling and would silently no-op. Tool rounds use a model that
+            // Ollama reports as tool-capable (the routed one if it is, else TOOL_MODEL).
+            final String toolModel = toolRoundModel();
             List<Map<String, String>> msgs = new ArrayList<>();
-            msgs.add(Map.of("role", "system", "content", ctx(routedModel) + "\n" + TOOL_SYSTEM_PROMPT));
+            msgs.add(Map.of("role", "system", "content", ctx(toolModel) + "\n" + TOOL_SYSTEM_PROMPT));
             msgs.add(Map.of("role", "user", "content", context + "\n\nTake ONE concrete action using your tools."));
 
-            OllamaClient.ToolResult tr = ollama.chatWithTools(routedModel, msgs, TOOLS);
+            OllamaClient.ToolResult tr = ollama.chatWithTools(toolModel, msgs, TOOLS);
             if (tr == null || tr.toolCalls.isEmpty()) {
                 if (tr != null && tr.content != null && !tr.content.isEmpty()) {
                     emit(onToolMessage, "[Tool] " + tr.content);
@@ -892,7 +904,7 @@ public class AgentManager {
             feedback.add(Map.of("role", "user", "content",
                 "You just took the actions shown above. In ONE line: what did you "
                 + "learn from the results, and what is the next concrete step?"));
-            OllamaClient.ToolResult sr = ollama.chatWithTools(routedModel, feedback, List.<com.google.gson.JsonObject>of());
+            OllamaClient.ToolResult sr = ollama.chatWithTools(toolModel, feedback, List.<com.google.gson.JsonObject>of());
             if (sr != null && sr.content != null && !sr.content.isEmpty()) {
                 emit(onToolMessage, "[Tool] " + sr.content);
             }
