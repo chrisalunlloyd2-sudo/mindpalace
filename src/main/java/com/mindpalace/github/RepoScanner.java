@@ -49,15 +49,12 @@ public class RepoScanner {
                 // Remote-only repo — add it, fogged until explored
                 remote.setLocalPath(null); // no local copy
                 remote.setFogged(true);
-                // H37 (#122): remote-only rooms have no local git — engrave the
-                // last 10 commits from /commits (TTL-cached; empty on API error).
-                try {
-                    java.util.List<String> commits = client.listRecentCommits(remote.getRepoName());
-                    if (!commits.isEmpty()) remote.setCommitLedger(String.join("\n", commits));
-                } catch (IOException e) {
-                    System.err.println("[RepoScanner] commit ledger unavailable for "
-                        + remote.getRepoName() + ": " + e.getMessage());
-                }
+                // H37 (#122): remote-only rooms have no local git, so the door plaque engraves the
+                // last 10 commits from /commits. That is one blocking HTTP call per remote repo (~90),
+                // which used to run HERE on the main thread and froze the window for 30+ s at launch
+                // (thread dumps at 12/22/32 s). The ledgers are now filled in the background after the
+                // world is up; the plaque simply appears when its ledger arrives.
+                queueLedgerFetch(remote);
                 localRooms.add(remote);
                 System.out.println("[RepoScanner] Added remote-only (fogged): " + remote.getRepoName());
             } else {
@@ -72,5 +69,37 @@ public class RepoScanner {
                 }
             }
         }
+    }
+
+    private final java.util.concurrent.ConcurrentLinkedQueue<Room> ledgerQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final java.util.concurrent.atomic.AtomicBoolean ledgerWorkerRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    private void queueLedgerFetch(Room remote) {
+        ledgerQueue.add(remote);
+        startLedgerWorker();
+    }
+
+    /** One daemon worker drains the queue sequentially (no request burst); it restarts if more arrive late. */
+    private void startLedgerWorker() {
+        if (!ledgerWorkerRunning.compareAndSet(false, true)) return;
+        Thread t = new Thread(() -> {
+            try {
+                Room r;
+                while ((r = ledgerQueue.poll()) != null) {
+                    try {
+                        java.util.List<String> commits = client.listRecentCommits(r.getRepoName());
+                        if (!commits.isEmpty()) r.setCommitLedger(String.join("\n", commits));
+                    } catch (IOException e) {
+                        System.err.println("[RepoScanner] commit ledger unavailable for "
+                            + r.getRepoName() + ": " + e.getMessage());
+                    }
+                }
+            } finally {
+                ledgerWorkerRunning.set(false);
+                if (!ledgerQueue.isEmpty()) startLedgerWorker();
+            }
+        }, "repo-ledger-fill");
+        t.setDaemon(true);
+        t.start();
     }
 }

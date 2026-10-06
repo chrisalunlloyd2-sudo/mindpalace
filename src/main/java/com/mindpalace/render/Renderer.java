@@ -188,7 +188,17 @@ public class Renderer {
     // Cache of solid-color textures keyed by quantized RGB, so gradient bands
     // (cosine-interpolated sky, water shimmer) can paint arbitrary colors
     // without a texture per shade.
-    private final java.util.Map<Integer, Texture> colorCache = new java.util.HashMap<>();
+    // LRU-capped: animated colors (OutsideWorld sin/cos/time) used to add one never-freed GL texture per
+    // distinct color for the whole session. The evicted entry is the least recently USED, never the one
+    // being drawn, and a color simply re-creates its 1x1 texture if it comes back.
+    private static final int COLOR_CACHE_MAX = 2048;
+    private final java.util.Map<Integer, Texture> colorCache = new java.util.LinkedHashMap<Integer, Texture>(256, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(java.util.Map.Entry<Integer, Texture> eldest) {
+            if (size() <= COLOR_CACHE_MAX) return false;
+            if (eldest.getValue() != null) eldest.getValue().cleanup();
+            return true;
+        }
+    };
 
     // Sky dome gradient texture (rebuilt when the day/night phase changes).
     private Texture skyDomeTex;
