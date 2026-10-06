@@ -543,6 +543,10 @@ public class GameEngine {
         // runs inside agentManager.start(); only the cycle is suppressed.
         agentManager.setSelfTest(selfTest);
         agentManager.start();
+        // #145: Reddit/GitHub bridges start only on explicit env opt-in; never in --demo or selftest (hermetic).
+        if (!demoMode && !selfTest) {
+            agentManager.startBridgesIfConfigured(System::getenv);
+        }
 
         // Build the knowledge graph + spawn agent NPCs (bodies in the world)
         knowledgeGraph = new KnowledgeGraph();
@@ -4822,6 +4826,21 @@ public class GameEngine {
             System.out.println("PASS demo hermeticity: skipped (live mode - see #43)");
         }
         if (hermeticOk) pass++; else fail++;
+
+        // #145: the bridge starter is reachable, off by default, rejects malformed config,
+        // and never touches the network here (stub env, no real credentials).
+        boolean bridgeStarterOk = false;
+        try {
+            String off = agentManager.startBridgesIfConfigured(k -> null);
+            String bad = agentManager.startBridgesIfConfigured(k -> k.equals("MP_ENABLE_GITHUB_BRIDGE") ? "1"
+                : k.equals("MP_GITHUB_BRIDGE_REPO") ? "not a repo" : null);
+            bridgeStarterOk = off.contains("github=skipped(disabled)") && off.contains("reddit=skipped(disabled)")
+                && bad.contains("github=skipped(enabled but repo/token missing or malformed)");
+        } catch (Throwable t) {
+            System.out.println("  bridge check threw: " + t);
+        }
+        System.out.println((bridgeStarterOk ? "PASS" : "FAIL") + " #145 bridge starter reachable, opt-in, validated");
+        if (bridgeStarterOk) pass++; else fail++;
 
         // 43. H04 budgets — read_file returns head+tail 150 lines (test via
         //     AgentManager.truncateHeadTail through a 400-line synthetic file:

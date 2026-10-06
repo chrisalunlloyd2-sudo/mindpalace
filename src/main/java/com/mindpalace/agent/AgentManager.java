@@ -1384,5 +1384,55 @@ public class AgentManager {
         }
     }
 
+    /**
+     * #145: the single startup path for the Reddit and GitHub bridges. Both are OFF
+     * unless explicitly enabled AND credentialed through the environment, because
+     * they feed public-sourced input (GitHub issues -> TASK files, Reddit -> quorum)
+     * and the public-feedback gate needs the Architect's sign-off first. Secrets are
+     * only ever read from env and never logged. The caller (GameEngine) invokes it once at startup.
+     *
+     * GitHub: MP_ENABLE_GITHUB_BRIDGE=1, MP_GITHUB_BRIDGE_REPO=owner/name, MP_GITHUB_BRIDGE_TOKEN
+     * Reddit: MP_ENABLE_REDDIT_BRIDGE=1, MP_REDDIT_CLIENT_ID, MP_REDDIT_CLIENT_SECRET, MP_REDDIT_SUBREDDIT
+     *
+     * @param env environment lookup (System::getenv in production, a stub in tests)
+     * @return one-line status, e.g. "github=skipped(disabled) reddit=skipped(disabled)"
+     */
+    public String startBridgesIfConfigured(java.util.function.Function<String, String> env) {
+        StringBuilder status = new StringBuilder();
+
+        String gh;
+        if (!"1".equals(env.apply("MP_ENABLE_GITHUB_BRIDGE"))) {
+            gh = "skipped(disabled)";
+        } else {
+            String repo = env.apply("MP_GITHUB_BRIDGE_REPO");
+            String token = env.apply("MP_GITHUB_BRIDGE_TOKEN");
+            if (repo == null || !repo.matches("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+") || token == null || token.isBlank()) {
+                gh = "skipped(enabled but repo/token missing or malformed)";
+            } else {
+                String[] p = repo.split("/", 2);
+                initGitHub(p[0], p[1], token);
+                gh = "started(" + repo + ")";
+            }
+        }
+        status.append("github=").append(gh);
+
+        String rd;
+        if (!"1".equals(env.apply("MP_ENABLE_REDDIT_BRIDGE"))) {
+            rd = "skipped(disabled)";
+        } else {
+            String id = env.apply("MP_REDDIT_CLIENT_ID");
+            String secret = env.apply("MP_REDDIT_CLIENT_SECRET");
+            String sub = env.apply("MP_REDDIT_SUBREDDIT");
+            if (id == null || id.isBlank() || secret == null || secret.isBlank() || sub == null || !sub.matches("[A-Za-z0-9_]{2,21}")) {
+                rd = "skipped(enabled but credentials/subreddit missing or malformed)";
+            } else {
+                rd = initReddit(id, secret, sub) != null ? "awaiting-authorization" : "failed";
+            }
+        }
+        status.append(" reddit=").append(rd);
+        log("[AgentManager] bridges: " + status);
+        return status.toString();
+    }
+
     public GitHubPollBridge getGitHubBridge() { return githubBridge; }
 }
