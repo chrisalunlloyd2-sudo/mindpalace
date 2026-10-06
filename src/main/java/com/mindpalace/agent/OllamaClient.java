@@ -69,6 +69,28 @@ public class OllamaClient {
         return ModelConfig.TOOL_MODEL.equals(model);
     }
 
+    // Context window requested per call. Without it Ollama applies ITS default, which on this machine was
+    // 131072 tokens: a 1.2B model loaded at 6.4 GB (KV cache ~5 GB) instead of ~1.5 GB, with multi-second
+    // loads and ~1 GB RAM left free (observed 2026-10-06 via /api/ps context_length). Tool budget is 4000
+    // tokens, so 8192 is ample. Override: -Dmindpalace.ollama.numCtx=... or env MP_OLLAMA_NUM_CTX.
+    private static final int NUM_CTX = resolveNumCtx();
+
+    private static int resolveNumCtx() {
+        String v = System.getProperty("mindpalace.ollama.numCtx", System.getenv("MP_OLLAMA_NUM_CTX"));
+        try {
+            int n = (v == null || v.isBlank()) ? 8192 : Integer.parseInt(v.trim());
+            return Math.max(2048, Math.min(n, 131072));
+        } catch (NumberFormatException e) {
+            return 8192;
+        }
+    }
+
+    private static void applyOptions(JsonObject body) {
+        JsonObject opts = body.has("options") && body.get("options").isJsonObject() ? body.getAsJsonObject("options") : new JsonObject();
+        opts.addProperty("num_ctx", NUM_CTX);
+        body.add("options", opts);
+    }
+
     private static void applyKeepAlive(JsonObject body) {
         if (KEEP_ALIVE.matches("\\d+")) body.addProperty("keep_alive", Long.parseLong(KEEP_ALIVE));
         else body.addProperty("keep_alive", KEEP_ALIVE);
@@ -143,6 +165,7 @@ public class OllamaClient {
         // ONE-HOT: the model stays resident for KEEP_ALIVE (default 5m); a different
         // model evicts it (see evictPreviousModelLocked). "0" = old cold-shot policy.
         applyKeepAlive(body);
+        applyOptions(body);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -204,6 +227,7 @@ public class OllamaClient {
         body.addProperty("stream", false);
         // Same one-hot keep-alive policy as chat().
         applyKeepAlive(body);
+        applyOptions(body);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
