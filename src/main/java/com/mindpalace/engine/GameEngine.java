@@ -3887,6 +3887,32 @@ public class GameEngine {
         System.out.println((mapOk ? "PASS" : "FAIL") + " map overlay toggle (Tab)");
         if (mapOk) pass++; else fail++;
 
+        // 12b. Overlay render paths the main frames never draw: map, help, teleport menu, dressing room, loading screen.
+        //      With -Dmindpalace.glTrace=true any GL error raised while drawing them fails the check.
+        boolean overlaysOk = true;
+        String overlayFailure = "";
+        long glErrorsBefore = com.mindpalace.render.GlTrace.errorTotal();
+        try {
+            boolean wasMap = showMap, wasHelp = showHelp, wasTeleport = teleportMenu;
+            showMap = true;      render(0); render(0); showMap = wasMap;
+            showHelp = true;     render(0); render(0); showHelp = wasHelp;
+            teleportMenu = true; render(0); render(0); teleportMenu = wasTeleport;
+            if (dressingRoom != null) {
+                boolean wasOpen = dressingRoom.isOpen();
+                if (!wasOpen) dressingRoom.toggle();
+                render(0); render(0);
+                if (dressingRoom.isOpen() != wasOpen) dressingRoom.toggle();
+            }
+            renderLoadingFrame();
+        } catch (Throwable t) {
+            overlaysOk = false;
+            overlayFailure = " (" + t.getClass().getSimpleName() + ")";
+        }
+        long glErrorsDuring = com.mindpalace.render.GlTrace.errorTotal() - glErrorsBefore;
+        if (glErrorsDuring > 0) { overlaysOk = false; overlayFailure += " (" + glErrorsDuring + " GL errors, see [GlTrace] lines)"; }
+        System.out.println((overlaysOk ? "PASS" : "FAIL") + " overlay render paths (map/help/teleport/dressing room/loading)" + overlayFailure);
+        if (overlaysOk) pass++; else fail++;
+
         // 13. Immediate chat path — scheduler exposes submitImmediate (no 5-min gate)
         boolean chatOk = agentManager != null && agentManager.getScheduler() != null;
         System.out.println((chatOk ? "PASS" : "FAIL") + " immediate chat path (scheduler)");

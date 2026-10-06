@@ -58,6 +58,7 @@ public final class GlTrace {
                 c = new long[]{0, frames};
                 counts.put(key, c);
             }
+            errorTotal++;
             if (++c[0] <= 3) {
                 System.out.println("[GlTrace] " + key + " (frame " + frames + ", hit " + c[0] + ")");
             }
@@ -69,6 +70,11 @@ public final class GlTrace {
         lastProgram = prog;
         previous = stage;
     }
+
+    private static long errorTotal;
+
+    /** Total GL errors attributed so far (always 0 unless tracing is enabled). */
+    public static long errorTotal() { return errorTotal; }
 
     private static int lastProgram = -1;
     private static int programChanges;
