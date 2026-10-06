@@ -1150,8 +1150,9 @@ public class GameEngine {
             System.out.println("[NOCLIP] " + (player.isNoclip() ? "ON" : "OFF"));
         }
 
-        // F4 — FPS overlay (M2, step 115): rolling average over ~2s of frames
-        if (input.wasKeyPressed(GLFW.GLFW_KEY_F4)) {
+        // F8 — FPS overlay (M2, step 115): rolling average over ~2s of frames.
+        // Moved off F4 (#141): F4 belongs to the VR<->2D text toggle; one key, one feature.
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F8)) {
             fpsShow = !fpsShow;
         }
 
@@ -2076,7 +2077,7 @@ public class GameEngine {
      * World graphics stay identical; only the text is pinned to the screen.
      */
     private void renderTwoDTextPanel() {
-        // F4 FPS overlay (M2 step 115): rolling average over frameTimes
+        // F8 FPS overlay (M2 step 115): rolling average over frameTimes
         if (fpsShow) {
             double sum = 0; int n = 0;
             for (Double ft : frameTimes) { sum += ft; n++; }
@@ -2284,7 +2285,7 @@ public class GameEngine {
             camFront.y * 3f - 0.6f,
             camFront.z * 3f - camRight.z * 0f);
 
-        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  F4:2D  ESC:Menu  F11:Fullscreen";
+        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  F4:2D  F8:FPS  ESC:Menu  F11:Fullscreen";
         fontRenderer.renderBillboard(hotkeys, hudCenter, 0.06f,
             new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
 

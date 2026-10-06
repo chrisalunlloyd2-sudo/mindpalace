@@ -38,7 +38,7 @@ M1 done = a stranger runs the palace in 5 minutes with no GitHub account. MET.
 |--------|--------|---------|--------|
 | Layout determinism | same repos = identical room centers | selftest stability check (queued step 114) | port is bit-identical by construction |
 | API call reduction | repeat reads served from cache 80%+ in 10-min window | telemetry grep contents/ vs cache hits | wiring live, measure next scout cycle |
-| FPS visibility | in-game rolling FPS readable on demand | F4 overlay present; window-title FPS unchanged | OK F4 wired |
+| FPS visibility | in-game rolling FPS readable on demand | F8 overlay present; window-title FPS unchanged | OK F8 wired |
 | Frame stability | E2E unchanged post-refactor | test_bot.py --verify-shots, 11+ OK | OK 11 OK + 2 known |
 | Regression guard | corridor port bit-identical | selftest 42/0 + E2E luminance deltas at baseline | OK 42/0 |
 
@@ -69,7 +69,7 @@ from a clean checkout; each is re-measured at every release.
 | Budget | Target | Benchmark procedure | Instrument |
 |--------|--------|--------------------|------------|
 | **Demo cold boot** | **< 2 min** from double-click/`--demo` to walking | `time java ... --demo --selftest` wall-clock; boot log timestamps `boot start → World built → Agents started` | console log t= lines |
-| **Frame rate, medium repo** | **60 FPS sustained** indoors on a ~50-repo world (medium) | 60s play session at default settings; F4 rolling average + window-title FPS sampled every 10s | window title / F4 overlay |
+| **Frame rate, medium repo** | **60 FPS sustained** indoors on a ~50-repo world (medium) | 60s play session at default settings; F8 rolling average + window-title FPS sampled every 10s | window title / F8 overlay |
 | **Search-to-teleport** | **< 300 ms** from Enter on query to camera settled at door | instrumented: `System.nanoTime()` around findRepoByName + setPosition in the search path (log line `[Search] Xms`) | console grep `[Search]` |
 
 ### Measurement rules for the budgets

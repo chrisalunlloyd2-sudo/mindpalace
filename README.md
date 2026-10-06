@@ -318,7 +318,8 @@ install; the JRE is bundled.
 | ESC | Toggle menu / close editor |
 | F1 | Help overlay |
 | F3 | Toggle noclip (free-fly: Space/Shift up/down, no collision) |
-| F4 | Toggle FPS/debug overlay (includes frustum-culled count) |
+| F4 | Toggle 2D readable text mode (VR 3D text <-> screen-pinned text) |
+| F8 | Toggle FPS/debug overlay (includes frustum-culled count) |
 | F11 | Fullscreen toggle |
 | F12 | Screenshot (saves to `screenshots/`) |
 | `/` | Search / jump to any repo |
