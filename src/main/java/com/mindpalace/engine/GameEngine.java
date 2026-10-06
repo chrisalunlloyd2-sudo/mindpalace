@@ -3350,20 +3350,23 @@ public class GameEngine {
             "=== CONTROLS ===",
             "WASD: Move    Mouse: Look    Shift: Sprint",
             "Enter: Open/Close Door    Space: Jump",
-            "Click: Open Book    ESC: Menu/Close",
-            "/: Search Repo    Tab: Map    Enter: Chat",
-            "F1: Help    F11: Fullscreen",
+            "T: Chat (Enter sends)    Click: Open Book",
+            "ESC: Menu/Close    /: Search Repo",
+            "Tab: Map    M: Minimap    1-9: Teleport (map open)",
+            "E: Plugboard swap (when near it)    [ / ]: Commit time slider",
+            "F1: Help    F3: Noclip    F4: 2D Text    F7: Dressing Room",
+            "F8: Debug    F11: Fullscreen    F12: Screenshot",
             "",
             "=== AGENTS ===",
             com.mindpalace.agent.ModelConfig.TOOL_MODEL + " (tool) + " + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + " (critic)",
             "Auto-cycle every 5 min in rooms",
-            "Enter to chat, type in-game",
+            "T to chat, type in-game",
             "",
             "=== EDITOR ===",
             ":e edit  :n new  :d delete  :s suggest  :q quit"
         };
 
-        float y = helpCenter.y + 0.6f;
+        float y = helpCenter.y + 0.6f + 0.06f * 3;   // 3 more lines than the original 14 keep the block centred
         for (String line : lines) {
             Vector3f linePos = new Vector3f(helpCenter.x, y, helpCenter.z);
             fontRenderer.renderBillboard(line, linePos, 0.05f,

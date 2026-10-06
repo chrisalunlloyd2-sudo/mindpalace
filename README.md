@@ -311,7 +311,13 @@ install; the JRE is bundled.
 | WASD | Move |
 | Mouse | Look around |
 | Space | Jump |
-| Enter | Open door / exit room / send chat |
+| Enter | Open door / exit room (sends your message while typing in chat) |
+| T | Start/stop typing in chat (Enter sends) |
+| Shift | Sprint |
+| 1-9 | With the map open: teleport to the Nth revealed room on this floor |
+| E | Swap the Enigma plugboard when standing near it |
+| `[` / `]` | Scrub the current room's commit history backwards / forwards (time slider) |
+| F7 | Dressing room (see its own keys below) |
 | Left Click | Click book to open editor / click plant for a fact |
 | Tab | Toggle full-map overlay |
 | M | Toggle minimap overlay |
@@ -323,6 +329,18 @@ install; the JRE is bundled.
 | F11 | Fullscreen toggle |
 | F12 | Screenshot (saves to `screenshots/`) |
 | `/` | Search / jump to any repo |
+
+### Dressing Room Keys
+
+| Key | Action |
+|-----|--------|
+| `[` / `-` , `]` / `=` | Decrease / increase the selected attribute |
+| H | Cycle hair style |
+| X | Toggle sex |
+| F5 / F6 | Save / load `avatar.json` |
+| Tab | Next attribute |
+| Arrow keys / mouse drag | Orbit the camera around the avatar |
+| `,` / `.` | Zoom in / out |
 
 ### Book Editor Commands
 

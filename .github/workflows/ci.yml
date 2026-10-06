@@ -107,6 +107,8 @@ jobs:
           } else {
             "### GL errors seen: 0" | Out-File -Append $env:GITHUB_STEP_SUMMARY
           }
+      - name: Instruction inventory (every handled key documented, every documented key handled)
+        run: python3 tools/instruction_inventory.py --strict
       - name: Upload selftest log
         if: always()
         uses: actions/upload-artifact@v4

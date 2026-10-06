@@ -24,7 +24,7 @@ One page per feature group: what it does, how to use it, what to expect.
 - Two SLMs (llama3.2:1b tool, qwen2.5:0.5b critic) walk the halls on a
   5-minute autonomous cycle: claim jobs, read code, propose changes —
   the critic reviews their CONCRETE actions (H01).
-- Chat HUD shows their reasoning live; **Enter to chat** replays through
+- Chat HUD shows their reasoning live; **T to chat** (Enter sends) replays through
   the immediate path (no 5-minute wait).
 - They earn DePIN credits per completed job; chatter is priced + gated.
 
