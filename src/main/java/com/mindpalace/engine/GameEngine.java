@@ -100,6 +100,7 @@ public class GameEngine {
     private com.mindpalace.genetics.SonicFitness sonicFitness;
     private com.mindpalace.genetics.GenomeControl genomeControl;
     private double evolveTimer = 0.0;
+    private double controlPollTimer = 0;   // throttles the genome control-file poll
     private double refreshTimer = 0.0;
     private static final double EVOLVE_INTERVAL = 30.0; // seconds per tick
     private static final int EVOLVE_GENERATIONS_PER_TICK = 8; // GA loop iterations per tick
@@ -3470,8 +3471,11 @@ public class GameEngine {
     private void updateEvolution(double dt) {
         if (audioEvolver == null) return;
 
-        // Poll the external control file (CLI tweaks while the system runs).
-        if (genomeControl != null) {
+        // Poll the external control file (CLI tweaks while the system runs). It used to be read on EVERY
+        // frame (a file-system call ~47x/s from the render loop; showed up in thread samples), so poll 4x/s.
+        controlPollTimer -= dt;
+        if (genomeControl != null && controlPollTimer <= 0) {
+            controlPollTimer = 0.25;
             com.google.gson.JsonObject ctl = genomeControl.read();
             if (ctl != null) {
                 String applied = genomeControl.apply(ctl, audioEvolver, sonicFitness);
