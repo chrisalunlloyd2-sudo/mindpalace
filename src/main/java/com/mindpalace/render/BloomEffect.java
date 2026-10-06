@@ -215,6 +215,7 @@ public class BloomEffect {
         GL11.glViewport(0, 0, width, height);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
+        final int prevProgram = Shader.currentProgram();
         compositeShader.bind();
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneTex);
@@ -226,6 +227,7 @@ public class BloomEffect {
         drawQuad();
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glEnable(GL11.GL_CULL_FACE);
+        Shader.restoreProgram(prevProgram);
     }
 
     private void renderPass(Shader shader, int srcTex, int dstFbo, int dstTex, Vector2f dir) {
@@ -233,6 +235,7 @@ public class BloomEffect {
         GL11.glViewport(0, 0, width, height);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
+        final int prevProgram = Shader.currentProgram();
         shader.bind();
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, srcTex);
@@ -246,6 +249,7 @@ public class BloomEffect {
         drawQuad();
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glEnable(GL11.GL_CULL_FACE);
+        Shader.restoreProgram(prevProgram);
     }
 
     private void drawQuad() {
@@ -306,6 +310,7 @@ public class BloomEffect {
         GL11.glViewport(0, 0, width, height);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
+        final int prevProgram = Shader.currentProgram();
         compositeShader.bind();
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneTex);
@@ -317,6 +322,7 @@ public class BloomEffect {
         drawQuad();
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glEnable(GL11.GL_CULL_FACE);
+        Shader.restoreProgram(prevProgram);
         GL11.glReadBuffer(GL11.GL_BACK);
         java.nio.ByteBuffer bb = org.lwjgl.BufferUtils.createByteBuffer(width * height * 4);
         GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, bb);

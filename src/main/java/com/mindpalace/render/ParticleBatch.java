@@ -82,6 +82,7 @@ public final class ParticleBatch {
         upload.put(quads.data(), 0, quads.floatCount());
         upload.flip();
 
+        final int previousProgram = Shader.currentProgram();   // callers must not have to remember to rebind theirs
         shader.bind();
         shader.setUniform("projection", projection);
         shader.setUniform("view", view);
@@ -106,6 +107,7 @@ public final class ParticleBatch {
         GL11.glDepthMask(true);
         GL11.glDisable(GL11.GL_BLEND);
         GL30.glBindVertexArray(0);
+        Shader.restoreProgram(previousProgram);
         if (probe) probe("state restore", count);
 
         drawCalls++;
