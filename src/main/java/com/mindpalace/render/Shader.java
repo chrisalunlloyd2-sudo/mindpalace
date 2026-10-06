@@ -84,12 +84,32 @@ public class Shader {
         return shader;
     }
 
+    // Every glUseProgram in the game goes through this class, so the current program is tracked here. Uniform
+    // locations belong to ONE program: setting basic-shader uniforms while another program is current raises
+    // GL_INVALID_OPERATION and the draw runs with the wrong shader. Code that must bind a different shader
+    // temporarily (text, particles) saves currentProgram() and restores it with restoreProgram().
+    private static int currentProgram = -1;      // -1 = unknown (before first bind / after deleting the bound program)
+
     public void bind() {
-        GL20.glUseProgram(programId);
+        if (currentProgram != programId) {
+            GL20.glUseProgram(programId);
+            currentProgram = programId;
+        }
     }
 
     public void unbind() {
         GL20.glUseProgram(0);
+        currentProgram = 0;
+    }
+
+    public static int currentProgram() { return currentProgram; }
+
+    /** Put back the program that was current before a temporary bind. -1 (unknown) leaves it alone. */
+    public static void restoreProgram(int id) {
+        if (id >= 0 && currentProgram != id) {
+            GL20.glUseProgram(id);
+            currentProgram = id;
+        }
     }
 
     public int getUniformLocation(String name) {
@@ -130,6 +150,7 @@ public class Shader {
     }
 
     public void cleanup() {
+        if (currentProgram == programId) currentProgram = -1;
         GL20.glDeleteProgram(programId);
     }
 

@@ -168,22 +168,32 @@ public class Renderer {
         Texture tex = colorCache.get(key);
         if (tex == null) { tex = new Texture(r, g, b); colorCache.put(key, tex); }
         Matrix4f model = new Matrix4f().translate(position).rotateY(yaw).scale(size);
+        GlTrace.expectProgram(basicShader.getId(), "cubeColorYaw");
+        GlTrace.mark("cubeColorYaw:enter");
         basicShader.setUniform("model", model);
+        GlTrace.mark("cubeColorYaw:model-uniform");
         tex.bind(0);
+        GlTrace.mark("cubeColorYaw:tex.bind");
         basicShader.setUniform("useTexture", 1);
+        GlTrace.mark("cubeColorYaw:useTexture-uniform");
         getCubeMesh().render();
+        GlTrace.mark("cubeColorYaw:mesh.render");
     }
 
     /** Draw a cube with the Cortana hologram shader — fresnel rim + scanlines + data lines. */
     public void drawHologramCube(Vector3f position, Vector3f size, float yaw, Vector3f tint, float time) {
+        GlTrace.mark("hologram:enter");
         hologramShader.bind();
+        GlTrace.mark("hologram:bind");
         hologramShader.setUniform("projection", projectionMatrix);
         hologramShader.setUniform("view", viewMatrix);
         hologramShader.setUniform("model", new Matrix4f().translate(position).rotateY(yaw).scale(size));
         hologramShader.setUniform("viewPos", viewPos);
         hologramShader.setUniform("tint", tint);
         hologramShader.setUniform("time", time);
+        GlTrace.mark("hologram:uniforms");
         getCubeMesh().render();
+        GlTrace.mark("hologram:mesh.render");
         basicShader.bind();  // restore the default shader for subsequent draws
     }
 

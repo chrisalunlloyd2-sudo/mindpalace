@@ -402,6 +402,7 @@ public class GameEngine {
         GLFW.glfwSwapInterval(1);
         GLFW.glfwShowWindow(window);
         GL.createCapabilities();
+        com.mindpalace.render.GlTrace.mark("init:createCapabilities");
 
         System.out.println("GPU: " + GL11.glGetString(GL11.GL_RENDERER));
         System.out.println("OpenGL: " + GL11.glGetString(GL11.GL_VERSION));
@@ -432,6 +433,7 @@ public class GameEngine {
 
         input = new Input(window);
         renderer = new Renderer(width, height);
+        com.mindpalace.render.GlTrace.mark("init:Renderer");
         com.mindpalace.render.ParticleQuality particleQuality = com.mindpalace.render.ParticleQuality.fromConfig();
         if (particleQuality != com.mindpalace.render.ParticleQuality.OFF) {
             try {
@@ -453,11 +455,13 @@ public class GameEngine {
             }
         }
         bloom = new BloomEffect(width, height);
+        com.mindpalace.render.GlTrace.mark("init:BloomEffect");
         blocks.register(com.mindpalace.blocks.FireBlock.seedDefault()); // MP-032 fire (flicker phase)
         blocks.register(new com.mindpalace.blocks.WeatherBlock()); // MP-028 weather (atmospheric light response)
         blocks.register(new com.mindpalace.blocks.FrostBlock()); // MP-033 ice (frost shimmer; phase 2 = crystals + rim tint under #179)
         blocks.register(new com.mindpalace.blocks.FireflyBlock()); // MP-031 fireflies (dusk/night Lissajous chorus)
         fontRenderer = new FontRenderer();
+        com.mindpalace.render.GlTrace.mark("init:FontRenderer");
         player = new Player();
         // Dressing room owns the player avatar — Cortana preset as the starting point.
         dressingRoom = new DressingRoom(com.mindpalace.avatar.AvatarLibrary.preset("cortana"));
@@ -1777,9 +1781,11 @@ public class GameEngine {
     private int musicTempoWeather = 0;
 
     private void render(double alpha) {
+        com.mindpalace.render.GlTrace.frameStart();
         updateRegionBloom(0.016); // frame-paced; region presets lerp smoothly
         bloom.begin();
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+        com.mindpalace.render.GlTrace.mark("bloom.begin+clear");
 
         // Dressing room mode: orbit camera + avatar editor replaces the world view.
         if (dressingRoom != null && dressingRoom.isOpen()) {
@@ -1793,13 +1799,17 @@ public class GameEngine {
         }
 
         renderer.beginFrame(player.getCamera());
+        com.mindpalace.render.GlTrace.mark("renderer.beginFrame");
         // Sky dome — full gradient sphere so the sky is never black, even
         // looking straight up or sideways. Phase follows the real clock.
         int hour = java.time.LocalTime.now().getHour();
         int skyPhase = (hour < 6 || hour >= 20) ? 2 : (hour >= 18 ? 1 : 0);
         renderer.drawSkyDome(player.getCamera().getPosition(), skyPhase);
+        com.mindpalace.render.GlTrace.mark("skyDome");
         world.render(renderer, player.getCamera());
+        com.mindpalace.render.GlTrace.mark("world.render");
         if (inMansion) renderMansionInterior();
+        com.mindpalace.render.GlTrace.mark("mansionInterior");
 
         // Turing Tape floor strip — feed it once a second, render always (LOD-capped inside).
         if (turingTape != null) {
@@ -1812,11 +1822,13 @@ public class GameEngine {
                 (float) GLFW.glfwGetTime());
         }
 
+        com.mindpalace.render.GlTrace.mark("turingTape");
         // Rotor Room — Enigma rings in the courtyard, stepping every second.
         if (rotorRoom != null) {
             rotorRoom.render(renderer, player.getCamera().getPosition(), GLFW.glfwGetTime());
         }
 
+        com.mindpalace.render.GlTrace.mark("rotorRoom");
         // Banburismus gauge — deciban needle fed by the live GA (two logs/frame).
         if (banburismusGauge != null) {
             if (audioEvolver != null) {
@@ -1825,6 +1837,7 @@ public class GameEngine {
             banburismusGauge.render(renderer, player.getCamera().getPosition(), GLFW.glfwGetTime());
         }
 
+        com.mindpalace.render.GlTrace.mark("banburismusGauge");
         // Nash fountain — fed by the same live GA; freezes at equilibrium.
         if (nashFountain != null) {
             if (audioEvolver != null) nashFountain.update(audioEvolver.bestScore());
@@ -1832,6 +1845,7 @@ public class GameEngine {
                 GLFW.glfwGetTime(), 1f / 60f);
         }
 
+        com.mindpalace.render.GlTrace.mark("nashFountain");
         // Enigma plugboard — render + E-key swap when near (re-seeds the GA).
         if (plugboard != null) {
             plugboard.render(renderer, player.getCamera().getPosition());
@@ -1849,9 +1863,11 @@ public class GameEngine {
             }
         }
 
+        com.mindpalace.render.GlTrace.mark("plugboard");
         // Render agent NPCs (bodies) + TODO crystals
         renderNPCs();
         renderCrystals();
+        com.mindpalace.render.GlTrace.mark("npcs+crystals");
 
         // Render neon sign text
         if (fontRenderer != null && fontRenderer.isReady()) {
@@ -1868,6 +1884,7 @@ public class GameEngine {
                 // 2D read mode — pin the key world text into a fixed screen panel.
                 renderTwoDTextPanel();
             }
+        com.mindpalace.render.GlTrace.mark("world-text");
             renderScreenHUD();
             renderBookTooltip();
             renderBookHighlight();
@@ -1875,6 +1892,7 @@ public class GameEngine {
             renderGistWall();
             renderFactToast();
             renderTocToast();
+        com.mindpalace.render.GlTrace.mark("hud+toasts");
         }
 
         if (state == GameState.PLAYING) {
@@ -1893,11 +1911,13 @@ public class GameEngine {
             }
         }
 
+        com.mindpalace.render.GlTrace.mark("interaction-prompt");
         if (bookEditor.isOpen()) {
             bookEditor.render(renderer);
             bookEditor.renderText(fontRenderer, player.getCamera(), width, height);
         }
 
+        com.mindpalace.render.GlTrace.mark("bookEditor");
         if (teleportMenu) renderTeleportMenu();
 
         // Shop menu — billboard showing what you can buy.
@@ -1917,17 +1937,20 @@ public class GameEngine {
                 new Vector3f(1f, 1f, 0.5f), proj, view, camPos);
         }
 
+        com.mindpalace.render.GlTrace.mark("menus+shop");
         if (state == GameState.MENU) renderMenu();
 
         if (agentChat != null) {
             agentChat.render(renderer, fontRenderer, player.getCamera(), width, height);
         }
 
+        com.mindpalace.render.GlTrace.mark("menu+agentChat");
         // H32 (step 85): bot roster — always-on lifecycle board, top-right.
         if (state != GameState.MENU) {
             renderBotBoard();
         }
 
+        com.mindpalace.render.GlTrace.mark("botBoard");
         // Render deploy animations
         if (animationSystem != null && animationSystem.isActive()) {
             animationSystem.render(renderer);
@@ -1935,6 +1958,7 @@ public class GameEngine {
         // MP-032 p2 / MP-031: block EMIT-RENDER -- rows to billboards. Blocks
         // emit data (deterministic), the engine owns the GL. Ember rows ride
         // the heat ramp (white-gold -> deep orange), fireflies pulse glow.
+        com.mindpalace.render.GlTrace.mark("animationSystem");
         int emitRows = blocks.emitAll(blockEmitRows, 0, 96);
         if (particleBatch != null) {
             // MP-028: ALL rows in ONE draw call (was one cube draw + two Vector3f allocations per row).
@@ -1973,12 +1997,14 @@ public class GameEngine {
             }
         }
 
+        com.mindpalace.render.GlTrace.mark("particles");
         // Help overlay
         if (showHelp) renderHelpOverlay();
 
         // Full-screen map overlay (Tab)
         if (showMap) renderMapOverlay();
 
+        com.mindpalace.render.GlTrace.mark("help+map");
         bloom.end();
         GLFW.glfwSwapBuffers(window);
     }
