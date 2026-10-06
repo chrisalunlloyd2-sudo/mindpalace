@@ -21,15 +21,22 @@ public class RepoMapper {
         if (aigenDir.exists() && aigenDir.isDirectory()) {
             File[] repos = aigenDir.listFiles(File::isDirectory);
             if (repos != null) {
+                // Metadata lookups are independent per repo and mostly wait on git process startup, so
+                // they run 3 at a time (measured startup: ~70 repos x 2 git calls). Rooms are still
+                // added in directory order, so the world layout is unchanged.
+                List<Room> found = new ArrayList<>();
+                List<File> foundDirs = new ArrayList<>();
                 for (File repoDir : repos) {
                     File gitDir = new File(repoDir, ".git");
                     if (gitDir.exists()) {
                         Room room = new Room(repoDir.getName());
                         room.setLocalPath(repoDir.getAbsolutePath());
-                        detectRepoMeta(room, repoDir);
-                        rooms.add(room);
+                        found.add(room);
+                        foundDirs.add(repoDir);
                     }
                 }
+                detectMetaParallel(found, foundDirs);
+                rooms.addAll(found);
             }
         }
 
@@ -119,9 +126,40 @@ public class RepoMapper {
         return u;
     }
 
+    private static final int META_THREADS = 3;
+
+    /** Run detectRepoMeta for every room, META_THREADS at a time; each room is touched by one thread only. */
+    private void detectMetaParallel(List<Room> found, List<File> dirs) {
+        java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(META_THREADS, r -> {
+            Thread t = new Thread(r, "repo-meta");
+            t.setDaemon(true);
+            return t;
+        });
+        try {
+            List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < found.size(); i++) {
+                final Room room = found.get(i);
+                final File dir = dirs.get(i);
+                futures.add(ex.submit(() -> detectRepoMeta(room, dir)));
+            }
+            for (java.util.concurrent.Future<?> f : futures) {
+                try {
+                    f.get();   // also publishes the room's fields to this thread
+                } catch (Exception e) {
+                    System.err.println("[RepoMapper] metadata lookup failed: " + e);
+                }
+            }
+        } finally {
+            ex.shutdown();
+        }
+    }
+
     private void detectRepoMeta(Room room, File repoDir) {
-        // Try to read git remote (bounded timeout — never hang the scan on a stall)
-        String url = runGit(repoDir, "remote", "get-url", "origin");
+        // Startup cost (measured: ~85 s frozen window with 70 local repos): this used to spawn FOUR git
+        // processes per repo on the main thread. Now: origin URL is read from .git/config (no process,
+        // git is only the fallback), and last commit + ledger share ONE git log call.
+        String url = readOriginUrl(repoDir);
+        if (url == null) url = runGit(repoDir, "remote", "get-url", "origin");
         if (url != null && !url.isEmpty()) {
             room.setRemoteUrl(url);
             // Extract the REAL GitHub repo name from the remote URL — this is
@@ -133,27 +171,30 @@ public class RepoMapper {
             }
         }
 
-        // Get last commit (bounded timeout)
-        String msg = runGit(repoDir, "log", "-1", "--format=%s (%ar)");
-        if (msg != null && !msg.isEmpty()) {
-            room.setLastCommit(msg);
+        // One bounded git call yields BOTH the last commit ("<subject> (<age>)", same text as the old
+        // `log -1 --format=%s (%ar)`) and the 10-line commit ledger for the door plaque (H37, #122).
+        // Fields are separated by \u001f so a subject containing a tab or space cannot split wrongly.
+        String log10 = runGit(repoDir, "log", "-10", "--format=%h%x1f%s%x1f%ar");
+        if (log10 != null && !log10.isEmpty()) {
+            StringBuilder ledger = new StringBuilder();
+            String lastCommit = null;
+            for (String line : log10.split("\n")) {
+                String[] f = line.split("\u001f", 3);
+                if (f.length < 3) continue;
+                if (lastCommit == null) lastCommit = f[1] + " (" + f[2] + ")";
+                if (ledger.length() > 0) ledger.append('\n');
+                ledger.append(f[0]).append(' ').append(f[1]);
+            }
+            if (lastCommit != null && !lastCommit.isEmpty()) room.setLastCommit(lastCommit);
+            if (ledger.length() > 0) room.setCommitLedger(capLedgerLines(ledger.toString()));
         }
 
-        // Heatmap activity (M3 step 123): commits in the last 30 days.
-        // One bounded git call per repo at scan time — no per-frame cost.
-        String actOut = runGit(repoDir,
-            "log", "--since=30.days", "--format=%h");
-        if (actOut != null && !actOut.isEmpty()) {
-            room.setActivity30d(actOut.split("\n").length);
-        }
-
-        // H37 (#122, step 95): commit engravings — the door plaque renders the
-        // last 10 commits. One bounded git call per repo at scan time (same
-        // no-per-frame-cost doctrine as the heatmap above); subjects capped so
-        // a plaque line never outgrows the wall segment between doors.
-        String ledgerOut = runGit(repoDir, "log", "-10", "--format=%h %s");
-        if (ledgerOut != null && !ledgerOut.isEmpty()) {
-            room.setCommitLedger(capLedgerLines(ledgerOut));
+        // Heatmap activity (M3 step 123): commits in the last 30 days. rev-list --count prints one
+        // number instead of listing every commit hash.
+        String cnt = runGit(repoDir, "rev-list", "--count", "--since=30.days", "HEAD");
+        if (cnt != null && cnt.matches("\\d+")) {
+            int n = Integer.parseInt(cnt);
+            if (n > 0) room.setActivity30d(n);
         }
 
         // Detect primary language by file extensions (recursive, bounded depth + file
@@ -168,6 +209,28 @@ public class RepoMapper {
         else if (js > 0) room.setLanguage("JavaScript");
         else if (html > 0) room.setLanguage("HTML");
         else if (md > 0) room.setLanguage("Markdown");
+    }
+
+    /** origin URL from .git/config without spawning git; null when not a plain repo dir or no origin. */
+    static String readOriginUrl(File repoDir) {
+        try {
+            File cfg = new File(new File(repoDir, ".git"), "config");
+            if (!cfg.isFile()) return null;   // worktree/submodule .git files: let git resolve it
+            boolean inOrigin = false;
+            for (String raw : java.nio.file.Files.readAllLines(cfg.toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
+                String line = raw.trim();
+                if (line.startsWith("[")) {
+                    inOrigin = line.replace(" ", "").equalsIgnoreCase("[remote\"origin\"]");
+                } else if (inOrigin) {
+                    int eq = line.indexOf('=');
+                    if (eq > 0 && line.substring(0, eq).trim().equalsIgnoreCase("url")) {
+                        String u = line.substring(eq + 1).trim();
+                        return u.isEmpty() ? null : u;
+                    }
+                }
+            }
+        } catch (Exception ignored) { /* fall back to git */ }
+        return null;
     }
 
     /** H37 (#122): cap each ledger line to a 7-char sha + 26 subject chars —
