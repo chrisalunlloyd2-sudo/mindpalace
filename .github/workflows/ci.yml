@@ -97,12 +97,13 @@ jobs:
           $missing = $checks | Where-Object { $log -notmatch [regex]::Escape($_) }
           if ($missing) { $missing | ForEach-Object { Write-Host "::error::missing: $_" }; exit 1 }
           Write-Host "CI smoke GREEN: $n/0, 12 demo rooms, hermeticity PASS"
-          # GL error report (warning only until it has been clean on Mesa for a few runs): GlTrace logs every
+          # GL error gate (clean on Mesa for 3 consecutive runs before this became a hard failure): GlTrace logs every
           # distinct (stage, error) pair, so any line here names the render stage that raised it.
           $gl = @([regex]::Matches($log, '(?m)^\[GlTrace\] GL_.*$'))
           if ($gl.Count -gt 0) {
-            $gl | Select-Object -First 10 | ForEach-Object { Write-Host "::warning::$($_.Value)" }
+            $gl | Select-Object -First 10 | ForEach-Object { Write-Host "::error::$($_.Value)" }
             "### GL errors seen: $($gl.Count) distinct (stage, error) pairs" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+            exit 1
           } else {
             "### GL errors seen: 0" | Out-File -Append $env:GITHUB_STEP_SUMMARY
           }
