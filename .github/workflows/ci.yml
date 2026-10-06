@@ -42,7 +42,7 @@ jobs:
           : > selftest.log
           run_selftest() {
             attempt_log="/tmp/selftest-attempt-$1.log"
-            xvfb-run -a -s "-screen 0 1280x720x24" java -jar "$JARFILE" --demo --selftest > "$attempt_log" 2>&1
+            xvfb-run -a -s "-screen 0 1280x720x24" java -Dmindpalace.glTrace=true -jar "$JARFILE" --demo --selftest > "$attempt_log" 2>&1
             attempt_rc=$?
             {
               echo "=== Selftest attempt $1 (exit $attempt_rc) ==="
@@ -97,6 +97,15 @@ jobs:
           $missing = $checks | Where-Object { $log -notmatch [regex]::Escape($_) }
           if ($missing) { $missing | ForEach-Object { Write-Host "::error::missing: $_" }; exit 1 }
           Write-Host "CI smoke GREEN: $n/0, 12 demo rooms, hermeticity PASS"
+          # GL error report (warning only until it has been clean on Mesa for a few runs): GlTrace logs every
+          # distinct (stage, error) pair, so any line here names the render stage that raised it.
+          $gl = @([regex]::Matches($log, '(?m)^\[GlTrace\] GL_.*$'))
+          if ($gl.Count -gt 0) {
+            $gl | Select-Object -First 10 | ForEach-Object { Write-Host "::warning::$($_.Value)" }
+            "### GL errors seen: $($gl.Count) distinct (stage, error) pairs" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          } else {
+            "### GL errors seen: 0" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          }
       - name: Upload selftest log
         if: always()
         uses: actions/upload-artifact@v4
