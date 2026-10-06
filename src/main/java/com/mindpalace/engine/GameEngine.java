@@ -4822,6 +4822,31 @@ public class GameEngine {
         }
         if (hermeticOk) pass++; else fail++;
 
+        // MP-041. Off-site backup: encrypted archive round-trips, restore test verifies
+        //     hashes, archive holds no plaintext, wrong passphrase is rejected.
+        boolean offsiteOk = false;
+        try {
+            java.nio.file.Path t = java.nio.file.Files.createTempDirectory("mp041");
+            java.nio.file.Path src = t.resolve("src");
+            java.nio.file.Files.createDirectories(src.resolve("sub"));
+            java.nio.file.Files.writeString(src.resolve("ledger.db"), "SECRET-LEDGER-MP041");
+            java.nio.file.Files.writeString(src.resolve("sub/chat.jsonl"), "{\"hi\":1}\n");
+            java.nio.file.Path arc = t.resolve("usb/backup.mpbk");
+            char[] pw = "selftest-pass".toCharArray();
+            var b = com.mindpalace.backup.OffsiteBackup.backup(java.util.Map.of("AIGEN_SYS", src), arc, pw);
+            var r = com.mindpalace.backup.OffsiteBackup.restoreTest(arc, pw, t.resolve("restore"));
+            var bad = com.mindpalace.backup.OffsiteBackup.restoreTest(arc, "wrong".toCharArray(), t.resolve("bad"));
+            boolean clear = new String(java.nio.file.Files.readAllBytes(arc),
+                java.nio.charset.StandardCharsets.ISO_8859_1).contains("SECRET-LEDGER");
+            offsiteOk = b.ok() && b.files() == 2 && r.ok() && r.files() == 2 && !bad.ok() && !clear
+                && java.nio.file.Files.readString(t.resolve("restore/AIGEN_SYS/ledger.db")).equals("SECRET-LEDGER-MP041");
+            try (var w = java.nio.file.Files.walk(t)) {
+                w.sorted(java.util.Comparator.reverseOrder()).forEach(q -> q.toFile().delete());
+            }
+        } catch (Exception e) { offsiteOk = false; }
+        System.out.println((offsiteOk ? "PASS" : "FAIL") + " MP-041 encrypted off-site backup + restore test");
+        if (offsiteOk) pass++; else fail++;
+
         // 43. H04 budgets — read_file returns head+tail 150 lines (test via
         //     AgentManager.truncateHeadTail through a 400-line synthetic file:
         //     expect 150 + elision marker + 150, and short files untouched).
