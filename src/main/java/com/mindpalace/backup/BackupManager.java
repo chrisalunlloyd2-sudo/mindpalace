@@ -27,7 +27,7 @@ public class BackupManager {
         t.setPriority(Thread.MIN_PRIORITY);
         return t;
     });
-    private final Path backupRoot;
+    private volatile Path backupRoot;  // may switch drives when a USB comes back with a new letter
     private final Map<String, String> contentHash = new ConcurrentHashMap<>(); // path -> sha1
     // path -> "size:lastModifiedMillis" at the last successful backup. A file whose size and mtime
     // are unchanged is skipped WITHOUT being read, so a steady-state crawl is just a directory walk.
@@ -161,14 +161,20 @@ public class BackupManager {
 
     /** Create/verify the destination. When it is missing (e.g. no D: drive) nothing is read at all. */
     private boolean ensureDest() {
-        try {
-            Files.createDirectories(backupRoot);
-            if (Files.isWritable(backupRoot)) {
-                if (!destOk) System.out.println("[Backup] destination " + backupRoot + " is available again; resuming");
-                destOk = true;
-                return true;
-            }
-        } catch (IOException | RuntimeException ignored) { /* reported below */ }
+        if (tryRoot(backupRoot)) {
+            if (!destOk) System.out.println("[Backup] destination " + backupRoot + " is available again; resuming");
+            destOk = true;
+            return true;
+        }
+        // A USB stick gets whatever drive letter Windows hands out. Look for the SAME relative
+        // folder (an existing, writable one: never created on a random drive) on the other drives.
+        Path alt = findOnOtherDrive();
+        if (alt != null && tryRoot(alt)) {
+            System.out.println("[Backup] backup folder found on another drive: " + alt + " (was " + backupRoot + "); switching");
+            adoptRoot(alt);
+            destOk = true;
+            return true;
+        }
         if (destOk) {
             System.err.println("[Backup] destination " + backupRoot + " is unavailable; backups paused (no files are "
                 + "read or hashed while it is missing; rechecked every 5 minutes). Set mindpalace.backup.dir or "
@@ -176,6 +182,43 @@ public class BackupManager {
         }
         destOk = false;
         return false;
+    }
+
+    private static boolean tryRoot(Path r) {
+        try {
+            Files.createDirectories(r);
+            return Files.isWritable(r);
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Same relative backup folder on another drive root (skipping the current and the system drive). */
+    private Path findOnOtherDrive() {
+        try {
+            Path cur = backupRoot;
+            Path curRoot = cur.getRoot();
+            if (curRoot == null) return null;
+            Path rel = curRoot.relativize(cur);
+            if (rel.toString().isEmpty()) return null;
+            Path sysRoot = Path.of(System.getProperty("user.home")).getRoot();
+            for (Path r : FileSystems.getDefault().getRootDirectories()) {
+                if (r.equals(curRoot) || r.equals(sysRoot)) continue;
+                try {
+                    Path cand = r.resolve(rel.toString());
+                    if (Files.isDirectory(cand) && Files.isWritable(cand)) return cand;
+                } catch (RuntimeException ignored) { /* drive not ready */ }
+            }
+        } catch (RuntimeException ignored) { /* no alternative */ }
+        return null;
+    }
+
+    /** Switch destination. The dedupe records describe the OLD destination, so they are dropped and reloaded. */
+    private void adoptRoot(Path newRoot) {
+        backupRoot = newRoot;
+        contentHash.clear();
+        statKey.clear();
+        loadIndex();
     }
 
     private Path relativize(Path src) {

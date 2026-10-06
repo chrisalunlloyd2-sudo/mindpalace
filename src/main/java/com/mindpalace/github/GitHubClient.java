@@ -76,6 +76,8 @@ public class GitHubClient {
     // this was the only fetch method in the class without a cache.
     private static final long REPO_LIST_CACHE_TTL_MS = 10 * 60 * 1000L;
     private volatile List<Room> cachedRepoList;
+    private volatile int lastFetchLogCount = -1;   // log the fetch only when the count changes (or hourly)
+    private volatile long lastFetchLogAt;
     private volatile long cachedRepoListAt;
 
     /**
@@ -129,7 +131,12 @@ public class GitHubClient {
             }
         }
 
-        System.out.println("[GitHub] Fetched " + rooms.size() + " repos from GitHub");
+        long nowLog = System.currentTimeMillis();
+        if (rooms.size() != lastFetchLogCount || nowLog - lastFetchLogAt > 3_600_000L) {
+            System.out.println("[GitHub] Fetched " + rooms.size() + " repos from GitHub");
+            lastFetchLogCount = rooms.size();
+            lastFetchLogAt = nowLog;
+        }
         cachedRepoList = rooms;
         cachedRepoListAt = System.currentTimeMillis();
         return rooms;

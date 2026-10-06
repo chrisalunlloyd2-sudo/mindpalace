@@ -64,8 +64,14 @@ public class LiveUpdateManager {
         scheduler.shutdown();
     }
 
+    // Offline handling: one log line per outage, exponential poll backoff (1,2,4,8,15 polls) while it
+    // lasts, one line on recovery. Before this, an offline night wrote a failure line every 60 s.
+    private volatile int pollFailures;
+    private volatile int skipPolls;
+
     private void poll() {
         if (!running) return;
+        if (skipPolls > 0) { skipPolls--; return; }
         try {
             checkNewRepos();
         } catch (Exception e) {
@@ -78,6 +84,11 @@ public class LiveUpdateManager {
         if (github == null || !github.isAuthenticated()) return;
         try {
             List<Room> remote = github.fetchAllRepos();
+            if (pollFailures > 0) {
+                System.out.println("[LiveUpdate] connection restored after " + pollFailures + " failed poll(s)");
+                pollFailures = 0;
+                skipPolls = 0;
+            }
             for (Room r : remote) {
                 String key = r.getRepoName().toLowerCase();
                 if (!knownRepos.contains(key)) {
@@ -106,7 +117,11 @@ public class LiveUpdateManager {
         } catch (Exception e) {
             // Never swallow silently — a JSON/auth/runtime error here would otherwise
             // make new repos stop appearing with zero signal.
-            System.err.println("[LiveUpdate] checkNewRepos failed: " + e);
+            pollFailures++;
+            if (pollFailures == 1) {
+                System.err.println("[LiveUpdate] checkNewRepos failed: " + e + " (polling backs off until it recovers)");
+            }
+            skipPolls = Math.min((1 << Math.min(pollFailures, 4)) - 1, 14);
         }
     }
 
