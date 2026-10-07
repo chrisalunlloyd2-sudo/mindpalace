@@ -401,6 +401,7 @@ public class GameEngine {
         GLFW.glfwMakeContextCurrent(window);
         GLFW.glfwSwapInterval(1);
         GLFW.glfwShowWindow(window);
+        if (Boolean.getBoolean("mindpalace.e2e.focus")) GLFW.glfwFocusWindow(window);   // experiment: does focus change the tour's message-pump stalls?
         GL.createCapabilities();
         com.mindpalace.render.GlTrace.mark("init:createCapabilities");
 
@@ -505,6 +506,18 @@ public class GameEngine {
             java.nio.file.Path.of(dataRoot, "mindpalace_memory")); // #49: demo-temp root
         telemetry.record(com.mindpalace.backup.Telemetry.SYSTEM, "boot", "mindpalace started");
         System.out.println("[Telemetry] ledger ready — " + telemetry.summary());
+        // The render thread must never touch the ledger: every Telemetry method is synchronized and record() commits to
+        // disk (INSERT + prune DELETE), so a once-a-second recent(64) on the render thread stalled it for 100-500 ms
+        // whenever a bot was writing. A daemon reads it once a second and publishes an immutable snapshot instead.
+        telemetryReader = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "telemetry-reader");
+            t.setDaemon(true);
+            return t;
+        });
+        telemetryReader.scheduleWithFixedDelay(() -> {
+            try { telemetrySnapshot = java.util.Collections.unmodifiableList(telemetry.recent(64)); }
+            catch (RuntimeException ignored) { /* keep the previous snapshot */ }
+        }, 0, 1, java.util.concurrent.TimeUnit.SECONDS);
 
         // Self-managing memory + never-make-code-twice DB (needed by agents).
         memoryManager = new MemoryManager(java.nio.file.Path.of(dataRoot, "mindpalace_memory").toString()); // #49
@@ -943,6 +956,8 @@ public class GameEngine {
         GLFW.glfwPollEvents();
     }
 
+    private volatile java.util.List<String[]> telemetrySnapshot = java.util.List.of();
+    private java.util.concurrent.ScheduledExecutorService telemetryReader;
     private int skipFrameSamples;
     private int startupFrames;
     private double startupFirstMs, startupWorstMs;
@@ -995,7 +1010,18 @@ public class GameEngine {
                 fpsTimer = 0.0;
             }
 
-            GLFW.glfwPollEvents();
+            if (com.mindpalace.render.GlTrace.PROF) {
+                long pollStart = System.nanoTime();
+                GLFW.glfwPollEvents();
+                long pollMs = (System.nanoTime() - pollStart) / 1_000_000L;
+                if (pollMs > 100) {       // an OS message-pump stall: record what state the window was in
+                    System.out.println("[FrameProf] glfwPollEvents " + pollMs + " ms; focused=" + (GLFW.glfwGetWindowAttrib(window, GLFW.GLFW_FOCUSED) == 1)
+                        + " visible=" + (GLFW.glfwGetWindowAttrib(window, GLFW.GLFW_VISIBLE) == 1)
+                        + " iconified=" + (GLFW.glfwGetWindowAttrib(window, GLFW.GLFW_ICONIFIED) == 1) + " e2eWaypoint=" + e2eWaypoint);
+                }
+            } else {
+                GLFW.glfwPollEvents();
+            }
         }
     }
 
@@ -1837,7 +1863,7 @@ public class GameEngine {
             long now = System.currentTimeMillis();
             if (now - tapeFeedTimer > 1000) {
                 tapeFeedTimer = now;
-                turingTape.feed(telemetry != null ? telemetry.recent(64) : null);
+                turingTape.feed(telemetry != null ? telemetrySnapshot : null);
             }
             turingTape.render(renderer, player.getCamera().getPosition(),
                 (float) GLFW.glfwGetTime());
@@ -3481,6 +3507,7 @@ public class GameEngine {
     }
 
     private void cleanup() {
+        if (telemetryReader != null) telemetryReader.shutdownNow();
         if (contextBroadcaster != null) contextBroadcaster.close();
         if (backupManager != null) backupManager.stop();
         if (bdiBridge != null) bdiBridge.stop();
