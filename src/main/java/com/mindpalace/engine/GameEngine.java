@@ -943,6 +943,9 @@ public class GameEngine {
         GLFW.glfwPollEvents();
     }
 
+    private int startupFrames;
+    private double startupFirstMs, startupWorstMs;
+
     private void loop() {
         while (running && !GLFW.glfwWindowShouldClose(window)) {
             double currentTime = GLFW.glfwGetTime();
@@ -953,6 +956,13 @@ public class GameEngine {
             // fed the fixed PHYSICS_DT from update(), so both always reported exactly 120 FPS whatever the real speed.
             frameTimes.addLast(Math.max(frameTime, 1e-6));
             if (frameTimes.size() > 120) frameTimes.removeFirst();
+            if (e2eMode && startupFrames < 61) {          // MP-004: startup latency reported apart from steady-state hitching
+                startupFrames++;
+                if (startupFrames == 1) startupFirstMs = frameTime * 1000.0;
+                else startupWorstMs = Math.max(startupWorstMs, frameTime * 1000.0);
+                if (startupFrames == 61) System.out.println("[E2E-STARTUP] first frame " + String.format("%.0f", startupFirstMs)
+                    + " ms; worst of the next 60 frames " + String.format("%.0f", startupWorstMs) + " ms");
+            }
 
             if (frameTime > MAX_FRAME_TIME) frameTime = MAX_FRAME_TIME;
             accumulator += frameTime;
