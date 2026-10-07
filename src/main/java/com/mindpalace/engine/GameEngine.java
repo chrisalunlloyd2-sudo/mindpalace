@@ -5798,6 +5798,9 @@ public class GameEngine {
                     if (rm.getRoomCenter() != null) { pr = rm; break; }
                 }
                 if (pr != null) {
+                    // The poster TEXT is drawn only for player.getCurrentRoom(), which is set by entering the room (Enter at the
+                    // door / teleportIntoRoom), never by camera position; the tour moves the camera directly, so enter properly.
+                    if (player.getCurrentRoom() != pr) player.teleportIntoRoom(pr);
                     Vector3f rc = pr.getRoomCenter();
                     int side = pr.getHallwaySide();
                     float fz = side == 0 ? rc.z - Room.ROOM_DEPTH / 2f : rc.z + Room.ROOM_DEPTH / 2f;
@@ -5811,7 +5814,7 @@ public class GameEngine {
                     p.set(0f, hallY + 1.7f, hallZ0 + 12f);
                     cam.setYaw(-75); cam.setPitch(15f);
                 }
-                if (shoot) { captureLabeled("18_poster_wall"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("18_poster_wall"); player.teleportToFloor(0, world); /* leave the room again */ e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 18 -> { // MP-004: gist wall — today a HUD overlay on the right of the view (MP-011 makes it a world wall)
                 p.set(0f, hallY + 1.7f, hallZ0 + 4f);
