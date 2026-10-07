@@ -5613,7 +5613,7 @@ public class GameEngine {
                     p.set(0f, hallY + 1.7f, hallZ1 - 7f);
                     cam.setYaw(0); cam.setPitch(-12f);
                 }
-                if (shoot) { captureLabeled("11_floor2_picker"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("11_floor2_picker"); teleportMenu = false; /* the picker must not stay open over every later shot */ e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 11 -> { // nash fountain — courtyard pool beside the rotor rings
                 p.set(3.5f, hallY + 1.7f, hallZ0 - 10f);
@@ -5706,8 +5706,44 @@ public class GameEngine {
                 }
                 if (shoot) { captureLabeled("17_hall_windows"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            case 17 -> { // MP-004: poster wall — the repo poster board above the first door
+                Vector3f door0 = null;
+                for (Room rm : world.getRooms()) {
+                    if (rm.getDoorPosition() != null && rm.getHallwaySide() == 0) { door0 = rm.getDoorPosition(); break; }
+                }
+                if (door0 != null) {
+                    p.set(-0.8f * door0.x, door0.y + 0.7f, door0.z + 0.5f);     // far side of the hall: longest view of the door wall
+                    Vector3f aim = new Vector3f(door0.x, door0.y + 2.2f, door0.z).sub(p).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                } else {
+                    p.set(0f, hallY + 1.7f, hallZ0 + 12f);
+                    cam.setYaw(-75); cam.setPitch(15f);
+                }
+                if (shoot) { captureLabeled("18_poster_wall"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 18 -> { // MP-004: gist wall — today a HUD overlay on the right of the view (MP-011 makes it a world wall)
+                p.set(0f, hallY + 1.7f, hallZ0 + 4f);
+                cam.setYaw(0); cam.setPitch(0);
+                if (shoot) {
+                    System.out.println("[E2E-NOTE] gist wall lines=" + (gistWall == null ? "none (no wall)" : String.valueOf(gistWall.getLines().size()))
+                        + (demoMode ? " (demo mode: no network, empty wall is expected)" : ""));
+                    captureLabeled("19_gist_wall"); e2eWaypoint++; e2ePhaseTimer = 0;
+                }
+            }
+            case 19 -> { // MP-004: sky — outside, looking up at the dome (sun/moon/stars by the real clock)
+                p.set(0f, 1.7f, -50f);
+                cam.setYaw(0); cam.setPitch(38f);
+                if (shoot) { captureLabeled("20_sky"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 20 -> { // MP-004: water — the traveling-wave lake from its shore
+                Vector3f lake = world.getOutsideWorld().getLakeCenter();
+                p.set(lake.x, 2.2f, lake.z + 16f);
+                cam.setYaw(180); cam.setPitch(-18f);
+                if (shoot) { captureLabeled("21_water"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 17 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 21 waypoints captured. Exiting.");
                 cleanup();
                 System.exit(0);
             }

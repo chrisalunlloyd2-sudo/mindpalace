@@ -108,6 +108,7 @@ public class OutsideWorld {
 
     /** Mansion (player home) position — player + crystals spawn here. */
     public Vector3f getMansionPos() { return mansionPos; }
+    public Vector3f getLakeCenter() { return lakeCenter; }
     /** TOC tree of knowledge position — walk up to retrieve system data. */
     public Vector3f getTocTreePos() { return tocTreePos; }
 
