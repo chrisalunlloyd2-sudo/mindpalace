@@ -949,6 +949,11 @@ public class GameEngine {
             double frameTime = currentTime - lastFrameTime;
             lastFrameTime = currentTime;
 
+            // Real wall-clock seconds per rendered frame feed the FPS overlay and the E2E perf evidence. They used to be
+            // fed the fixed PHYSICS_DT from update(), so both always reported exactly 120 FPS whatever the real speed.
+            frameTimes.addLast(Math.max(frameTime, 1e-6));
+            if (frameTimes.size() > 120) frameTimes.removeFirst();
+
             if (frameTime > MAX_FRAME_TIME) frameTime = MAX_FRAME_TIME;
             accumulator += frameTime;
 
@@ -1206,7 +1211,6 @@ public class GameEngine {
             minimapShow = !minimapShow;
             System.out.println("[Minimap] " + (minimapShow ? "ON" : "OFF"));
         }
-        frameTimes.addLast(dt);
         if (minimapHighlight != null && System.currentTimeMillis() > minimapHighlightUntil) {
             minimapHighlight = null; // highlight expired
         }
@@ -3499,11 +3503,12 @@ public class GameEngine {
         if (written != null) System.out.println("[E2E-SHOT] " + label + " -> " + written);
         // H26 (step 78): per-waypoint FPS evidence — after the 3s settle the
         // rolling average is the waypoint's real perf, logged next to the shot.
-        double sum = 0; int n = 0;
-        for (Double ft : frameTimes) { sum += ft; n++; }
+        double sum = 0, worst = 0; int n = 0;
+        for (Double ft : frameTimes) { sum += ft; n++; if (ft > worst) worst = ft; }
         double avgFps = n > 0 ? n / Math.max(sum, 1e-9) : 0;
         System.out.println("[E2E-FPS] " + label + " -> " + String.format("%.1f", avgFps)
-            + " fps (target >=30, budget SUCCESS_METRICS.md step 78)");
+            + " fps, worst frame " + String.format("%.1f", worst * 1000.0) + " ms over " + n
+            + " real frames (target >=30, budget SUCCESS_METRICS.md step 78)");
     }
 
     /**
@@ -5451,11 +5456,6 @@ public class GameEngine {
     private void updateAutodrive(double dt) {
         world.tick((float) dt);
         updatePatches(dt);
-        // H26 (step 78): the rolling FPS deque is fed in update(), but the E2E
-        // tour runs on updateAutodrive() — feed it here too or every waypoint
-        // reports 0.0 fps and the perf budget has no evidence.
-        frameTimes.addLast(dt);
-        if (frameTimes.size() > 120) frameTimes.removeFirst();
 
         // Step 80: the scout patrol + NPC behaviors run in the tour too, so
         // the E2E log carries live [Scout] VISIT + [Quorum] evidence.
