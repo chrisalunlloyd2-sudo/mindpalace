@@ -63,11 +63,11 @@
 ## PHASE D — Quorum ↔ GitHub Deep (89–98)
 - [x] **89** H33 GitHub releases — cascade tags v0.x.y per phase, builds installer exe, uploads to Release (gh release create; token from Credential Manager)
 - [x] **90** H33a version bump automation — pom.xml version + INSTALLER.md stamp on every phase completion
-- [ ] **91** H34 open-issue crystals — GitHubClient.listIssues → TODO crystals; agents see repo issues in-world
+- [ ] **91** (reconciled 2026-10-06: not done — the TODO crystals come from the lexical bridge scanning code, not from `GitHubClient.listIssues`) H34 open-issue crystals — GitHubClient.listIssues → TODO crystals; agents see repo issues in-world
 - [ ] **92** H35 issue verdicts — quorum votes on issues; verdict posted as comment (add-only, never close)
 - [ ] **93** H36 repo health rollup — issues/TODO-density/last-push age → KG attribute + room glow intensity
 - [ ] **94** H36a nightly 143-repo sweep — quota-free bot job
-- [ ] **95** H37 commit engravings — last 10 commits per repo rendered at the room door
+- [x] **95** H37 commit engravings — last 10 commits per repo rendered at the room door (0e83613: `renderCommitEngravings`; local rooms via `git log -10` in RepoMapper, remote-only rooms via `GitHubClient` /commits with a 10-min cache)
 - [ ] **96** H38 push gate — autonomous upsertFile requires quorum APPROVED on the exact diff + critic pass
 - [ ] **97** PR preview branch — agent edits land on `agent/<step>` branches; human merges (safety before trust)
 - [ ] **98** Weekly self-report (H50) — metrics + phases + next steps as issue comment + reports/
@@ -83,7 +83,7 @@
 - [ ] **106** H47 dedupe sentinel — static scan for duplicated utilities across repos → issues
 - [ ] **107** H48 doc-drift sentinel — README claims vs file inventory; drift → issue
 - [ ] **108** H49 multiplayer contract — presence + chat over one WebSocket; loopback two-instance demo
-- [ ] **109** Installer v2 — jpackage --type msi, per-user, auto-update check against Releases API, better first-run wizard, theme picker
+- [~] **109** Installer v2 (reconciled 2026-10-06: a jpackage `.exe` and an Inno Setup warm installer ship via `build-installer.sh` / `build-warm-installer.sh` and `scripts/release_phase.sh`; NOT yet: MSI, per-user install, Releases-API update check, first-run wizard) — jpackage --type msi, per-user, auto-update check against Releases API, better first-run wizard, theme picker
 - [ ] **110** Installer QA — clean-path install test documented in INSTALLER.md
 - [ ] **111–150** Content & depth: NPC dialects per district (30), room acoustics (reverb by size), puzzle rooms (Enigma plugboard chains), agent apprenticeship (senior agents train newborn bots on logged successful cycles), KG-backed memory palace search, autosave/replay viewer, achievements tied to real repo milestones, mod hooks (JSON room decorations), localization scaffold, and 30 further polish steps drafted from weekly self-report data.
 

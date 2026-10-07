@@ -61,7 +61,7 @@ phase (v1.1.0-beta1 is live).
 - [ ] Render the outside world in small chunks at once (streaming, not all-at-once)
 - [ ] Diablo/Zelda-style top-down view (low overhead)
 - [ ] Trees (Fibonacci), water, lake, sun, sunset, moon, day/night cycle
-- [ ] Local weather sync (real weather → in-game weather)
+- [ ] Local weather sync (real weather → in-game weather) — reconciled 2026-10-06: only a deterministic day-of-year pseudo-weather ships (`OutsideWorld.weather()`, no network); a real weather source is still open
 
 ---
 
@@ -78,7 +78,7 @@ phase (v1.1.0-beta1 is live).
 
 - [x] jpackage native .exe installer (v1.0.0-coldshot, v1.1.0-beta1 on Releases;
       icon Windows-path fix in build-installer.sh)
-- [ ] Auto-updater (checks Releases API; queued NEXT_100 step 109)
+- [ ] Auto-updater (checks Releases API; queued NEXT_100 step 109) — reconciled 2026-10-06: `LiveUpdateManager` only watches for new repos/files, it is NOT a release updater
 
 ---
 
@@ -94,7 +94,7 @@ phase (v1.1.0-beta1 is live).
 - [ ] Email: in-game client, me-to-me sync, emails → books in a notes room (cabinets + folders)
 
 ### 2.2 Book Interaction
-- [ ] Hover → neon glow highlight + tooltip (filename | language | size)
+- [x] Hover → neon glow highlight + tooltip (filename | language | size) (248e698 amber glow highlight, bb2a90c tooltip)
 - [ ] Hover → content preview (first lines, "a page of programming")
 - [ ] Click → sound + open editor (with the new live-add design)
 - [ ] Editor redesigned via live-add protocol, tested in a separate headless unit
@@ -126,8 +126,8 @@ phase (v1.1.0-beta1 is live).
 ### 5.1 Environment
 - [ ] Diablo/Zelda-style top-down view (low overhead, like Pokémon)
 - [ ] Emaculately beautiful: trees (Fibonacci sequence), water, lake, sun, sunset
-- [ ] Moon + day/night cycle synced to the real clock
-- [ ] Local weather sync (real weather → in-game weather)
+- [x] Moon + day/night cycle synced to the real clock (b8f2f9e sun/moon/stars billboarded on the sky dome; phase from the real hour, 64a141c)
+- [ ] Local weather sync (real weather → in-game weather) — reconciled 2026-10-06: only a deterministic day-of-year pseudo-weather ships (`OutsideWorld.weather()`, no network); a real weather source is still open
 
 ### 5.2 Block Building
 - [ ] Build with blocks (Lego-like), assign attributes → blocks morph into materials
