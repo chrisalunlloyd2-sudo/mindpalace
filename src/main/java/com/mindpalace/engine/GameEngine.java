@@ -3916,6 +3916,51 @@ public class GameEngine {
         System.out.println((overlaysOk ? "PASS" : "FAIL") + " overlay render paths (map/help/teleport/dressing room/loading)" + overlayFailure);
         if (overlaysOk) pass++; else fail++;
 
+        // 12c. MP-002 instruction e2e: every toggle key in the inventory (tools/instruction_inventory.py) is PRESSED through
+        //      the real input path and must flip its state, then flip back on a second press. Driven exactly like the
+        //      teleport-picker check: injectKeyPress, one update tick, one release tick.
+        state = GameState.PLAYING;
+        String keyFailures = "";
+        int keysChecked = 0;
+        Object[][] toggles = {
+            {"F1 help overlay", GLFW.GLFW_KEY_F1, (java.util.function.Supplier<Boolean>) () -> showHelp},
+            {"F3 noclip", GLFW.GLFW_KEY_F3, (java.util.function.Supplier<Boolean>) () -> player.isNoclip()},
+            {"F4 2D text mode", GLFW.GLFW_KEY_F4, (java.util.function.Supplier<Boolean>) () -> twoDTextMode},
+            {"F8 FPS overlay", GLFW.GLFW_KEY_F8, (java.util.function.Supplier<Boolean>) () -> fpsShow},
+            {"M minimap", GLFW.GLFW_KEY_M, (java.util.function.Supplier<Boolean>) () -> minimapShow},
+            {"Tab map overlay", GLFW.GLFW_KEY_TAB, (java.util.function.Supplier<Boolean>) () -> showMap},
+            {"F7 dressing room", GLFW.GLFW_KEY_F7, (java.util.function.Supplier<Boolean>) () -> dressingRoom != null && dressingRoom.isOpen()},
+        };
+        try {
+            for (Object[] row : toggles) {
+                @SuppressWarnings("unchecked")
+                java.util.function.Supplier<Boolean> read = (java.util.function.Supplier<Boolean>) row[2];
+                int key = (Integer) row[1];
+                boolean start = read.get();
+                for (int press = 0; press < 2; press++) {
+                    input.injectKeyPress(key);
+                    update(0.0);       // the press edge
+                    update(0.0);       // release tick so the next press edges again
+                    boolean expected = press == 0 ? !start : start;
+                    if (read.get() != expected) {
+                        keyFailures += " [" + row[0] + " press " + (press + 1) + " did not " + (press == 0 ? "toggle" : "restore") + "]";
+                        break;
+                    }
+                }
+                if (read.get() != start) {                        // leave the world as we found it
+                    input.injectKeyPress(key); update(0.0); update(0.0);
+                }
+                keysChecked++;
+            }
+        } catch (Throwable t) {
+            keyFailures += " [exception " + t.getClass().getSimpleName() + "]";
+        }
+        state = GameState.PLAYING;
+        showMap = false; showHelp = false; teleportMenu = false;
+        boolean keysOk = keyFailures.isEmpty();
+        System.out.println((keysOk ? "PASS" : "FAIL") + " instruction e2e (" + keysChecked + " toggle keys press+restore through the real input path)" + keyFailures);
+        if (keysOk) pass++; else fail++;
+
         // 13. Immediate chat path — scheduler exposes submitImmediate (no 5-min gate)
         boolean chatOk = agentManager != null && agentManager.getScheduler() != null;
         System.out.println((chatOk ? "PASS" : "FAIL") + " immediate chat path (scheduler)");
