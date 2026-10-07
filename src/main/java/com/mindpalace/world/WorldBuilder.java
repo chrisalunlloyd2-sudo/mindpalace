@@ -886,7 +886,8 @@ public class WorldBuilder {
         // Repo poster board — above the door, shows repo name/language/stars.
         // Dark backing plate; the text is drawn by GameEngine.renderRoomPoster().
         float posterY = c.y - h / 2f + dw + 0.15f + 0.45f;
-        float posterZ = side == 0 ? fz + 0.03f : fz - 0.03f;
+        // The plate used to sit at fz +/- 0.03, i.e. INSIDE the 0.2 m front wall, so the plate, bars, image and text were all invisible.
+        float posterZ = side == 0 ? fz + (Room.WALL_FACE + 0.03f) : fz - (Room.WALL_FACE + 0.03f);
         r.drawCube(new Vector3f(c.x, posterY, posterZ),
             new Vector3f(2.2f, 0.7f, 0.04f), Renderer.TEX_CEILING);
 
@@ -899,7 +900,7 @@ public class WorldBuilder {
         Texture posterTex = getPosterTexture(room);
         float posterFacingYaw = side == 0 ? (float) Math.PI : 0f;
         if (posterTex != null) {
-            r.drawImageQuad(posterTex, new Vector3f(c.x, posterY, posterZ),
+            r.drawImageQuad(posterTex, new Vector3f(c.x, posterY, side == 0 ? posterZ + 0.025f : posterZ - 0.025f),   // in FRONT of the plate
                 1.9f, 0.6f, posterFacingYaw);
         } else {
             renderPosterDiagram(r, room, c.x, posterY, posterZ, side);

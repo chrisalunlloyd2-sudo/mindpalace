@@ -47,6 +47,9 @@ public class Room {
     public static final float ROOM_DEPTH = 6.0f;
     public static final float ROOM_HEIGHT = 3.5f;
     public static final float WALL_THICKNESS = 0.2f;
+    /** The front wall is a cube WALL_THICKNESS thick centred on the door line, so anything mounted on its room-facing
+     *  surface (poster board, bars, image, text) must start this far in front of the centre line or it is buried in the wall. */
+    public static final float WALL_FACE = WALL_THICKNESS / 2f;
     public static final float DOOR_WIDTH = 1.2f;
     public static final float DOOR_HEIGHT = 2.4f;
 

@@ -2605,7 +2605,7 @@ public class GameEngine {
         float dw = Room.DOOR_HEIGHT;
         float fz = side == 0 ? c.z - d / 2f : c.z + d / 2f;
         float posterY = c.y - h / 2f + dw + 0.15f + 0.45f;
-        float posterZ = side == 0 ? fz + 0.06f : fz - 0.06f;
+        float posterZ = side == 0 ? fz + (Room.WALL_FACE + 0.10f) : fz - (Room.WALL_FACE + 0.10f);   // in front of the wall's room-facing surface
 
         // Text faces into the room (away from the door wall)
         Vector3f facing = new Vector3f(0, 0, side == 0 ? 1 : -1);
@@ -5791,14 +5791,20 @@ public class GameEngine {
                 }
                 if (shoot) { captureLabeled("17_hall_windows"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 17 -> { // MP-004: poster wall — the repo poster board above the first door
-                Vector3f door0 = null;
+            case 17 -> { // MP-004: poster wall — the poster board faces INTO the room (and its text renders only for the
+                         // room you are standing in), so look at it from inside the first room, aimed at the board.
+                Room pr = null;
                 for (Room rm : world.getRooms()) {
-                    if (rm.getDoorPosition() != null && rm.getHallwaySide() == 0) { door0 = rm.getDoorPosition(); break; }
+                    if (rm.getRoomCenter() != null) { pr = rm; break; }
                 }
-                if (door0 != null) {
-                    p.set(-0.8f * door0.x, door0.y + 0.7f, door0.z + 0.5f);     // far side of the hall: longest view of the door wall
-                    Vector3f aim = new Vector3f(door0.x, door0.y + 2.2f, door0.z).sub(p).normalize();
+                if (pr != null) {
+                    Vector3f rc = pr.getRoomCenter();
+                    int side = pr.getHallwaySide();
+                    float fz = side == 0 ? rc.z - Room.ROOM_DEPTH / 2f : rc.z + Room.ROOM_DEPTH / 2f;
+                    float floorY = rc.y - Room.ROOM_HEIGHT / 2f;
+                    float boardY = floorY + Room.DOOR_HEIGHT + 0.15f + 0.45f;       // same formula as WorldBuilder / renderRoomPoster
+                    p.set(rc.x, floorY + 1.7f, fz + (side == 0 ? 3.2f : -3.2f));
+                    Vector3f aim = new Vector3f(rc.x, boardY, fz).sub(p).normalize();
                     cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
                     cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
                 } else {
