@@ -3942,6 +3942,36 @@ public class GameEngine {
         System.out.println((overlaysOk ? "PASS" : "FAIL") + " overlay render paths (map/help/teleport/dressing room/loading)" + overlayFailure);
         if (overlaysOk) pass++; else fail++;
 
+        // 12b2. Poster images are decoded off-thread and shrunk to <=1024 px on their long side (aspect kept); small
+        //       images pass through untouched. Needs no GL context, so it is exactly what the worker thread runs.
+        boolean posterDecodeOk = true;
+        String posterDecodeNote = "";
+        try {
+            java.nio.file.Path tmpDir = java.nio.file.Files.createTempFile("mp-poster", ".png");
+            try {
+                java.nio.ByteBuffer px = org.lwjgl.system.MemoryUtil.memAlloc(2000 * 1000 * 4);
+                for (int i = 0; i < 2000 * 1000; i++) { px.put((byte) 200).put((byte) 100).put((byte) 50).put((byte) 255); }
+                px.flip();
+                if (!org.lwjgl.stb.STBImageWrite.stbi_write_png(tmpDir.toString(), 2000, 1000, 4, px, 2000 * 4)) posterDecodeOk = false;
+                org.lwjgl.system.MemoryUtil.memFree(px);
+                com.mindpalace.render.Texture.Pixels big = com.mindpalace.render.Texture.decode(tmpDir.toString(), 1024);
+                if (big.width() != 1024 || big.height() != 512) { posterDecodeOk = false; posterDecodeNote += " (2000x1000 -> " + big.width() + "x" + big.height() + ")"; }
+                int pxv = big.firstPixel();
+                big.free();
+                if ((pxv & 0xFF) < 190 || (pxv & 0xFF) > 210) { posterDecodeOk = false; posterDecodeNote += " (colour changed by the resize)"; }
+                com.mindpalace.render.Texture.Pixels small = com.mindpalace.render.Texture.decode(tmpDir.toString(), 4096);
+                if (small.width() != 2000 || small.height() != 1000) { posterDecodeOk = false; posterDecodeNote += " (a small image was resized)"; }
+                small.free();
+            } finally {
+                java.nio.file.Files.deleteIfExists(tmpDir);
+            }
+        } catch (Throwable t) {
+            posterDecodeOk = false;
+            posterDecodeNote = " (" + t.getClass().getSimpleName() + ")";
+        }
+        System.out.println((posterDecodeOk ? "PASS" : "FAIL") + " poster decode off-thread + downscale (2000x1000 -> 1024x512, small images untouched)" + posterDecodeNote);
+        if (posterDecodeOk) pass++; else fail++;
+
         // 12c. MP-002 instruction e2e: every toggle key in the inventory (tools/instruction_inventory.py) is PRESSED through
         //      the real input path and must flip its state, then flip back on a second press. Driven exactly like the
         //      teleport-picker check: injectKeyPress, one update tick, one release tick.

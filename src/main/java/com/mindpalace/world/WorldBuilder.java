@@ -1039,7 +1039,7 @@ public class WorldBuilder {
         if (posterLoadFailed.contains(path)) return null;
         java.util.concurrent.Future<Texture.Pixels> pending = posterDecodes.get(path);
         if (pending == null) {                        // first sight of this poster: start decoding, draw the diagram meanwhile
-            posterDecodes.put(path, posterDecoder.submit(() -> Texture.decode(path)));
+            posterDecodes.put(path, posterDecoder.submit(() -> Texture.decode(path, 1024)));
             return null;
         }
         if (!pending.isDone() || posterUploadsThisFrame >= 1) return null;     // not decoded yet / this frame's upload budget is spent
