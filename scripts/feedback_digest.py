@@ -16,12 +16,17 @@ LOG = Path(r"C:/Users/viper/AppData/Local/Temp/mindpalace_feedback_digest.log")
 OWNER_REPO = "chrisalunlloyd2-sudo/mindpalace"
 
 def token():
+    """Token (function)."""
     r = subprocess.run([GIT_BASH, "-c",
         "printf 'protocol=https\\nhost=github.com\\n\\n' | git credential-manager get 2>/dev/null | grep '^password=' | cut -d= -f2"],
         capture_output=True, text=True, timeout=180)
     return r.stdout.strip()
 
 def gh(args, env, tries=2):
+    """Gh.
+
+    Args: args, env, tries.
+    """
     for k in range(tries):
         r = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=200, env=env)
         if r.returncode == 0:
@@ -30,6 +35,7 @@ def gh(args, env, tries=2):
     return r
 
 def main():
+    """Main (function)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=7)
     a = ap.parse_args()
