@@ -958,6 +958,10 @@ public class GameEngine {
 
     private volatile java.util.List<String[]> telemetrySnapshot = java.util.List.of();
     private java.util.concurrent.ScheduledExecutorService telemetryReader;
+    private int e2eOverCount;
+    private String e2eOverLabels = "";
+    private double e2eWorstMs;
+    private String e2eWorstLabel = "none";
     private int skipFrameSamples;
     private int startupFrames;
     private double startupFirstMs, startupWorstMs;
@@ -3549,6 +3553,9 @@ public class GameEngine {
         for (Double ft : frameTimes) { sum += ft; n++; if (ft > worst) worst = ft; }
         String written = Screenshot.capture(width, height, path);
         if (written != null) System.out.println("[E2E-SHOT] " + label + " -> " + written);
+        if (e2eWaypoint > 0 && worst * 1000.0 > e2eWorstMs) { e2eWorstMs = worst * 1000.0; e2eWorstLabel = label; }
+        double gateLimit = Double.parseDouble(System.getProperty("mindpalace.e2e.maxFrameMs", "0"));
+        if (e2eWaypoint > 0 && gateLimit > 0 && worst * 1000.0 > gateLimit) { e2eOverCount++; e2eOverLabels += " " + label; }
         frameTimes.clear();
         skipFrameSamples = 2;                 // the capture frame and the one after it are harness cost, not game cost
         // H26 (step 78): per-waypoint FPS evidence — after the 3s settle the
@@ -5822,8 +5829,27 @@ public class GameEngine {
             }
             default -> { // done — clean exit for CI
                 System.out.println("[E2E] tour complete — 21 waypoints captured. Exiting.");
+                int exitCode = 0;
+                // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
+                // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software
+                // rasteriser (Mesa llvmpipe in CI) frame times mean nothing, so the gate only WARNS there.
+                double limitMs = Double.parseDouble(System.getProperty("mindpalace.e2e.maxFrameMs", "0"));
+                if (limitMs > 0) {
+                    String gpu = String.valueOf(GL11.glGetString(GL11.GL_RENDERER));
+                    boolean software = gpu.toLowerCase().matches(".*(llvmpipe|softpipe|swrast|software|microsoft basic render).*");
+                    // One slow waypoint is usually the machine (a Defender scan, a model loading); a regression such as render-thread
+                    // I/O or per-room texture creation shows at SEVERAL waypoints. Fail only when >= N waypoints exceed the limit.
+                    int needOver = Integer.getInteger("mindpalace.e2e.maxOverWaypoints", 3);
+                    boolean over = e2eOverCount >= needOver;
+                    String line = "worst steady-state frame " + String.format("%.1f", e2eWorstMs) + " ms at " + e2eWorstLabel
+                        + "; " + e2eOverCount + " waypoint(s) over " + String.format("%.0f", limitMs) + " ms" + e2eOverLabels
+                        + " (fail at >= " + needOver + ", gpu: " + gpu + ")";
+                    if (over && software) System.out.println("[PERF_WARN] " + line + " — software rasteriser, not failing");
+                    else if (over) { System.out.println("[PERF_FAIL] " + line); exitCode = 2; }
+                    else System.out.println("[PERF_OK] " + line);
+                }
                 cleanup();
-                System.exit(0);
+                System.exit(exitCode);
             }
         }
         cam.setPosition(p);
