@@ -943,10 +943,12 @@ public class GameEngine {
         GLFW.glfwPollEvents();
     }
 
+    private int skipFrameSamples;
     private int startupFrames;
     private double startupFirstMs, startupWorstMs;
 
     private void loop() {
+        com.mindpalace.render.HitchSampler.start(Thread.currentThread());
         while (running && !GLFW.glfwWindowShouldClose(window)) {
             double currentTime = GLFW.glfwGetTime();
             double frameTime = currentTime - lastFrameTime;
@@ -954,8 +956,11 @@ public class GameEngine {
 
             // Real wall-clock seconds per rendered frame feed the FPS overlay and the E2E perf evidence. They used to be
             // fed the fixed PHYSICS_DT from update(), so both always reported exactly 120 FPS whatever the real speed.
-            frameTimes.addLast(Math.max(frameTime, 1e-6));
-            if (frameTimes.size() > 120) frameTimes.removeFirst();
+            if (skipFrameSamples > 0) skipFrameSamples--;
+            else {
+                frameTimes.addLast(Math.max(frameTime, 1e-6));
+                if (frameTimes.size() > 120) frameTimes.removeFirst();
+            }
             if (e2eMode && startupFrames < 61) {          // MP-004: startup latency reported apart from steady-state hitching
                 startupFrames++;
                 if (startupFrames == 1) startupFirstMs = frameTime * 1000.0;
@@ -967,11 +972,13 @@ public class GameEngine {
             if (frameTime > MAX_FRAME_TIME) frameTime = MAX_FRAME_TIME;
             accumulator += frameTime;
 
+            long updateStart = com.mindpalace.render.GlTrace.PROF ? System.nanoTime() : 0L;
             while (accumulator >= PHYSICS_DT) {
                 if (autodrive) updateAutodrive(PHYSICS_DT);
                 else update(PHYSICS_DT);
                 accumulator -= PHYSICS_DT;
             }
+            if (com.mindpalace.render.GlTrace.PROF) com.mindpalace.render.GlTrace.noteUpdate(System.nanoTime() - updateStart);
 
             render(accumulator / PHYSICS_DT);
 
@@ -3509,12 +3516,16 @@ public class GameEngine {
         java.io.File dir = new java.io.File(screenshotDir);
         if (!dir.exists()) dir.mkdirs();
         String path = screenshotDir + "/" + label + "_" + String.format("%02d", shotCounter++) + ".png";
-        String written = Screenshot.capture(width, height, path);
-        if (written != null) System.out.println("[E2E-SHOT] " + label + " -> " + written);
-        // H26 (step 78): per-waypoint FPS evidence — after the 3s settle the
-        // rolling average is the waypoint's real perf, logged next to the shot.
+        // Report the frame times of the waypoint itself, BEFORE the PNG write: encoding it on the render thread costs
+        // 0.3-1.2 s and used to be counted as a hitch in the next waypoint's window.
         double sum = 0, worst = 0; int n = 0;
         for (Double ft : frameTimes) { sum += ft; n++; if (ft > worst) worst = ft; }
+        String written = Screenshot.capture(width, height, path);
+        if (written != null) System.out.println("[E2E-SHOT] " + label + " -> " + written);
+        frameTimes.clear();
+        skipFrameSamples = 2;                 // the capture frame and the one after it are harness cost, not game cost
+        // H26 (step 78): per-waypoint FPS evidence — after the 3s settle the
+        // rolling average is the waypoint's real perf, logged next to the shot.
         double avgFps = n > 0 ? n / Math.max(sum, 1e-9) : 0;
         System.out.println("[E2E-FPS] " + label + " -> " + String.format("%.1f", avgFps)
             + " fps, worst frame " + String.format("%.1f", worst * 1000.0) + " ms over " + n

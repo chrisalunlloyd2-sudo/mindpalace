@@ -45,6 +45,15 @@ public class WorldBuilder {
     // render of each room's poster; falls back to the diagram when absent.
     private final Map<String, Texture> posterTextures = new HashMap<>();
     private final Set<String> posterLoadFailed = new HashSet<>();
+    // Poster images are decoded on ONE background thread (stb decode + disk read cost 100-500 ms on the render thread the
+    // first time a room came into view). Only the GL upload stays on the render thread, at most one per frame.
+    private final Map<String, java.util.concurrent.Future<Texture.Pixels>> posterDecodes = new HashMap<>();
+    private final java.util.concurrent.ExecutorService posterDecoder = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "poster-decoder");
+        t.setDaemon(true);
+        return t;
+    });
+    private int posterUploadsThisFrame;
 
     // Global animation clock (seconds) — drives pulsing teleporters, neon, etc.
     public float time = 0f;
@@ -235,6 +244,7 @@ public class WorldBuilder {
     public void setLayout(RoomLayout l) { this.activeLayout = l; }
 
     public void render(Renderer r, Camera camera) {
+        posterUploadsThisFrame = 0;
         Vector3f camPos = camera.getPosition();
         Vector3f camFront = camera.getFront();
         this.camX = camPos.x;
@@ -1027,13 +1037,22 @@ public class WorldBuilder {
         Texture tex = posterTextures.get(path);
         if (tex != null) return tex;
         if (posterLoadFailed.contains(path)) return null;
+        java.util.concurrent.Future<Texture.Pixels> pending = posterDecodes.get(path);
+        if (pending == null) {                        // first sight of this poster: start decoding, draw the diagram meanwhile
+            posterDecodes.put(path, posterDecoder.submit(() -> Texture.decode(path)));
+            return null;
+        }
+        if (!pending.isDone() || posterUploadsThisFrame >= 1) return null;     // not decoded yet / this frame's upload budget is spent
+        posterDecodes.remove(path);
         try {
-            tex = new Texture(path);
+            tex = Texture.upload(pending.get());
+            posterUploadsThisFrame++;
             posterTextures.put(path, tex);
             return tex;
         } catch (Exception e) {
             posterLoadFailed.add(path);
-            System.err.println("[Poster] image load failed: " + path + " — " + e.getMessage());
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            System.err.println("[Poster] image load failed: " + path + " — " + cause.getMessage());
             return null;
         }
     }

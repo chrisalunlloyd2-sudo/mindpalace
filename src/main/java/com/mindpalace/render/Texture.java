@@ -18,21 +18,45 @@ public class Texture {
     /** Private no-arg constructor for static factory methods (grass, etc.). */
     private Texture() {}
 
-    public Texture(String path) {
+    /** Decoded RGBA pixels, ready for {@link #upload}. Decoding needs no GL context, so it can run on a worker thread. */
+    public static final class Pixels {
+        final ByteBuffer data;
+        final int width, height;
+        Pixels(ByteBuffer data, int width, int height) { this.data = data; this.width = width; this.height = height; }
+    }
+
+    /** Decode an image file to RGBA (flipped vertically, like the GL convention). Safe off the render thread:
+     *  the flip is requested through stb's THREAD-local override, so it cannot race the global flag. */
+    public static Pixels decode(String path) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             IntBuffer w = stack.mallocInt(1);
             IntBuffer h = stack.mallocInt(1);
             IntBuffer comp = stack.mallocInt(1);
-
-            STBImage.stbi_set_flip_vertically_on_load(true);
+            STBImage.stbi_set_flip_vertically_on_load_thread(1);
             ByteBuffer data = STBImage.stbi_load(path, w, h, comp, 4); // force RGBA
-
             if (data == null) {
                 throw new RuntimeException("Failed to load texture: " + path + " — " + STBImage.stbi_failure_reason());
             }
+            return new Pixels(data, w.get(0), h.get(0));
+        }
+    }
 
-            width = w.get(0);
-            height = h.get(0);
+    /** Create the GL texture from decoded pixels and free them. Render thread only (needs the GL context). */
+    public static Texture upload(Pixels p) {
+        Texture t = new Texture();
+        t.uploadPixels(p);
+        return t;
+    }
+
+    public Texture(String path) {
+        uploadPixels(decode(path));
+    }
+
+    private void uploadPixels(Pixels p) {
+        {
+            ByteBuffer data = p.data;
+            width = p.width;
+            height = p.height;
 
             id = GL30.glGenTextures();
             GL30.glBindTexture(GL30.GL_TEXTURE_2D, id);

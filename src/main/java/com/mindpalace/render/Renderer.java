@@ -162,19 +162,25 @@ public class Renderer {
         drawMesh(getCubeMesh(), model, texId);
     }
 
+    private final org.joml.Vector3f solidScratch = new org.joml.Vector3f();
+
+    /** Flat colour for the next draw via the shader (useTexture == 2). Quantised to 8 bits per channel exactly like the
+     *  1x1 textures it replaces, but with NO GL object: creating a texture per new colour cost 15-40 ms each on the
+     *  Intel iGPU the first time a room's colours came into view, and was the main remaining first-sight hitch. */
+    private void solidColor(float r, float g, float b) {
+        solidScratch.set(((int) (r * 255) & 0xFF) / 255f, ((int) (g * 255) & 0xFF) / 255f, ((int) (b * 255) & 0xFF) / 255f);
+        basicShader.setUniform("solidColor", solidScratch);
+        basicShader.setUniform("useTexture", 2);
+    }
+
     /** Draw a cube with an arbitrary RGB color, rotated around Y (for clothing layers). */
     public void drawCubeColorYaw(Vector3f position, Vector3f size, float yaw, float r, float g, float b) {
-        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(b*255);
-        Texture tex = colorCache.get(key);
-        if (tex == null) { tex = new Texture(r, g, b); colorCache.put(key, tex); }
         Matrix4f model = new Matrix4f().translate(position).rotateY(yaw).scale(size);
         GlTrace.expectProgram(basicShader.getId(), "cubeColorYaw");
         GlTrace.mark("cubeColorYaw:enter");
         basicShader.setUniform("model", model);
         GlTrace.mark("cubeColorYaw:model-uniform");
-        tex.bind(0);
-        GlTrace.mark("cubeColorYaw:tex.bind");
-        basicShader.setUniform("useTexture", 1);
+        solidColor(r, g, b);
         GlTrace.mark("cubeColorYaw:useTexture-uniform");
         getCubeMesh().render();
         GlTrace.mark("cubeColorYaw:mesh.render");
@@ -197,20 +203,6 @@ public class Renderer {
         basicShader.bind();  // restore the default shader for subsequent draws
     }
 
-    // Cache of solid-color textures keyed by quantized RGB, so gradient bands
-    // (cosine-interpolated sky, water shimmer) can paint arbitrary colors
-    // without a texture per shade.
-    // LRU-capped: animated colors (OutsideWorld sin/cos/time) used to add one never-freed GL texture per
-    // distinct color for the whole session. The evicted entry is the least recently USED, never the one
-    // being drawn, and a color simply re-creates its 1x1 texture if it comes back.
-    private static final int COLOR_CACHE_MAX = 2048;
-    private final java.util.Map<Integer, Texture> colorCache = new java.util.LinkedHashMap<Integer, Texture>(256, 0.75f, true) {
-        @Override protected boolean removeEldestEntry(java.util.Map.Entry<Integer, Texture> eldest) {
-            if (size() <= COLOR_CACHE_MAX) return false;
-            if (eldest.getValue() != null) eldest.getValue().cleanup();
-            return true;
-        }
-    };
 
     // Sky dome gradient texture (rebuilt when the day/night phase changes).
     private Texture skyDomeTex;
@@ -244,13 +236,9 @@ public class Renderer {
 
     /** Draw a cube with an arbitrary RGB color (cached 1x1 texture). */
     public void drawCubeColor(Vector3f position, Vector3f size, float r, float g, float b) {
-        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(b*255);
-        Texture tex = colorCache.get(key);
-        if (tex == null) { tex = new Texture(r, g, b); colorCache.put(key, tex); }
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         basicShader.setUniform("model", model);
-        tex.bind(0);
-        basicShader.setUniform("useTexture", 1);
+        solidColor(r, g, b);
         getCubeMesh().render();
     }
 
@@ -261,16 +249,12 @@ public class Renderer {
         float len = dir.length();
         if (len < 1e-4f) return;
         dir.normalize();
-        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(bl*255);
-        Texture tex = colorCache.get(key);
-        if (tex == null) { tex = new Texture(r, g, bl); colorCache.put(key, tex); }
         // rotateTowards aligns the cube's +Z with dir (the long axis).
         Matrix4f model = new Matrix4f().translate(mid)
             .rotateTowards(dir, new Vector3f(0, 1, 0))
             .scale(thickness, thickness, len);
         basicShader.setUniform("model", model);
-        tex.bind(0);
-        basicShader.setUniform("useTexture", 1);
+        solidColor(r, g, bl);
         getCubeMesh().render();
     }
 
@@ -393,13 +377,9 @@ public class Renderer {
 
     /** Draw a sphere with an arbitrary RGB color (cached 1x1 texture). */
     public void drawSphereColor(Vector3f position, Vector3f size, float r, float g, float b) {
-        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(b*255);
-        Texture tex = colorCache.get(key);
-        if (tex == null) { tex = new Texture(r, g, b); colorCache.put(key, tex); }
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         basicShader.setUniform("model", model);
-        tex.bind(0);
-        basicShader.setUniform("useTexture", 1);
+        solidColor(r, g, b);
         getSphereMesh().render();
     }
 
@@ -414,7 +394,6 @@ public class Renderer {
         if (quadMesh != null) quadMesh.cleanup();
         if (sphereMesh != null) sphereMesh.cleanup();
         for (Texture t : textures) if (t != null) t.cleanup();
-        for (Texture t : colorCache.values()) if (t != null) t.cleanup();
         if (skyDomeTex != null) skyDomeTex.cleanup();
     }
 }

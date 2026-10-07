@@ -17,6 +17,49 @@ import java.util.Map;
  */
 public final class GlTrace {
     public static final boolean ENABLED = Boolean.getBoolean("mindpalace.glTrace");
+    /** -Dmindpalace.frameProf=true: wall-clock time between marks, no GL calls (so it adds no pipeline stalls). Any frame
+     *  slower than {@value #HITCH_MS} ms prints its slowest stages and the update() time, so a hitch names its stage. */
+    public static final boolean PROF = Boolean.getBoolean("mindpalace.frameProf");
+    private static final long HITCH_NS = 80_000_000L;
+    private static final int PROF_MAX = 96;
+    private static final String[] profNames = new String[PROF_MAX];
+    private static final long[] profNs = new long[PROF_MAX];
+    private static int profN;
+    private static long profLast, profUpdateNs;
+    private static volatile long profFrames;
+
+    public static long frameCount() { return profFrames; }
+
+    /** The game loop reports how long this frame's update() ticks took. */
+    public static void noteUpdate(long ns) { if (PROF) profUpdateNs += ns; }
+
+    private static void profMark(String stage) {
+        long now = System.nanoTime();
+        if (profLast != 0 && profN < PROF_MAX) { profNames[profN] = stage; profNs[profN] = now - profLast; profN++; }
+        profLast = now;
+    }
+
+    private static void profFrameStart() {
+        profMark("frame-start (bloom.end + swap + update + loop)");
+        long total = 0;
+        for (int i = 0; i < profN; i++) total += profNs[i];
+        profFrames = profFrames + 1;
+        if (total > HITCH_NS) {
+            StringBuilder sb = new StringBuilder("[FrameProf] frame ").append(profFrames).append(": ").append(total / 1_000_000)
+                .append(" ms, update() ").append(profUpdateNs / 1_000_000).append(" ms; slowest:");
+            boolean[] used = new boolean[profN];
+            for (int k = 0; k < 4 && k < profN; k++) {
+                int best = -1;
+                for (int i = 0; i < profN; i++) if (!used[i] && (best < 0 || profNs[i] > profNs[best])) best = i;
+                used[best] = true;
+                sb.append(' ').append(profNames[best]).append(' ').append(profNs[best] / 1_000_000).append("ms;");
+            }
+            System.out.println(sb);
+        }
+        profN = 0;
+        profUpdateNs = 0;
+    }
+
     private static final int SUMMARY_FRAMES = 600;
     private static final int MAX_KEYS = 256;                 // hard bound on distinct pairs we remember
 
@@ -40,6 +83,7 @@ public final class GlTrace {
 
     /** Call at the start of each frame; resets the stage chain and prints the periodic summary. */
     public static void frameStart() {
+        if (PROF) profFrameStart();
         if (!ENABLED) return;
         previous = "frame-start";
         mark("frame-start(leftover from update/swap)");
@@ -48,6 +92,7 @@ public final class GlTrace {
 
     /** Drain GL errors and attribute them to the work done since the previous mark. */
     public static void mark(String stage) {
+        if (PROF) profMark(stage);
         if (!ENABLED) return;
         int guard = 0;
         for (int e = GL11.glGetError(); e != GL11.GL_NO_ERROR && guard < 16; e = GL11.glGetError(), guard++) {

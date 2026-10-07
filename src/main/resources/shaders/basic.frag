@@ -12,6 +12,7 @@ uniform vec3 viewPos;
 uniform float ambientStrength;
 uniform sampler2D textureSampler;
 uniform int useTexture;
+uniform vec3 solidColor;   // flat colour when useTexture == 2 (no 1x1 texture needed)
 uniform vec3 tintColor;
 uniform float fogEnabled;
 
@@ -36,6 +37,8 @@ void main() {
     vec3 baseColor;
     if (useTexture == 1) {
         baseColor = texture(textureSampler, TexCoord).rgb;
+    } else if (useTexture == 2) {
+        baseColor = solidColor;
     } else {
         baseColor = vec3(0.5, 0.4, 0.3); // default brown
     }
