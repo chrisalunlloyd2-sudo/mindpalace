@@ -30,6 +30,7 @@ NOT_CONTROLS = {"LAST", "BACKSPACE", "UP", "DOWN", "LEFT", "RIGHT", "PERIOD", "C
 
 
 def code_keys():
+    """Code keys (function)."""
     found = defaultdict(list)
     method = re.compile(r"^\s*(?:public|private|protected|static|final|synchronized|\s)+[\w<>\[\], ?]+\s+(\w+)\s*\([^;]*\)\s*(?:throws [\w, ]+)?\{?\s*$")
     for p in sorted(JAVA.rglob("*.java")):
@@ -45,6 +46,7 @@ def code_keys():
 
 
 def readme_keys():
+    """Readme keys (function)."""
     text = (ROOT / "README.md").read_text(encoding="utf-8", errors="replace")
     sec = text.split("## Controls", 1)[1].split("### Book Editor Commands", 1)[0]     # includes the Dressing Room table
     rows = {}
@@ -56,6 +58,7 @@ def readme_keys():
 
 
 def help_keys():
+    """Help keys (function)."""
     src = (JAVA / "com/mindpalace/engine/GameEngine.java").read_text(encoding="utf-8", errors="replace")
     overlay = src.split("private void renderHelpOverlay", 1)[1]           # the real overlay, not an unrelated "CONTROLS" string
     block = overlay.split("=== CONTROLS ===", 1)[1].split("=== AGENTS ===", 1)[0]
@@ -75,6 +78,10 @@ MOUSE_LABELS = {"MOUSE", "LEFT CLICK", "CLICK", "RIGHT CLICK", "MOUSE DRAG", "AR
 
 
 def expand(label):
+    """Expand.
+
+    Args: label.
+    """
     if label.strip().strip("`").upper() in MOUSE_LABELS:
         return []                                  # mouse input has no GLFW_KEY_* handler to cross-check
     if label.strip().strip("`").upper() in ALIASES:
@@ -89,6 +96,10 @@ def expand(label):
 
 
 def main(argv):
+    """Main.
+
+    Args: argv.
+    """
     code = code_keys()
     if "1" in code and "9" in code:                 # `for (k = KEY_1; k <= KEY_9; k++)` names only the ends of 1..9
         for d in "23456789":
