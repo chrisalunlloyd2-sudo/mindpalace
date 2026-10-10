@@ -206,6 +206,7 @@ telemetry leaves the machine.
 | ![Main hall](docs/screenshots/main_hall.png) | ![Agents](docs/screenshots/agents.png) |
 | ![Rotor rings](docs/screenshots/rotor_rings.png) | The courtyard's Enigma rotor — carries tick, chime, and bell every second |
 | ![Interaction prompt with drop-shadow](docs/screenshots/prompt_drop_shadow.png) | The unified interaction prompt — magenta HUD text with a black drop-shadow (`#113`), readable even over the door's bloom |
+| ![Commit ledger engraved in hallway](docs/screenshots/commit_ledger_hall.png) | The hallway's commit ledger — real recent commits from GitHub engraved on the wall above a doorway (`#122`) |
 
 
 
