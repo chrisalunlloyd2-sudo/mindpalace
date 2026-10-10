@@ -116,6 +116,14 @@ tinyllama:1.1b, phi:latest, gemma2:2b, mistral:7b, codellama:7b,
 nomic-embed-text. Game roles: tool=llama3.2:1b, critic=qwen2.5:0.5b,
 tie-breaker=deepseek-r1:1.5b.
 
+## Cron model pins (MP-042)
+- Canonical pin map: `scripts/hermes_cron_models.sh`
+- `auto-sync`, `health-monitor`, `scout-bot`, `feedback-digest` are script-only (`none` model).
+- `task-watch` is pinned local-first (`llama3.2:3b`).
+- Cloud spend is opt-in only, gated by:
+  - `HERMES_CRON_ALLOW_CLOUD=1`
+  - `HERMES_CRON_CLOUD_APPROVAL=<ticket-or-decision-id>`
+
 ## Known landmine (fixed, but know about it)
 `AIGEN_SYS/scripts/system_maintenance.py`'s `clear_ollama_cache()` used to
 allowlist only `phi/starcoder/tinyllama` and would `ollama rm` everything
