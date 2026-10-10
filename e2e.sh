@@ -40,9 +40,13 @@ echo "=== [4/4] VERIFY SHOTS (exist + non-black) ==="
 python - "$DIR" <<'PYEOF'
 import sys, os, struct, zlib
 d = sys.argv[1]
+# Kept in lockstep with GameEngine e2e waypoint labels (captureLabeled calls,
+# ~line 4946): when the tour gains/renames a waypoint, update this list too —
+# a stale list here false-fails the gate on shots that were actually captured.
 labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gauge","05_main_hall",
           "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad",
-          "11_nash_fountain","12_door_prompt","13_plugboard"]
+          "11_floor2_picker","11_nash_fountain","13_door_prompt","14_plugboard",
+          "15_forest_path","16_room_interior","17_hall_windows","18_mansion_spawn"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:
@@ -117,9 +121,9 @@ else:
 # room info cyan, hotkeys grey), so b and r both high with g low is a clean
 # signature. Sample the middle band; require >40 hits (a text line at
 # 1920x1080 with 0.065 char size yields hundreds; control shots have ~0).
-prompt = [f for f in os.listdir(d) if f.startswith("12_door_prompt")] if os.path.isdir(d) else []
+prompt = [f for f in os.listdir(d) if f.startswith("13_door_prompt")] if os.path.isdir(d) else []
 if not prompt:
-    print("MISSING 12_door_prompt hue check"); fail += 1
+    print("MISSING 13_door_prompt hue check"); fail += 1
 else:
     w, h, raw, stride = load_png(os.path.join(d, prompt[0]))
     magenta = 0
