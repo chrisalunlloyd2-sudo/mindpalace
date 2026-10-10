@@ -41,6 +41,7 @@ import com.mindpalace.backup.MemoryManager;
 import com.mindpalace.agent.IdleDetector;
 import com.mindpalace.integration.ContextBroadcaster;
 import org.joml.Vector3f;
+import org.joml.Vector4f;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWErrorCallback;
@@ -2315,7 +2316,8 @@ public class GameEngine {
 
     /** H37 (#122, step 95): commit engravings — each revealed room's door gets
      *  a wall-facing "foundation stone" engraving OVER the door (lintel band
-     *  y 2.45→3.4, within the 1.2m door width), listing the repo's last 10
+     *  door top 2.4 → ceiling 4.0, entries 2.50+, header 3.90), listing the
+     *  repo's last 10
      *  commits (newest first, 7-char sha + capped subject). Ledger sources:
      *  real `git log -10` for local rooms, the /commits API for remote-only
      *  rooms, deterministic seeds for demo fixtures. Placement: the over-door
@@ -2345,40 +2347,89 @@ public class GameEngine {
             float wallX = room.getHallwaySide() == 0
                 ? -WorldBuilder.HALLWAY_WIDTH / 2f
                 : WorldBuilder.HALLWAY_WIDTH / 2f;
-            // Over-door "foundation stone" band: wall spans door top (2.4) →
-            // ceiling (HALLWAY_HEIGHT 4.0). renderInternal stacks '\n' lines
-            // UPWARD (+li*lineH), so for a top-down read the block must be
-            // painted oldest-first (newest = last chunk = highest line) and
-            // the header rendered as its own call ABOVE the entry block.
-            // Both calls anchor centered on dp.z (renderInternal centers each
-            // line around position before advancing glyphs along the wall).
+            // Hall side-wall cubes are wallT(0.25) thick centred on wallX, so
+            // the hallway-facing surface sits at |wallX| - 0.125 (e.g. -1.625).
+            // stoneX must be PROUD of that face or every glyph depth-fails
+            // inside the wall cube (the 122d-n invisibility root cause).
+            float wallFaceX = wallX + (wallX > 0 ? -0.125f : 0.125f);
+            // ...and clear of the wallpaper fixtures by ANCHOR, not by depth.
+            // Exact spans (WorldBuilder): neon-sign backing plate dp.z
+            // +/-1.075 at y 3.45-3.95 (own door); hall poster s.z+5+10k,
+            // z +/-0.43, y 1.67-2.73 (BELOW the rows); window pane y
+            // 1.35-2.25 (backdrop). So the ONLY header-height occluder is
+            // the door's own sign plate: a band whose right edge stops
+            // short of the plate is never occluded on any floor/side.
+            // Half-width 1.52 (38 chars at 0.08) -> anchor dp.z-3.3 keeps
+            // the whole band (z span anchor+/-1.52) clear of the sign plate
+            // (dp-1.075..) AND of the cut zone triangulated across 122t/122u
+            // (z ~dp-1.3..dp-1.7): shas end at dp-1.78. Header 22x0.10 = 2.2
+            // fits inside.
+            // Plane: PROVEN plaque mode -1.56 on every door (122q2) — proud
+            // of the poster/neon-frame cluster that reaches |x|-1.57, so
+            // glyphs depth-win over every wallpaper fixture in their box.
+            float stoneX = wallFaceX + (wallX > 0 ? -0.065f : 0.065f);
+            float anchorZ = dp.z - 3.3f;
             float baseY = (room.getFloor() == 0 ? 0f : WorldBuilder.HALLWAY_HEIGHT + 1.0f);
-            float stoneX = wallX + (wallX > 0 ? -0.03f : 0.03f);
             Vector3f facing = new Vector3f(wallX > 0 ? -1 : 1, 0, 0);
             // Palette: cool stone-gray entries + amber header, ledger ink.
             Vector3f headCol = new Vector3f(1.0f, 0.72f, 0.25f);
-            Vector3f lineCol = new Vector3f(0.62f, 0.62f, 0.55f);
+            Vector3f lineCol = new Vector3f(0.78f, 0.78f, 0.72f);
 
-            // Entries (0.08 → lineH 0.136; 10 lines span 2.50→3.72 on floor 0,
-            // clear of the neon lintel bar at 2.4 and the header below):
+            // Entries (0.08 -> lineH 0.136; 10 lines span 2.45->3.67 on floor
+            // 0, clear of the neon lintel bar at 2.4 and the header at 3.70+):
             StringBuilder rows = new StringBuilder();
             String[] ls = ledger.split("\n", -1);
             for (int li = ls.length - 1; li >= 0; li--) {
                 if (ls[li].isEmpty()) continue;
                 if (rows.length() > 0) rows.append('\n');
-                rows.append(ls[li]);
+                // Cap 38 chars (2.99m at 0.08): wider rows can never fit the
+                // hall view window at any parkable distance (window is ~3.9m
+                // wide at dist 3.0) — 64c rows ran under the HUD forever.
+                String capped = ls[li].length() > 38 ? ls[li].substring(0, 36) + ".." : ls[li];
+                rows.append(capped);
             }
             fontRenderer.renderText(rows.toString(),
-                new Vector3f(stoneX, baseY + Room.DOOR_HEIGHT + 0.10f, dp.z),
+                new Vector3f(stoneX, baseY + Room.DOOR_HEIGHT + 0.05f, anchorZ),
                 0.08f, lineCol, proj, view, facing);
-            // Header on top (0.10 at y 3.90 → glyphs 3.82–3.98 < wall top 4.0).
-            // ASCII hyphen — em-dash U+2014 is outside the glyph atlas
-            // (ASCII/Latin-1/box-drawing/extras) and would render as '?'.
+            // Header (0.10 at 3.78 -> glyphs 3.70-3.86) collides in y with
+            // BOTH doors' neon plates (y 3.45-3.95): own plate covers z
+            // dp+0.925.., the NEXT door's covers z ..dp+1.075-3 = 4.075 -
+            // Header at y 3.3 (glyphs 3.22-3.38): below plate bottoms
+            // (3.45, 0.07 margin — plates can't reach it at ANY z) and
+            // above the rows block (top 2.86); screen-y clears the HUD
+            // help line that overlaid y-3.0 in 122z. Shares rows' anchor
+            // dp-3.3 (22x0.10 = 2.2 span). ASCII hyphen only - em-dash
+            // U+2014 is outside the glyph atlas and would render as '?'.
             fontRenderer.renderText("commit ledger - last 10",
-                new Vector3f(stoneX, baseY + 3.90f, dp.z),
+                new Vector3f(stoneX, baseY + 3.3f, anchorZ),
                 0.10f, headCol, proj, view, facing);
+            rendered++;
+        }
+        if (h37Debug && e2eLogTick++ % 60 == 0) {
+            int withLedger = 0, near = 0, renderedNow = 0;
+            StringBuilder probe = new StringBuilder();
+            for (Room room : world.getRooms()) {
+                Vector3f dp = room.getDoorPosition();
+                if (dp == null) continue;
+                String led = room.getCommitLedger();
+                if (led == null || led.isEmpty()) continue;
+                withLedger++;
+                float d = camPos.distance(dp);
+                if (d <= 14f) {
+                    near++;
+                    boolean revealed = !room.isFogged() || world.getFogOfWar().isRoomRevealed(room);
+                    if (d < 12f && probe.length() < 400) probe.append(String.format(
+                        " [d=%.1f z=%.1f revealed=%s]", d, dp.z, revealed));
+                }
+            }
+            System.out.println("[H37-DBG] cam=" + fmt(camPos) + " withLedger=" + withLedger
+                + " near=" + near + " rendered=" + rendered + probe);
         }
     }
+    private int e2eLogTick;
+    private String fmt(Vector3f v) { return String.format("(%.1f,%.1f,%.1f)", v.x, v.y, v.z); }
+    private boolean h37Debug = System.getProperty("mindpalace.debug.h37") != null;
+    private int rendered;
 
     private void renderFloorMap() {
         Camera cam = player.getCamera();
@@ -5426,6 +5477,82 @@ public class GameEngine {
             + " MP-051 sprites (read-only KG, opt-in pending proposal queue)");
         if (spriteQueueOk) pass++; else fail++;
 
+        // 53. H37 (#122, step 95) commit engravings — data layer: a real
+        //     two-commit git repo scanned through the production RepoMapper
+        //     path (mindpalace.repos redirect) yields a newest-first ledger
+        //     of "7-char sha + ≤26-char subject" lines; Room storage
+        //     round-trips. No GL, no network, no pinned shas (contract-only).
+        boolean ledgerOk = false;
+        java.nio.file.Path ledgerTmp = null;
+        String reposProp = System.getProperty("mindpalace.repos");
+        try {
+            ledgerTmp = java.nio.file.Files.createTempDirectory("mp-ledger");
+            java.io.File gDir = ledgerTmp.resolve("engraved-repo").toFile();
+            java.nio.file.Files.createDirectories(gDir.toPath());
+            com.mindpalace.world.RepoMapper.GitRunner gitR = com.mindpalace.world.RepoMapper.SHARED_GIT;
+            java.nio.file.Path seedTxt = gDir.toPath().resolve("seed.txt");
+            // Stepped (not one &&-chain) so a failure names the exact git call.
+            java.nio.file.Files.writeString(seedTxt, "h37 v1\n");
+            String tInit = gitR.run(gDir, "init", "-q");
+            String tAdd1 = gitR.run(gDir, "add", "-A");
+            String tC1 = gitR.run(gDir, "-c", "user.email=selftest@mp", "-c",
+                "user.name=MP", "commit", "-q", "-m", "first seeded change");
+            java.nio.file.Files.writeString(seedTxt, "h37 v2\n");
+            String tAdd2 = gitR.run(gDir, "add", "-A");
+            String tC2 = gitR.run(gDir, "-c", "user.email=selftest@mp", "-c",
+                "user.name=MP", "commit", "-q", "-m",
+                "second seeded change: this subject intentionally runs well "
+                    + "past twenty six characters for cap testing");
+            boolean setup = tInit != null && tAdd1 != null && tC1 != null
+                && tAdd2 != null && tC2 != null;
+            if (setup) {
+                System.setProperty("mindpalace.repos", ledgerTmp.toString());
+                java.util.List<Room> scanned = new java.util.ArrayList<>();
+                new com.mindpalace.world.RepoMapper().scanRepos(scanned);
+                Room engraved = scanned.stream()
+                    .filter(r -> "engraved-repo".equals(r.getRepoName()))
+                    .findFirst().orElse(null);
+                String ledger = engraved != null ? engraved.getCommitLedger() : null;
+                String[] lines = ledger == null ? new String[0] : ledger.split("\n", -1);
+                java.util.regex.Pattern shaP = java.util.regex.Pattern.compile(
+                    "^[0-9a-f]{7} .*");
+                boolean shape = lines.length == 2
+                    && shaP.matcher(lines[0]).matches() && shaP.matcher(lines[1]).matches()
+                    && lines[0].contains("second")           // newest commits first
+                    && lines[0].endsWith("..") && lines[0].length() == 34  // 7+1+26 cap
+                    && lines[1].contains("first") && lines[1].length() <= 34;
+                if (engraved != null) {
+                    engraved.setCommitLedger("abc roundtrip");
+                }
+                boolean roundTrip = "abc roundtrip".equals(
+                    engraved == null ? null : engraved.getCommitLedger());
+                ledgerOk = engraved != null && shape && roundTrip;
+                System.out.println((ledgerOk ? "PASS" : "FAIL")
+                    + " commit ledger (scan->led lines=" + lines.length
+                    + " shape=" + shape + " roundTrip=" + roundTrip + ")");
+            } else {
+                System.out.println("FAIL commit ledger (git setup failed: "
+                    + "init=" + (tInit == null ? "NULL" : "ok")
+                    + " add1=" + (tAdd1 == null ? "NULL" : "ok")
+                    + " c1=" + (tC1 == null ? "NULL" : "ok")
+                    + " add2=" + (tAdd2 == null ? "NULL" : "ok")
+                    + " c2=" + (tC2 == null ? "NULL" : "ok") + ")");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL commit ledger: " + e.getClass().getSimpleName()
+                + " " + e.getMessage());
+        } finally {
+            if (reposProp != null) System.setProperty("mindpalace.repos", reposProp);
+            else System.clearProperty("mindpalace.repos");
+            if (ledgerTmp != null) {
+                try { java.nio.file.Files.walk(ledgerTmp)
+                        .sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) {} }); }
+                catch (Exception ignored) {}
+            }
+        }
+        if (ledgerOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -5777,14 +5904,82 @@ public class GameEngine {
                 // and the emissive pane on the adjacent wall segment right
                 // beside it. FOV-proof — no assumptions about hFOV needed.
                 Vector3f door0 = null;
+                Room ledgerRoom = null;
+                float bestD = Float.MAX_VALUE;
                 for (Room rm : world.getRooms()) {
-                    if (rm.getDoorPosition() != null && rm.getHallwaySide() == 0) { door0 = rm.getDoorPosition(); break; }
+                    Vector3f dp2 = rm.getDoorPosition();
+                    if (dp2 == null || rm.getHallwaySide() != 0) continue;
+                    String led = rm.getCommitLedger();
+                    if (led == null || led.isEmpty()) continue;
+                    float d = Math.abs(dp2.z - (hallZ0 + 6f));
+                    if (d < bestD) { bestD = d; door0 = dp2; ledgerRoom = rm; }
                 }
-                if (door0 != null) {
-                    p.set(0f, door0.y + 0.7f, door0.z + 2.2f);
-                    Vector3f aim = new Vector3f(door0.x - 0.6f, door0.y + 0.6f, door0.z - 1.2f).sub(p).normalize();
+                if (door0 != null && ledgerRoom != null) {
+                    // Reveal the door hex deterministically: the engraving
+                    // skips unrevealed rooms and an unrevealed door renders
+                    // as a black fog slab. No teleport here: entering the
+                    // room would OPEN its door panel (doorAnimTarget=1),
+                    // and the raised panel + lit interior block the very
+                    // band above the doorway (seen in 17l).
+                    world.getFogOfWar().reveal(new Vector3f(door0.x, door0.y, door0.z));
+                    // H37v park: HEAD-ON opposite the band (x 1.6, dist
+                    // 3.16 -> k ~290 px/unit): 38c rows x 535-1385 - all
+                    // inside frame; symmetric view kills grazing variables.
+                    // H37v2: anchor dp-3.3 (band z 4.7 +/-1.52 vs plate at
+                    // 6.925+ and the 6.25-6.6 cut zone); park y 1.6 with aim
+                    // +2.7 lifts the band up-frame (122u had it sunk low).
+                    float bandZ = door0.z - 3.3f;
+                    p.set(1.6f, door0.y + 1.6f, bandZ);
+                    Vector3f aim = new Vector3f(-1.56f, door0.y + 2.7f, bandZ).sub(p).normalize();
                     cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
                     cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                    if (shoot) {
+                                                Matrix4f vp = new Matrix4f(cam.getProjectionMatrix((float) width / height))
+                            .mul(cam.getViewMatrix());
+                        float stoneX = -1.56f;
+                        // H37u boundary projection: first/mid/last char of
+                        // header and each capped row, using the same
+                        // per-line-centered layout as FontRenderer - printed
+                        // numbers instead of eyeballed pixels.
+                        StringBuilder bp = new StringBuilder();
+                        String hd = "commit ledger - last 10";
+                        java.util.List<String> lines = new java.util.ArrayList<>();
+                        for (String ln : ledgerRoom.getCommitLedger().replace("\r", "").split("\n", -1)) {
+                            if (ln.isEmpty()) continue;
+                            if (lines.size() >= 10) break;
+                            lines.add(ln.length() > 38 ? ln.substring(0, 36) + ".." : ln);
+                        }
+                        java.util.Collections.reverse(lines);
+                        for (int li = -1; li < lines.size(); li++) {
+                            boolean isHdr = li == -1;
+                            String txt = isHdr ? hd : lines.get(li);
+                            float cs = isHdr ? 0.10f : 0.08f;
+                            float y = isHdr ? 3.3f
+                                : Room.DOOR_HEIGHT + 0.05f + li * 0.090f;
+                            float half = txt.length() * cs / 2f;
+                            int[] ends = txt.length() > 2
+                                ? new int[]{0, txt.length() / 2, txt.length() - 1}
+                                : new int[]{0, txt.length() - 1};
+                            for (int e : ends) {
+                                float z = bandZ - (e * cs - half + cs / 2f);
+                                Vector4f gv = new Vector4f(stoneX, y, z, 1f).mul(vp);
+                                float gx = (gv.x() / gv.w() * 0.5f + 0.5f) * width;
+                                float gy = (1f - (gv.y() / gv.w() * 0.5f + 0.5f)) * height;
+                                bp.append(" ").append(isHdr ? "HDR" : "R" + li).append(e)
+                                    .append('\'').append(txt.charAt(e)).append('\'')
+                                    .append("@z").append(String.format("%.2f", z))
+                                    .append("->").append(String.format("(%.0f,%.0f)", gx, gy));
+                            }
+                            if (isHdr) bp.append(" |");
+                        }
+                        System.out.println("[H37-BOUND] park=" + fmt(p)
+                            + " door0z=" + door0.z
+                            + " dist=" + String.format("%.2f", p.distance(door0))
+                            + " ledgerLen=" + ledgerRoom.getCommitLedger().length()
+                            + " rows=" + lines.size()
+                            + " rendered=" + rendered);
+                        System.out.println("[H37-BOUND] " + bp);
+                    }
                 } else {
                     p.set(0f, hallY + 1.7f, hallZ0 + 12f);
                     cam.setYaw(-75); cam.setPitch(4f);

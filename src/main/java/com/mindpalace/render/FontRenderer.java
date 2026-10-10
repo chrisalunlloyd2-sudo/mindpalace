@@ -283,9 +283,21 @@ public class FontRenderer {
                 );
                 model.scale(charSize, charSize * 1.6f, 1f);
             } else {
-                // Wall-facing text: lay flat on the wall, rotated so +X is right
-                // along the wall and -Z faces into the room (unchanged behavior).
-                model.translate(cx, position.y, position.z).rotateY(angleY)
+                // Wall-facing text: rotate the glyph so its native +Z normal
+                // becomes the wall's facing normal, then advance each glyph
+                // along the wall TANGENT (the rotated +X = (cosA, 0, -sinA)).
+                // H37b fix (#122): the old code advanced centers along WORLD
+                // X — correct only for normals ±Z (end walls: genome, posters);
+                // on hallway SIDE walls (normal ±X: doors, neon signs, commit
+                // engravings) the string marched into/through the wall,
+                // leaving glyphs buried and edge-on (the dash columns in e2e
+                // shots 8/13). For normal ±Z this is byte-identical to before.
+                float cosA = (float) Math.cos(angleY);
+                float sinA = (float) Math.sin(angleY);
+                float along = i * charSize - totalW / 2f + charSize / 2f;
+                model.translate(position.x + cosA * along, position.y,
+                                position.z - sinA * along)
+                     .rotateY(angleY)
                      .scale(charSize, charSize * 1.6f, 1f);
             }
             textShader.setUniform("model", model);
