@@ -114,7 +114,7 @@ else:
           + ("OK" if ok else "HUE-FAIL"))
     if not ok: fail += 1
 
-# Unified interaction prompt hue assertion (TASK 0002) — the 12_door_prompt
+# Unified interaction prompt hue assertion (TASK 0002) — the 13_door_prompt
 # shot stands 1.5m from a repo door facing it, so the magenta prompt
 # ("[ENTER] Open door: ...") must render HUD-anchored above view center.
 # Prompt color = (1.0, 0.2, 0.9) — the ONLY magenta HUD text (wallet is gold,
