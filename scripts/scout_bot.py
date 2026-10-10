@@ -410,31 +410,11 @@ def steplog():
             f"- messages: {msgs}\n- meta-chatter: {meta}% (target <15)\n"
             f"- code-bearing: {code}% (target >25)\n\n{verdict}\n\n"
             f"Source: {latest.name} (scout_bot --metrics, quota-free).")
-    cmd = ["gh", "issue", "comment", "9", "-R", "chrisalunlloyd2-sudo/mindpalace", "--body", body]
-    env = {**os.environ}
-    if not env.get("GH_TOKEN") and not env.get("GITHUB_TOKEN"):
-        # self-sufficient: pull the stored PAT from git credential manager
-        try:
-            r = subprocess.run(["git", "credential", "fill"],
-                               input="protocol=https\nhost=github.com\n\n",
-                               capture_output=True, text=True, timeout=30,
-                               cwd=str(REPO))
-            for line in r.stdout.splitlines():
-                if line.startswith("password="):
-                    env["GH_TOKEN"] = line.split("=", 1)[1].strip()
-                    break
-        except Exception as e:
-            print("credential lookup failed:", str(e)[:80])
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
-        if r.returncode == 0:
-            print("step-log posted:", r.stdout.strip()[-80:])
-            return 0
-        print("gh failed:", (r.stderr or r.stdout).strip()[:200])
-        return 1
-    except FileNotFoundError:
-        print("gh not on PATH")
-        return 1
+    url = gh_comment(9, body)
+    if url:
+        print("step-log posted:", url[-80:])
+        return 0
+    return 1
 
 
 def bot_metrics():
@@ -676,32 +656,12 @@ def bot_steplog():
             f"- bots seen last 24h: {bot_list}\n"
             f"- game alive: {d.get('game_alive')}\n\n"
             f"Source: {latest.name} (scout_bot --botmetrics, quota-free).")
-    cmd = ["gh", "issue", "comment", "9", "-R", "chrisalunlloyd2-sudo/mindpalace", "--body", body]
-    env = {**os.environ}
-    if not env.get("GH_TOKEN") and not env.get("GITHUB_TOKEN"):
-        # self-sufficient: pull the stored PAT from git credential manager
-        try:
-            r = subprocess.run(["git", "credential", "fill"],
-                               input="protocol=https\nhost=github.com\n\n",
-                               capture_output=True, text=True, timeout=30,
-                               cwd=str(REPO))
-            for line in r.stdout.splitlines():
-                if line.startswith("password="):
-                    env["GH_TOKEN"] = line.split("=", 1)[1].strip()
-                    break
-        except Exception as e:
-            print("credential lookup failed:", str(e)[:80])
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
-        if r.returncode == 0:
-            guard.write_text(datetime.now().strftime("%Y-%m-%d"), encoding="utf-8")
-            print("bot scorecard posted:", r.stdout.strip()[-80:])
-            return 0
-        print("gh failed:", (r.stderr or r.stdout).strip()[:200])
-        return 1
-    except FileNotFoundError:
-        print("gh not on PATH")
-        return 1
+    url = gh_comment(9, body)
+    if url:
+        guard.write_text(datetime.now().strftime("%Y-%m-%d"), encoding="utf-8")
+        print("bot scorecard posted:", url[-80:])
+        return 0
+    return 1
 
 
 def watch():
