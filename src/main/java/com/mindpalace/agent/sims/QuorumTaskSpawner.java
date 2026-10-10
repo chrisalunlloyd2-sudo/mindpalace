@@ -1,6 +1,7 @@
 package com.mindpalace.agent.sims;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -44,12 +45,32 @@ public class QuorumTaskSpawner {
 
     private QuorumTaskSpawner() {}
 
+    // t_740fa7c6: test-only spawn redirect. --selftest must exercise
+    // handleApprovedProposal end-to-end but must NOT pollute the live
+    // quorum_inbox, task_watch.log, or the ledger. When armed, spawns land
+    // in the given scratch dir and watch/ledger writes are suppressed.
+    private static volatile Path taskDirOverride = null;
+    private static volatile boolean suppressDurableLogs = false;
+
+    /** Test hook: redirect spawns to {@code dir} and silence watch/ledger writes. Pass null to disarm. */
+    public static void useTestSpawnTarget(Path dir) {
+        taskDirOverride = dir;
+        suppressDurableLogs = (dir != null);
+    }
+
     public static void handleApprovedProposal(WeightedQuorumVote.QuorumResult result) {
         if (!"APPROVED".equals(result.status)) return;
 
         try {
-            // Generate unique TASK number (1000+ band for quorum-spawned tasks)
-            int taskNum = 1000 + Math.floorMod(result.proposalId.hashCode(), 1000);
+            // t_740fa7c6: monotonic numbering. The old scheme hashed the
+            // proposal id into the 1000+ band (1000 + floorMod(hash, 1000)),
+            // which is non-monotonic and collides — TASK_1196 spawned after
+            // TASK_1980, and hash collisions needed TRUNCATE_EXISTING as a
+            // band-aid (CARD-Q1 F10). Number sequentially above every number
+            // already used in the inbox; archives are counted too in live
+            // mode so a post-archive spawn cannot reuse a retired number.
+            Path tasksDir = taskDirOverride != null ? taskDirOverride : TASK_DIR;
+            int taskNum = nextTaskNumber(tasksDir);
             String taskName = String.format("TASK_%04d_quorum_approved_%s_%s.md",
                 taskNum, result.proposalType, result.proposalId.substring(0, Math.min(16, result.proposalId.length())));
 
@@ -67,12 +88,14 @@ public class QuorumTaskSpawner {
             // Build TASK content
             String taskContent = buildTaskContent(result, taskNum, suggestions);
 
-            // Write TASK file (CARD-Q1 F10: TRUNCATE_EXISTING — task numbers
-            // hash-collide, and WRITE-without-TRUNCATE left a longer file's
-            // old tail behind, corrupting the task)
-            Path taskPath = TASK_DIR.resolve(taskName);
-            Files.createDirectories(TASK_DIR);
-            Files.write(taskPath, taskContent.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+            // Write TASK file — UTF-8 explicitly (t_740fa7c6: the default-
+            // charset getBytes() mangled non-ASCII on Windows cp1252).
+            // CREATE+TRUNCATE retained: defensive only now that numbering is
+            // sequential and collision-free.
+            Path taskPath = tasksDir.resolve(taskName);
+            Files.createDirectories(tasksDir);
+            Files.write(taskPath, taskContent.getBytes(StandardCharsets.UTF_8),
+                StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
 
             // Log spawning
             logSpawning(result, taskName, taskNum);
@@ -85,9 +108,49 @@ public class QuorumTaskSpawner {
         }
     }
 
+    /**
+     * Next free quorum TASK number (t_740fa7c6): scan {@code dir} for
+     * TASK_NNNN_* names and return (max+1). In live mode the resolved/
+     * archive sibling is scanned too, so numbering stays monotonic across
+     * archival sweeps. Starts from 2001 so the first spawn sits above the
+     * highest hash-band number ever handed out (1999) — no reuse, no
+     * collision with archived files.
+     */
+    static int nextTaskNumber(Path dir) {
+        int max = 2000;
+        max = scanMaxTaskNumber(dir, max);
+        if (taskDirOverride == null) {
+            Path live = Paths.get(aigenBase().resolve("todo_management/todo_files/mindpalace/resolved").toString());
+            max = scanMaxTaskNumber(live, max);
+        }
+        return max + 1;
+    }
+
+    private static int scanMaxTaskNumber(Path dir, int currentMax) {
+        if (dir == null || !Files.isDirectory(dir)) return currentMax;
+        try (var files = Files.list(dir)) {
+            for (Path p : (Iterable<Path>) files::iterator) {
+                String name = p.getFileName().toString();
+                if (name.startsWith("TASK_") && name.length() >= 9) {
+                    try { currentMax = Math.max(currentMax, Integer.parseInt(name.substring(5, 9))); }
+                    catch (NumberFormatException ignored) { }
+                }
+            }
+        } catch (IOException ignored) { }
+        return currentMax;
+    }
+
+    private static Path aigenBase() {
+        String aigenHome = System.getProperty("aigen.home", System.getenv("AIGEN_HOME"));
+        if (aigenHome == null) {
+            aigenHome = System.getProperty("user.home") + "/AIGEN_SYS";
+        }
+        return Paths.get(aigenHome);
+    }
+
     private static String buildTaskContent(WeightedQuorumVote.QuorumResult result, int taskNum, Map<String, List<String>> suggestions) {
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("# TASK_%04d: Quorum Approved — %s\n\n", taskNum, result.proposalType));
+        sb.append(String.format("# TASK_%04d: Quorum Approved - %s%n%n", taskNum, result.proposalType));
         sb.append(String.format("**Created:** %s\n", Instant.now()));
         sb.append(String.format("**Quorum Cycle:** %s\n", result.proposalId));
         sb.append(String.format("**Outcome:** APPROVED\n"));
@@ -95,7 +158,7 @@ public class QuorumTaskSpawner {
 
         sb.append("## Voting Details\n\n");
         sb.append(String.format("| Field | Value |\n|-------|-------|\n"));
-        sb.append(String.format("| Vote Tally | ✓%d ✗%d 🌫%d |\n", result.approve, result.reject, result.blind));
+        sb.append(String.format("| Vote Tally | ok:%d no:%d blind:%d |%n", result.approve, result.reject, result.blind));
         sb.append(String.format("| Agents | %s |\n", String.join(", ", result.visibleModels)));
         sb.append(String.format("| Weight | %.2f |\n", result.weightedApprove));
         sb.append(String.format("| Pulse | %.2f |\n", result.avgPulsePhase));
@@ -129,14 +192,20 @@ public class QuorumTaskSpawner {
     }
 
     private static void logSpawning(WeightedQuorumVote.QuorumResult result, String taskName, int taskNum) throws IOException {
-        String logLine = String.format("%s QUORUM_SPAWN: %s → %s (weight=%.2f)\n",
+        // t_740fa7c6: ASCII arrow — the "→" glyph mangled to "?" in
+        // task_watch.log (cp1252 console/file default).
+        String logLine = String.format("%s QUORUM_SPAWN: %s -> %s (weight=%.2f)%n",
             java.time.LocalDateTime.now(), result.proposalId, taskName, result.weightedApprove);
 
-        Files.write(WATCH_LOG, logLine.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        if (!suppressDurableLogs) {
+            Files.write(WATCH_LOG, logLine.getBytes(StandardCharsets.UTF_8),
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        }
         System.out.println(logLine.strip());
     }
 
     private static void ledgerAppend(WeightedQuorumVote.QuorumResult result, String taskName) throws IOException {
+        if (suppressDurableLogs) return; // t_740fa7c6: test spawns never touch the ledger
         Map<String, Object> record = new LinkedHashMap<>();
         record.put("cycle_id", result.proposalId);
         record.put("timestamp", System.currentTimeMillis());
@@ -188,8 +257,11 @@ public class QuorumTaskSpawner {
 
     private static void logError(String msg) {
         try {
-            String logLine = String.format("%s ERROR: %s\n", java.time.LocalDateTime.now(), msg);
-            Files.write(WATCH_LOG, logLine.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            String logLine = String.format("%s ERROR: %s%n", java.time.LocalDateTime.now(), msg);
+            if (!suppressDurableLogs) {
+                Files.write(WATCH_LOG, logLine.getBytes(StandardCharsets.UTF_8),
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            }
             System.err.println(logLine.strip());
         } catch (IOException e) {
             System.err.println("[LEDGER] Error writing log: " + e);

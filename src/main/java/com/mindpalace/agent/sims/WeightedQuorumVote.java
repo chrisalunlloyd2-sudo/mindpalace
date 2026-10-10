@@ -74,7 +74,7 @@ public class WeightedQuorumVote {
         }
 
         @Override public String toString() {
-            return String.format("#%s: %s %s ✓%d ✗%d 🌫%d", id, text, hex, approveCount(), rejectCount(), blindCount());
+            return String.format("#%s: %s %s ok:%d no:%d blind:%d", id, text, hex, approveCount(), rejectCount(), blindCount());
         }
     }
 
@@ -238,8 +238,11 @@ public class WeightedQuorumVote {
         }
 
         @Override public String toString() {
+            // t_740fa7c6: ASCII tally. The previous glyphs (check/cross/fog)
+            // rendered as "?3 ?0 ?0" through Windows cp1252 consoles and
+            // telemetry writes — unreadable exactly where votes matter most.
             String typeAndText = proposalType + (text != null && !text.isEmpty() ? " | " + text : "");
-            return String.format("Quorum[#%s: %s] %s ✓%d ✗%d 🌫%d (w:%.2f) pulse:%.2f visible:%s",
+            return String.format("Quorum[#%s: %s] %s [ok:%d no:%d blind:%d] (w:%.2f) pulse:%.2f visible:%s",
                 proposalId, typeAndText, status, approve, reject, blind, weightedApprove, avgPulsePhase, visibleModels);
         }
     }
