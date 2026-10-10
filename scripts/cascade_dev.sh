@@ -121,3 +121,6 @@ python scripts/test_bot.py --steplog || log "steplog: post failed (non-fatal)"
 python scripts/scout_bot.py --metrics >/dev/null 2>&1 || true
 python scripts/scout_bot.py --botmetrics >/dev/null 2>&1 || true
 python scripts/scout_bot.py --botsteplog || log "botsteplog: post failed (non-fatal)"
+# ── 9. H50 (step 98): weekly self-report -> reports/ + step-log ──────
+# Internally 7d-guarded; every-cascade callers safe.
+python scripts/scout_bot.py --weeklyreport || log "weeklyreport: post failed (non-fatal)"

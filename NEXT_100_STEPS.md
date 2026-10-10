@@ -70,7 +70,7 @@
 - [x] **95** H37 commit engravings — last 10 commits per repo rendered at the room door (0e83613: `renderCommitEngravings`; local rooms via `git log -10` in RepoMapper, remote-only rooms via `GitHubClient` /commits with a 10-min cache)
 - [ ] **96** H38 push gate — autonomous upsertFile requires quorum APPROVED on the exact diff + critic pass
 - [ ] **97** PR preview branch — agent edits land on `agent/<step>` branches; human merges (safety before trust)
-- [ ] **98** Weekly self-report (H50) — metrics + phases + next steps as issue comment + reports/
+- [x] **98** Weekly self-report (H50) — metrics + phases + next steps as issue comment + reports/ (scout_bot --weeklyreport: telemetry 7d pulse + NEXT_100_STEPS phase table + queue head -> reports/2026-Www.md + step-log #9, 7d guard, quota-free; wired into cascade_dev.sh step 9)
 
 ## PHASE E/F/G — Economy, Flash, Modules (99–150)
 - [ ] **99** H39 compute tax — Ollama calls cost DePIN credits by chars/4; empty = no refund

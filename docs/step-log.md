@@ -19,3 +19,10 @@
 - --botmetrics 7d rollup (71,086 visits / 156 unique rooms / 2,440 retirements / wallet 124)
 - --botsteplog weekly-guarded post to #9 (first: comment 5970331415)
 - game_alive() javaw class-fix; cascade_dev step-8 wiring
+
+## 2026-10-09 — #123 SHIPPED (weekly self-report · H50 step 98)
+- scout_bot --weeklyreport: telemetry 7d pulse (196 events, quorum 30 APPROVED / 4 REJECTED, 69 cycles, 34 DePIN, 59 boots) + NEXT_100_STEPS phase table (A 8/0, B 20/0, C 10/0, D 3/7, E/F/G 0/12) + next-5 queue
+- reports/2026-W41.md in-repo mirror + step-log #9 post (first: comment 6098280283)
+- 7d guard (.weeklyreport_last) + --nopost dry-run mode; cascade_dev step-9 wiring
+- DRY: shared gh_comment() helper extracted (steplog/botsteplog/weeklyreport)
+- Quota-free, zero LLM, evidence on #123
