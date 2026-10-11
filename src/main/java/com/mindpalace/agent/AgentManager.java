@@ -246,6 +246,16 @@ public class AgentManager {
     /** Inject the unified telemetry ledger (append-only, paced). */
     public void setTelemetry(com.mindpalace.backup.Telemetry t) {
         this.telemetry = t;
+        // TASK_0132: wire quorum vote recording — one telemetry row per cast
+        // vote (real/strip/abstain/blind/sim vocabulary), null-safe so a game
+        // run without telemetry never breaks voting.
+        if (t != null && quorum != null) {
+            quorum.setVoteSink(rec -> t.record(com.mindpalace.backup.Telemetry.QUORUM,
+                "quorum_vote", rec.toDetail()));
+            com.mindpalace.agent.sims.QuorumTaskSpawner.setTelemetrySink(
+                (outcome, detail) -> t.record(com.mindpalace.backup.Telemetry.QUORUM,
+                    outcome, detail));
+        }
     }
 
     // ── Context kits (per-model wrapper: LoRA + KG + KV, never mixed) ──
@@ -441,8 +451,9 @@ public class AgentManager {
             WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
             if (r != null) {
                 log("[AgentManager] quorum: " + r);
+                String voteQuality = com.mindpalace.agent.sims.VoteQualityLedger.summarize(r.voteOutcomes);
                 if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.QUORUM,
-                    r.status, text);
+                    r.status, text + " | " + voteQuality);
                 // H21 (step 67): ride the carry-event pattern — publish the
                 // verdict to the game so the world flares (gold for APPROVED,
                 // ice dip for REJECTED). The web-side CSS twins already exist.
@@ -450,9 +461,11 @@ public class AgentManager {
                 // TASK_0125: Spawn TASK file for APPROVED proposals
                 if ("APPROVED".equals(r.status)) {
                     try {
-                        com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r);
+                        boolean ok = com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r);
+                        log(ok ? "[AgentManager] TASK spawned: " + r.proposalId
+                               : "[AgentManager] TASK not spawned (status=" + r.status + ")");
                     } catch (Exception e) {
-                        log("[AgentManager] TASK spawn failed: " + e.getMessage());
+                        log("[AgentManager] TASK spawn FAILED: " + e);
                     }
                 }
             }
