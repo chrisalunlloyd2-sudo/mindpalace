@@ -279,7 +279,13 @@ public class WeightedQuorumVote {
      * closers) from a model response — deepseek-r1-style wrappers.
      */
     static String stripThink(String s) {
-        String t = s.replaceAll("(?s)" + java.util.regex.Pattern.quote(THINK_OPEN), "");
+        // Remove paired think blocks first (DOTALL: bodies span lines). Quoted
+        // literals joined with a lazy any — no backslash escapes in source.
+        String t = java.util.regex.Pattern
+            .compile(java.util.regex.Pattern.quote(THINK_OPEN) + ".*?"
+                     + java.util.regex.Pattern.quote(THINK_CLOSE),
+                     java.util.regex.Pattern.DOTALL)
+            .matcher(s).replaceAll(" ");                         // space: don't glue tokens
         int openIdx = t.indexOf(THINK_OPEN);                 // unclosed opener: keep tail after it
         if (openIdx >= 0) t = t.substring(t.lastIndexOf(THINK_OPEN) + THINK_OPEN.length());
         t = t.replace(THINK_CLOSE, "");                      // lone closer
