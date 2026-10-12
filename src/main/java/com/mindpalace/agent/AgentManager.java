@@ -33,6 +33,21 @@ public class AgentManager {
         if (dir == null || dir.isEmpty()) dir = System.getProperty("mindpalace.repos", "C:/Users/viper/AIGEN_SYS/repos");
         return Paths.get(dir);
     }
+
+    /**
+     * ASCII-safe target name for quorum proposals and telemetry details
+     * (t_740fa7c6). When no room is in focus, the old literal "?" leaked into
+     * every proposal ("Act on ?"), every telemetry record, and every spawned
+     * TASK file — 4291 APPROVED + 1215 REJECTED ledger rows, 100% "Act on ?".
+     * Returns the repo name when known, an explicit world-wide fallback when
+     * not. Pure ASCII so it survives cp1252 consoles and telemetry round-trips.
+     */
+    public static String proposalTargetName(Room room) {
+        if (room != null && room.getRepoName() != null && !room.getRepoName().isBlank()) {
+            return room.getRepoName();
+        }
+        return "[no room in focus - world-wide check]";
+    }
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private final Gson gson = new Gson();
     private final ModelScheduler modelScheduler;  // serializes ALL model calls
@@ -374,11 +389,11 @@ public class AgentManager {
             return;
         }
 
-        log("[AgentManager] Auto-cycle — agents discussing " + (currentRoom != null ? currentRoom.getRepoName() : "?"));
+        log("[AgentManager] Auto-cycle — agents discussing " + proposalTargetName(currentRoom));
 
         // Telemetry: record the cycle itself (paced, append-only).
         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.AGENT,
-            "cycle", currentRoom != null ? currentRoom.getRepoName() : "?");
+            "cycle", proposalTargetName(currentRoom));
 
         // Route the tool agent's model by task complexity (SIMS1337 ModelRouter).
         Complexity cx = Complexity.estimate(context);
@@ -409,7 +424,7 @@ public class AgentManager {
             log("[AgentManager] critic skipped — no tool actions to review this cycle");
         } else {
             String criticPrompt = ctx(CRITIC_MODEL)
-                + "\nThe tool agent just did, in room " + (currentRoom != null ? currentRoom.getRepoName() : "?")
+                + "\nThe tool agent just did, in room " + proposalTargetName(currentRoom)
                 + ":\n" + actions
                 + "\nEvaluate these CONCRETE actions. Name the files touched. "
                 + "Is the result correct for the language? Should we proceed, "
@@ -464,7 +479,11 @@ public class AgentManager {
     private void runQuorumVote(String context) {
         try {
             String id = "cycle-" + System.currentTimeMillis();
-            String text = "Act on " + (currentRoom != null ? currentRoom.getRepoName() : "?");
+            // t_740fa7c6: null-room fallback must be ASCII-plain. The old "Act on ?"
+            // string was written into ALL 4291 telemetry APPROVED rows — a "?" is
+            // indistinguishable from a mojibake glyph and hides which repo (or none)
+            // the cycle targeted.
+            String text = "Act on " + proposalTargetName(currentRoom);
             quorum.registerProposal(id, text, new HexCoord(0, 0), "system_health_check");
             quorum.advanceTimePulse(0.1);
             quorum.actualVoteAll(modelScheduler);
