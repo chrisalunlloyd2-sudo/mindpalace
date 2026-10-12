@@ -294,41 +294,137 @@ public class OutsideWorld {
                 // depth), the SKY reflection cue is distance-driven (far
                 // water pales toward the horizon — a real Fresnel cue near
                 // the camera is unnecessary), and night drops albedo hard.
+                // STEP 94v4 (anti "white in the water") — Architect saw white
+                // fields on the live v3 lake at night. Root causes, all AFTER
+                // the night-albedo drop so the dimming never touched them:
+                // (1) glitter cells snapped to full white and at unlucky
+                // swell phases merged into connected white patches (Pillow:
+                // 2.15% achromatic-white in a fresh tour vs 0.47% in r6 —
+                // phase-dependent); (2) waterline foam (0.88,0.98,1.0) read
+                // as white dashes around the shore; (3) the far-horizon sky
+                // wash paled past the night dim. v4 removes every white
+                // writer: foam → moonlit seafoam, glitter → additive
+                // cyan-silver shimmer (capped, never a snap), sky wash →
+                // steel blue BEFORE the dim. All writers now sit after the
+                // night drop so night stays dark-coherent. The spectacular
+                // layer: a moon-path specular corridor down the lake
+                // meridian (the classic moonlight streak, strongest at
+                // night) plus deep hue travel — troughs toward indigo,
+                // crests toward cerulean — so the surface undulates in
+                // COLOR, not brightness blobs.
                 float depthT = (float) Math.pow(Math.min(eTrue, 1f), 0.7f);
                 float rC = 0.07f + 0.10f * depthT;      // deep navy → teal
                 float gC = 0.22f + 0.22f * depthT;
                 float bC = 0.40f + 0.16f * depthT;
-                // wave light/dark — k clamps h to [0,1] around the mean
+                // wave light/dark — k clamps h to [0,1] around the mean.
+                // v4 hue travel: troughs dip toward indigo, crests lift
+                // toward cerulean — the lake rolls in hue, not brightness.
                 float k = Math.min(Math.max(h * 3.2f + 0.5f, 0f), 1f);
-                float waveShade = 0.84f + 0.34f * k;
-                rC *= waveShade; gC *= waveShade; bC *= waveShade;
+                rC += -0.10f * (1f - k) + 0.02f * k;
+                gC += -0.10f * (1f - k) + 0.10f * k;
+                bC += -0.05f * (1f - k) + 0.14f * k;
                 // sky reflection with distance — starts at 8 m, 70% by 30 m.
+                // v4: target is DAY/NIGHT aware — day keeps the v3 pale-steel
+                // horizon fade (v3's day look was never flagged), night uses
+                // darker steel blue BEFORE the dim (the night wash must not
+                // glow against a night sky).
                 float dCam = (float) Math.sqrt((wx - camX) * (wx - camX) + (wz - camZ) * (wz - camZ));
                 float skyBlend = 0.70f * Math.min(Math.max((dCam - 8f) / 22f, 0f), 1f);
-                rC += (0.62f - rC) * skyBlend;
-                gC += (0.78f - gC) * skyBlend;
-                bC += (0.90f - bC) * skyBlend;
+                boolean nightNow = isNight();
+                float skyR = nightNow ? 0.30f : 0.62f;
+                float skyG = nightNow ? 0.50f : 0.78f;
+                float skyB = nightNow ? 0.66f : 0.90f;
+                rC += (skyR - rC) * skyBlend;
+                gC += (skyG - gC) * skyBlend;
+                bC += (skyB - bC) * skyBlend;
                 // Night albedo drop (tour + real evening play): kill the
-                // pastel brightness so dark blue stays dark blue.
+                // pastel brightness so dark blue stays dark blue. v4: every
+                // writer below this line inherits the dim — the v3 ordering
+                // let foam and glitter bypass it entirely.
                 if (isNight()) { rC *= 0.55f; gC *= 0.60f; bC *= 0.62f; }
+                // v4 moon path: one-lobed Gaussian down the lake meridian
+                // (x = lx), 18 m 1/e half-width. Viewer-independent, so the
+                // tour and every shore see the same classic streak. Night
+                // intensity ×0.95, day ×0.25. Additive on a dimmed base —
+                // corridor cells land ~0.2-0.4 per channel, never near
+                // white. A slow phase roll makes the path breathe. v4c
+                // synthesis: r7's base amplitude read "subtle", r8's wide
+                // boost read "milky" — so the base returns to r7 strength
+                // and the punch moves into a NARROW hot core (~2 m
+                // half-width, the true moon column): bright where the eye
+                // looks, dark navy everywhere else.
+                float mpath = (float) Math.exp(-((wx - lx) * (wx - lx)) * 0.00155f);
+                float mNight = isNight() ? 0.95f : 0.25f;
+                float mPhase = 0.85f + 0.15f * (float) Math.sin(time * 0.9f + wz * 0.12f);
+                rC += 0.18f * mNight * mpath * mPhase;
+                gC += 0.22f * mNight * mpath * mPhase;
+                bC += 0.26f * mNight * mpath * mPhase;
+                // v4d hot core: narrow Gaussian ON TOP of the subtle base
+                // path — but windowed by viewer distance. r9 proved the
+                // lesson: a viewer-independent core lights the cells under
+                // the camera, and near-field perspective magnification
+                // turns a modest addend into a 14%-white ice field. A
+                // moon streak physically lives on the FAR water: fade the
+                // core in from 6 m, full by 15 m. Near field stays dark
+                // navy; the streak reads mid-lake → horizon.
+                float core = (float) Math.exp(-((wx - lx) * (wx - lx)) * 0.070f);
+                float vWin = Math.min(Math.max((dCam - 6f) / 9f, 0f), 1f);
+                float cAmp = mNight * mPhase;
+                // v4e: r10 was white-free but the streak read as a thread —
+                // amplitude up into the tinted ceiling (never white) and
+                // width 0.090→0.070 so the column reads at distance.
+                rC += 0.40f * core * cAmp * vWin;
+                gC += 0.52f * core * cAmp * vWin;
+                bC += 0.62f * core * cAmp * vWin;
                 if (eTrue > 0.965f) {
                     // Thin waterline foam: fixed ~3.5%-of-radius band
-                    // (≈0.5 m wide) gently breathing in brightness. The
-                    // step-93 pulsing RADIUS swung the band 2-3 m wide and
-                    // read as ice floes mid-lake.
+                    // (≈0.5 m wide) gently breathing. v4: moonlit SEAFOAM
+                    // (green-leaning) instead of the v3 near-white ring,
+                    // with its own night palette — the dashes stay but
+                    // they read as foam on a night sea, not white paint.
                     float breathe = 0.92f + 0.08f * (float) Math.sin(time * 1.3f + (wx + wz) * 0.15f);
-                    rC = 0.88f * breathe; gC = 0.98f * breathe; bC = breathe;
+                    if (isNight()) {
+                        rC = 0.21f * breathe; gC = 0.45f * breathe; bC = 0.42f * breathe;
+                    } else {
+                        rC = 0.34f * breathe; gC = 0.72f * breathe; bC = 0.64f * breathe;
+                    }
                 } else {
-                    // Sun glitter: the old single-sine glint>0.2 lit ~43% of
-                    // crest cells in contiguous strips (the white patches);
-                    // a two-sine product > 0.82 picks ~4% of crest cells
-                    // POINTWISE — a sparkling field, not patches.
+                    // Sun glitter v4: sparkle stays pointwise but it now
+                    // MODULATES (additive cyan-silver flash, capped, never
+                    // a snap) instead of snapping to (0.96,0.99,1.0). The
+                    // v3 snap values are exactly the achromatic-white
+                    // patches the Architect caught. v4b: caps stay tinted
+                    // (r well below g/b) so a flash reads unmistakably
+                    // pale-cyan; inside the NARROW hot core the product
+                    // threshold drops to 0.70 so the streak itself
+                    // sparkles denser — light on moving water.
                     float g1 = (float) Math.sin(wx * 2.1f + wz * 1.7f + time * 2.7f);
                     float g2 = (float) Math.sin(wz * 1.6f - wx * 1.3f - time * 2.1f);
-                    if (k > 0.55f && g1 * g2 > 0.82f) {
-                        rC = 0.96f; gC = 0.99f; bC = 1.0f;
+                    if (k > 0.55f && (g1 * g2 > 0.82f || (core * vWin > 0.50f && g1 * g2 > 0.70f))) {
+                        float flash = 0.86f + 0.14f * g1;
+                        rC = Math.min(rC + 0.34f * flash, 0.62f);
+                        gC = Math.min(gC + 0.50f * flash, 0.78f);
+                        bC = Math.min(bC + 0.55f * flash, 0.85f);
+                    }
+                    // Moon-path crest kiss: inside the corridor, crests
+                    // lift a hair and troughs drop a hair — the moving
+                    // light-ripple texture the eye reads on a real
+                    // moonlit sea. v4c: back to r7's tight band (the r8
+                    // wide lift helped the milk).
+                    if (mpath > 0.35f) {
+                        float lift = 0.10f * (k - 0.5f) * (mpath - 0.35f) * 2.9f;
+                        rC += lift * 0.7f; gC += lift * 0.9f; bC += lift;
                     }
                 }
+                // v4d hard tinted ceiling: the structural anti-white
+                // guarantee. No water cell may exceed these post-dim
+                // values (r < g < b, cyan family), so even at full flash
+                // the renderer can never clamp a pale vertex to
+                // screen-white. Achromatic white on the lake is now
+                // geometrically impossible.
+                rC = Math.min(rC, 0.76f);
+                gC = Math.min(gC, 0.86f);
+                bC = Math.min(bC, 0.92f);
                 r.drawHexPrismColor(new Vector3f(wx, floorY + 0.22f + h, wz),
                     new Vector3f(hr * 1.06f, 0.60f, hr * 1.06f),
                     rC, gC, bC);
