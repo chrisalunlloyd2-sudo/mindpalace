@@ -30,6 +30,7 @@
 - Gate: mvn package EXIT=0 ×4 · jar-swap cmp SWAP_OK · live relaunch MP_COUNT=2 · e2e tour fix6c 21/21 TOUR_EXIT=0
 - Pixel proof: docs/screenshots/fix6c/ 11 shots (fountain, teleport menu, poster wall, 3-line sign, sky, water) — commit adds -f (gitignored dir)
 - Known follow-up: teleport menu has no dim backdrop → list overlaps the white wall behind it; queued for next sweep
+- Evidence addendum: --selftest on the shipped jar (build #4 = commit 69a0915 bits) → 64 passed / 0 failed; hermes-verify-step92 ad-hoc harness 10/10 (marker + camera-form + gate; cleaned post-run). AD-HOC, NOT suite green.
 
 ## 2026-10-09 — #123 SHIPPED (weekly self-report · H50 step 98)
 - scout_bot --weeklyreport: telemetry 7d pulse (196 events, quorum 30 APPROVED / 4 REJECTED, 69 cycles, 34 DePIN, 59 boots) + NEXT_100_STEPS phase table (A 8/0, B 20/0, C 10/0, D 3/7, E/F/G 0/12) + next-5 queue
