@@ -181,6 +181,13 @@ public class GameEngine {
     // Screenshot + auto-drive (agent "sees" the game)
     private boolean autodrive;
     private boolean e2eMode;
+    // STEP 94v5 white-catch: property-free CLI-gated lake orbit (never on in
+    // normal play/CI): the camera circles the shore capturing wave/sparkle/
+    // foam phases from many bearings so free-look white can be CAUGHT by the
+    // agent instead of only the fixed water waypoint being swept.
+    private boolean orbitMode;
+    private int orbitStep;              // bearing index around the lake
+    private float orbitTimer;           // dwell clock inside one bearing
     private int e2eWaypoint = 0;
     private double e2ePhaseTimer = 0;
     private String screenshotDir;
@@ -343,6 +350,15 @@ public class GameEngine {
         this.screenshotDir = dir;
         this.e2eMode = true;
         System.out.println("[E2E] enabled, waypoints + labeled shots -> " + dir);
+    }
+
+    /** STEP 94v5 white-catch: orbit the lake shore and capture wave/sparkle/
+     *  foam phases from 40 bearings. CLI-gated (--orbit dir), exits when done. */
+    public void setOrbit(String dir) {
+        this.autodrive = true;
+        this.screenshotDir = dir;
+        this.orbitMode = true;
+        System.out.println("[ORBIT] enabled -> " + dir);
     }
 
 /** Demo mode: fixture world, no GitHub auth, no network (step 112). */
@@ -5709,6 +5725,13 @@ public class GameEngine {
             return;
         }
 
+        // STEP 94v5 white-catch: lake orbit — 40 bearings × shore ring +
+        // raised-pitch ring (moon-in-frame views), one labeled shot each.
+        if (orbitMode) {
+            updateOrbit(dt);
+            return;
+        }
+
         shotTimer += dt;
         if (shotTimer >= 0.5) {
             shotTimer = 0.0;
@@ -5760,6 +5783,63 @@ public class GameEngine {
             }
         }
         cam.setPosition(p);
+    }
+
+    /**
+     * STEP 94v5 white-catch orbit. 40 stations around the lake: bearing i covers
+     * the full 360° at shoreline standing height (pitch -6° water-fill), then a
+     * raised-pitch ring catches the moon disc + streak column in one view (the
+     * "white in the water" free-look framing). 0.6 s dwell per station = wave/
+     * sparkle/foam phase variety; System.exit cleans up for scripted capture.
+     */
+    private void updateOrbit(double dt) {
+        world.tick((float) dt);
+        updatePatches(dt);
+        updateNPCs(dt);
+
+        final int stations = 40;
+        final int total = stations * 2;
+        float lakeX = world.getOutsideWorld().getLakeCenter().x;
+        float lakeZ = world.getOutsideWorld().getLakeCenter().z;
+
+        orbitTimer += (float) dt;
+        if (orbitTimer < 0.6) return;          // dwell: let wave phases advance
+        orbitTimer = 0;
+
+        int step = orbitStep;
+        boolean raised = step >= stations;
+        int bearing = step % stations;         // 0..39
+        float ang = (float) (bearing * Math.PI * 2.0 / stations);
+        // shoreline ring: just outside the sand berm (rx 30 / rz 20 ellipse)
+        float sx = lakeX + (float) Math.sin(ang) * 33f;
+        float sz = lakeZ + (float) Math.cos(ang) * 23f;
+        // raised ring: pulled back so the moon arc fits above the far shore
+        float rx = lakeX + (float) Math.sin(ang) * 44f;
+        float rz = lakeZ + (float) Math.cos(ang) * 34f;
+        boolean high = raised;
+        float px = high ? rx : sx;
+        float pz = high ? rz : sz;
+
+        Camera cam = player.getCamera();
+        cam.setPosition(new Vector3f(px, 2.2f, pz));
+        // look at lake center; raised ring tilts up 14° to hold moon + streak
+        Vector3f aim = new Vector3f(lakeX, high ? 7.5f : 0.0f, lakeZ).sub(
+            new Vector3f(px, 2.2f, pz)).normalize();
+        cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+        cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+
+        java.io.File dir = new java.io.File(screenshotDir);
+        if (!dir.exists()) dir.mkdirs();
+        String path = screenshotDir + "/orbit_" + String.format("%02d", step) + ".png";
+        String written = Screenshot.capture(width, height, path);
+        if (written != null) System.out.println("[ORBIT-SHOT] " + step + " -> " + written);
+
+        orbitStep++;
+        if (orbitStep >= total) {
+            System.out.println("[ORBIT] complete — " + total + " stations captured. Exiting.");
+            cleanup();
+            System.exit(0);
+        }
     }
 
     /**

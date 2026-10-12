@@ -51,6 +51,18 @@
 - Pixel proof: docs/screenshots/step94-v4/r11_water_v4e.png (git add -f; r7-r11 sets under target/e2e-shots-r*, uncommitted by design)
 - Live: one-tree jar swap → mindpalace-live.jar + relaunch (below)
 
+## 2026-10-12 Step 94v5 SHIPPED (bloom white-kill: night water lum budget 0.58 below bright-pass knee · orbit catch harness · post-fix pixel proof)
+- Driver: user saw white AGAIN live on v4e ("k now theres whiye in the water lol try to ctch these yourself make iy look spectacular") — user rejection overrides r11 vision PASS per doctrine
+- CATCH (new orbit harness, GameEngine+Main): --orbit <dir> CLI-gated sweep = 40 bearings × 2 rings (low shore-ring pitch −6°, raised moon-in-frame ring), 0.6s dwell, [ORBIT-SHOT] labels, clean exit; early-returns before e2e branch; v5base pre-patch gate 64/0 + 21/21 + VERIFY-PASS proved shipped behavior intact with tool in
+- CAUGHT (pre-fix orbit-v5, 80 frames): whole lake hex cells render flat white/pale-cyan plates at grazing shore angles — orbit_03 blob (118,675), orbit_36 (428,853), orbit_21 giant white hex (700–1100 px) w/ glow; phase/bearing-dependent (11,849→25 px between adjacent bearings) → fixed-tour r-metrics structurally blind (every set r2→r11 clean perceptually except r9)
+- ROOT CAUSE (sim + code, BloomEffect.java): bright pass = smoothstep(lum 0.6→0.9), composite `c + b*0.95`; v4e ceiling (0.76,0.86,0.92) lum ≈0.85 sits INSIDE bright band → moon-streak cells self-add ~1.7 → clip to screen white; per-vertex ceiling math exonerated (r11's white-freedom was tour-blindness, not a fix)
+- v5 FIX (OutsideWorld ~444-451): night cells luminance-budgeted — if lum > 0.58 rescale rgb to lum 0.58 (below 0.6 knee → water can never bloom to white); brightness preserved as hue (vivid cerulean); ceiling kept as 2nd guard; foam (lum 0.40) untouched; day path untouched
+- Numeric pipeline sim (hermes-verify-v5-bloomkill AD-HOC 21/21): v4e reproduces bug (821–5674 white samples by bloom intensity), v5 zero at ALL intensities incl flare 2.0; maxLum 0.58, post-composite maxCh 205/255
+- POST-FIX pixel proof (orbit-v5c, 80 frames): ALL original bug sites cured — orbit_21 white hex (255,255,255) → teal/mint blend; v5c-blob-sweep remaining hits = far-shore door/cream rects on LAND, byte-identical pre/post (not touched by patch, not water)
+- Gates: build BUILD SUCCESS · r12 e2e BUILD + selftest 64/0 + tour 21/21 + VERIFY-PASS (fresh, post-patch) · 21_water 0.33% strict (ledger-consistent HUD residual) · vision PASS 21_water tour + 80-frame contact sheet (no white plates in bug rows; former white hexes read as subdued moonlit mint) · self-verdict **7/10 — ACCEPT**
+- Tooling trap (kept): java resolves `/c/...` program arg as `C:\c\...` (drive-relative) → orbit shots land in a `C:\c` shadow dir; pass `C:/...` mixed-path form (e2e.sh cygpath -m precedent)
+- Ship: commit + push + #9 evidence + hermes fresh at committed state + jar swap + relaunch + user look
+
 ## 2026-10-11 — #123 SHIPPED (weekly self-report · H50 step 98)
 - scout_bot --weeklyreport: telemetry 7d pulse (196 events, quorum 30 APPROVED / 4 REJECTED, 69 cycles, 34 DePIN, 59 boots) + NEXT_100_STEPS phase table (A 8/0, B 20/0, C 10/0, D 3/7, E/F/G 0/12) + next-5 queue
 - reports/2026-W41.md in-repo mirror + step-log #9 post (first: comment 6098280283)

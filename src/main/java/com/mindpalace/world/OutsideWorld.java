@@ -425,6 +425,30 @@ public class OutsideWorld {
                 rC = Math.min(rC, 0.76f);
                 gC = Math.min(gC, 0.86f);
                 bC = Math.min(bC, 0.92f);
+                // STEP 94v5 (bloom white-kill — the REAL root cause): the
+                // v4 vertex ceiling (0.76,0.86,0.92) sits at luminance ~0.85,
+                // INSIDE BloomEffect's bright pass (smoothstep 0.6→0.9).
+                // Composite then adds the blurred scene back at ~0.95
+                // intensity, so every ceiling-hit cell self-adds to ~1.7 and
+                // clips to screen-white. Only cells subtending enough screen
+                // area (standing on the shore, free-look) keep the blur
+                // self-contained; the fixed tour camera saw thin diluted
+                // bands — which is why both r10/r11 passed clean and the
+                // Architect still saw white hexes live. Fix: budget the
+                // final cell luminance BELOW the bright-pass knee (0.58) at
+                // night — water contributes nothing to bloom, so no
+                // composite can lift it to white. The brightness budget
+                // moves into blue: the streak reads as a vivid cerulean
+                // column, still the brightest thing on the lake, never
+                // achromatic. Night-only: the day steel-haze look is
+                // untouched (never flagged) and its bloom is a feature.
+                if (isNight()) {
+                    float lum = 0.2126f * rC + 0.7152f * gC + 0.0722f * bC;
+                    if (lum > 0.58f) {
+                        float s = 0.58f / lum;
+                        rC *= s; gC *= s; bC *= s;
+                    }
+                }
                 r.drawHexPrismColor(new Vector3f(wx, floorY + 0.22f + h, wz),
                     new Vector3f(hr * 1.06f, 0.60f, hr * 1.06f),
                     rC, gC, bC);

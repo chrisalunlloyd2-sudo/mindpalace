@@ -25,6 +25,8 @@ public class Main {
                 engine.setSelfTest();
             } else if (args[i].equals("--demo")) {
                 engine.setDemo();
+            } else if (args[i].equals("--orbit") && i + 1 < args.length) {
+                engine.setOrbit(args[i + 1]);
             } else if (args[i].equals("--stress") && i + 1 < args.length) {
                 engine.setStress(Integer.parseInt(args[i + 1]));
             }
