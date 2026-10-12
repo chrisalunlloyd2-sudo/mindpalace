@@ -102,6 +102,16 @@ public class QuorumProposalSource {
             return "[" + source + (publicSourced ? "/public" : "") + "] " + title + d;
         }
 
+        /** Stable proposal id for the quorum registry (source-tagged, ASCII-safe). */
+        public String proposalId() {
+            return "rw-" + source + "-" + sourceId.replace("#", "");
+        }
+
+        /** Proposal category for the voter prompt and ledger rows. */
+        public String proposalType() {
+            return "real_work_" + source;
+        }
+
         @Override public String toString() {
             return source + ":" + sourceId + " " + title;
         }

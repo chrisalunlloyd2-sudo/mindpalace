@@ -127,6 +127,14 @@ public class WeightedQuorumVote {
         if (mp != null) mp.pulsePhase = ((phase % 1.0) + 1.0) % 1.0;
     }
 
+    /**
+     * t_948a71be: post-verdict sweep — drop every registered proposal so the
+     * next cycle starts clean. Without this, repeated cycles re-vote on
+     * already-applied, already-ledgered items and the voter round grows
+     * unboundedly (one registerProposal per backlog item per cycle).
+     */
+    public void finishCycle() { proposals.clear(); }
+
     public boolean isVisible(HexCoord target, String model) {
         if (!fowEnabled) return true;
         ModelPosition mp = models.get(model);

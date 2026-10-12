@@ -485,6 +485,23 @@ public class AgentManager {
             // the cycle targeted.
             String text = "Act on " + proposalTargetName(currentRoom);
             quorum.registerProposal(id, text, new HexCoord(0, 0), "system_health_check");
+            // t_948a71be: real-work overlay — register the actual backlog
+            // (kanban ready/triage cards, hermes-queue issues, failing checks)
+            // BEFORE the voting round so the same model pass votes on all of
+            // them and handleRealWorkVerdicts applies each result. Kept in a
+            // finally so the source never survives a failed cycle in a
+            // half-applied state.
+            java.util.List<com.mindpalace.agent.sims.QuorumProposalSource.RealWorkProposal> realWork = null;
+            try {
+                realWork = realWorkSource.gather();
+                for (var rw : realWork) {
+                    quorum.registerProposal(rw.proposalId(), rw.voteText(),
+                        new HexCoord(0, 0), rw.proposalType());
+                }
+            } catch (Exception e) {
+                log("[AgentManager] real-work gather failed (synthetic cycle still ran): " + e.getMessage());
+                realWork = null;
+            }
             quorum.advanceTimePulse(0.1);
             quorum.actualVoteAll(modelScheduler);
             WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
@@ -505,10 +522,58 @@ public class AgentManager {
                     }
                 }
             }
+            // t_948a71be: apply each real-work verdict (promote / comment /
+            // create-triage) — the synthetic cycle's own handling above is
+            // unaffected ("never delete, only merge").
+            if (realWork != null && !realWork.isEmpty()) {
+                try {
+                    handleRealWorkVerdicts(realWork);
+                } catch (Exception e) {
+                    log("[AgentManager] real-work verdict application failed: " + e.getMessage());
+                }
+            }
         } catch (Exception e) {
             log("[AgentManager] quorum error: " + e.getMessage());
         }
     }
+
+    /**
+     * t_948a71be: calculate + apply a verdict per real-work proposal.
+     * Voting happened in the shared actualVoteAll round above; this only
+     * reads the results. The source's applyVerdict promotes approved
+     * kanban cards, comments on rejected ones, and parks approved public
+     * items in triage — never past it (Architect sign-off doctrine).
+     */
+    private void handleRealWorkVerdicts(
+            java.util.List<com.mindpalace.agent.sims.QuorumProposalSource.RealWorkProposal> realWork) {
+        for (var rw : realWork) {
+            WeightedQuorumVote.QuorumResult wr;
+            try {
+                wr = quorum.calculateQuorum(rw.proposalId());
+            } catch (Exception e) {
+                log("[AgentManager] real-work quorum calc failed for " + rw.sourceId + ": " + e.getMessage());
+                continue;
+            }
+            if (wr == null) continue;
+            log("[AgentManager] real-work quorum: " + wr);
+            if (telemetry != null) {
+                telemetry.record(com.mindpalace.backup.Telemetry.QUORUM, wr.status, rw.voteText());
+            }
+            try {
+                realWorkSource.applyVerdict(wr, rw);
+            } catch (Exception e) {
+                log("[AgentManager] real-work verdict failed for " + rw.sourceId + ": " + e.getMessage());
+            }
+        }
+        // Post-verdict sweep: drop every proposal this cycle registered
+        // (synthetic + real-work), keeping repeated cycles from re-voting on
+        // stale entries that are already applied-and-ledgered.
+        quorum.finishCycle();
+    }
+
+    /** t_948a71be: source of real-work proposals (kanban + issues + checks). */
+    private final com.mindpalace.agent.sims.QuorumProposalSource realWorkSource =
+        new com.mindpalace.agent.sims.QuorumProposalSource();
 
     /** H21: game-side hook for quorum verdicts (set by GameEngine). */
     public void setQuorumVerdictCallback(java.util.function.Consumer<String> cb) {
