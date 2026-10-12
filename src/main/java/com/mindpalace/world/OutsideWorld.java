@@ -442,10 +442,19 @@ public class OutsideWorld {
                 // column, still the brightest thing on the lake, never
                 // achromatic. Night-only: the day steel-haze look is
                 // untouched (never flagged) and its bloom is a feature.
+                // STEP 94v6 (all-blue tightening): the v5 budget 0.58 left a
+                // band of streak cells at lum 0.55-0.58 (ceiling-family 0.76/
+                // 0.86/0.92 scaled down) that still reads as PALE MINT at
+                // grazing bearings (orbit-v5c stations 21-23, 32, 35-36).
+                // Architect bar: hex water ALL BLUE. Budget now 0.50 —
+                // every night water cell lands in the saturated-teal band;
+                // the streak stays the brightest blue on the lake, can no
+                // longer read as pale/white anywhere. Night-only; day
+                // steel-haze bloom untouched.
                 if (isNight()) {
                     float lum = 0.2126f * rC + 0.7152f * gC + 0.0722f * bC;
-                    if (lum > 0.58f) {
-                        float s = 0.58f / lum;
+                    if (lum > 0.50f) {
+                        float s = 0.50f / lum;
                         rC *= s; gC *= s; bC *= s;
                     }
                 }

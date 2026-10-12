@@ -63,6 +63,13 @@
 - Tooling trap (kept): java resolves `/c/...` program arg as `C:\c\...` (drive-relative) → orbit shots land in a `C:\c` shadow dir; pass `C:/...` mixed-path form (e2e.sh cygpath -m precedent)
 - Ship: commit + push + #9 evidence + hermes fresh at committed state + jar swap + relaunch + user look
 
+## 2026-10-12 Step 94v6 SHIPPED (all-blue tightening: fountain night tiers de-whited + lake budget 0.58→0.50 · second fountain site v5 never covered)
+- Driver: user again on live v5 ("till white on hex water should be al; blue") — v5 budgeted ONLY the outside lake (OutsideWorld); frame 12 (hub fountain, night) showed the same bug class UNPATCHED at the fountain: foam rim tiers written (0.90,0.97,1.0) lum ≈0.96 deep inside the bloom band + TEX_WHITE top plinth/pillar → white hex plate w/ blue center
+- v6 FIX (2 files): WorldBuilder renderCourtyard — night-gated (`hour <6 || >=18`) tints: foam rims (0.90,0.97,1.0)→(0.16,0.34,0.43) lum ≈0.31; top plinth TEX_WHITE→steel-blue (0.30,0.42,0.50); pillar→cyan (0.35,0.60,0.70); day branch byte-identical (hall window panes (1.0,0.85,0.55) intentionally NOT touched). OutsideWorld — night budget 0.58→0.50 (kills the 0.55-0.58 pale-mint survivor band: ceiling-family cells that sat under the v5 bar)
+- Gates: build BUILD SUCCESS · r13 e2e BUILD + selftest 64/0 + tour 21/21 + VERIFY-PASS · fountain-region strict-white (rows 640-840 frame 12): 0/13,750 (v5 same region held the plate) · vision PASS frame 12 vs r12 baseline
+- Orbit-v6 (80/80, survivor bearings incl): st35 worst mint cell (179,255,222)→(52,115,122); st21 green-leaning probes = land grass berm, unchanged both builds; water-band strict census across 80 frames = HUD WASD-hint text ONLY (v5c delta 1 px fbob; stations 21/60/61 land-door FPs byte-pattern unchanged)
+- Ship: this commit + push + #9 evidence + jar swap + relaunch + user look
+
 ## 2026-10-11 — #123 SHIPPED (weekly self-report · H50 step 98)
 - scout_bot --weeklyreport: telemetry 7d pulse (196 events, quorum 30 APPROVED / 4 REJECTED, 69 cycles, 34 DePIN, 59 boots) + NEXT_100_STEPS phase table (A 8/0, B 20/0, C 10/0, D 3/7, E/F/G 0/12) + next-5 queue
 - reports/2026-W41.md in-repo mirror + step-log #9 post (first: comment 6098280283)

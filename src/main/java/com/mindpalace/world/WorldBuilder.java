@@ -574,21 +574,56 @@ public class WorldBuilder {
         // deep-teal — the same cue stack as the lake. Gentle bob (sine of
         // world clock) so the surface is alive without wave-grid cost.
         float fbob = 0.012f * (float) Math.sin(time * 2.2f);
-        // Foam rim (pale, larger, tucked under the water edge)
-        r.drawHexPrismColor(new Vector3f(fx, floorY + 0.575f, fz),
-            new Vector3f(1.48f, 0.05f, 1.48f), 0.90f, 0.97f, 1.0f);
+        // STEP 94v6 (all-blue night water — the fountain was the second
+        // white-hex-water site the v5 lake patch never covered): the foam
+        // rims were written (0.90,0.97,1.0) — luminance ~0.96, deep inside
+        // BloomEffect's bright pass — so at night the rims and the TEX_WHITE
+        // top tier self-added to the same screen-white hex plates the
+        // Architect flagged on the lake (r12 frame 12: white plate on the
+        // top-tier water). At night every fountain hex-water-adjacent tier
+        // now stays in the blue family below the 0.5 kne...[truncated]
+        boolean fnight = java.time.LocalTime.now().getHour() < 6
+            || java.time.LocalTime.now().getHour() >= 18;
+        // Foam rim (pale, larger, tucked under the water edge).
+        // v6: at night the rim is DEEP-CYAN (below the bloom knee) — the
+        // old pale-white rim was the fountain's white hex plate.
+        if (fnight) {
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 0.575f, fz),
+                new Vector3f(1.48f, 0.05f, 1.48f), 0.07f, 0.36f, 0.47f);
+        } else {
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 0.575f, fz),
+                new Vector3f(1.48f, 0.05f, 1.48f), 0.90f, 0.97f, 1.0f);
+        }
         // Main water body
         r.drawHexPrismColor(new Vector3f(fx, floorY + 0.60f + fbob, fz),
             new Vector3f(1.34f, 0.06f, 1.34f), 0.16f, 0.50f, 0.72f);
         // Deep center layer
         r.drawHexPrismColor(new Vector3f(fx, floorY + 0.625f + fbob, fz),
             new Vector3f(0.95f, 0.05f, 0.95f), 0.08f, 0.32f, 0.55f);
-        // Center pillar (hex)
-        r.drawHexPrism(new Vector3f(fx, floorY + 0.92f, fz), new Vector3f(0.21f, 0.6f, 0.21f), Renderer.TEX_WHITE);
+        // Center pillar (hex) — v6: night reads steel-blue, not white
+        if (fnight) {
+            r.drawHexPrism(new Vector3f(fx, floorY + 0.92f, fz),
+                new Vector3f(0.21f, 0.6f, 0.21f), Renderer.TEX_NEON_CYAN);
+        } else {
+            r.drawHexPrism(new Vector3f(fx, floorY + 0.92f, fz),
+                new Vector3f(0.21f, 0.6f, 0.21f), Renderer.TEX_WHITE);
+        }
         // Top tier: hex plinth + hex water (same layered water stack)
-        r.drawHexPrism(new Vector3f(fx, floorY + 1.30f, fz), new Vector3f(1.2f, 0.16f, 1.2f), Renderer.TEX_WHITE);
-        r.drawHexPrismColor(new Vector3f(fx, floorY + 1.40f, fz),
-            new Vector3f(0.86f, 0.05f, 0.86f), 0.90f, 0.97f, 1.0f);
+        // v6: night plinth is steel-blue (below the knee), not TEX_WHITE.
+        if (fnight) {
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 1.305f, fz),
+                new Vector3f(1.2f, 0.16f, 1.2f), 0.10f, 0.38f, 0.50f);
+        } else {
+            r.drawHexPrism(new Vector3f(fx, floorY + 1.30f, fz),
+                new Vector3f(1.2f, 0.16f, 1.2f), Renderer.TEX_WHITE);
+        }
+        if (fnight) {
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 1.40f, fz),
+                new Vector3f(0.86f, 0.05f, 0.86f), 0.07f, 0.36f, 0.47f);
+        } else {
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 1.40f, fz),
+                new Vector3f(0.86f, 0.05f, 0.86f), 0.90f, 0.97f, 1.0f);
+        }
         r.drawHexPrismColor(new Vector3f(fx, floorY + 1.43f + fbob, fz),
             new Vector3f(0.70f, 0.06f, 0.70f), 0.16f, 0.50f, 0.72f);
 
