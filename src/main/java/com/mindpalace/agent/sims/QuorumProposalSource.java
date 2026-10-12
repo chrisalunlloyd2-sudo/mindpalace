@@ -173,16 +173,23 @@ public class QuorumProposalSource {
 
     /** Kanban cards in ready/triage (quorum-minted cards excluded — no self-feeding). */
     List<RealWorkProposal> gatherKanbanCards() {
-        String json;
         if (testKanbanFeed != null) {
-            json = testKanbanFeed;
-        } else {
-            json = runHermesList("ready");
-            if (json == null) json = runHermesList("triage");
-            if (json == null) return List.of();
+            String json = testKanbanFeed;
+            return parseKanbanCards(json, QUORUM_CREATED_BY, KANBAN_CAP);
         }
-        // The test feed concatenates both statuses; the CLI path yields one.
-        return parseKanbanCards(json, QUORUM_CREATED_BY, KANBAN_CAP);
+        // t_948a71be fix: query BOTH statuses and merge — triage cards (where
+        // approved public items park) stay reachable even when the ready list
+        // answers successfully. Each list parses independently; a card id
+        // appears in only one status, so there is no dedupe risk. Skip the
+        // triage call when ready already filled the cap (one fewer subprocess).
+        List<RealWorkProposal> out = new ArrayList<>();
+        String ready = runHermesList("ready");
+        if (ready != null) out.addAll(parseKanbanCards(ready, QUORUM_CREATED_BY, KANBAN_CAP));
+        if (out.size() < KANBAN_CAP) {
+            String triage = runHermesList("triage");
+            if (triage != null) out.addAll(parseKanbanCards(triage, QUORUM_CREATED_BY, KANBAN_CAP));
+        }
+        return out.size() > KANBAN_CAP ? new ArrayList<>(out.subList(0, KANBAN_CAP)) : out;
     }
 
     /**
@@ -429,7 +436,11 @@ public class QuorumProposalSource {
 
         boolean ran = runVerdict(action, argv, r, item, idempotencyKey);
         if (!ran) { appliedVerdicts.remove(key); return; } // allow retry next cycle
-        ledgerAppend(r, item, action, idempotencyKey);
+        // t_948a71be fix: in capture mode the durable ledger stays untouched —
+        // capture records must never seed later live runs (seedFromLedger
+        // reads the same file the live run uses, so a captured-but-never-
+        // executed verdict would suppress real application forever).
+        if (captureDir == null) ledgerAppend(r, item, action, idempotencyKey);
     }
 
     /**
@@ -615,8 +626,17 @@ public class QuorumProposalSource {
         return Paths.get(aigenHome);
     }
 
-    /** Test seam: point the ledger somewhere scratch (37b keeps the real one untouched). */
-    public void useTestLedgerPath(Path p) { this.ledgerPath = p; }
+    /**
+     * Test seam: point the ledger somewhere scratch (37b keeps the real one
+     * untouched). t_948a71be fix: re-seed from the scratch path after
+     * clearing, so a test run never inherits real-ledger verdicts
+     * (clean-slate tests) and the real ledger never absorbs test verdicts.
+     */
+    public void useTestLedgerPath(Path p) {
+        this.ledgerPath = p;
+        this.appliedVerdicts.clear();
+        seedFromLedger(); // reads the new (scratch) path; empty file → clean set
+    }
 
     /**
      * Shared JSON serializer for the realwork ledger + capture records.
