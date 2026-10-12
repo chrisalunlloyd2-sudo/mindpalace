@@ -32,7 +32,18 @@
 - Known follow-up: teleport menu has no dim backdrop → list overlaps the white wall behind it; queued for next sweep
 - Evidence addendum: --selftest on the shipped jar (build #4 = commit 69a0915 bits) → 64 passed / 0 failed; hermes-verify-step92 ad-hoc harness 10/10 (marker + camera-form + gate; cleaned post-run). AD-HOC, NOT suite green.
 
-## 2026-10-09 — #123 SHIPPED (weekly self-report · H50 step 98)
+## 2026-10-12 Step 94 SHIPPED (water v2+v3: lake reads as lake · fountain layered discs · vision-passed)
+- Driver: user rejected step-93 water pass twice ("nope still not right the water") — v2 redesign + v3 night fix
+- Diagnosis (from r4 pixels + shader read): red channel compressed 0.07→0.13 (6% band) → flat blue floor; ±0.12 swell invisible at 2.1 m cells; foam predicate `eTrue>0.80–0.88` → white ice-floe blobs mid-water; fountain TEX_NEON_CYAN shared with NPC pads → glowing pad
+- v2 (WorldBuilder 545+): fountain = white plinth + pale foam rim + blue water discs + center pillar, gentle bob (0.012 sin t·2.2); lake re-shade navy→white-cyan depth gradient + dCam sky blend + crests-only glitter + fixed thin waterline foam band (eTrue>0.965) + darker sand (0.62,0.55,0.40)@+0.02 + swell ±0.20
+- v2 verdict (vision, r5 shot 21): FAIL — pale-rim gradient read as uniform MINT seafoam from shore camera (mid-eTrue cells dominate); ±0.20 swell exposed moonlit side walls → green seam grid; fountain PASS (r5+re-checked r6)
+- v3 (OutsideWorld 275–334): swell ±0.14 (0.055/0.045/0.030), cap overlap 1.02→1.06 (kills seam walls), color INVERTED — deep navy-teal everywhere by depth (0.07+0.10·t, 0.22+0.22·t, 0.40+0.16·t), NO rim paling, sky-blend far-only (starts 8 m, 70% @ 30 m), night albedo drop ×0.55/0.60/0.62 via isNight()
+- v3 verdict (vision, r6 shot 21): PASS — dark navy-teal body, per-cell wave shading, pale sky-white far shoreline, thin foam dashes, no ice floes, no seams; foreground even-dark noted as minor/night-acceptable
+- Gates: build EXIT=0 ×3 · r5 21/21 VERIFY-PASS · r6 21/21 BUILD SUCCESS + selftest 64/0 + VERIFY-PASS · hermes-verify-step94 ad-hoc 15/15 at f6e9224; AD-HOC, NOT suite green
+- Live: one-game sweep verified (wmic census: SIMS untouched, javapath shim 4804 + jdk javaw 6900 = ONE tree), jar swap → mindpalace-live.jar (21.9 MB), relaunch healthy (AgentManager auto-cycle, BDI step 81+)
+- Superseded: step-93 lake re-shade (its only remaining live value is the fixed-foam + sand tweaks absorbed into v2)
+
+## 2026-10-11 — #123 SHIPPED (weekly self-report · H50 step 98)
 - scout_bot --weeklyreport: telemetry 7d pulse (196 events, quorum 30 APPROVED / 4 REJECTED, 69 cycles, 34 DePIN, 59 boots) + NEXT_100_STEPS phase table (A 8/0, B 20/0, C 10/0, D 3/7, E/F/G 0/12) + next-5 queue
 - reports/2026-W41.md in-repo mirror + step-log #9 post (first: comment 6098280283)
 - 7d guard (.weeklyreport_last) + --nopost dry-run mode; cascade_dev step-9 wiring
