@@ -4853,6 +4853,98 @@ public class GameEngine {
             + " quorum tie-breaker (3 voters, no eternal PENDING)");
         if (quorumOk) pass++; else fail++;
 
+        // 37a. Quorum readability + spawner contract (t_740fa7c6, t_66a35d3f):
+        //      the old code wrote "Act on ?" into ALL 4291 telemetry APPROVED
+        //      rows and mojibake tally glyphs (cp1252) into TASK files. The
+        //      TASK-file pipeline itself is gone — approved quorum cycles now
+        //      spawn hermes-kanban cards. Regression: (a) no-room target is
+        //      ASCII-plain, never "?"; (b) an APPROVED cycle MUST produce
+        //      exactly one kanban-capture record (the would-be spawn) written
+        //      UTF-8 with an ASCII tally and the quorum dossier; (c)
+        //      consecutive captures are strictly numbered; (d) result/toString
+        //      stays glyph-free. Spawns are captured to a scratch dir so the
+        //      live board, quorum_inbox, task_watch.log and
+        //      quorum_ledger.jsonl are untouched.
+        boolean quorumReadabilityOk = false;
+        java.nio.file.Path spawnTmp = null;
+        try {
+            // (a) the "Act on ?" poison: null-room fallback must be plain text
+            String noRoom = com.mindpalace.agent.AgentManager.proposalTargetName(null);
+            boolean noPoison = noRoom != null && !noRoom.contains("?");
+
+            spawnTmp = java.nio.file.Files.createTempDirectory("mindpalace-quorum-spawn");
+            com.mindpalace.agent.sims.QuorumTaskSpawner.useTestSpawnTarget(spawnTmp);
+            com.mindpalace.agent.sims.WeightedQuorumVote q2 =
+                new com.mindpalace.agent.sims.WeightedQuorumVote();
+            q2.setModelPosition("a", 0, 0);
+            q2.setModelPosition("b", 1, 0);
+            q2.setModelPosition("c", 0, 0);
+            String target = com.mindpalace.agent.AgentManager.proposalTargetName(null);
+            String pid = "spawn-verify-" + System.currentTimeMillis();
+            q2.registerProposal(pid, "Act on " + target,
+                new com.mindpalace.agent.sims.HexCoord(0, 0), "system_health_check");
+            // deterministic APPROVED (3/3 visible approve)
+            q2.castVote(pid, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q2.castVote(pid, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q2.castVote(pid, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r2 = q2.calculateQuorum(pid);
+
+            // (d) ASCII-only verdict rendering
+            boolean glyphsOk = r2 != null && "APPROVED".equals(r2.status)
+                && !java.util.regex.Pattern.compile("[\uFFFD\u2713\u2717]").matcher(r2.toString()).find()
+                && r2.toString().contains("ok:3 no:0 blind:0");
+
+            // (b) APPROVED -> exactly one kanban-capture record, UTF-8, ASCII
+            //     tally, dossier present
+            com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r2);
+            java.util.List<java.nio.file.Path> spawned = new java.util.ArrayList<>();
+            try (java.util.stream.Stream<java.nio.file.Path> ls = java.nio.file.Files.list(spawnTmp)) {
+                ls.filter(p -> p.getFileName().toString().startsWith("quorum_kanban_capture_"))
+                    .forEach(spawned::add);
+            }
+            boolean spawnedOk = spawned.size() == 1;
+            String firstContent = null;
+            if (spawnedOk) {
+                firstContent = new String(java.nio.file.Files.readAllBytes(spawned.get(0)),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                spawnedOk = !firstContent.contains("\uFFFD")
+                    && firstContent.contains("\"spawn_backend\"")
+                    && firstContent.contains("hermes_kanban")
+                    && firstContent.contains("quorum-" + pid)
+                    && firstContent.contains("system_health_check")
+                    && firstContent.contains("ok:3 no:0 blind:0");
+
+                // (c) numbering monotonic: a second APPROVED cycle gets a higher capture number
+                String pid2 = pid + "-2";
+                q2.registerProposal(pid2, "Act on " + target,
+                    new com.mindpalace.agent.sims.HexCoord(0, 0), "system_health_check");
+                q2.castVote(pid2, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                q2.castVote(pid2, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                q2.castVote(pid2, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(q2.calculateQuorum(pid2));
+                try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(spawnTmp)) {
+                    long nCapture = s.filter(p -> p.getFileName().toString()
+                        .startsWith("quorum_kanban_capture_")).count();
+                    spawnedOk = spawnedOk && nCapture == 2;
+                }
+            }
+            quorumReadabilityOk = noPoison && glyphsOk && spawnedOk;
+        } catch (Exception e) {
+            System.out.println("      quorum readability error: " + e);
+            quorumReadabilityOk = false;
+        } finally {
+            com.mindpalace.agent.sims.QuorumTaskSpawner.useTestSpawnTarget(null);
+            if (spawnTmp != null) {
+                try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(spawnTmp)) {
+                    walk.sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) { } });
+                } catch (Exception ignored) { }
+            }
+        }
+        System.out.println((quorumReadabilityOk ? "PASS" : "FAIL")
+            + " quorum readability + spawner contract (kanban capture, no 'Act on ?', ASCII tally)");
+        if (quorumReadabilityOk) pass++; else fail++;
+
         // 38. Portal color pairing — every teleporter pad has a complementary
         //     color pair (roadmap §3): pair hues >= 110 degrees apart, every
         //     color clears the bloom bright-pass (luminance > 0.6), the planet
