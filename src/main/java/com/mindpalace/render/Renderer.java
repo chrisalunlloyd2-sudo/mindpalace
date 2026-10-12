@@ -383,6 +383,92 @@ public class Renderer {
         getSphereMesh().render();
     }
 
+    // ── Hex prism (step 92a) ─────────────────────────────────────────────────
+
+    private Mesh hexPrismMesh;
+    private Mesh getHexPrismMesh() {
+        if (hexPrismMesh == null) hexPrismMesh = createHexPrismMesh();
+        return hexPrismMesh;
+    }
+
+    /** Six-sided vertical prism. Pointy-top hexagonal caps (top/bottom), unit
+     *  size, centered at origin: cap radius 0.5 in X/Z, half-height 0.5 in Y.
+     *  Scale (sizeX, sizeY, sizeZ) stretches it like drawCube does. */
+    private Mesh createHexPrismMesh() {
+        final int SIDES = 6, PER_V = 8;
+        float r = 0.5f, half = 0.5f;
+        float[] va = new float[(SIDES * 4 + 2 * (SIDES + 1)) * PER_V];
+        int[] ia = new int[SIDES * 6 + 2 * SIDES * 3];
+        int vi = 0, ii = 0;
+        // Side walls: each face gets its own 4 verts (flat normals, cube-style).
+        // Winding: a_bot, a_top, b_top, b_bot → triangles face outward.
+        for (int i = 0; i < SIDES; i++) {
+            float a0 = (float) Math.toRadians(30 + 60 * i);
+            float a1 = (float) Math.toRadians(30 + 60 * (i + 1));
+            float x0 = (float) Math.cos(a0) * r, z0 = (float) Math.sin(a0) * r;
+            float x1 = (float) Math.cos(a1) * r, z1 = (float) Math.sin(a1) * r;
+            float am = (float) Math.toRadians(30 + 60 * i + 30);
+            float nx = (float) Math.cos(am), nz = (float) Math.sin(am);
+            float u0 = i / (float) SIDES, u1 = (i + 1) / (float) SIDES;
+            int b = vi;
+            vi = putVertex(va, vi, x0, -half, z0, nx, 0, nz, u0, 0);
+            vi = putVertex(va, vi, x0,  half, z0, nx, 0, nz, u0, 1);
+            vi = putVertex(va, vi, x1,  half, z1, nx, 0, nz, u1, 1);
+            vi = putVertex(va, vi, x1, -half, z1, nx, 0, nz, u1, 0);
+            ia[ii++] = b; ia[ii++] = b + 1; ia[ii++] = b + 2;
+            ia[ii++] = b; ia[ii++] = b + 2; ia[ii++] = b + 3;
+        }
+        // Top cap (+Y fan): center + ring in increasing-angle order.
+        // CAP WINDING (STEP 92b fix, proven by window-space test vs cube top):
+        // with the 30°-anchored CCW-in-XZ ring, (center, ring_i, ring_i+1)
+        // faces DOWN — GL culling removed the cap from above, so every water
+        // cell rendered as a bare wall sliver ("bars on grass"). Flip both
+        // caps so +Y faces up / -Y faces down; walls were already correct.
+        int topCenter = vi / PER_V;
+        vi = putVertex(va, vi, 0, half, 0, 0, 1, 0, 0.5f, 0.5f);
+        int topRing = vi / PER_V;
+        for (int i = 0; i < SIDES; i++) {
+            float a = (float) Math.toRadians(30 + 60 * i);
+            float x = (float) Math.cos(a) * r, z = (float) Math.sin(a) * r;
+            vi = putVertex(va, vi, x, half, z, 0, 1, 0, 0.5f + 0.5f * x / r, 0.5f + 0.5f * z / r);
+            ia[ii++] = topCenter; ia[ii++] = topRing + (i + 1) % SIDES; ia[ii++] = topRing + i;
+        }
+        // Bottom cap (−Y fan): mirror winding so it faces down.
+        int botCenter = vi / PER_V;
+        vi = putVertex(va, vi, 0, -half, 0, 0, -1, 0, 0.5f, 0.5f);
+        int botRing = vi / PER_V;
+        for (int i = 0; i < SIDES; i++) {
+            float a = (float) Math.toRadians(30 + 60 * i);
+            float x = (float) Math.cos(a) * r, z = (float) Math.sin(a) * r;
+            vi = putVertex(va, vi, x, -half, z, 0, -1, 0, 0.5f + 0.5f * x / r, 0.5f + 0.5f * z / r);
+            ia[ii++] = botCenter; ia[ii++] = botRing + i; ia[ii++] = botRing + (i + 1) % SIDES;
+        }
+        return new Mesh(va, ia);
+    }
+
+    private int putVertex(float[] va, int vi, float px, float py, float pz,
+                          float nx, float ny, float nz, float u, float v) {
+        va[vi++] = px; va[vi++] = py; va[vi++] = pz;
+        va[vi++] = nx; va[vi++] = ny; va[vi++] = nz;
+        va[vi++] = u;  va[vi++] = v;
+        return vi;
+    }
+
+    /** Draw a hexagonal prism scaled to `size` (cap radius = size.x/z sides,
+     *  height = size.y), with a texture. */
+    public void drawHexPrism(Vector3f position, Vector3f size, int texId) {
+        Matrix4f model = new Matrix4f().translate(position).scale(size);
+        drawMesh(getHexPrismMesh(), model, texId);
+    }
+
+    /** Draw a hexagonal prism with an arbitrary RGB color. */
+    public void drawHexPrismColor(Vector3f position, Vector3f size, float r, float g, float b) {
+        Matrix4f model = new Matrix4f().translate(position).scale(size);
+        basicShader.setUniform("model", model);
+        solidColor(r, g, b);
+        getHexPrismMesh().render();
+    }
+
     public void resize(int w, int h) {
         width = w; height = h;
         GL11.glViewport(0, 0, w, h);
@@ -393,6 +479,7 @@ public class Renderer {
         if (cubeMesh != null) cubeMesh.cleanup();
         if (quadMesh != null) quadMesh.cleanup();
         if (sphereMesh != null) sphereMesh.cleanup();
+        if (hexPrismMesh != null) hexPrismMesh.cleanup();
         for (Texture t : textures) if (t != null) t.cleanup();
         if (skyDomeTex != null) skyDomeTex.cleanup();
     }

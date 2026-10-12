@@ -20,6 +20,17 @@
 - --botsteplog weekly-guarded post to #9 (first: comment 5970331415)
 - game_alive() javaw class-fix; cascade_dev step-8 wiring
 
+## 2026-10-11 Step 92 SHIPPED (hex visual overhaul: 92a–92e · water/fountain/sky/teleport UI · fix6c tour sign-off)
+- 92a Renderer.hexPrism (+87): six-sided prism primitive, shared normals — groundwork for water/sky geometry
+- 92b OutsideWorld water floor → hex cells (pitch √3·2.4 X / 1.8 rows, cap CR 1.2, base floorY−0.15, wave ±0.18): continuous honeycomb, no rectangular tiles at the shoreline
+- 92c NPC grounding: hex pads tinted (0.05,0.80,1.00)/(0.10,0.55,1.00) +0.03 under yellow/cyan bots, bodies grounded at floor level
+- 92d sky: golden hex sun + silver moon spheres on arcs, hex water lake in the south field
+- 92e sweep fix batch (7 families A–G): WB courtyard fountain = hex plinth + cyan hex water ring + white center pillar + upper tier ~:560; B hex caps `hr*1.02` + 0.60 skirts; C fountain trim 0.10 + moon halo wallX∓0.145; E teleport menu labels 0.06f, swatches 0.055, title 0.09f tint (0.2,1.0,0.9); F poster proud 0.01 (no z-fight); G gist-wall neon sign text 3 lines ON board GE:2321 wallX−0.215
+- E2E waypoint 11 (nash_fountain case 11) re-aimed ×2 → FINAL camera (6, −18) yaw −90, east of fountain, dead-ahead 6 m (first try z=−10/yaw0 sat 2 m outside the courtyard walls → flat-brown frame)
+- Gate: mvn package EXIT=0 ×4 · jar-swap cmp SWAP_OK · live relaunch MP_COUNT=2 · e2e tour fix6c 21/21 TOUR_EXIT=0
+- Pixel proof: docs/screenshots/fix6c/ 11 shots (fountain, teleport menu, poster wall, 3-line sign, sky, water) — commit adds -f (gitignored dir)
+- Known follow-up: teleport menu has no dim backdrop → list overlaps the white wall behind it; queued for next sweep
+
 ## 2026-10-09 — #123 SHIPPED (weekly self-report · H50 step 98)
 - scout_bot --weeklyreport: telemetry 7d pulse (196 events, quorum 30 APPROVED / 4 REJECTED, 69 cycles, 34 DePIN, 59 boots) + NEXT_100_STEPS phase table (A 8/0, B 20/0, C 10/0, D 3/7, E/F/G 0/12) + next-5 queue
 - reports/2026-W41.md in-repo mirror + step-log #9 post (first: comment 6098280283)

@@ -2113,7 +2113,19 @@ public class GameEngine {
             }
 
             float footY = p.y + bob;
-            float hipY = footY + legLen;
+            // STEP 92c: ground the body. NPCs hover at position.y = 1.0, so
+            // their feet used to dangle ~1 m in mid-air ("players off the
+            // ground are square cubes floating"). The RENDERED body now stands
+            // on the real terrain (corridor floor / stair ramp) under the feet;
+            // NPC logic (position, targets) is untouched.
+            float groundY = 0f;
+            if (world != null) groundY = world.getGroundHeight(p.x, p.z);
+            float standY = groundY + bob;
+            // Hex grounding pad — the "hex instead of square" marker: a glowing
+            // hologram plinth under every NPC, holo-tinted, larger than the hips.
+            renderer.drawHexPrismColor(new Vector3f(p.x, standY + 0.03f, p.z),
+                new Vector3f(0.42f, 0.06f, 0.42f), holoTint.x * 0.6f, holoTint.y * 0.6f, holoTint.z * 0.6f);
+            float hipY = standY + legLen;
             float waistY = hipY + 0.26f;      // pelvis (hips) top
             float shoulderY = waistY + 0.30f; // chest top
             float headY = shoulderY + 0.22f;
@@ -2195,12 +2207,13 @@ public class GameEngine {
             Vector3f p = c.getPosition();
             if (cam.getPosition().distance(p) > 20f) continue;
 
-            // Hex crystal — a tall thin cube (height = complexity)
-            // CARD-Q2 F3: dedicated emissive white-cyan (was shared neon green);
-            // footprint 0.15→0.25 so it doesn't vanish from 3m at 1080p.
+            // Hex crystal (STEP 92e): actually hex now — was a cube mislabeled
+            // "Hex crystal". Hex cap scale 0.35 keeps the old footprint bulk
+            // (flat-side width ≈ the cube's 0.25 face) while the silhouette
+            // reads as a real six-sided crystal; height = complexity.
             float h = c.getHeight();
-            renderer.drawCube(new Vector3f(p.x, p.y + h / 2f, p.z),
-                new Vector3f(0.25f, h, 0.25f), Renderer.TEX_CRYSTAL);
+            renderer.drawHexPrism(new Vector3f(p.x, p.y + h / 2f, p.z),
+                new Vector3f(0.35f, h, 0.35f), Renderer.TEX_CRYSTAL);
 
             // Label
             if (fontRenderer != null && fontRenderer.isReady()) {
@@ -2297,7 +2310,15 @@ public class GameEngine {
             float wallX = room.getHallwaySide() == 0
                 ? -WorldBuilder.HALLWAY_WIDTH / 2f
                 : WorldBuilder.HALLWAY_WIDTH / 2f;
-            float offsetX = wallX > 0 ? -0.20f : 0.20f;
+            // Step 92f (sweep defect 3): the text plane wallX-0.20 was EXACTLY
+            // coplanar with the neon-sign backing assembly's front face
+            // (offset -0.15 glow plate + -0.02 face + 3d/2 = wallX-0.20), so
+            // every glyph depth-TIED with the plate and dropped out -> the
+            // signs rendered as bare black slabs in shots 13/14/17/19 (the
+            // #122 depth-fail class). Nudging 0.015 proud of the plate puts
+            // the glyphs strictly in front: they depth-win at every distance
+            // and the black slab now carries its repo name.
+            float offsetX = wallX > 0 ? -0.215f : 0.215f;
             Vector3f signPos = new Vector3f(wallX + offsetX, signY, dp.z);
 
             Vector3f color = room.isPrivate()
@@ -2945,7 +2966,13 @@ public class GameEngine {
         float lineH = 0.12f;
         float startY = center.y + (options * lineH) / 2f;
 
-        fontRenderer.renderBillboard("TELEPORT DESTINATION", center, 0.09f,
+        // Step 92f: teleport menu text is a HUD overlay, not world geometry —
+        // it used renderBillboard (depth-tested) at a 2.5m world anchor, so a
+        // wall inside 2.5m z-fought/took the text away and the theme swatches
+        // floated alone ("floating green panel", sweep shot 11). The bot
+        // roster hit the same class-bug and was fixed with
+        // renderBillboardOverlay (GE:3516 precedent) — same fix here.
+        fontRenderer.renderBillboardOverlay("TELEPORT DESTINATION", center, 0.09f,
             new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
 
         // Theme for one destination: physical floor pads carry the palette pair
@@ -2964,11 +2991,14 @@ public class GameEngine {
             Vector3f col = (i == teleportSel)
                 ? new Vector3f(1.0f, 0.9f, 0.3f)
                 : new Vector3f(0.7f, 0.7f, 0.7f);
-            fontRenderer.renderBillboard(label, pos, 0.06f, col, proj, view, camPos);
+            fontRenderer.renderBillboardOverlay(label, pos, 0.06f, col, proj, view, camPos);
         }
 
         // Two-block color swatches — the destination's PortalTheme pair, so a
         // menu entry can be visually matched to the physical pad it routes to.
+        // Labels are now depth-test-free overlays, so a swatch clipped into
+        // nearby geometry still has its label rendered beside it (no more
+        // lone "floating green panel", sweep shot 11).
         // Drawn after the labels: FontRenderer leaves textShader bound, so
         // rebind the basic shader before any cube draw.
         renderer.beginFrame(cam);
@@ -5795,9 +5825,27 @@ public class GameEngine {
                 cam.setYaw(180); cam.setPitch(0);
                 if (shoot) { captureLabeled("08_hall_lookback"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 8 -> { // agents — NPC area from a corner
-                p.set(1.5f, hallY + 1.7f, hallZ0 + 10f);
-                cam.setYaw(-45); cam.setPitch(-5);
+            case 8 -> { // agents — camera docks to the FIRST live NPC and
+                // aims at a second one (falls back to the old hall corner
+                // when the roster is empty). A static corner could not
+                // guarantee an NPC in frame — spawnNpcs place at room
+                // centers and patrol, so the shot used to come out empty
+                // and 92c's grounding/pads had no visual proof.
+                if (!npcs.isEmpty()) {
+                    AgentNPC host = npcs.get(0);
+                    Vector3f hp = host.getPosition();
+                    p.set(hp.x + 2.2f, hp.y + 0.9f, hp.z + 2.2f);
+                    Vector3f aimAt = npcs.size() > 1 ? new Vector3f(npcs.get(1).getPosition())
+                            : new Vector3f(hp.x, hp.y - 0.4f, hp.z);
+                    aimAt.y -= 0.2f; // frame the feet + pad, not the head
+                    Vector3f dir = new Vector3f(aimAt).sub(p).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(dir.x, dir.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(
+                            Math.max(-1f, Math.min(1f, dir.y)))));
+                } else {
+                    p.set(1.5f, hallY + 1.7f, hallZ0 + 10f);
+                    cam.setYaw(-45); cam.setPitch(-5);
+                }
                 if (shoot) { captureLabeled("09_agents"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 9 -> { // portal pad — floor 0's themed teleporter (Amber/Cerulean)
@@ -5828,8 +5876,16 @@ public class GameEngine {
                 if (shoot) { captureLabeled("11_floor2_picker"); teleportMenu = false; /* the picker must not stay open over every later shot */ e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 11 -> { // nash fountain — courtyard pool beside the rotor rings
-                p.set(3.5f, hallY + 1.7f, hallZ0 - 10f);
-                cam.setYaw(0); cam.setPitch(-5);
+                // Courtyard walls sit at z=-24..-12 (courtZ=-24, cd=12); the
+                // first attempt z=-10 stood OUTSIDE the z=-12 wall (wallpaper
+                // photo). Second attempt z=-16/yaw180 was inside but the
+                // fountain (fx=0) sat 60° off-axis — out of the 70° FOV, only
+                // the red couches showed. Third take: stand EAST of the
+                // fountain at (6, -18), yaw -90 (-X), fountain dead ahead 6 m.
+                // Yaw-0 (+Z) never faces the fountain — it faces the palace.
+                // (Step 92f)
+                p.set(6f, hallY + 1.7f, hallZ0 - 18f);
+                cam.setYaw(-90); cam.setPitch(-5);
                 if (shoot) { captureLabeled("12_nash_fountain"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 12 -> { // door prompt — the unified interaction prompt at a repo door
@@ -6020,9 +6076,14 @@ public class GameEngine {
                     captureLabeled("19_gist_wall"); e2eWaypoint++; e2ePhaseTimer = 0;
                 }
             }
-            case 19 -> { // MP-004: sky — outside, looking up at the dome (sun/moon/stars by the real clock)
+            case 19 -> { // MP-004 + 92d: sky — aim AT the actual sun/moon body (shared arc formula)
                 p.set(0f, 1.7f, -50f);
-                cam.setYaw(0); cam.setPitch(38f);
+                int hr = java.time.LocalTime.now().getHour();
+                int body = (hr >= 5 && hr < 19) ? hr : (hr + 12) % 24; // sun's hour, else the moon's arc hour
+                Vector3f tgt = WorldBuilder.celestialPosition(body, p);
+                Vector3f aim = new Vector3f(tgt).sub(p).normalize();
+                cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
                 if (shoot) { captureLabeled("20_sky"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 20 -> { // MP-004: water — the traveling-wave lake from its shore

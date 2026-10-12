@@ -244,34 +244,66 @@ public class OutsideWorld {
     // ── Lake ─────────────────────────────────────────────────────────────────
 
     private void renderLake(Renderer r, float floorY, float time) {
-        float lw = 60f, ld = 40f;
         float lx = lakeCenter.x, lz = lakeCenter.z;
-        // Deep water base
-        r.drawCube(new Vector3f(lx, floorY + 0.02f, lz), new Vector3f(lw, 0.1f, ld), Renderer.TEX_WATER);
-        // High-res traveling-wave surface (finer grid than before)
-        int gw = 30, gd = 20;
-        for (int gx = 0; gx < gw; gx++) {
-            for (int gz = 0; gz < gd; gz++) {
-                float wx = lx - lw / 2f + (gx + 0.5f) * (lw / gw);
-                float wz = lz - ld / 2f + (gz + 0.5f) * (ld / gd);
+        // STEP 92b: hex-cell traveling-wave surface. The old surface was a grid
+        // of SQUARE wave cubes — the lake read as a square pool. A pointy-top
+        // hex grid (vertex along +Z) tiles the elliptical basin in hexagons.
+        // Tiling pitch (Architect fix: "no grass in between"): the mesh's unit
+        // circumradius is 0.5, so cap circumradius = 0.5·hr and the seamless
+        // pitch is x = √3·0.5·hr (flat-side to flat-side), z = 0.75·hr
+        // (1.5·circumradius) with odd rows offset half the x pitch. The old
+        // √3·hr/1.5·hr spacing assumed a unit circumradius → every cell was
+        // spaced twice its width and grass showed through between all hexes.
+        final float hr = 2.4f;                       // tile scale (cap circumradius 0.5·hr = 1.2)
+        final float xStep = (float) Math.sqrt(3.0) * 0.5f * hr;
+        final float zStep = 0.75f * hr;
+        int row = 0;
+        for (float wz = lz - 24f; wz <= lz + 24f; wz += zStep, row++) {
+            float xOff = (row % 2 != 0) ? xStep * 0.5f : 0f;
+            for (float wx = lx - 32f + xOff; wx <= lx + 32f; wx += xStep) {
+                if (!inLake(wx, wz)) continue;
                 if (!chunkVisible(wx, wz)) continue;
-                float h = 0.08f * (float) Math.cos(wx * 0.9f + time * 1.6f)
-                        + 0.06f * (float) Math.cos(wz * 1.3f - time * 1.2f)
-                        + 0.04f * (float) Math.sin((wx + wz) * 0.5f + time * 0.8f);
+                // One deep-skirted column per cell: the cap rides the same
+                // traveling wave FAMILY as the old square grid, but the
+                // spatial frequency is tuned to the HEX LATTICE: the old
+                // kx=0.9/kz=1.3 advanced ~2 rad per cell step (107-134 deg),
+                // so neighbours leapt +/-0.36 apart in height and low cells
+                // dipped BELOW the opaque grass plane -- the cell vanished
+                // and read as a green hole ("grass in between"). Quartered
+                // wavenumbers (0.22/0.30/0.22) give a gentle ~26 deg ramp
+                // per cell, and the +0.06 base keeps every cap above the
+                // ground plane (min top = floorY+0.09) while the skirt
+                // still runs below the lakebed so nothing pokes through.
+                float h = 0.05f * (float) Math.cos(wx * 0.22f + time * 1.6f)
+                        + 0.04f * (float) Math.cos(wz * 0.30f - time * 1.2f)
+                        + 0.03f * (float) Math.sin((wx + wz) * 0.22f + time * 0.8f);
                 float a = 0.5f + 0.5f * (float) Math.cos(wx * 0.6f + wz * 0.5f + time * 1.4f);
-                r.drawCubeColor(new Vector3f(wx, floorY + 0.08f + h, wz),
-                    new Vector3f(lw / gw + 0.03f, 0.05f, ld / gd + 0.03f),
+                // STEP 92f: caps inflated 2% over the exact lattice pitch. The
+                // pitch is mathematically seamless, but adjacent caps ride
+                // DIFFERENT wave heights — on a falling slope the higher cap's
+                // edge exposes a subpixel sliver of the lower neighbour/edge
+                // sky background = the green seam hairlines seen at the lake's
+                // far shore (sweep shots 20/21). Overlapping the caps by ~2
+                // px hides every seam; the lower sand ring stays underneath.
+                r.drawHexPrismColor(new Vector3f(wx, floorY - 0.09f + h, wz),
+                    new Vector3f(hr * 1.02f, 0.60f, hr * 1.02f),
                     0.08f, 0.30f + 0.25f * a, 0.70f + 0.25f * a);
             }
         }
-        // Sandy shoreline ring
-        for (int i = 0; i < 40; i++) {
-            float ang = i * GOLDEN;
-            float rad = 32f;
-            float sx = lx + (float) Math.cos(ang) * rad;
-            float sz = lz + (float) Math.sin(ang) * rad * 0.7f;
-            r.drawCubeColor(new Vector3f(sx, floorY - 0.06f, sz),
-                new Vector3f(1.5f, 0.04f, 1.5f), 0.75f, 0.70f, 0.55f);
+        // Sandy shoreline — hex cells on the SAME grid, just outside the water
+        // ellipse, so shore + water share one coherent hex tessellation.
+        row = 0;
+        for (float wz = lz - 27f; wz <= lz + 27f; wz += zStep, row++) {
+            float xOff = (row % 2 != 0) ? xStep * 0.5f : 0f;
+            for (float wx = lx - 35f + xOff; wx <= lx + 35f; wx += xStep) {
+                // outside the lake, but inside the lake grown by one cell → ring
+                if (inLake(wx, wz)) continue;
+                float gdx = wx - lx, gdz = wz - lz;
+                if ((gdx * gdx) / (34.2f * 34.2f) + (gdz * gdz) / (24.2f * 24.2f) >= 1f) continue;
+                if (!chunkVisible(wx, wz)) continue;
+                r.drawHexPrismColor(new Vector3f(wx, floorY + 0.01f, wz),
+                    new Vector3f(hr, 0.08f, hr), 0.78f, 0.72f, 0.55f);
+            }
         }
     }
 
