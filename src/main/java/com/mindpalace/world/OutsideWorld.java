@@ -257,37 +257,81 @@ public class OutsideWorld {
         final float hr = 2.4f;                       // tile scale (cap circumradius 0.5·hr = 1.2)
         final float xStep = (float) Math.sqrt(3.0) * 0.5f * hr;
         final float zStep = 0.75f * hr;
+        // STEP 93: rim cull fix — cell centers up to half a pitch outside the
+        // ellipse still carry bodies overlapping the rim. Testing the center
+        // against the exact ellipse skipped those and let the opaque grass
+        // plane show through as green hairlines at the shoreline.
+        final float rxGrown = 30f + xStep, rzGrown = 20f + zStep;
+        // STEP 94: foam is a fixed thin waterline band (see loop body).
         int row = 0;
         for (float wz = lz - 24f; wz <= lz + 24f; wz += zStep, row++) {
             float xOff = (row % 2 != 0) ? xStep * 0.5f : 0f;
             for (float wx = lx - 32f + xOff; wx <= lx + 32f; wx += xStep) {
-                if (!inLake(wx, wz)) continue;
+                // inside lake grown by one cell pitch → rim bodies kept
+                float edx = wx - lx, edz = wz - lz;
+                float eOuter = (edx * edx) / (rxGrown * rxGrown) + (edz * edz) / (rzGrown * rzGrown);
+                if (eOuter >= 1f) continue;
+                // true-ellipse distance for depth + foam banding
+                float eTrue = (edx * edx) / (30f * 30f) + (edz * edz) / (20f * 20f);
                 if (!chunkVisible(wx, wz)) continue;
                 // One deep-skirted column per cell: the cap rides the same
-                // traveling wave FAMILY as the old square grid, but the
-                // spatial frequency is tuned to the HEX LATTICE: the old
-                // kx=0.9/kz=1.3 advanced ~2 rad per cell step (107-134 deg),
-                // so neighbours leapt +/-0.36 apart in height and low cells
-                // dipped BELOW the opaque grass plane -- the cell vanished
-                // and read as a green hole ("grass in between"). Quartered
-                // wavenumbers (0.22/0.30/0.22) give a gentle ~26 deg ramp
-                // per cell, and the +0.06 base keeps every cap above the
-                // ground plane (min top = floorY+0.09) while the skirt
-                // still runs below the lakebed so nothing pokes through.
-                float h = 0.05f * (float) Math.cos(wx * 0.22f + time * 1.6f)
-                        + 0.04f * (float) Math.cos(wz * 0.30f - time * 1.2f)
-                        + 0.03f * (float) Math.sin((wx + wz) * 0.22f + time * 0.8f);
-                float a = 0.5f + 0.5f * (float) Math.cos(wx * 0.6f + wz * 0.5f + time * 1.4f);
-                // STEP 92f: caps inflated 2% over the exact lattice pitch. The
-                // pitch is mathematically seamless, but adjacent caps ride
-                // DIFFERENT wave heights — on a falling slope the higher cap's
-                // edge exposes a subpixel sliver of the lower neighbour/edge
-                // sky background = the green seam hairlines seen at the lake's
-                // far shore (sweep shots 20/21). Overlapping the caps by ~2
-                // px hides every seam; the lower sand ring stays underneath.
-                r.drawHexPrismColor(new Vector3f(wx, floorY - 0.09f + h, wz),
-                    new Vector3f(hr * 1.02f, 0.60f, hr * 1.02f),
-                    0.08f, 0.30f + 0.25f * a, 0.70f + 0.25f * a);
+                // traveling wave family. STEP 94v3: medium swell ±0.14 — the
+                // v2 ±0.20 exposed glowing side walls as green seams between
+                // cells at grazing night light.
+                float h = 0.055f * (float) Math.cos(wx * 0.22f + time * 1.6f)
+                        + 0.045f * (float) Math.cos(wz * 0.30f - time * 1.2f)
+                        + 0.030f * (float) Math.sin((wx + wz) * 0.22f + time * 0.8f);
+                // Shallow-water damping: the swell tapers to 15% over the
+                // outer quarter of the lake — rim cells stay near waterline
+                // level (no wave walls against the sand berm; real
+                // shorelines calm), deep cells keep the full roll.
+                float damp = eTrue > 0.75f ? Math.max(1f - 3.4f * (eTrue - 0.75f), 0.15f) : 1f;
+                h *= damp;
+                // STEP 94v3 (anti "mint floor") — the v2 pale-rim gradient
+                // was read from the shoreline camera: most visible cells sit
+                // at MID eTrue → pastel mint everywhere, no dark anywhere.
+                // v3 inverts it: water is DEEP everywhere (navy→teal only by
+                // depth), the SKY reflection cue is distance-driven (far
+                // water pales toward the horizon — a real Fresnel cue near
+                // the camera is unnecessary), and night drops albedo hard.
+                float depthT = (float) Math.pow(Math.min(eTrue, 1f), 0.7f);
+                float rC = 0.07f + 0.10f * depthT;      // deep navy → teal
+                float gC = 0.22f + 0.22f * depthT;
+                float bC = 0.40f + 0.16f * depthT;
+                // wave light/dark — k clamps h to [0,1] around the mean
+                float k = Math.min(Math.max(h * 3.2f + 0.5f, 0f), 1f);
+                float waveShade = 0.84f + 0.34f * k;
+                rC *= waveShade; gC *= waveShade; bC *= waveShade;
+                // sky reflection with distance — starts at 8 m, 70% by 30 m.
+                float dCam = (float) Math.sqrt((wx - camX) * (wx - camX) + (wz - camZ) * (wz - camZ));
+                float skyBlend = 0.70f * Math.min(Math.max((dCam - 8f) / 22f, 0f), 1f);
+                rC += (0.62f - rC) * skyBlend;
+                gC += (0.78f - gC) * skyBlend;
+                bC += (0.90f - bC) * skyBlend;
+                // Night albedo drop (tour + real evening play): kill the
+                // pastel brightness so dark blue stays dark blue.
+                if (isNight()) { rC *= 0.55f; gC *= 0.60f; bC *= 0.62f; }
+                if (eTrue > 0.965f) {
+                    // Thin waterline foam: fixed ~3.5%-of-radius band
+                    // (≈0.5 m wide) gently breathing in brightness. The
+                    // step-93 pulsing RADIUS swung the band 2-3 m wide and
+                    // read as ice floes mid-lake.
+                    float breathe = 0.92f + 0.08f * (float) Math.sin(time * 1.3f + (wx + wz) * 0.15f);
+                    rC = 0.88f * breathe; gC = 0.98f * breathe; bC = breathe;
+                } else {
+                    // Sun glitter: the old single-sine glint>0.2 lit ~43% of
+                    // crest cells in contiguous strips (the white patches);
+                    // a two-sine product > 0.82 picks ~4% of crest cells
+                    // POINTWISE — a sparkling field, not patches.
+                    float g1 = (float) Math.sin(wx * 2.1f + wz * 1.7f + time * 2.7f);
+                    float g2 = (float) Math.sin(wz * 1.6f - wx * 1.3f - time * 2.1f);
+                    if (k > 0.55f && g1 * g2 > 0.82f) {
+                        rC = 0.96f; gC = 0.99f; bC = 1.0f;
+                    }
+                }
+                r.drawHexPrismColor(new Vector3f(wx, floorY + 0.22f + h, wz),
+                    new Vector3f(hr * 1.06f, 0.60f, hr * 1.06f),
+                    rC, gC, bC);
             }
         }
         // Sandy shoreline — hex cells on the SAME grid, just outside the water
@@ -296,13 +340,16 @@ public class OutsideWorld {
         for (float wz = lz - 27f; wz <= lz + 27f; wz += zStep, row++) {
             float xOff = (row % 2 != 0) ? xStep * 0.5f : 0f;
             for (float wx = lx - 35f + xOff; wx <= lx + 35f; wx += xStep) {
-                // outside the lake, but inside the lake grown by one cell → ring
-                if (inLake(wx, wz)) continue;
-                float gdx = wx - lx, gdz = wz - lz;
-                if ((gdx * gdx) / (34.2f * 34.2f) + (gdz * gdz) / (24.2f * 24.2f) >= 1f) continue;
+                // outside the GROWN water ellipse (same boundary as water cells)
+                // but inside the sand ring → sand never underlays water cells
+                float sdx = wx - lx, sdz = wz - lz;
+                float sInner = (sdx * sdx) / (rxGrown * rxGrown) + (sdz * sdz) / (rzGrown * rzGrown);
+                if (sInner < 1f) continue;
+                float sOuter = (sdx * sdx) / (34.2f * 34.2f) + (sdz * sdz) / (24.2f * 24.2f);
+                if (sOuter >= 1f) continue;
                 if (!chunkVisible(wx, wz)) continue;
-                r.drawHexPrismColor(new Vector3f(wx, floorY + 0.01f, wz),
-                    new Vector3f(hr, 0.08f, hr), 0.78f, 0.72f, 0.55f);
+                r.drawHexPrismColor(new Vector3f(wx, floorY + 0.02f, wz),
+                    new Vector3f(hr, 0.08f, hr), 0.62f, 0.55f, 0.40f);
             }
         }
     }

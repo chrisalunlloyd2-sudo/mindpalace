@@ -567,13 +567,30 @@ public class WorldBuilder {
         float fx = cx, fz = cz;
         // Basin plinth (hex)
         r.drawHexPrism(new Vector3f(fx, floorY + 0.28f, fz), new Vector3f(1.7f, 0.56f, 1.7f), Renderer.TEX_CONCRETE);
-        // Water surface (hex) resting on the plinth
-        r.drawHexPrism(new Vector3f(fx, floorY + 0.59f, fz), new Vector3f(1.45f, 0.06f, 1.45f), Renderer.TEX_NEON_CYAN);
+        // Water surface (hex) resting on the plinth. STEP 94: the old single
+        // TEX_NEON_CYAN disc shared its tint with the NPC pads and read as a
+        // glowing pad, not water. Stacked layers instead — pale foam rim
+        // slightly LARGER and LOWER than the water body, water gradient
+        // deep-teal — the same cue stack as the lake. Gentle bob (sine of
+        // world clock) so the surface is alive without wave-grid cost.
+        float fbob = 0.012f * (float) Math.sin(time * 2.2f);
+        // Foam rim (pale, larger, tucked under the water edge)
+        r.drawHexPrismColor(new Vector3f(fx, floorY + 0.575f, fz),
+            new Vector3f(1.48f, 0.05f, 1.48f), 0.90f, 0.97f, 1.0f);
+        // Main water body
+        r.drawHexPrismColor(new Vector3f(fx, floorY + 0.60f + fbob, fz),
+            new Vector3f(1.34f, 0.06f, 1.34f), 0.16f, 0.50f, 0.72f);
+        // Deep center layer
+        r.drawHexPrismColor(new Vector3f(fx, floorY + 0.625f + fbob, fz),
+            new Vector3f(0.95f, 0.05f, 0.95f), 0.08f, 0.32f, 0.55f);
         // Center pillar (hex)
         r.drawHexPrism(new Vector3f(fx, floorY + 0.92f, fz), new Vector3f(0.21f, 0.6f, 0.21f), Renderer.TEX_WHITE);
-        // Top tier: hex plinth + hex water
+        // Top tier: hex plinth + hex water (same layered water stack)
         r.drawHexPrism(new Vector3f(fx, floorY + 1.30f, fz), new Vector3f(1.2f, 0.16f, 1.2f), Renderer.TEX_WHITE);
-        r.drawHexPrism(new Vector3f(fx, floorY + 1.41f, fz), new Vector3f(0.8f, 0.06f, 0.8f), Renderer.TEX_NEON_CYAN);
+        r.drawHexPrismColor(new Vector3f(fx, floorY + 1.40f, fz),
+            new Vector3f(0.86f, 0.05f, 0.86f), 0.90f, 0.97f, 1.0f);
+        r.drawHexPrismColor(new Vector3f(fx, floorY + 1.43f + fbob, fz),
+            new Vector3f(0.70f, 0.06f, 0.70f), 0.16f, 0.50f, 0.72f);
 
         // Couches (left side)
         for (int i = 0; i < 2; i++) {
