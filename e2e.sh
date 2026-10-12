@@ -33,9 +33,13 @@ grep -a "RESULT" /tmp/e2e_selftest.log | tail -1
 
 echo "=== [3/4] E2E WAYPOINT TOUR ==="
 rm -rf "$DIR"; mkdir -p "$DIR"
+# STEP 94v7: --time 21 pins the whole world to NIGHT (sky phase 2, lake +
+# fountain purple drift, moon up, stars) so v7's night features are exercised
+# regardless of the real wall clock. Day shot 12_nash_fountain keeps its
+# bright-sky look via the day branch — fnight uses the same TimeClock now.
 timeout 120 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
-  -jar "$BUILD_JAR" --e2e "$DIR" > /tmp/e2e_tour.log 2>&1
+  -jar "$BUILD_JAR" --e2e "$DIR" --time 21 > /tmp/e2e_tour.log 2>&1
 grep -aE "\[E2E\]|\[E2E-SHOT\]" /tmp/e2e_tour.log
 
 echo "=== [4/4] VERIFY SHOTS (exist + non-black) ==="

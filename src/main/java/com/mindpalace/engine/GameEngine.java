@@ -1870,7 +1870,7 @@ public class GameEngine {
         com.mindpalace.render.GlTrace.mark("renderer.beginFrame");
         // Sky dome — full gradient sphere so the sky is never black, even
         // looking straight up or sideways. Phase follows the real clock.
-        int hour = java.time.LocalTime.now().getHour();
+        int hour = com.mindpalace.world.TimeClock.hour(); // v7: --time override choke point
         int skyPhase = (hour < 6 || hour >= 20) ? 2 : (hour >= 18 ? 1 : 0);
         renderer.drawSkyDome(player.getCamera().getPosition(), skyPhase);
         com.mindpalace.render.GlTrace.mark("skyDome");
@@ -6158,7 +6158,7 @@ public class GameEngine {
             }
             case 19 -> { // MP-004 + 92d: sky — aim AT the actual sun/moon body (shared arc formula)
                 p.set(0f, 1.7f, -50f);
-                int hr = java.time.LocalTime.now().getHour();
+                int hr = com.mindpalace.world.TimeClock.hour();
                 int body = (hr >= 5 && hr < 19) ? hr : (hr + 12) % 24; // sun's hour, else the moon's arc hour
                 Vector3f tgt = WorldBuilder.celestialPosition(body, p);
                 Vector3f aim = new Vector3f(tgt).sub(p).normalize();

@@ -383,6 +383,13 @@ public class Renderer {
         getSphereMesh().render();
     }
 
+    /** Toggle distance fog for out-of-atmosphere bodies (STEP 94v7: sun/moon
+     *  now sit 140 u out — without this the distance fog would wash a third
+     *  of their color into pale haze and they'd read as milky discs). */
+    public void setFogEnabled(float on) {
+        basicShader.setUniform("fogEnabled", on);
+    }
+
     // ── Hex prism (step 92a) ─────────────────────────────────────────────────
 
     private Mesh hexPrismMesh;

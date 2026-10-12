@@ -191,7 +191,7 @@ public class OutsideWorld {
     }
 
     private boolean isNight() {
-        int h = LocalTime.now().getHour();
+        int h = TimeClock.hour();
         return h < 6 || h >= 20;
     }
 
@@ -452,6 +452,14 @@ public class OutsideWorld {
                 // longer read as pale/white anywhere. Night-only; day
                 // steel-haze bloom untouched.
                 if (isNight()) {
+                    // STEP 94v7 (Architect: slight purple hue): night water
+                    // drifts toward indigo-violet — green dips, blue+red lift.
+                    // Order matters: shift FIRST, v6 budget LAST, so every
+                    // cell is still clamped ≤ lum 0.50 (r<g<b cyan family,
+                    // all-blue bar, and purple can never rebloom a cell).
+                    rC += 0.02f * bC;
+                    gC *= 0.94f;
+                    bC += 0.08f * (1f - bC);
                     float lum = 0.2126f * rC + 0.7152f * gC + 0.0722f * bC;
                     if (lum > 0.50f) {
                         float s = 0.50f / lum;

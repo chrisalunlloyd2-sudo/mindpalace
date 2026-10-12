@@ -582,14 +582,17 @@ public class WorldBuilder {
         // Architect flagged on the lake (r12 frame 12: white plate on the
         // top-tier water). At night every fountain hex-water-adjacent tier
         // now stays in the blue family below the 0.5 kne...[truncated]
-        boolean fnight = java.time.LocalTime.now().getHour() < 6
-            || java.time.LocalTime.now().getHour() >= 18;
+        boolean fnight = TimeClock.hour() < 6
+            || TimeClock.hour() >= 18;
         // Foam rim (pale, larger, tucked under the water edge).
         // v6: at night the rim is DEEP-CYAN (below the bloom knee) — the
         // old pale-white rim was the fountain's white hex plate.
         if (fnight) {
+            // STEP 94v7 (Architect: slight purple hue): fountain night tiers
+            // drift with the lake — mild indigo-violet lean, still deep-cyan
+            // family and far below the bloom knee. Day branch untouched.
             r.drawHexPrismColor(new Vector3f(fx, floorY + 0.575f, fz),
-                new Vector3f(1.48f, 0.05f, 1.48f), 0.07f, 0.36f, 0.47f);
+                new Vector3f(1.48f, 0.05f, 1.48f), 0.09f, 0.33f, 0.49f);
         } else {
             r.drawHexPrismColor(new Vector3f(fx, floorY + 0.575f, fz),
                 new Vector3f(1.48f, 0.05f, 1.48f), 0.90f, 0.97f, 1.0f);
@@ -618,8 +621,9 @@ public class WorldBuilder {
                 new Vector3f(1.2f, 0.16f, 1.2f), Renderer.TEX_WHITE);
         }
         if (fnight) {
+            // v7 purple drift: rim tiers (0.07,0.36,0.47)→(0.09,0.33,0.49).
             r.drawHexPrismColor(new Vector3f(fx, floorY + 1.40f, fz),
-                new Vector3f(0.86f, 0.05f, 0.86f), 0.07f, 0.36f, 0.47f);
+                new Vector3f(0.86f, 0.05f, 0.86f), 0.09f, 0.33f, 0.49f);
         } else {
             r.drawHexPrismColor(new Vector3f(fx, floorY + 1.40f, fz),
                 new Vector3f(0.86f, 0.05f, 0.86f), 0.90f, 0.97f, 1.0f);
@@ -696,46 +700,59 @@ public class WorldBuilder {
     public static Vector3f celestialPosition(int hour24, Vector3f cam) {
         int h = ((hour24 % 24) + 24) % 24;
         float theta = (float) Math.toRadians((h - 6) * 15f);   // 6h→0°, 12h→90°, 18h→180°
-        float dist = 44f;
+        // STEP 94v7: bodies belong in SPACE, not parked on the ground. The
+        // old dist=44 arc sank to +4 u above the camera at dusk — halo big
+        // enough to clip terrain, so the sun visibly "sat on the ground".
+        // Arc to 140 u out (inside far plane 200, inside sky dome 150), peak
+        // +112 u above the camera at noon, min +9.5 u at horizon. Radii are
+        // scaled (44/140) so ANGULAR size is unchanged from the old look.
+        float dist = 140f;
         return new Vector3f(
             cam.x - (float) Math.cos(theta) * dist,
-            cam.y + 4f + (float) Math.sin(theta) * 34f,
-            cam.z + 14f);
+            cam.y + 9.5f + (float) Math.sin(theta) * dist * (34f / 44f),
+            cam.z + 14f * (140f / 44f));
     }
 
     /** Sun/moon/stars: real spheres on a diurnal arc (step 92d). The old
      *  implementation bolted flat square cube-slabs to one fixed sky spot —
      *  the "square sun/moon" — and never moved them. */
     private void renderCelestial(Renderer r, Vector3f camPos) {
-        int hour = java.time.LocalTime.now().getHour();
+        int hour = TimeClock.hour();
         boolean sunUp = hour >= 5 && hour < 19;
         boolean moonUp = hour >= 18 || hour < 7;
+        // STEP 94v7: at 140 u out the distance fog would eat ~35% of each
+        // body's color — kill fog for the celestial pass only, restore after.
+        if (sunUp || moonUp) r.setFogEnabled(0.0f);
         if (sunUp) {
             Vector3f sp = celestialPosition(hour, camPos);
             if (sp.y > camPos.y) { // risen above the horizon
-                float t = Math.max(0f, Math.min(1f, (sp.y - camPos.y - 4f) / 34f)); // 0 horizon → 1 high
+                float t = Math.max(0f, Math.min(1f, (sp.y - camPos.y - 9.5f) / (140f * 34f / 44f))); // 0 horizon → 1 high
                 // Layered glow: wide soft halo → mid glow → bright core.
-                r.drawSphereColor(sp, new Vector3f(6.5f, 6.5f, 6.5f), 1.00f, 0.55f + 0.20f * t, 0.25f + 0.15f * t);
-                r.drawSphereColor(sp, new Vector3f(4.4f, 4.4f, 4.4f), 1.00f, 0.62f + 0.26f * t, 0.28f + 0.22f * t);
-                r.drawSphereColor(sp, new Vector3f(2.6f, 2.6f, 2.6f), 1.00f, 0.78f, 0.42f);
+                // v7: radii ×(140/44) — same angular size, now 140 u out.
+                r.drawSphereColor(sp, new Vector3f(20.7f, 20.7f, 20.7f), 1.00f, 0.55f + 0.20f * t, 0.25f + 0.15f * t);
+                r.drawSphereColor(sp, new Vector3f(14.0f, 14.0f, 14.0f), 1.00f, 0.62f + 0.26f * t, 0.28f + 0.22f * t);
+                r.drawSphereColor(sp, new Vector3f(8.3f, 8.3f, 8.3f), 1.00f, 0.78f, 0.42f);
             }
         }
         if (moonUp) {
             Vector3f mp = celestialPosition(hour + 12, camPos);
             if (mp.y > camPos.y) {
                 // Pale glow + core + face craters (billboarded toward camera).
-                r.drawSphereColor(mp, new Vector3f(3.8f, 3.8f, 3.8f), 0.50f, 0.55f, 0.68f);
-                r.drawSphereColor(mp, new Vector3f(2.4f, 2.4f, 2.4f), 0.90f, 0.92f, 0.98f);
+                // v7: HALF SIZE (Architect: moon could be smaller by 1/2) and
+                // 140 u out — radii ×0.5×(140/44), face details scale along.
+                r.drawSphereColor(mp, new Vector3f(6.05f, 6.05f, 6.05f), 0.50f, 0.55f, 0.68f);
+                r.drawSphereColor(mp, new Vector3f(3.8f, 3.8f, 3.8f), 0.90f, 0.92f, 0.98f);
                 Vector3f dir = new Vector3f(camPos).sub(mp).normalize(); // moon → camera
                 Vector3f lat = new Vector3f(dir.z, 0, -dir.x).normalize();
                 r.drawSphereColor(new Vector3f(mp).add(new Vector3f(dir).mul(1.05f)).add(new Vector3f(lat).mul(0.35f)),
-                    new Vector3f(0.42f, 0.42f, 0.42f), 0.76f, 0.78f, 0.86f);
-                r.drawSphereColor(new Vector3f(mp).add(new Vector3f(dir).mul(0.95f)).add(new Vector3f(lat).mul(-0.40f)).sub(0f, 0.18f, 0f),
-                    new Vector3f(0.30f, 0.30f, 0.30f), 0.78f, 0.80f, 0.88f);
-                r.drawSphereColor(new Vector3f(mp).add(new Vector3f(dir).mul(1.10f)).add(0f, 0.30f, 0f),
-                    new Vector3f(0.26f, 0.26f, 0.26f), 0.74f, 0.76f, 0.85f);
+                    new Vector3f(0.67f, 0.67f, 0.67f), 0.76f, 0.78f, 0.86f);
+                r.drawSphereColor(new Vector3f(mp).add(new Vector3f(dir).mul(0.95f)).add(new Vector3f(lat).mul(-0.40f)).sub(0f, 0.09f, 0f),
+                    new Vector3f(0.47f, 0.47f, 0.47f), 0.78f, 0.80f, 0.88f);
+                r.drawSphereColor(new Vector3f(mp).add(new Vector3f(dir).mul(1.10f)).add(0f, 0.15f, 0f),
+                    new Vector3f(0.41f, 0.41f, 0.41f), 0.74f, 0.76f, 0.85f);
             }
         }
+        if (sunUp || moonUp) r.setFogEnabled(1.0f);
         // Stars: strict night gate, matched to the sky-dome night phase.
         if (hour >= 20 || hour < 6) {
             Constellation.render(r, camPos.x, camPos.y + 26f, camPos.z, time);
@@ -803,7 +820,7 @@ public class WorldBuilder {
     private void renderHallwayWindows(Renderer r, Vector3f s, Hallway hw, float wallX, int side) {
         float len = hw.getEnd().z - s.z;
         float dw = Room.DOOR_WIDTH, dh = Room.DOOR_HEIGHT;
-        int hour = java.time.LocalTime.now().getHour();
+        int hour = TimeClock.hour();
         boolean night = hour < 6 || hour >= 18;
         // midpoints between consecutive doors get one pane each
         List<Float> doorZs = new ArrayList<>();
