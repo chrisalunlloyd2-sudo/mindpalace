@@ -532,6 +532,10 @@ public class AgentManager {
                     log("[AgentManager] real-work verdict application failed: " + e.getMessage());
                 }
             }
+            // t_948a71be: unconditional post-verdict sweep — also clears the
+            // synthetic cycle-<ts> proposal when gather() returned empty
+            // (otherwise dead synthetic ids pile up cycle over cycle).
+            quorum.finishCycle();
         } catch (Exception e) {
             log("[AgentManager] quorum error: " + e.getMessage());
         }
@@ -565,10 +569,6 @@ public class AgentManager {
                 log("[AgentManager] real-work verdict failed for " + rw.sourceId + ": " + e.getMessage());
             }
         }
-        // Post-verdict sweep: drop every proposal this cycle registered
-        // (synthetic + real-work), keeping repeated cycles from re-voting on
-        // stale entries that are already applied-and-ledgered.
-        quorum.finishCycle();
     }
 
     /** t_948a71be: source of real-work proposals (kanban + issues + checks). */
