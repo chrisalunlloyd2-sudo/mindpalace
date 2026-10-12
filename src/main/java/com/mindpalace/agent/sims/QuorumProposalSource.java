@@ -98,8 +98,17 @@ public class QuorumProposalSource {
 
         /** Full voting text: source-tagged title + detail — what the voter models actually read. */
         public String voteText() {
-            String d = detail.isBlank() ? "" : " — " + detail;
-            return "[" + source + (publicSourced ? "/public" : "") + "] " + title + d;
+            String base = "[" + source + (publicSourced ? "/public" : "") + "] " + title
+                + (detail.isBlank() ? "" : " - " + detail);
+            // t_740fa7c6 doctrine: voter-facing text is ASCII-plain — this rides
+            // into buildVotingPrompt / telemetry through cp1252-unsafe surfaces,
+            // so an em dash here mangles exactly like the old tally glyphs did.
+            StringBuilder sb = new StringBuilder(base.length());
+            for (int i = 0; i < base.length(); i++) {
+                char c = base.charAt(i);
+                sb.append(c >= 0x7F ? '?' : c);
+            }
+            return sb.toString();
         }
 
         /** Stable proposal id for the quorum registry (source-tagged, ASCII-safe). */
