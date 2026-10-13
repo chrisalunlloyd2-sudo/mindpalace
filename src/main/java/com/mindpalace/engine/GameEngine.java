@@ -5117,6 +5117,197 @@ public class GameEngine {
             + " quorum readability + spawner contract (kanban capture, no 'Act on ?', ASCII tally)");
         if (quorumReadabilityOk) pass++; else fail++;
 
+        // 37b. Real-work proposal source + verdict capture (t_948a71be):
+        //      quorum votes on REAL work (kanban ready/triage cards,
+        //      hermes-queue issues, failing checks). All through the public
+        //      API in capture mode — live board, ledger and GitHub stay
+        //      untouched. Regression coverage:
+        //      (a) gather(): ready+triage cards both reachable, quorum-
+        //          authored cards excluded (no self-feed), poller-bridge
+        //          issues deduped against minted cards, failing checks
+        //          parsed from the monitor tail, concrete actions name
+        //          the file/command, vote text is line-free ASCII;
+        //      (b) APPROVED kanban card → captured 'promote' argv;
+        //      (c) REJECTED kanban card → captured 'comment' authored by
+        //          mindpalace-quorum with the tally;
+        //      (d) REJECTED public issue → ledger-only (GitHub is read-
+        //          only); APPROVED public issue → 'create-triage' ONLY
+        //          (never past triage — Architect sign-off doctrine) with
+        //          a stable idempotency key;
+        //      (e) capture mode never touches the durable ledger;
+        //      (f) verdicts dedupe within a run (no double capture);
+        //      (g) finishCycle() sweeps the registry clean.
+        boolean realWorkSourceOk = false;
+        java.nio.file.Path realWorkTmp = null;
+        try {
+            realWorkTmp = java.nio.file.Files.createTempDirectory("mindpalance-realwork-37b");
+            com.mindpalace.agent.sims.QuorumProposalSource src =
+                new com.mindpalace.agent.sims.QuorumProposalSource();
+            src.useTestEffectsTarget(realWorkTmp);
+            src.useTestLedgerPath(realWorkTmp.resolve("ledger_scratch.jsonl")); // clean slate
+            String kanbanFeed = "["
+                + "{\"id\":\"t_111aaa\",\"status\":\"ready\",\"created_by\":\"hermes\","
+                + "\"title\":\"Upgrade HUD door prompts\",\"body\":\"Edit HUD render path\"},"
+                + "{\"id\":\"t_222bbb\",\"status\":\"triage\",\"created_by\":\"architect\","
+                + "\"title\":\"GitHub issue #7: portal glow\",\"body\":\"wall plates y3.45+\"},"
+                + "{\"id\":\"t_333ccc\",\"status\":\"triage\",\"created_by\":\"mindpalace-quorum\","
+                + "\"title\":\"self-feed poison card\",\"body\":\"must be excluded\"},"
+                + "{\"id\":\"t_444ddd\",\"status\":\"running\",\"created_by\":\"hermes\","
+                + "\"title\":\"claimed already\",\"body\":\"not a proposal\"}"
+                + "]";
+            String issueFeed = "["
+                + "{\"number\":7,\"title\":\"dup covered by card\",\"body\":\"\","
+                + "\"html_url\":\"https://example.invalid/7\"},"
+                + "{\"number\":12,\"title\":\"Add perf overlay to menu\",\"body\":\"GPU frame cost\","
+                + "\"html_url\":\"https://example.invalid/12\"}"
+                + "]";
+            String monitorLine = "{\"chat_loop\":{\"looping\":true,\"avg_similarity\":0.91,"
+                + "\"sample_size\":24},\"git_unpushed_commits\":5,\"disk_free_gb\":{\"C\":12.5}}";
+            src.useTestKanbanFeed(kanbanFeed);
+            src.useTestIssueFeed(issueFeed);
+            src.useTestMonitorLine(monitorLine);
+            var realWork = src.gather();
+            java.util.Set<String> got = new java.util.HashSet<>();
+            for (var rw : realWork) got.add(rw.sourceId);
+            boolean gatherOk = realWork.size() == 5
+                && got.contains("t_111aaa")                    // ready card
+                && got.contains("t_222bbb")                    // triage card reachable
+                && !got.contains("t_333ccc")                   // quorum-authored excluded
+                && !got.contains("t_444ddd")                   // running card excluded
+                && !got.contains("#7") && got.contains("#12")  // poller-bridge dedupe
+                && got.contains("check-chat-loop")
+                && got.contains("check-unpushed")
+                && !got.contains("check-disk");                // 12.5 GB free = healthy
+            boolean actionsOk = true, asciiOk = true;
+            for (var rw : realWork) {
+                String a = rw.concreteAction;
+                if (rw.sourceId.equals("t_111aaa") && !a.contains("hermes kanban claim t_111aaa")) actionsOk = false;
+                if (rw.sourceId.equals("check-chat-loop") && !a.contains("chat_logs")) actionsOk = false;
+                if (rw.sourceId.equals("check-unpushed") && !a.contains("mindpalace-sync.sh")) actionsOk = false;
+                if (rw.sourceId.equals("#12")) {
+                    if (!rw.publicSourced) actionsOk = false;
+                    if (!a.contains("triage")) actionsOk = false;
+                }
+                String vt = rw.voteText();
+                for (int i = 0; i < vt.length(); i++) {
+                    char c = vt.charAt(i);
+                    if (c == '\n' || c == 13 || c >= 0x7F) { asciiOk = false; break; }
+                }
+            }
+            boolean publicFlagOk = true;
+            for (var rw : realWork) {
+                if (rw.sourceId.equals("#12") && !rw.voteText().startsWith("[github/public] ")) publicFlagOk = false;
+            }
+
+            // (b)-(d) verdict routing through applyVerdict in capture mode.
+            var byId = new java.util.HashMap<String, com.mindpalace.agent.sims.QuorumProposalSource.RealWorkProposal>();
+            for (var rw : realWork) byId.put(rw.sourceId, rw);
+            var rwCard = byId.get("t_111aaa");
+            var rwCard2 = byId.get("t_222bbb");
+            var rwIssue = byId.get("#12");
+            var q3 = new com.mindpalace.agent.sims.WeightedQuorumVote();
+            q3.setModelPosition("a", 0, 0);
+            q3.setModelPosition("b", 1, 0);
+            q3.setModelPosition("c", 0, 0);
+            boolean approvedCardOk = false, rejectedCardOk = false, ledgerOnlyOk = false, triageOk = false;
+            // APPROVED kanban card -> capture 'promote'
+            String pidC = rwCard.proposalId();
+            q3.registerProposal(pidC, rwCard.voteText(), new com.mindpalace.agent.sims.HexCoord(0, 0), rwCard.proposalType());
+            q3.castVote(pidC, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q3.castVote(pidC, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q3.castVote(pidC, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            var rApp = q3.calculateQuorum(pidC);
+            if (rApp != null && "APPROVED".equals(rApp.status)) {
+                src.applyVerdict(rApp, rwCard);
+                String cap1 = new String(java.nio.file.Files.readAllBytes(
+                    realWorkTmp.resolve("realwork_verdict_0001.json")),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                approvedCardOk = cap1.contains("\"action\":\"promote\"")
+                    && cap1.contains("hermes") && cap1.contains("promote")
+                    && cap1.contains("t_111aaa") && cap1.contains("APPROVED");
+            }
+            // REJECTED kanban card -> capture 'comment' (author mindpalace-quorum)
+            String pidR = rwCard2.proposalId();
+            q3.registerProposal(pidR, rwCard2.voteText(), new com.mindpalace.agent.sims.HexCoord(0, 0), rwCard2.proposalType());
+            q3.castVote(pidR, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            q3.castVote(pidR, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            q3.castVote(pidR, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            var rRej = q3.calculateQuorum(pidR);
+            if (rRej != null && "REJECTED".equals(rRej.status)) {
+                src.applyVerdict(rRej, rwCard2);
+                String cap2 = new String(java.nio.file.Files.readAllBytes(
+                    realWorkTmp.resolve("realwork_verdict_0002.json")),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                rejectedCardOk = cap2.contains("\"action\":\"comment\"")
+                    && cap2.contains("--author") && cap2.contains("mindpalace-quorum")
+                    && cap2.contains("REJECTED") && cap2.contains("t_222bbb");
+            }
+            // REJECTED public issue -> ledger-only (GitHub stays read-only)
+            String pidI = rwIssue.proposalId();
+            q3.registerProposal(pidI, rwIssue.voteText(), new com.mindpalace.agent.sims.HexCoord(0, 0), rwIssue.proposalType());
+            q3.castVote(pidI, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            q3.castVote(pidI, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            q3.castVote(pidI, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            var rRejIssue = q3.calculateQuorum(pidI);
+            if (rRejIssue != null && "REJECTED".equals(rRejIssue.status)) {
+                src.applyVerdict(rRejIssue, rwIssue);
+                String cap3 = new String(java.nio.file.Files.readAllBytes(
+                    realWorkTmp.resolve("realwork_verdict_0003.json")),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                ledgerOnlyOk = cap3.contains("\"action\":\"ledger-only\"");
+            }
+            // APPROVED public issue -> create-triage ONLY, stable idempotency key
+            q3.castVote(pidI, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q3.castVote(pidI, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q3.castVote(pidI, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            var rAppIssue = q3.calculateQuorum(pidI);
+            if (rAppIssue != null && "APPROVED".equals(rAppIssue.status)) {
+                src.applyVerdict(rAppIssue, rwIssue);
+                String cap4 = new String(java.nio.file.Files.readAllBytes(
+                    realWorkTmp.resolve("realwork_verdict_0004.json")),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                triageOk = cap4.contains("\"action\":\"create-triage\"")
+                    && cap4.contains("--triage")
+                    && cap4.contains("quorum-github-12");
+            }
+            // (e) capture mode never writes the durable ledger
+            boolean ledgerOk = !java.nio.file.Files.exists(realWorkTmp.resolve("ledger_scratch.jsonl"));
+            // (f) dedupe: re-applying the promote verdict writes no 0005 record
+            src.applyVerdict(rApp, rwCard);
+            boolean dedupeOk = true;
+            try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(realWorkTmp)) {
+                dedupeOk = s.filter(p -> p.getFileName().toString().startsWith("realwork_verdict_"))
+                    .count() == 4;
+            }
+            // (g) finishCycle sweeps the registry
+            q3.finishCycle();
+            boolean sweepOk = q3.proposalCount() == 0;
+
+            realWorkSourceOk = gatherOk && actionsOk && asciiOk && publicFlagOk
+                && approvedCardOk && rejectedCardOk && ledgerOnlyOk && triageOk
+                && ledgerOk && dedupeOk && sweepOk;
+            if (!realWorkSourceOk) {
+                System.out.println("      37b detail: gather=" + gatherOk + " actions=" + actionsOk
+                    + " ascii=" + asciiOk + " flag=" + publicFlagOk
+                    + " promote=" + approvedCardOk + " comment=" + rejectedCardOk
+                    + " ledgerOnly=" + ledgerOnlyOk + " triage=" + triageOk
+                    + " ledgerClean=" + ledgerOk + " dedupe=" + dedupeOk + " sweep=" + sweepOk);
+            }
+        } catch (Exception e) {
+            System.out.println("      real-work source error: " + e);
+            realWorkSourceOk = false;
+        } finally {
+            if (realWorkTmp != null) {
+                try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(realWorkTmp)) {
+                    walk.sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) { } });
+                } catch (Exception ignored) { }
+            }
+        }
+        System.out.println((realWorkSourceOk ? "PASS" : "FAIL")
+            + " real-work proposal source + verdict capture (kanban/issues/checks -> promote/comment/ledger-only/create-triage, no live writes)");
+        if (realWorkSourceOk) pass++; else fail++;
+
         // 38. Portal color pairing — every teleporter pad has a complementary
         //     color pair (roadmap §3): pair hues >= 110 degrees apart, every
         //     color clears the bloom bright-pass (luminance > 0.6), the planet
