@@ -4899,6 +4899,100 @@ public class GameEngine {
             + " quorum vote quality (APPROVED at 2 real; ABSTAIN labeled; RAW-FIRST decideVote)");
         if (quorumOk) pass++; else fail++;
 
+        // 37a. Quorum readability + spawner contract (t_740fa7c6): the old
+        //      code wrote "Act on ?" into ALL 4291 telemetry APPROVED rows,
+        //      mojibake tally glyphs ("?3 ?0 ?0", ✓/✗/🌫 through cp1252) into
+        //      TASK files, and hashed proposal ids into non-monotonic,
+        //      collision-prone TASK numbers (TASK_1196 born after TASK_1980).
+        //      Regression: (a) no-room target must be ASCII-plain, never "?";
+        //      (b) an APPROVED quorum cycle MUST spawn exactly one TASK file,
+        //      written UTF-8 with an ASCII tally; (c) consecutive spawns get
+        //      strictly increasing numbers (sequential, no hash band);
+        //      (d) result/toString output stays glyph-free. Spawns are
+        //      redirected to a scratch dir so the live quorum_inbox,
+        //      task_watch.log and quorum_ledger.jsonl are untouched.
+        boolean quorumReadabilityOk = false;
+        java.nio.file.Path spawnTmp = null;
+        try {
+            // (a) the "Act on ?" poison: null-room fallback must be plain text
+            String noRoom = com.mindpalace.agent.AgentManager.proposalTargetName(null);
+            boolean noPoison = noRoom != null && !noRoom.contains("?");
+
+            spawnTmp = java.nio.file.Files.createTempDirectory("mindpalace-quorum-spawn");
+            com.mindpalace.agent.sims.QuorumTaskSpawner.useTestSpawnTarget(spawnTmp);
+            com.mindpalace.agent.sims.WeightedQuorumVote q2 =
+                new com.mindpalace.agent.sims.WeightedQuorumVote();
+            q2.setModelPosition("a", 0, 0);
+            q2.setModelPosition("b", 1, 0);
+            q2.setModelPosition("c", 0, 0);
+            String target = com.mindpalace.agent.AgentManager.proposalTargetName(null);
+            String pid = "spawn-verify-" + System.currentTimeMillis();
+            q2.registerProposal(pid, "Act on " + target,
+                new com.mindpalace.agent.sims.HexCoord(0, 0), "system_health_check");
+            // deterministic APPROVED (3/3 visible approve)
+            q2.castVote(pid, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q2.castVote(pid, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q2.castVote(pid, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r2 = q2.calculateQuorum(pid);
+
+            // (d) ASCII-only verdict rendering
+            boolean glyphsOk = r2 != null && "APPROVED".equals(r2.status)
+                && !java.util.regex.Pattern.compile("[\\uFFFD\\u2713\\u2717]").matcher(r2.toString()).find()
+                && r2.toString().contains("ok:3 no:0 blind:0");
+
+            // (b) APPROVED -> exactly one TASK file, UTF-8, ASCII tally
+            com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r2);
+            java.util.List<java.nio.file.Path> spawned;
+            try (java.util.stream.Stream<java.nio.file.Path> ls = java.nio.file.Files.list(spawnTmp)) {
+                spawned = ls.filter(p -> p.getFileName().toString().startsWith("TASK_"))
+                    .collect(java.util.stream.Collectors.toList());
+            }
+            boolean spawnedOk = spawned.size() == 1;
+            int firstNum = -1;
+            String firstContent = null;
+            if (spawnedOk) {
+                java.nio.file.Path tf = spawned.get(0);
+                String name = tf.getFileName().toString();
+                firstNum = Integer.parseInt(name.substring(5, 9));
+                firstContent = new String(java.nio.file.Files.readAllBytes(tf),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                spawnedOk = !firstContent.contains("\uFFFD")
+                    && firstContent.contains("Quorum Approved - system_health_check")
+                    && firstContent.contains("ok:3 no:0 blind:0")
+                    && name.contains(pid.substring(0, Math.min(16, pid.length())));
+
+                // (c) numbering monotonic: a second APPROVED cycle gets a higher number
+                String pid2 = pid + "-2";
+                q2.registerProposal(pid2, "Act on " + target,
+                    new com.mindpalace.agent.sims.HexCoord(0, 0), "system_health_check");
+                q2.castVote(pid2, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                q2.castVote(pid2, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                q2.castVote(pid2, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(q2.calculateQuorum(pid2));
+                try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(spawnTmp)) {
+                    int maxNum = s.map(p -> p.getFileName().toString())
+                        .filter(n -> n.startsWith("TASK_") && n.length() >= 9)
+                        .mapToInt(n -> Integer.parseInt(n.substring(5, 9))).max().orElse(-1);
+                    spawnedOk = spawnedOk && maxNum > firstNum;
+                }
+            }
+            quorumReadabilityOk = noPoison && glyphsOk && spawnedOk;
+        } catch (Exception e) {
+            System.out.println("      quorum readability error: " + e);
+            quorumReadabilityOk = false;
+        } finally {
+            com.mindpalace.agent.sims.QuorumTaskSpawner.useTestSpawnTarget(null);
+            if (spawnTmp != null) {
+                try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(spawnTmp)) {
+                    walk.sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) { } });
+                } catch (Exception ignored) { }
+            }
+        }
+        System.out.println((quorumReadabilityOk ? "PASS" : "FAIL")
+            + " quorum readability + spawner contract (no 'Act on ?', ASCII tally, monotonic TASK numbers)");
+        if (quorumReadabilityOk) pass++; else fail++;
+
         // 38. Portal color pairing — every teleporter pad has a complementary
         //     color pair (roadmap §3): pair hues >= 110 degrees apart, every
         //     color clears the bloom bright-pass (luminance > 0.6), the planet

@@ -93,6 +93,8 @@ public class WeightedQuorumVote {
         }
 
         @Override public String toString() {
+            // t_740fa7c6: ASCII-only (glyphs died in cp1252 consoles/telemetry);
+            // t_deed6566: abstain + real-tally fields added. Union.
             return String.format("#%s approve=%d reject=%d blind=%d abstain=%d",
                 id, approveCount(), rejectCount(), blindCount(), abstainCount());
         }
@@ -383,7 +385,8 @@ public class WeightedQuorumVote {
         }
 
         @Override public String toString() {
-            String typeAndText = proposalType + (text != null && !text.isEmpty() ? " | " + text : "");
+            // t_740fa7c6: ASCII tally (glyphs -> "?3 ?0 ?0" in cp1252);
+            // t_deed6566 union: abstain + real counts added.
             return String.format("Quorum[#%s: %s] %s approve=%d reject=%d blind=%d abstain=%d real=%d (w:%.2f) pulse:%.2f visible:%s",
                 proposalId, typeAndText, status, approve, reject, blind, abstain, real, weightedApprove, avgPulsePhase, visibleModels);
         }
