@@ -41,6 +41,21 @@ public class WorldBuilder {
     private FogOfWar fogOfWar;
     private final OutsideWorld outsideWorld = new OutsideWorld();
 
+    /**
+     * t_0c1374b0: optional in-game clock pin for e2e determinism. Null = live
+     * wall clock (default). When set, every sky-phase / lighting decision
+     * (GameEngine sky dome, WorldBuilder celestial + hallway windows) honors
+     * the pin instead of java.time.LocalTime, so an evening tour renders the
+     * same daytime scenes the brightness thresholds were calibrated on.
+     */
+    private Integer clockPin = null;
+    public void setClockPin(Integer hour) { this.clockPin = hour; }
+    public boolean isClockPinned() { return clockPin != null; }
+    public int getPinHour() { return clockPin != null ? clockPin : 12; }
+    private int effectiveHour() {
+        return clockPin != null ? clockPin : java.time.LocalTime.now().getHour();
+    }
+
     // Lazily-loaded repo poster images (path -> GPU texture). Loaded on first
     // render of each room's poster; falls back to the diagram when absent.
     private final Map<String, Texture> posterTextures = new HashMap<>();
@@ -621,7 +636,7 @@ public class WorldBuilder {
 
     /** Sun/moon/stars billboarded against the sky dome (follows the camera). */
     private void renderCelestial(Renderer r, float floorY, float outZ) {
-        int hour = java.time.LocalTime.now().getHour();
+        int hour = effectiveHour();
         boolean night = hour < 6 || hour >= 20;
         boolean dusk = hour >= 18 && hour < 20;
         // Billboard the celestial body high in the sky, offset from the camera
@@ -714,7 +729,7 @@ public class WorldBuilder {
     private void renderHallwayWindows(Renderer r, Vector3f s, Hallway hw, float wallX, int side) {
         float len = hw.getEnd().z - s.z;
         float dw = Room.DOOR_WIDTH, dh = Room.DOOR_HEIGHT;
-        int hour = java.time.LocalTime.now().getHour();
+        int hour = effectiveHour();
         boolean night = hour < 6 || hour >= 18;
         // midpoints between consecutive doors get one pane each
         List<Float> doorZs = new ArrayList<>();

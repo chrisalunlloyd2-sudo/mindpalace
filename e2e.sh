@@ -2,7 +2,11 @@
 # e2e.sh — the amazing test flow: build → selftest → E2E waypoint tour → verify.
 # Usage: bash e2e.sh [shotdir]   (default: target/e2e-shots)
 set -u
-REPO="/c/Users/viper/AIGEN_SYS/repos/mindpalace"
+# REPO resolves from THIS script's location — main checkout for e2e.sh there,
+# the worktree root for .worktrees/<id>/e2e.sh (the hardcoded checkout path
+# made the worktree copy build+verify the wrong tree).
+E2E_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cygpath -m "$E2E_SCRIPT_DIR" 2>/dev/null || echo "$E2E_SCRIPT_DIR")"
 JAVA_HOME="C:/Program Files/Java/jdk-17"
 MVN="C:\\ProgramData\\chocolatey\\lib\\maven\\apache-maven-3.9.16\\bin\\mvn.cmd"
 DIR="${1:-$REPO/target/e2e-shots}"
@@ -24,17 +28,23 @@ BUILD_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE "original-|-shaded
 [ -n "$BUILD_JAR" ] || { echo "e2e: no built jar in target/"; exit 1; }
 
 echo "=== [2/4] SELFTEST ==="
-timeout 110 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# t_0c1374b0: 110/120s starved this box — world build alone runs ~5min on the
+# Intel HD 510 (73 rooms × Files.isRegularFile). 400s selftest observed green;
+# tour = world build + 17 waypoints × 6s + margin.
+timeout 400 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --selftest > /tmp/e2e_selftest.log 2>&1
 grep -a "RESULT" /tmp/e2e_selftest.log | tail -1
 
 echo "=== [3/4] E2E WAYPOINT TOUR ==="
 rm -rf "$DIR"; mkdir -p "$DIR"
-timeout 120 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+timeout 700 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --e2e "$DIR" > /tmp/e2e_tour.log 2>&1
-grep -aE "\[E2E\]|\[E2E-SHOT\]" /tmp/e2e_tour.log
+grep -aE "\[E2E\]|\[E2E-SHOT\]|\[E2E-HUD-GATE\] SUMMARY" /tmp/e2e_tour.log
+# t_0c1374b0: the HUD-gate verify below reads the tour log via Windows python,
+# which cannot resolve MSYS /tmp — mirror it into target/ (cwd = $REPO).
+cp -a /tmp/e2e_tour.log target/e2e_tour.log 2>/dev/null || true
 
 echo "=== [4/4] VERIFY SHOTS (exist + non-black) ==="
 python - "$DIR" <<'PYEOF'
@@ -130,6 +140,26 @@ else:
     ok = magenta > 40
     print(f"door prompt magenta text: {magenta} " + ("OK" if ok else "HUE-FAIL"))
     if not ok: fail += 1
+
+# t_0c1374b0 HUD-slots overlap gate — the tour projects every primary slot's
+# gate rect through the REAL camera at each waypoint framing and logs
+# [E2E-HUD-GATE] lines: OVERLAP (two visible primaries intersect on screen)
+# or OFFFRAME (a slot's anchor left the frustum). The same counter drives the
+# tour's own exit code; this grep is the verify-side double-check.
+hud_fail = 0
+try:
+    tour = open("target/e2e_tour.log", "r", errors="replace").read()
+    hud_fail += tour.count("[E2E-HUD-GATE] OVERLAP")
+    hud_fail += tour.count("=OFFFRAME(")
+    hud_fail += tour.count("HUD gate FAILED")
+    if hud_fail:
+        print(f"HUD slot gate: {hud_fail} OVERLAP/OFFFRAME/FAILED line(s) — FAIL")
+    else:
+        print("HUD slot gate: 0 overlaps, all slots in-frame OK")
+except FileNotFoundError:
+    print("HUD slot gate: tour log missing — FAIL")
+    hud_fail += 1
+fail += hud_fail
 print("VERIFY-PASS" if fail == 0 else f"VERIFY-FAIL ({fail})")
 sys.exit(0 if fail == 0 else 1)
 PYEOF

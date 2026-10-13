@@ -5,6 +5,7 @@ import com.mindpalace.render.FontRenderer;
 import com.mindpalace.render.Camera;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import com.mindpalace.ui.HudLayout;
 import java.util.*;
 import java.io.*;
 import java.nio.file.*;
@@ -187,10 +188,11 @@ public class AgentChat {
         Vector3f right = new Vector3f(front).cross(new Vector3f(0, 1, 0)).normalize();
         Vector3f up = new Vector3f(right).cross(front).normalize();
 
-        // Anchor at top of view, 2.5m in front
-        Vector3f anchor = new Vector3f(camPos)
-            .add(front.x * 2.5f, front.y * 2.5f, front.z * 2.5f)
-            .add(up.x * 0.9f, up.y * 0.9f, up.z * 0.9f);
+        // Lower-left column — HudLayout.CHAT slot (t_0c1374b0): the feed
+        // used to hang at the top-center of the view and collided with the
+        // roster column. Same 2.5m plane, same true-up basis, new fixed
+        // slot position.
+        Vector3f anchor = HudLayout.anchor(camPos, front, right, up, HudLayout.CHAT);
 
         // Show last N messages, newest at bottom
         int start = Math.max(0, messages.size() - 8);
@@ -204,7 +206,7 @@ public class AgentChat {
                           : line.startsWith("[Tool") || line.startsWith("[Auto") ? new Vector3f(0.2f, 0.9f, 1.0f)
                           : line.startsWith("[You]") ? new Vector3f(0.4f, 1.0f, 0.4f)
                           : new Vector3f(0.8f, 0.8f, 0.8f);
-            font.renderBillboard(line, pos, 0.045f, color, proj, view, camPos);
+            font.renderBillboardLeft(line, pos, 0.045f, color, proj, view, camPos);
             y -= lineH;
         }
 
@@ -212,7 +214,7 @@ public class AgentChat {
         if (typing) {
             String prompt = "> " + input.toString() + "_";
             Vector3f pos = new Vector3f(anchor.x, y - 0.05f, anchor.z);
-            font.renderBillboard(prompt, pos, 0.05f, new Vector3f(0.4f, 1.0f, 0.4f), proj, view, camPos);
+            font.renderBillboardLeft(prompt, pos, 0.05f, new Vector3f(0.4f, 1.0f, 0.4f), proj, view, camPos);
         }
     }
 
