@@ -42,7 +42,6 @@ public class AgentManager {
      * Returns the repo name when known, an explicit world-wide fallback when
      * not. Pure ASCII so it survives cp1252 consoles and telemetry round-trips.
      */
-    /** ASCII-safe room target for prompts/telemetry (t_740fa7c6): never "?". */
     public static String proposalTargetName(Room room) {
         if (room != null && room.getRepoName() != null && !room.getRepoName().isBlank()) {
             return room.getRepoName();
@@ -400,8 +399,7 @@ public class AgentManager {
             return;
         }
 
-        log("[AgentManager] Auto-cycle — agents discussing "
-            + proposalTargetName(currentRoom));
+        log("[AgentManager] Auto-cycle — agents discussing " + proposalTargetName(currentRoom));
 
         // Telemetry: record the cycle itself (paced, append-only).
         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.AGENT,
@@ -491,8 +489,10 @@ public class AgentManager {
     private void runQuorumVote(String context) {
         try {
             String id = "cycle-" + System.currentTimeMillis();
-            // t_740fa7c6: ASCII-safe target — "?" fallback poisoned every
-            // telemetry row and spawned TASK file with "Act on ?".
+            // t_740fa7c6: null-room fallback must be ASCII-plain. The old "Act on ?"
+            // string was written into ALL 4291 telemetry APPROVED rows — a "?" is
+            // indistinguishable from a mojibake glyph and hides which repo (or none)
+            // the cycle targeted.
             String text = "Act on " + proposalTargetName(currentRoom);
             quorum.registerProposal(id, text, new HexCoord(0, 0), "system_health_check");
             quorum.advanceTimePulse(0.1);
@@ -510,9 +510,8 @@ public class AgentManager {
                 // TASK_0125: Spawn TASK file for APPROVED proposals
                 if ("APPROVED".equals(r.status)) {
                     try {
-                        boolean ok = com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r);
-                        log(ok ? "[AgentManager] TASK spawned: " + r.proposalId
-                               : "[AgentManager] TASK not spawned (status=" + r.status + ")");
+                        com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r);
+                        log("[AgentManager] TASK spawn handled: " + r.proposalId);
                     } catch (Exception e) {
                         log("[AgentManager] TASK spawn FAILED: " + e);
                     }

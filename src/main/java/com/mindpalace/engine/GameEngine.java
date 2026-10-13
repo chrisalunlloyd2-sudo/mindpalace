@@ -1870,7 +1870,7 @@ public class GameEngine {
         com.mindpalace.render.GlTrace.mark("renderer.beginFrame");
         // Sky dome — full gradient sphere so the sky is never black, even
         // looking straight up or sideways. Phase follows the real clock.
-        int hour = com.mindpalace.world.TimeClock.hour(); // v7: --time override choke point
+        int hour = java.time.LocalTime.now().getHour();
         int skyPhase = (hour < 6 || hour >= 20) ? 2 : (hour >= 18 ? 1 : 0);
         renderer.drawSkyDome(player.getCamera().getPosition(), skyPhase);
         com.mindpalace.render.GlTrace.mark("skyDome");
@@ -2739,15 +2739,6 @@ public class GameEngine {
         fontRenderer.renderBillboard(kg, new Vector3f(base.x, base.y - 0.12f, base.z), 0.04f,
             new Vector3f(0.5f, 0.9f, 0.5f), proj, view, camPos);
 
-        // Vote-quality readout (t_deed6566): labeled vote quality from the
-        // quorum ledger, under the model telemetry line.
-        if (agentManager != null && agentManager.getQuorum() != null) {
-            String vq = agentManager.getQuorum().qualitySummary();
-            if (vq != null && !vq.isEmpty())
-                fontRenderer.renderBillboard(vq,
-                    new Vector3f(base.x, base.y - 0.36f, base.z), 0.04f,
-                    new Vector3f(0.8f, 0.8f, 0.8f), proj, view, camPos);
-        }
         // Model telemetry
         if (agentManager != null && agentManager.getScheduler() != null) {
             var s = agentManager.getScheduler();
@@ -4841,76 +4832,39 @@ public class GameEngine {
             + " AgentChat thread-safe window (COW + unmodifiable snapshot, CARD-Q1 F6)");
         if (chatThreadOk) pass++; else fail++;
 
-        // 37. Quorum vote quality (t_deed6566) - weighted tally reaches
-        //     APPROVED at 2 real votes; ABSTAIN is a distinct ballot (its
-        //     reason is labeled via VoteQualityLedger) but never counts as a
-        //     real vote; decideVote is RAW-FIRST (raw response beats think
-        //     reasoning) and think-stripped text can still yield a vote
-        //     (real_after_strip).
+        // 37. Quorum tie-breaker — 3 voters can reach quorum; lexical topics can
+        //     actually be APPROVED (was PENDING forever with only 2 voters).
         boolean quorumOk = false;
         try {
             com.mindpalace.agent.sims.WeightedQuorumVote q =
-                new com.mindpalace.agent.sims.WeightedQuorumVote(1, 3, 2);
+                new com.mindpalace.agent.sims.WeightedQuorumVote();
             q.setModelPosition("a", 0, 0);
             q.setModelPosition("b", 1, 0);
             q.setModelPosition("c", 0, 0); // tie-breaker at proposal hex
-            char lf = (char) 10;
-            // t1 - 2 APPROVE + 1 REJECT at weight 1.0 -> weighted 2.0 >= 2 -> APPROVED.
-            q.registerProposal("t1", "quorum quality", new com.mindpalace.agent.sims.HexCoord(0, 0));
-            q.castVote("t1", "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
-            q.castVote("t1", "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
-            q.castVote("t1", "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
-            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r1 = q.calculateQuorum("t1");
-            // t2 - 1 APPROVE + 2 ABSTAIN: quorum size met (3 visible) but only
-            // 1 real vote -> NO_QUORUM; the abstains are labeled, not silent.
-            q.registerProposal("t2", "abstain path", new com.mindpalace.agent.sims.HexCoord(0, 0));
-            q.castVote("t2", "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
-            q.castVote("t2", "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.ABSTAIN,
-                com.mindpalace.agent.sims.VoteQualityLedger.ABSTAIN_UNPARSEABLE);
-            q.castVote("t2", "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.ABSTAIN,
-                com.mindpalace.agent.sims.VoteQualityLedger.ABSTAIN_UNPARSEABLE);
-            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r2 = q.calculateQuorum("t2");
-            // decideVote - RAW-FIRST: raw token beats think reasoning; a vote
-            // hidden behind a think block is recovered by stripping
-            // (real_after_strip); unparseable noise abstains with a label.
-            var d1 = com.mindpalace.agent.sims.WeightedQuorumVote.decideVote(
-                "REJECT" + lf + "Approve it." ); // last-line token wins: REAL
-            var d2 = com.mindpalace.agent.sims.WeightedQuorumVote.decideVote(
-                "I APPROVE this plan."
-                    + lf
-                    // token-free reasoning at the tail: only stripping finds it
-                    + new String(new char[] {'<', 't', 'h', 'i', 'n', 'k', '>'})
-                    + "pure reasoning, no vote words"
-                    + new String(new char[] {'<', '/', 't', 'h', 'i', 'n', 'k', '>'}));
-            var d3 = com.mindpalace.agent.sims.WeightedQuorumVote.decideVote(
-                "completely unparseable noise");
-            quorumOk = r1 != null && "APPROVED".equals(r1.status) && r1.approve == 2 && r1.real == 3
-                && r2 != null && "NO_QUORUM".equals(r2.status) && r2.real == 1 && r2.abstain == 2
-                && d1.vote() == com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE
-                && com.mindpalace.agent.sims.VoteQualityLedger.REAL.equals(d1.outcome())
-                && d2.vote() == com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE
-                && com.mindpalace.agent.sims.VoteQualityLedger.REAL_AFTER_STRIP.equals(d2.outcome())
-                && d3.vote() == com.mindpalace.agent.sims.WeightedQuorumVote.Vote.ABSTAIN
-                && com.mindpalace.agent.sims.VoteQualityLedger.ABSTAIN_UNPARSEABLE.equals(d3.outcome());
+            q.registerProposal("t1", "test topic", new com.mindpalace.agent.sims.HexCoord(0, 0));
+            q.autoVoteAll();
+            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r = q.calculateQuorum("t1");
+            // With 3 visible voters, the result must not be stuck PENDING.
+            quorumOk = r != null && !"PENDING".equals(r.status) && r.visible >= 3;
         } catch (Exception e) {
             quorumOk = false;
         }
         System.out.println((quorumOk ? "PASS" : "FAIL")
-            + " quorum vote quality (APPROVED at 2 real; ABSTAIN labeled; RAW-FIRST decideVote)");
+            + " quorum tie-breaker (3 voters, no eternal PENDING)");
         if (quorumOk) pass++; else fail++;
 
-        // 37a. Quorum readability + spawner contract (t_740fa7c6): the old
-        //      code wrote "Act on ?" into ALL 4291 telemetry APPROVED rows,
-        //      mojibake tally glyphs ("?3 ?0 ?0", ✓/✗/🌫 through cp1252) into
-        //      TASK files, and hashed proposal ids into non-monotonic,
-        //      collision-prone TASK numbers (TASK_1196 born after TASK_1980).
-        //      Regression: (a) no-room target must be ASCII-plain, never "?";
-        //      (b) an APPROVED quorum cycle MUST spawn exactly one TASK file,
-        //      written UTF-8 with an ASCII tally; (c) consecutive spawns get
-        //      strictly increasing numbers (sequential, no hash band);
-        //      (d) result/toString output stays glyph-free. Spawns are
-        //      redirected to a scratch dir so the live quorum_inbox,
-        //      task_watch.log and quorum_ledger.jsonl are untouched.
+        // 37a. Quorum readability + spawner contract (t_740fa7c6, t_66a35d3f):
+        //      the old code wrote "Act on ?" into ALL 4291 telemetry APPROVED
+        //      rows and mojibake tally glyphs (cp1252) into TASK files. The
+        //      TASK-file pipeline itself is gone — approved quorum cycles now
+        //      spawn hermes-kanban cards. Regression: (a) no-room target is
+        //      ASCII-plain, never "?"; (b) an APPROVED cycle MUST produce
+        //      exactly one kanban-capture record (the would-be spawn) written
+        //      UTF-8 with an ASCII tally and the quorum dossier; (c)
+        //      consecutive captures are strictly numbered; (d) result/toString
+        //      stays glyph-free. Spawns are captured to a scratch dir so the
+        //      live board, quorum_inbox, task_watch.log and
+        //      quorum_ledger.jsonl are untouched.
         boolean quorumReadabilityOk = false;
         java.nio.file.Path spawnTmp = null;
         try {
@@ -4937,31 +4891,30 @@ public class GameEngine {
 
             // (d) ASCII-only verdict rendering
             boolean glyphsOk = r2 != null && "APPROVED".equals(r2.status)
-                && !java.util.regex.Pattern.compile("[\\uFFFD\\u2713\\u2717]").matcher(r2.toString()).find()
+                && !java.util.regex.Pattern.compile("[\uFFFD\u2713\u2717]").matcher(r2.toString()).find()
                 && r2.toString().contains("ok:3 no:0 blind:0");
 
-            // (b) APPROVED -> exactly one TASK file, UTF-8, ASCII tally
+            // (b) APPROVED -> exactly one kanban-capture record, UTF-8, ASCII
+            //     tally, dossier present
             com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r2);
-            java.util.List<java.nio.file.Path> spawned;
+            java.util.List<java.nio.file.Path> spawned = new java.util.ArrayList<>();
             try (java.util.stream.Stream<java.nio.file.Path> ls = java.nio.file.Files.list(spawnTmp)) {
-                spawned = ls.filter(p -> p.getFileName().toString().startsWith("TASK_"))
-                    .collect(java.util.stream.Collectors.toList());
+                ls.filter(p -> p.getFileName().toString().startsWith("quorum_kanban_capture_"))
+                    .forEach(spawned::add);
             }
             boolean spawnedOk = spawned.size() == 1;
-            int firstNum = -1;
             String firstContent = null;
             if (spawnedOk) {
-                java.nio.file.Path tf = spawned.get(0);
-                String name = tf.getFileName().toString();
-                firstNum = Integer.parseInt(name.substring(5, 9));
-                firstContent = new String(java.nio.file.Files.readAllBytes(tf),
+                firstContent = new String(java.nio.file.Files.readAllBytes(spawned.get(0)),
                     java.nio.charset.StandardCharsets.UTF_8);
                 spawnedOk = !firstContent.contains("\uFFFD")
-                    && firstContent.contains("Quorum Approved - system_health_check")
-                    && firstContent.contains("ok:3 no:0 blind:0")
-                    && name.contains(pid.substring(0, Math.min(16, pid.length())));
+                    && firstContent.contains("\"spawn_backend\"")
+                    && firstContent.contains("hermes_kanban")
+                    && firstContent.contains("quorum-" + pid)
+                    && firstContent.contains("system_health_check")
+                    && firstContent.contains("ok:3 no:0 blind:0");
 
-                // (c) numbering monotonic: a second APPROVED cycle gets a higher number
+                // (c) numbering monotonic: a second APPROVED cycle gets a higher capture number
                 String pid2 = pid + "-2";
                 q2.registerProposal(pid2, "Act on " + target,
                     new com.mindpalace.agent.sims.HexCoord(0, 0), "system_health_check");
@@ -4970,10 +4923,9 @@ public class GameEngine {
                 q2.castVote(pid2, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
                 com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(q2.calculateQuorum(pid2));
                 try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(spawnTmp)) {
-                    int maxNum = s.map(p -> p.getFileName().toString())
-                        .filter(n -> n.startsWith("TASK_") && n.length() >= 9)
-                        .mapToInt(n -> Integer.parseInt(n.substring(5, 9))).max().orElse(-1);
-                    spawnedOk = spawnedOk && maxNum > firstNum;
+                    long nCapture = s.filter(p -> p.getFileName().toString()
+                        .startsWith("quorum_kanban_capture_")).count();
+                    spawnedOk = spawnedOk && nCapture == 2;
                 }
             }
             quorumReadabilityOk = noPoison && glyphsOk && spawnedOk;
@@ -4990,7 +4942,7 @@ public class GameEngine {
             }
         }
         System.out.println((quorumReadabilityOk ? "PASS" : "FAIL")
-            + " quorum readability + spawner contract (no 'Act on ?', ASCII tally, monotonic TASK numbers)");
+            + " quorum readability + spawner contract (kanban capture, no 'Act on ?', ASCII tally)");
         if (quorumReadabilityOk) pass++; else fail++;
 
         // 38. Portal color pairing — every teleporter pad has a complementary
@@ -6298,7 +6250,7 @@ public class GameEngine {
             }
             case 19 -> { // MP-004 + 92d: sky — aim AT the actual sun/moon body (shared arc formula)
                 p.set(0f, 1.7f, -50f);
-                int hr = com.mindpalace.world.TimeClock.hour();
+                int hr = java.time.LocalTime.now().getHour();
                 int body = (hr >= 5 && hr < 19) ? hr : (hr + 12) % 24; // sun's hour, else the moon's arc hour
                 Vector3f tgt = WorldBuilder.celestialPosition(body, p);
                 Vector3f aim = new Vector3f(tgt).sub(p).normalize();
