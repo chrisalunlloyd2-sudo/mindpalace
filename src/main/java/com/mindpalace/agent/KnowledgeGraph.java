@@ -9,19 +9,28 @@ import java.util.*;
  * navigation routes, room adjacency, and district clustering.
  */
 public class KnowledgeGraph {
-    private final Map<String, Room> nodes = new HashMap<>();
-    private final Map<String, Set<String>> edges = new HashMap<>();
-    private final Map<String, String> district = new HashMap<>(); // room -> district label
+    // Snapshot-published fields (fix 2026-10-13, verifier run t_6dd98959):
+    // build() runs on the LiveUpdate scheduler thread while the render thread
+    // calls nodeCount()/edgeCount() EVERY FRAME (telemetry panel). The old
+    // clear()-in-place maps made the game loop throw
+    // ConcurrentModificationException (KnowledgeGraph.edgeCount ->
+    // GameEngine.renderTelemetryPanel) and killed the e2e tour 2 shots in.
+    // Now build() constructs fresh maps privately and publishes each complete
+    // map through a volatile write: readers on other threads either see the
+    // whole old graph or the whole new one — never a half-cleared map.
+    private volatile Map<String, Room> nodes = new HashMap<>();
+    private volatile Map<String, Set<String>> edges = new HashMap<>();
+    private volatile Map<String, String> district = new HashMap<>(); // room -> district label
 
     /** Build the KG from the current world layout. */
     public void build(List<Room> rooms) {
-        nodes.clear();
-        edges.clear();
-        district.clear();
+        Map<String, Room> newNodes = new HashMap<>();
+        Map<String, Set<String>> newEdges = new HashMap<>();
+        Map<String, String> newDistrict = new HashMap<>();
 
         for (Room r : rooms) {
-            nodes.put(r.getRepoName(), r);
-            edges.put(r.getRepoName(), new HashSet<>());
+            newNodes.put(r.getRepoName(), r);
+            newEdges.put(r.getRepoName(), new HashSet<>());
         }
 
         // Edges: rooms on the same floor, adjacent by door Z-order
@@ -34,14 +43,20 @@ public class KnowledgeGraph {
             for (int i = 0; i < floorRooms.size(); i++) {
                 Room a = floorRooms.get(i);
                 // District: cluster by hallway side (left/right wing)
-                district.put(a.getRepoName(), a.getHallwaySide() == 0 ? "West" : "East");
+                newDistrict.put(a.getRepoName(), a.getHallwaySide() == 0 ? "West" : "East");
                 if (i + 1 < floorRooms.size()) {
                     Room b = floorRooms.get(i + 1);
-                    edges.get(a.getRepoName()).add(b.getRepoName());
-                    edges.get(b.getRepoName()).add(a.getRepoName());
+                    newEdges.get(a.getRepoName()).add(b.getRepoName());
+                    newEdges.get(b.getRepoName()).add(a.getRepoName());
                 }
             }
         }
+
+        // Atomic publish: three complete maps swapped in. Readers never
+        // observe a partially-built graph (see class comment above).
+        nodes = newNodes;
+        edges = newEdges;
+        district = newDistrict;
     }
 
     /** Neighbors of a room (adjacent rooms the agent can walk to). */
