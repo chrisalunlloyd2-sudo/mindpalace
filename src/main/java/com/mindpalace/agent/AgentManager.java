@@ -430,12 +430,17 @@ public class AgentManager {
         }
     }
 
+    /** TASK_0128 redo: deterministic 5-type rotation over quorum cycles. */
+    private final com.mindpalace.agent.sims.ProposalRotator proposalRotator =
+        new com.mindpalace.agent.sims.ProposalRotator();
+
     /** Run a FOW-gated quorum vote on the current cycle's proposal. */
     private void runQuorumVote(String context) {
         try {
             String id = "cycle-" + System.currentTimeMillis();
+            String type = proposalRotator.next(); // TASK_0128: rotate through 5 proposal types
             String text = "Act on " + (currentRoom != null ? currentRoom.getRepoName() : "?");
-            quorum.registerProposal(id, text, new HexCoord(0, 0), "system_health_check");
+            quorum.registerProposal(id, text, new HexCoord(0, 0), type);
             quorum.advanceTimePulse(0.1);
             quorum.actualVoteAll(modelScheduler);
             WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
