@@ -190,6 +190,15 @@ public class GameEngine {
     private float orbitTimer;           // dwell clock inside one bearing
     private int e2eWaypoint = 0;
     private double e2ePhaseTimer = 0;
+    // Waypoint-10 one-shot latch: the floor-2/picker side effects (teleport +
+    // destination rebuild + menu open) used to re-fire on EVERY physics tick of
+    // the 3s settle (180 ticks), each printing a [TELEPORT] line, resetting the
+    // camera and re-arming the picker — at CI fps that floods stdout, collapses
+    // the frame rate (accumulator caps each frame at 0.25s of virtual time) and
+    // blows the harness's 120s tour timeout before the shot fires. Armed once
+    // on entry, re-armed for the next tour run when the waypoint advances
+    // (2026-10-12, e2e waypoint-10 stall).
+    private boolean e2ePadLatch;
     private String screenshotDir;
     private int shotCounter;
     private double shotTimer;
@@ -6020,20 +6029,33 @@ public class GameEngine {
                 // its pad, rebuild destinations, open the menu. Face DOWN-HALL
                 // so the 2.5m text anchor sits in open corridor, not in the
                 // wall the pad backs onto (depth-tested billboard would hide).
-                List<Vector3f> pads15 = world.getTeleporterPads();
-                if (pads15.size() > 2) {
-                    Vector3f pad2 = pads15.get(2);
-                    player.teleportToFloor(2, world);
-                    player.getCamera().setPosition(pad2.x, pad2.y + 1.7f, pad2.z);
-                    cam.setYaw(180); cam.setPitch(-8);
-                    rebuildTeleportDestinations();
-                    teleportMenu = true;
-                    teleportSel = 0;
+                // The side effects run ONCE (latched), not per physics tick:
+                // a per-tick teleportToFloor spam-collapses the tour (see the
+                // e2ePadLatch note).
+                if (e2ePadLatch) { // hold the same pad pose the one-shot set (idempotent, like every other waypoint)
+                    List<Vector3f> padsHold = world.getTeleporterPads();
+                    if (padsHold.size() > 2) {
+                        Vector3f pad2h = padsHold.get(2);
+                        player.getCamera().setPosition(pad2h.x, pad2h.y + 1.7f, pad2h.z);
+                        cam.setYaw(180); cam.setPitch(-8);
+                    }
                 } else {
-                    p.set(0f, hallY + 1.7f, hallZ1 - 7f);
-                    cam.setYaw(0); cam.setPitch(-12f);
+                    List<Vector3f> pads15 = world.getTeleporterPads();
+                    if (pads15.size() > 2) {
+                        Vector3f pad2 = pads15.get(2);
+                        player.teleportToFloor(2, world);
+                        player.getCamera().setPosition(pad2.x, pad2.y + 1.7f, pad2.z);
+                        cam.setYaw(180); cam.setPitch(-8);
+                        rebuildTeleportDestinations();
+                        teleportMenu = true;
+                        teleportSel = 0;
+                        e2ePadLatch = true;
+                    } else {
+                        p.set(0f, hallY + 1.7f, hallZ1 - 7f);
+                        cam.setYaw(0); cam.setPitch(-12f);
+                    }
                 }
-                if (shoot) { captureLabeled("11_floor2_picker"); teleportMenu = false; /* the picker must not stay open over every later shot */ e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) { captureLabeled("11_floor2_picker"); teleportMenu = false; /* the picker must not stay open over every later shot */ e2eWaypoint++; e2ePhaseTimer = 0; e2ePadLatch = false; }
             }
             case 11 -> { // nash fountain — courtyard pool beside the rotor rings
                 // Courtyard walls sit at z=-24..-12 (courtZ=-24, cd=12); the
