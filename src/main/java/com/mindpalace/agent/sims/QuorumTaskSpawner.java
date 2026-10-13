@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -128,8 +129,18 @@ public class QuorumTaskSpawner {
             // Write to ledger (TASK_0131 persistence, now with kanban id)
             ledgerAppend(result, spawnedRef, outcome);
 
+            if (telemetrySink != null) {
+                telemetrySink.accept(outcome.ok ? "spawn_ok" : "spawn_failed",
+                    result.proposalId + " -> " + spawnedRef);
+            }
+
         } catch (Exception e) {
-            logError("handleApprovedProposal failed: " + e.getMessage());
+            String msg = "handleApprovedProposal failed: " + e.getMessage();
+            logError(msg);
+            rotateStderr(msg);
+            if (telemetrySink != null) {
+                telemetrySink.accept("spawn_failed", result.proposalId + " :: " + e);
+            }
         }
     }
 
@@ -420,3 +431,105 @@ sb.append("---\n");
             first = false;
         }
         sb.append("}");
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Object o) { return (Map<String, Object>) o; }
+
+    /**
+     * JSON string escaping (t_66a35d3f): the hand-rolled serializer never
+     * escaped control characters — a proposal text or body containing a
+     * quote/newline would corrupt the ledger line and every line after it.
+     */
+    private static String escapeJson(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+                    else sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static void logError(String msg) {
+        try {
+            String logLine = String.format("%s ERROR: %s%n", java.time.LocalDateTime.now(), msg);
+            if (!suppressDurableLogs) {
+                Files.write(WATCH_LOG, logLine.getBytes(StandardCharsets.UTF_8),
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            }
+            System.err.println(logLine.strip());
+        } catch (IOException e) {
+            System.err.println("[LEDGER] Error writing log: " + e);
+        }
+    }
+
+    /** Roll quorum_spawn_stderr.log.N (newest .0, keep .0-.3), then append. (t_deed6566) */
+    private static synchronized void rotateStderr(String message) {
+        try {
+            Files.createDirectories(STDERR_DIR);
+            // Roll: shift .N-1 into .N, newest ends up as .0 after append below.
+            // We append to .0 first, then roll if oversized.
+            Path newest = STDERR_DIR.resolve(STDERR_BASE + ".0");
+            Files.write(newest, (Instant.now() + " " + message + System.lineSeparator())
+                .getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            if (Files.size(newest) > STDERR_MAX_BYTES) {
+                try {
+                    Files.deleteIfExists(STDERR_DIR.resolve(STDERR_BASE + "." + (STDERR_KEEP - 1)));
+                } catch (IOException ignored) {
+                    // best effort
+                }
+                for (int i = STDERR_KEEP - 1; i > 0; i--) {
+                    Path from = STDERR_DIR.resolve(STDERR_BASE + "." + (i - 1));
+                    Path to = STDERR_DIR.resolve(STDERR_BASE + "." + i);
+                    try {
+                        if (Files.exists(from)) {
+                            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                    } catch (IOException ignored) {
+                        // best effort
+                    }
+                }
+                Files.write(newest, new byte[0], StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            }
+        } catch (Exception e) {
+            System.err.println("[LEDGER] stderr rotation failed: " + e);
+        }
+    }
+
+    private static Path aigenBase() {
+        String aigenHome = System.getProperty("aigen.home", System.getenv("AIGEN_HOME"));
+        if (aigenHome == null) {
+            aigenHome = System.getProperty("user.home") + "/AIGEN_SYS";
+        }
+        return Paths.get(aigenHome);
+    }
+
+    /** Result of a live (or would-be live) spawn attempt. */
+    static final class SpawnOutcome {
+        final List<String> argv;
+        final String kanbanId;
+        final String error;
+        final boolean ok;
+
+        private SpawnOutcome(List<String> argv, String kanbanId, String error) {
+            this.argv = argv;
+            this.kanbanId = kanbanId;
+            this.error = error;
+            this.ok = kanbanId != null && error == null;
+        }
+
+        static SpawnOutcome of(List<String> argv, String kanbanId, String error) {
+            return new SpawnOutcome(argv, kanbanId, error);
+        }
+    }
+}

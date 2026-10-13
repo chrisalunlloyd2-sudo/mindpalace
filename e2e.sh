@@ -46,9 +46,14 @@ echo "=== [4/4] VERIFY SHOTS (exist + non-black) ==="
 python - "$DIR" <<'PYEOF'
 import sys, os, struct, zlib
 d = sys.argv[1]
+# Kept in lockstep with GameEngine e2e waypoint labels (captureLabeled calls,
+# ~line 4946): when the tour gains/renames a waypoint, update this list too —
+# a stale list here false-fails the gate on shots that were actually captured.
 labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gauge","05_main_hall",
           "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad",
-          "11_floor2_picker","12_nash_fountain","13_door_prompt","14_plugboard"]
+          "11_floor2_picker","12_nash_fountain","13_door_prompt","14_plugboard",
+          "15_forest_path","16_room_interior","17_hall_windows","18_poster_wall",
+          "19_gist_wall","20_sky","21_water","22_mansion_spawn"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:
