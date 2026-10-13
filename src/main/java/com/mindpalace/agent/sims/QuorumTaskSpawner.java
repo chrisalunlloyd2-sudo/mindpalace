@@ -41,6 +41,46 @@ public class QuorumTaskSpawner {
 
     private QuorumTaskSpawner() {}
 
+    /**
+     * TASK_0128 redo: log EVERY finished quorum cycle to the ledger,
+     * regardless of outcome, so per-type approval rates are measurable
+     * (an APPROVED-only ledger always reads 100%). Returns the record.
+     */
+    public static Map<String, Object> ledgerRecord(WeightedQuorumVote.QuorumResult result) {
+        try {
+            Map<String, Object> record = new LinkedHashMap<>();
+            record.put("cycle_id", result.proposalId);
+            record.put("timestamp", System.currentTimeMillis());
+            record.put("timestamp_iso", Instant.now().toString());
+            record.put("proposal_type", result.proposalType);
+            record.put("agents", result.visibleModels);
+            Map<String, String> voteMap = new LinkedHashMap<>();
+            for (var e : result.voteMap.entrySet())
+                voteMap.put(e.getKey(), e.getValue().name());
+            record.put("votes", voteMap);
+            record.put("outcome", result.status);
+            record.put("weight", result.weightedApprove);
+            record.put("pulse", result.avgPulsePhase);
+            return record;
+        } catch (Exception e) {
+            logError("ledgerRecord failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** TASK_0128 redo: append a ledger record for any cycle outcome. */
+    public static void ledgerAppendAny(WeightedQuorumVote.QuorumResult result) {
+        Map<String, Object> record = ledgerRecord(result);
+        if (record == null) return;
+        try {
+            String json = serializeJson(record);
+            Files.write(QUORUM_LEDGER, (json + "\n").getBytes(),
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Exception e) {
+            logError("ledgerAppendAny failed: " + e.getMessage());
+        }
+    }
+
     public static void handleApprovedProposal(WeightedQuorumVote.QuorumResult result) {
         if (!"APPROVED".equals(result.status)) return;
 
@@ -130,18 +170,10 @@ public class QuorumTaskSpawner {
     }
 
     private static void ledgerAppend(WeightedQuorumVote.QuorumResult result, String taskName) throws IOException {
-        Map<String, Object> record = new LinkedHashMap<>();
-        record.put("cycle_id", result.proposalId);
-        record.put("timestamp", System.currentTimeMillis());
-        record.put("timestamp_iso", Instant.now().toString());
-        record.put("proposal_type", result.proposalType);
-        record.put("agents", result.visibleModels);
-        record.put("votes", Map.of("approve", result.approve, "reject", result.reject, "blind", result.blind));
-        record.put("outcome", result.status);
-        record.put("weight", result.weightedApprove);
-        record.put("pulse", result.avgPulsePhase);
+        // TASK_0128 redo: unified record shape for every outcome; keep the
+        // task_spawned_id pointer that only APPROVED cycles carry.
+        Map<String, Object> record = ledgerRecord(result);
         record.put("task_spawned_id", taskName);
-
         String json = serializeJson(record);
         Files.write(QUORUM_LEDGER, (json + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }

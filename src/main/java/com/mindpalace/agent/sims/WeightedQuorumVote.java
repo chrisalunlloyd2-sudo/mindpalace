@@ -216,6 +216,8 @@ public class WeightedQuorumVote {
         public final double weightedApprove, avgPulsePhase;
         public final List<String> visibleModels, blindModels;
         public final Map<String, List<String>> suggestedActions;
+        /** TASK_0128 redo: per-model vote (APPROVE/REJECT/BLIND) for the ledger. */
+        public final Map<String, Vote> voteMap;
 
         QuorumResult(Proposal p, Map<String, ModelPosition> models, int qMin, int aMin) {
             proposalId = p.id; text = p.text; hexKey = p.hex.key(); proposalType = p.proposalType; suggestedActions = p.suggestedActions;
@@ -223,6 +225,8 @@ public class WeightedQuorumVote {
             total = p.totalVotes(); visible = p.visibleTotal();
             weightedApprove = p.weightedApprove(models);
             status = p.status(models, qMin, aMin);
+            // TASK_0128 redo: per-agent vote map for ledger-derived analysis.
+            voteMap = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(p.votes));
 
             visibleModels = new ArrayList<>(); blindModels = new ArrayList<>();
             double pulseSum = 0; int pulseCount = 0;

@@ -448,6 +448,17 @@ public class AgentManager {
                 log("[AgentManager] quorum: " + r);
                 if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.QUORUM,
                     r.status, text);
+                // TASK_0128 redo: ledger EVERY cycle (any outcome) so the
+                // diversity report can measure per-type approval rates.
+                // APPROVED cycles are logged by QuorumTaskSpawner itself
+                // (with task_spawned_id) — don't double-write those.
+                if (!"APPROVED".equals(r.status)) {
+                    try {
+                        com.mindpalace.agent.sims.QuorumTaskSpawner.ledgerAppendAny(r);
+                    } catch (Exception e) {
+                        log("[AgentManager] ledger append failed: " + e.getMessage());
+                    }
+                }
                 // H21 (step 67): ride the carry-event pattern — publish the
                 // verdict to the game so the world flares (gold for APPROVED,
                 // ice dip for REJECTED). The web-side CSS twins already exist.
