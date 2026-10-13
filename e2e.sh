@@ -30,8 +30,10 @@ BUILD_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE "original-|-shaded
 echo "=== [2/4] SELFTEST ==="
 # t_0c1374b0: 110/120s starved this box — world build alone runs ~5min on the
 # Intel HD 510 (73 rooms × Files.isRegularFile). 400s selftest observed green;
-# tour = world build + 17 waypoints × 6s + margin.
-timeout 400 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# tour = world build + 17 waypoints × 6s + margin. 700s: tonight's box hit
+# 400s with the selftest STILL in world build (LiveUpdate rooms) — same
+# budget as the tour, since it is the same work.
+timeout 700 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --selftest > /tmp/e2e_selftest.log 2>&1
 grep -a "RESULT" /tmp/e2e_selftest.log | tail -1
