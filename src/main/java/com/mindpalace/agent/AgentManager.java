@@ -117,7 +117,9 @@ public class AgentManager {
     private boolean running;
     private boolean available;
     private long lastAutoCycle;
-    private static final long CYCLE_MS = 5 * 60 * 1000; // 5 minutes
+    // TASK_0128 redo: -Dmindpalace.cycleMs=N speeds the autonomous cycle for
+    // data collection (e.g. 30000 = 5 cycles/min). Live default stays 5 min.
+    private static final long CYCLE_MS = Long.getLong("mindpalace.cycleMs", 5 * 60 * 1000L);
 
     // Tool definitions for the tool-calling agent
     private static final List<JsonObject> TOOLS = buildTools();
