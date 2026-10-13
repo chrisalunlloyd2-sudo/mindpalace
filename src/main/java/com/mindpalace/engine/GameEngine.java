@@ -2739,6 +2739,15 @@ public class GameEngine {
         fontRenderer.renderBillboard(kg, new Vector3f(base.x, base.y - 0.12f, base.z), 0.04f,
             new Vector3f(0.5f, 0.9f, 0.5f), proj, view, camPos);
 
+        // Vote-quality readout (t_deed6566): labeled vote quality from the
+        // quorum ledger, under the model telemetry line.
+        if (agentManager != null && agentManager.getQuorum() != null) {
+            String vq = agentManager.getQuorum().qualitySummary();
+            if (vq != null && !vq.isEmpty())
+                fontRenderer.renderBillboard(vq,
+                    new Vector3f(base.x, base.y - 0.36f, base.z), 0.04f,
+                    new Vector3f(0.8f, 0.8f, 0.8f), proj, view, camPos);
+        }
         // Model telemetry
         if (agentManager != null && agentManager.getScheduler() != null) {
             var s = agentManager.getScheduler();
@@ -4832,25 +4841,62 @@ public class GameEngine {
             + " AgentChat thread-safe window (COW + unmodifiable snapshot, CARD-Q1 F6)");
         if (chatThreadOk) pass++; else fail++;
 
-        // 37. Quorum tie-breaker — 3 voters can reach quorum; lexical topics can
-        //     actually be APPROVED (was PENDING forever with only 2 voters).
+        // 37. Quorum vote quality (t_deed6566) - weighted tally reaches
+        //     APPROVED at 2 real votes; ABSTAIN is a distinct ballot (its
+        //     reason is labeled via VoteQualityLedger) but never counts as a
+        //     real vote; decideVote is RAW-FIRST (raw response beats think
+        //     reasoning) and think-stripped text can still yield a vote
+        //     (real_after_strip).
         boolean quorumOk = false;
         try {
             com.mindpalace.agent.sims.WeightedQuorumVote q =
-                new com.mindpalace.agent.sims.WeightedQuorumVote();
+                new com.mindpalace.agent.sims.WeightedQuorumVote(1, 3, 2);
             q.setModelPosition("a", 0, 0);
             q.setModelPosition("b", 1, 0);
             q.setModelPosition("c", 0, 0); // tie-breaker at proposal hex
-            q.registerProposal("t1", "test topic", new com.mindpalace.agent.sims.HexCoord(0, 0));
-            q.autoVoteAll();
-            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r = q.calculateQuorum("t1");
-            // With 3 visible voters, the result must not be stuck PENDING.
-            quorumOk = r != null && !"PENDING".equals(r.status) && r.visible >= 3;
+            char lf = (char) 10;
+            // t1 - 2 APPROVE + 1 REJECT at weight 1.0 -> weighted 2.0 >= 2 -> APPROVED.
+            q.registerProposal("t1", "quorum quality", new com.mindpalace.agent.sims.HexCoord(0, 0));
+            q.castVote("t1", "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q.castVote("t1", "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q.castVote("t1", "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r1 = q.calculateQuorum("t1");
+            // t2 - 1 APPROVE + 2 ABSTAIN: quorum size met (3 visible) but only
+            // 1 real vote -> NO_QUORUM; the abstains are labeled, not silent.
+            q.registerProposal("t2", "abstain path", new com.mindpalace.agent.sims.HexCoord(0, 0));
+            q.castVote("t2", "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q.castVote("t2", "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.ABSTAIN,
+                com.mindpalace.agent.sims.VoteQualityLedger.ABSTAIN_UNPARSEABLE);
+            q.castVote("t2", "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.ABSTAIN,
+                com.mindpalace.agent.sims.VoteQualityLedger.ABSTAIN_UNPARSEABLE);
+            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r2 = q.calculateQuorum("t2");
+            // decideVote - RAW-FIRST: raw token beats think reasoning; a vote
+            // hidden behind a think block is recovered by stripping
+            // (real_after_strip); unparseable noise abstains with a label.
+            var d1 = com.mindpalace.agent.sims.WeightedQuorumVote.decideVote(
+                "REJECT" + lf + "Approve it." ); // last-line token wins: REAL
+            var d2 = com.mindpalace.agent.sims.WeightedQuorumVote.decideVote(
+                "I APPROVE this plan."
+                    + lf
+                    // token-free reasoning at the tail: only stripping finds it
+                    + new String(new char[] {'<', 't', 'h', 'i', 'n', 'k', '>'})
+                    + "pure reasoning, no vote words"
+                    + new String(new char[] {'<', '/', 't', 'h', 'i', 'n', 'k', '>'}));
+            var d3 = com.mindpalace.agent.sims.WeightedQuorumVote.decideVote(
+                "completely unparseable noise");
+            quorumOk = r1 != null && "APPROVED".equals(r1.status) && r1.approve == 2 && r1.real == 3
+                && r2 != null && "NO_QUORUM".equals(r2.status) && r2.real == 1 && r2.abstain == 2
+                && d1.vote() == com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE
+                && com.mindpalace.agent.sims.VoteQualityLedger.REAL.equals(d1.outcome())
+                && d2.vote() == com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE
+                && com.mindpalace.agent.sims.VoteQualityLedger.REAL_AFTER_STRIP.equals(d2.outcome())
+                && d3.vote() == com.mindpalace.agent.sims.WeightedQuorumVote.Vote.ABSTAIN
+                && com.mindpalace.agent.sims.VoteQualityLedger.ABSTAIN_UNPARSEABLE.equals(d3.outcome());
         } catch (Exception e) {
             quorumOk = false;
         }
         System.out.println((quorumOk ? "PASS" : "FAIL")
-            + " quorum tie-breaker (3 voters, no eternal PENDING)");
+            + " quorum vote quality (APPROVED at 2 real; ABSTAIN labeled; RAW-FIRST decideVote)");
         if (quorumOk) pass++; else fail++;
 
         // 38. Portal color pairing — every teleporter pad has a complementary
