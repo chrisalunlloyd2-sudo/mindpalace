@@ -116,9 +116,9 @@ editor with a keystroke. The databases grow massive — that's the point.
 - **Backup + Memory** — cold backup to D:, never-make-code-twice / never-make-mistakes-twice SQLite DBs
 - **Model Lifespan** — token-budgeted context, drift detection, rolling summary, RAG memory
 - **Live patching** — drop a `patch.json` and the game ships rooms/books/texts/graphics without restarting
-- **Self-test harness** — `--selftest` runs 40 automated checks (world, books,
+- **Self-test harness** — `--selftest` runs 54 automated checks (world, books,
   teleporters, agents, crystals, KG, font, editor, bloom, invert-Y, map,
-  chat, mouse turn radius, room personality, finesse) and exits 0/1
+  chat, mouse turn radius, room personality, genetics, telemetry, quorum …) and exits 0/1
 
 ---
 
@@ -205,6 +205,8 @@ telemetry leaves the machine.
 |---|---|
 | ![Main hall](docs/screenshots/main_hall.png) | ![Agents](docs/screenshots/agents.png) |
 | ![Rotor rings](docs/screenshots/rotor_rings.png) | The courtyard's Enigma rotor — carries tick, chime, and bell every second |
+| ![Interaction prompt with drop-shadow](docs/screenshots/prompt_drop_shadow.png) | The unified interaction prompt — magenta HUD text with a black drop-shadow (`#113`), readable even over the door's bloom |
+| ![Commit ledger engraved in hallway](docs/screenshots/commit_ledger_hall.png) | The hallway's commit ledger — real recent commits from GitHub engraved on the wall above a doorway (`#122`) |
 
 
 
@@ -282,7 +284,7 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
   org.codehaus.plexus.classworlds.launcher.Launcher clean package
 
 # Run
-"$JAVA_HOME/bin/java" -jar target/mindpalace-1.0.0.jar
+"$JAVA_HOME/bin/java" -jar "$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)"
 ```
 
 ### CLI Flags
@@ -290,7 +292,7 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
 | Flag | Effect |
 |------|--------|
 | `--autodrive <dir>` | Scripted walkthrough that captures PNG frames to `<dir>` (lets an agent SEE the world) |
-| `--selftest` | 40 automated checks headlessly, PASS/FAIL, exit 0/1 (CI gate) |
+| `--selftest` | 54 automated checks headlessly, PASS/FAIL, exit 0/1 (CI gate) |
 | `--e2e <dir>` | 13 labeled waypoints captured as PNGs (visual regression proof) |
 | `--demo` | Full palace from a bundled JSON snapshot — no GitHub auth, no network (see docs/DEMO_MODE.md; lands as step 112) |
 
@@ -310,17 +312,36 @@ install; the JRE is bundled.
 | WASD | Move |
 | Mouse | Look around |
 | Space | Jump |
-| Enter | Open door / exit room / send chat |
+| Enter | Open door / exit room (sends your message while typing in chat) |
+| T | Start/stop typing in chat (Enter sends) |
+| Shift | Sprint |
+| 1-9 | With the map open: teleport to the Nth revealed room on this floor |
+| E | Swap the Enigma plugboard when standing near it |
+| `[` / `]` | Scrub the current room's commit history backwards / forwards (time slider) |
+| F7 | Dressing room (see its own keys below) |
 | Left Click | Click book to open editor / click plant for a fact |
 | Tab | Toggle full-map overlay |
 | M | Toggle minimap overlay |
 | ESC | Toggle menu / close editor |
 | F1 | Help overlay |
 | F3 | Toggle noclip (free-fly: Space/Shift up/down, no collision) |
-| F4 | Toggle FPS/debug overlay (includes frustum-culled count) |
+| F4 | Toggle 2D readable text mode (VR 3D text <-> screen-pinned text) |
+| F8 | Toggle FPS/debug overlay (includes frustum-culled count) |
 | F11 | Fullscreen toggle |
 | F12 | Screenshot (saves to `screenshots/`) |
 | `/` | Search / jump to any repo |
+
+### Dressing Room Keys
+
+| Key | Action |
+|-----|--------|
+| `[` / `-` , `]` / `=` | Decrease / increase the selected attribute |
+| H | Cycle hair style |
+| X | Toggle sex |
+| F5 / F6 | Save / load `avatar.json` |
+| Tab | Next attribute |
+| Arrow keys / mouse drag | Orbit the camera around the avatar |
+| `,` / `.` | Zoom in / out |
 
 ### Book Editor Commands
 

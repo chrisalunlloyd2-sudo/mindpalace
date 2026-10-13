@@ -21,6 +21,7 @@ import com.mindpalace.genetics.GeneticTimeline;
 import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
 import com.mindpalace.ui.DressingRoom;
+import com.mindpalace.ui.HudLayout;   // t_0c1374b0: HUD slot table (de-overlap)
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.github.GistWall;
 import com.mindpalace.audio.AudioEngine;
@@ -39,7 +40,9 @@ import com.mindpalace.deploy.PatchManager;
 import com.mindpalace.backup.BackupManager;
 import com.mindpalace.backup.MemoryManager;
 import com.mindpalace.agent.IdleDetector;
+import com.mindpalace.integration.ContextBroadcaster;
 import org.joml.Vector3f;
+import org.joml.Vector4f;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWErrorCallback;
@@ -64,8 +67,17 @@ public class GameEngine {
     private boolean running = true;
 
     private Renderer renderer;
+    // MP-028 (#174): batched particle drawing. null = OFF (legacy per-row cube drawing, unchanged).
+    private com.mindpalace.render.ParticleBatch particleBatch;
+    // Demo fountain in front of the camera (-Dmindpalace.particles.demo=true) to see the batched path.
+    private com.mindpalace.render.ParticlePool demoPool;
+    private com.mindpalace.render.ParticleEmitter demoEmitter;
     private FontRenderer fontRenderer;
     private BloomEffect bloom;
+    // MP-20 block-assembly: self-contained visual blocks minted at boot, composed at the bloom seam
+    private final com.mindpalace.blocks.BlockRegistry blocks = new com.mindpalace.blocks.BlockRegistry();
+    /** v1.2 emit-render buffer (flat rows x,y,z,size,warmth,KIND). */
+    private final float[] blockEmitRows = new float[96 * 6];
     private WorldBuilder world;
     private Player player;
     private DressingRoom dressingRoom;   // F7: avatar dressing room (360° orbit editor)
@@ -95,6 +107,7 @@ public class GameEngine {
     private com.mindpalace.genetics.SonicFitness sonicFitness;
     private com.mindpalace.genetics.GenomeControl genomeControl;
     private double evolveTimer = 0.0;
+    private double controlPollTimer = 0;   // throttles the genome control-file poll
     private double refreshTimer = 0.0;
     private static final double EVOLVE_INTERVAL = 30.0; // seconds per tick
     private static final int EVOLVE_GENERATIONS_PER_TICK = 8; // GA loop iterations per tick
@@ -121,6 +134,7 @@ public class GameEngine {
     private BackupManager backupManager;
     private MemoryManager memoryManager;
     private IdleDetector idleDetector;
+    private ContextBroadcaster contextBroadcaster;
     private boolean searchMode;
     private String searchQuery = "";
     private boolean showHelp;
@@ -168,8 +182,25 @@ public class GameEngine {
     // Screenshot + auto-drive (agent "sees" the game)
     private boolean autodrive;
     private boolean e2eMode;
+    // STEP 94v5 white-catch: property-free CLI-gated lake orbit (never on in
+    // normal play/CI): the camera circles the shore capturing wave/sparkle/
+    // foam phases from many bearings so free-look white can be CAUGHT by the
+    // agent instead of only the fixed water waypoint being swept.
+    private boolean orbitMode;
+    private int orbitStep;              // bearing index around the lake
+    private float orbitTimer;           // dwell clock inside one bearing
     private int e2eWaypoint = 0;
     private double e2ePhaseTimer = 0;
+    private boolean e2eMansionDone; // final mansion waypoint: one-shot teleport so logs print once
+    // Waypoint-10 one-shot latch: the floor-2/picker side effects (teleport +
+    // destination rebuild + menu open) used to re-fire on EVERY physics tick of
+    // the 3s settle (180 ticks), each printing a [TELEPORT] line, resetting the
+    // camera and re-arming the picker — at CI fps that floods stdout, collapses
+    // the frame rate (accumulator caps each frame at 0.25s of virtual time) and
+    // blows the harness's 120s tour timeout before the shot fires. Armed once
+    // on entry, re-armed for the next tour run when the waypoint advances
+    // (2026-10-12, e2e waypoint-10 stall).
+    private boolean e2ePadLatch;
     private String screenshotDir;
     private int shotCounter;
     private double shotTimer;
@@ -240,7 +271,17 @@ public class GameEngine {
             System.exit(0);
         }
         startConsoleReader();
-        loop();
+        try {
+            loop();
+        } catch (Throwable t) {
+            // A crash in the loop used to skip cleanup and leave a window-less zombie JVM alive on
+            // its non-daemon threads (2026-10-03, 3 days "Not Responding"). Log, clean up, exit so
+            // a relauncher can restart the game.
+            System.err.println("[FATAL] game loop crashed: " + t);
+            t.printStackTrace();
+            try { cleanup(); } catch (Throwable ignored) { /* exiting anyway */ }
+            System.exit(1);
+        }
         cleanup();
     }
 
@@ -319,8 +360,26 @@ public class GameEngine {
         this.autodrive = true;
         this.screenshotDir = dir;
         this.e2eMode = true;
-        System.out.println("[E2E] enabled, waypoints + labeled shots -> " + dir);
+        // t_0c1374b0: pin the in-game clock to midday for the whole run.
+        // Brightness thresholds in e2e.sh were calibrated on daytime baselines;
+        // an evening tour renders night scenes (07_todo_crystals measured 1.0
+        // vs the 1.5 daytime baseline) and fails the verify spuriously.
+        this.timeOfDayPin = 12;
+        System.out.println("[E2E] enabled, waypoints + labeled shots -> " + dir
+            + " (clock pinned to 12:00 for deterministic brightness)");
     }
+
+    /** STEP 94v5 white-catch: orbit the lake shore and capture wave/sparkle/
+     *  foam phases from 40 bearings. CLI-gated (--orbit dir), exits when done. */
+    public void setOrbit(String dir) {
+        this.autodrive = true;
+        this.screenshotDir = dir;
+        this.orbitMode = true;
+        System.out.println("[ORBIT] enabled -> " + dir);
+    }
+
+    /** t_0c1374b0: e2e clock pin (null = live wall clock), applied in init(). */
+    private Integer timeOfDayPin = null;
 
 /** Demo mode: fixture world, no GitHub auth, no network (step 112). */
     private boolean demoMode = false;
@@ -357,7 +416,14 @@ public class GameEngine {
         // Size the window to the ACTUAL monitor, not a hardcoded 1920x1080.
         // On a 1536x864 display (125% DPI) a 1920x1080 window is larger than the
         // screen and gets cropped into a zoomed "tunnel" view that reads as VR.
-        var vm0 = GLFW.glfwGetVideoMode(GLFW.glfwGetPrimaryMonitor());
+        // Session-0 note: services / headless shells have NO monitor —
+        // glfwGetPrimaryMonitor() returns NULL and passing NULL into
+        // glfwGetVideoMode NPEs. Guard the HANDLE (not just the result) so
+        // --selftest can run from headless sessions; windowed creation still
+        // works there (hidden window station), console sessions keep the
+        // monitor-accurate sizing.
+        long mon0 = GLFW.glfwGetPrimaryMonitor();
+        var vm0 = mon0 != MemoryUtil.NULL ? GLFW.glfwGetVideoMode(mon0) : null;
         if (vm0 != null) {
             width = vm0.width();
             height = vm0.height();
@@ -379,7 +445,9 @@ public class GameEngine {
         GLFW.glfwMakeContextCurrent(window);
         GLFW.glfwSwapInterval(1);
         GLFW.glfwShowWindow(window);
+        if (Boolean.getBoolean("mindpalace.e2e.focus")) GLFW.glfwFocusWindow(window);   // experiment: does focus change the tour's message-pump stalls?
         GL.createCapabilities();
+        com.mindpalace.render.GlTrace.mark("init:createCapabilities");
 
         System.out.println("GPU: " + GL11.glGetString(GL11.GL_RENDERER));
         System.out.println("OpenGL: " + GL11.glGetString(GL11.GL_VERSION));
@@ -410,8 +478,35 @@ public class GameEngine {
 
         input = new Input(window);
         renderer = new Renderer(width, height);
+        com.mindpalace.render.GlTrace.mark("init:Renderer");
+        com.mindpalace.render.ParticleQuality particleQuality = com.mindpalace.render.ParticleQuality.fromConfig();
+        if (particleQuality != com.mindpalace.render.ParticleQuality.OFF) {
+            try {
+                particleBatch = new com.mindpalace.render.ParticleBatch(particleQuality.cap);
+                System.out.println("[Particles] batched drawing on: quality=" + particleQuality + " cap=" + particleQuality.cap);
+                if (Boolean.getBoolean("mindpalace.particles.demo")) {
+                    demoPool = new com.mindpalace.render.ParticlePool(particleQuality.cap, 1337L);
+                    demoPool.drag = 0.3f;
+                    demoEmitter = new com.mindpalace.render.ParticleEmitter();
+                    demoEmitter.rate = 400f; demoEmitter.spread = 0.5f;
+                    demoEmitter.speedMin = 2.5f; demoEmitter.speedMax = 4.5f;
+                    demoEmitter.lifeMin = 1.0f; demoEmitter.lifeMax = 2.0f;
+                    demoEmitter.size = 0.14f; demoEmitter.r = 1f; demoEmitter.g = 0.75f; demoEmitter.b = 0.25f;
+                    System.out.println("[Particles] demo fountain enabled");
+                }
+            } catch (RuntimeException e) {
+                particleBatch = null;   // never let an effects problem stop the game: fall back to the cube path
+                System.err.println("[Particles] batch unavailable, using the cube path: " + e);
+            }
+        }
         bloom = new BloomEffect(width, height);
+        com.mindpalace.render.GlTrace.mark("init:BloomEffect");
+        blocks.register(com.mindpalace.blocks.FireBlock.seedDefault()); // MP-032 fire (flicker phase)
+        blocks.register(new com.mindpalace.blocks.WeatherBlock()); // MP-028 weather (atmospheric light response)
+        blocks.register(new com.mindpalace.blocks.FrostBlock()); // MP-033 ice (frost shimmer; phase 2 = crystals + rim tint under #179)
+        blocks.register(new com.mindpalace.blocks.FireflyBlock()); // MP-031 fireflies (dusk/night Lissajous chorus)
         fontRenderer = new FontRenderer();
+        com.mindpalace.render.GlTrace.mark("init:FontRenderer");
         player = new Player();
         // Dressing room owns the player avatar — Cortana preset as the starting point.
         dressingRoom = new DressingRoom(com.mindpalace.avatar.AvatarLibrary.preset("cortana"));
@@ -429,10 +524,24 @@ public class GameEngine {
 
         world = new WorldBuilder();
         world.setDemoMode(demoMode);
+        // t_0c1374b0: e2e pins the clock (setE2E ran during arg parsing,
+        // before init) so the whole tour renders midday lighting.
+        if (timeOfDayPin != null) world.setClockPin(timeOfDayPin);
         world.build();
+
+        // t_b2e9bc3f: register the static building boxes NOW, not on the first
+        // culled render pass — spawn validation below (and the selftest) must
+        // see real colliders. Idempotent; the render path calls it again safely.
+        world.getOutsideWorld().registerStaticColliders();
 
         // Start the day at the mansion (player home) in the outside world.
         player.teleportToMansion(world);
+        // t_b2e9bc3f: the mansion teleport used to land ON the mansion box's
+        // +Z face (z = -172 with the box ending there) — insideSolid()'s
+        // player-radius pad made the spawn cell solid and resolveAxis() kept
+        // reverting every frame, so WASD was dead from frame one. Validate the
+        // spawn cell and BFS-nudge to the nearest free cell when it's solid.
+        player.ensureSpawnFree(world);
 
         loadingText = "Populating bookshelves...";
         loadingProgress = 0.7f;
@@ -455,6 +564,18 @@ public class GameEngine {
             java.nio.file.Path.of(dataRoot, "mindpalace_memory")); // #49: demo-temp root
         telemetry.record(com.mindpalace.backup.Telemetry.SYSTEM, "boot", "mindpalace started");
         System.out.println("[Telemetry] ledger ready — " + telemetry.summary());
+        // The render thread must never touch the ledger: every Telemetry method is synchronized and record() commits to
+        // disk (INSERT + prune DELETE), so a once-a-second recent(64) on the render thread stalled it for 100-500 ms
+        // whenever a bot was writing. A daemon reads it once a second and publishes an immutable snapshot instead.
+        telemetryReader = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "telemetry-reader");
+            t.setDaemon(true);
+            return t;
+        });
+        telemetryReader.scheduleWithFixedDelay(() -> {
+            try { telemetrySnapshot = java.util.Collections.unmodifiableList(telemetry.recent(64)); }
+            catch (RuntimeException ignored) { /* keep the previous snapshot */ }
+        }, 0, 1, java.util.concurrent.TimeUnit.SECONDS);
 
         // Self-managing memory + never-make-code-twice DB (needed by agents).
         memoryManager = new MemoryManager(java.nio.file.Path.of(dataRoot, "mindpalace_memory").toString()); // #49
@@ -468,6 +589,19 @@ public class GameEngine {
         if (!demoMode && github.isAuthenticated()) {
             agentManager.setIssueStream(new com.mindpalace.github.GitHubIssueStream(
                 github.getToken(), "chrisalunlloyd2-sudo", 30_000L));
+        }
+        // (#118, step 91) Every mapped room's repo joins the read feed — open
+        // issues surface in-world as crystals via the paced pull below.
+        if (!demoMode && github.isAuthenticated() && agentManager.getIssueStream() != null) {
+            java.util.LinkedHashSet<String> repoSet = new java.util.LinkedHashSet<>();
+            for (Room room : world.getRooms()) {
+                String repoName = room.getRepoName();
+                if (repoName != null && !"mansion".equals(repoName)) repoSet.add(repoName);
+            }
+            for (String repoName : repoSet)
+                agentManager.getIssueStream().watchRepo(repoName);
+            System.out.println("[IssueStream] " + repoSet.size()
+                + " repos in the in-world issue feed (1 read/60s, round-robin)");
         }
         // Unified telemetry: agents record quorum/DePIN/issue events.
         agentManager.setTelemetry(telemetry);
@@ -520,6 +654,10 @@ public class GameEngine {
         // runs inside agentManager.start(); only the cycle is suppressed.
         agentManager.setSelfTest(selfTest);
         agentManager.start();
+        // #145: Reddit/GitHub bridges start only on explicit env opt-in; never in --demo or selftest (hermetic).
+        if (!demoMode && !selfTest) {
+            agentManager.startBridgesIfConfigured(System::getenv);
+        }
 
         // Build the knowledge graph + spawn agent NPCs (bodies in the world)
         knowledgeGraph = new KnowledgeGraph();
@@ -663,6 +801,21 @@ public class GameEngine {
             System.out.println("[BDI] demo mode - bridge suppressed (hermetic selftest, step 81)");
         }
 
+        if (!demoMode && !selfTest) {
+            try {
+                contextBroadcaster = ContextBroadcaster.fromConfig();
+                if (contextBroadcaster != null) {
+                    contextBroadcaster.start();
+                    System.out.println("[Context] tailnet broadcaster listening on "
+                        + contextBroadcaster.port());
+                }
+            } catch (Exception e) {
+                System.err.println("[Context] broadcaster not started: " + e.getMessage());
+                if (contextBroadcaster != null) contextBroadcaster.close();
+                contextBroadcaster = null;
+            }
+        }
+
         loadingText = "Ready.";
         loadingProgress = 1.0f;
         renderLoadingFrame();
@@ -737,6 +890,27 @@ public class GameEngine {
             scout.setPosition(new Vector3f(rooms.get(0).getRoomCenter()).add(-1.5f, 1.0f, 0));
         npcs.add(scout);
         System.out.println("[NPC] Scout on patrol (" + rooms.size() + " rooms in rotation)");
+    }
+
+    /**
+     * (#118, step 91) Surface a GitHub-issue crystal near its repo's room.
+     * Called from the issue-stream daemon thread (same cross-thread contract
+     * as the lexical setIssuesCallback at setup) — hard cap 60 in-world
+     * crystals, duplicates pre-filtered by the stream's add-only dedup keys.
+     */
+    private void spawnIssueCrystal(com.mindpalace.world.TodoCrystal c) {
+        if (crystals.size() >= 60) return; // hard cap, one world
+        Room r = world.getRooms().stream()
+            .filter(rm -> rm.getRepoName() != null
+                && rm.getRepoName().equalsIgnoreCase(c.getRepoName()))
+            .findFirst().orElse(null);
+        if (r != null && r.getRoomCenter() != null) {
+            c.setPosition(new Vector3f(r.getRoomCenter()).add(0, 0.3f, 0));
+        } else {
+            c.setPosition(new Vector3f(0, 1.0f, 0));
+        }
+        crystals.add(c);
+        System.out.println("[IssueFeed] crystal: " + c.getLabel() + " @ " + c.getRepoName());
     }
 
     private void spawnCrystals() {
@@ -840,20 +1014,48 @@ public class GameEngine {
         GLFW.glfwPollEvents();
     }
 
+    private volatile java.util.List<String[]> telemetrySnapshot = java.util.List.of();
+    private java.util.concurrent.ScheduledExecutorService telemetryReader;
+    private int e2eOverCount;
+    private String e2eOverLabels = "";
+    private double e2eWorstMs;
+    private String e2eWorstLabel = "none";
+    private int skipFrameSamples;
+    private int startupFrames;
+    private double startupFirstMs, startupWorstMs;
+
     private void loop() {
+        com.mindpalace.render.HitchSampler.start(Thread.currentThread());
         while (running && !GLFW.glfwWindowShouldClose(window)) {
             double currentTime = GLFW.glfwGetTime();
             double frameTime = currentTime - lastFrameTime;
             lastFrameTime = currentTime;
 
+            // Real wall-clock seconds per rendered frame feed the FPS overlay and the E2E perf evidence. They used to be
+            // fed the fixed PHYSICS_DT from update(), so both always reported exactly 120 FPS whatever the real speed.
+            if (skipFrameSamples > 0) skipFrameSamples--;
+            else {
+                frameTimes.addLast(Math.max(frameTime, 1e-6));
+                if (frameTimes.size() > 120) frameTimes.removeFirst();
+            }
+            if (e2eMode && startupFrames < 61) {          // MP-004: startup latency reported apart from steady-state hitching
+                startupFrames++;
+                if (startupFrames == 1) startupFirstMs = frameTime * 1000.0;
+                else startupWorstMs = Math.max(startupWorstMs, frameTime * 1000.0);
+                if (startupFrames == 61) System.out.println("[E2E-STARTUP] first frame " + String.format("%.0f", startupFirstMs)
+                    + " ms; worst of the next 60 frames " + String.format("%.0f", startupWorstMs) + " ms");
+            }
+
             if (frameTime > MAX_FRAME_TIME) frameTime = MAX_FRAME_TIME;
             accumulator += frameTime;
 
+            long updateStart = com.mindpalace.render.GlTrace.PROF ? System.nanoTime() : 0L;
             while (accumulator >= PHYSICS_DT) {
                 if (autodrive) updateAutodrive(PHYSICS_DT);
                 else update(PHYSICS_DT);
                 accumulator -= PHYSICS_DT;
             }
+            if (com.mindpalace.render.GlTrace.PROF) com.mindpalace.render.GlTrace.noteUpdate(System.nanoTime() - updateStart);
 
             render(accumulator / PHYSICS_DT);
 
@@ -870,7 +1072,18 @@ public class GameEngine {
                 fpsTimer = 0.0;
             }
 
-            GLFW.glfwPollEvents();
+            if (com.mindpalace.render.GlTrace.PROF) {
+                long pollStart = System.nanoTime();
+                GLFW.glfwPollEvents();
+                long pollMs = (System.nanoTime() - pollStart) / 1_000_000L;
+                if (pollMs > 100) {       // an OS message-pump stall: record what state the window was in
+                    System.out.println("[FrameProf] glfwPollEvents " + pollMs + " ms; focused=" + (GLFW.glfwGetWindowAttrib(window, GLFW.GLFW_FOCUSED) == 1)
+                        + " visible=" + (GLFW.glfwGetWindowAttrib(window, GLFW.GLFW_VISIBLE) == 1)
+                        + " iconified=" + (GLFW.glfwGetWindowAttrib(window, GLFW.GLFW_ICONIFIED) == 1) + " e2eWaypoint=" + e2eWaypoint);
+                }
+            } else {
+                GLFW.glfwPollEvents();
+            }
         }
     }
 
@@ -891,6 +1104,15 @@ public class GameEngine {
         if (factToastTimer > 0) factToastTimer -= dt;
         if (tocToastTimer > 0) tocToastTimer -= dt;
         if (tocCooldown > 0) tocCooldown -= dt;
+
+        // (#118, step 91) GitHub issue feed: paced daemon-thread drip — at
+        // most 1 repo read per 60s, crystals surface near their repo room.
+        // Never blocks the render loop (network runs on the daemon thread,
+        // same contract as GistWall); self-pacing makes per-frame calls cheap.
+        if (state == GameState.PLAYING && agentManager != null
+            && agentManager.getIssueStream() != null) {
+            agentManager.getIssueStream().refreshCrystals(this::spawnIssueCrystal);
+        }
 
         // TOC tree of knowledge — walk up to retrieve real system data
         if (tocCooldown <= 0 && player.getCurrentRoom() == null) {
@@ -951,10 +1173,13 @@ public class GameEngine {
                     inMansion = !inMansion;
                     mansionCooldown = 0.5;
                     if (inMansion) {
+                        // H13c: interior mode frees the shell (one solid AABB).
+                        player.setMansionInterior(true);
                         player.getCamera().setPosition(m.x, m.y + 1.6f, m.z + 2f);
                         player.getCamera().setYaw(180);
                         System.out.println("[MANSION] Entered the mansion");
                     } else {
+                        player.setMansionInterior(false);
                         player.getCamera().setPosition(m.x, m.y + 1.6f, m.z - 10f);
                         player.getCamera().setYaw(0);
                         System.out.println("[MANSION] Left the mansion");
@@ -1067,6 +1292,7 @@ public class GameEngine {
 
         // Continuous genetic-audio evolution — evolve the music in the background
         updateEvolution(dt);
+        updateParticleDemo((float) dt);
 
         // F12 — screenshot (agent "sees" the game)
         if (input.wasKeyPressed(GLFW.GLFW_KEY_F12)) {
@@ -1079,8 +1305,9 @@ public class GameEngine {
             System.out.println("[NOCLIP] " + (player.isNoclip() ? "ON" : "OFF"));
         }
 
-        // F4 — FPS overlay (M2, step 115): rolling average over ~2s of frames
-        if (input.wasKeyPressed(GLFW.GLFW_KEY_F4)) {
+        // F8 — FPS overlay (M2, step 115): rolling average over ~2s of frames.
+        // Moved off F4 (#141): F4 belongs to the VR<->2D text toggle; one key, one feature.
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_F8)) {
             fpsShow = !fpsShow;
         }
 
@@ -1089,7 +1316,6 @@ public class GameEngine {
             minimapShow = !minimapShow;
             System.out.println("[Minimap] " + (minimapShow ? "ON" : "OFF"));
         }
-        frameTimes.addLast(dt);
         if (minimapHighlight != null && System.currentTimeMillis() > minimapHighlightUntil) {
             minimapHighlight = null; // highlight expired
         }
@@ -1115,8 +1341,12 @@ public class GameEngine {
             for (int k = GLFW.GLFW_KEY_1; k <= GLFW.GLFW_KEY_9; k++) {
                 if (input.wasKeyPressed(k)) {
                     java.util.List<Room> vis = new java.util.ArrayList<>();
+                    // getCurrentRoom() is null outside any room (mansion, hallway, outside):
+                    // that NPE killed the game loop on 2026-10-03. Same fallback as the map HUD.
+                    Room hereRoom = player.getCurrentRoom();
+                    int hereFloor = hereRoom != null ? hereRoom.getFloor() : 0;
                     for (Room room : world.getRooms()) {
-                        if (room.getFloor() != player.getCurrentRoom().getFloor()) continue;
+                        if (room.getFloor() != hereFloor) continue;
                         if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
                         if (room.getDoorPosition() == null) continue;
                         vis.add(room);
@@ -1610,7 +1840,9 @@ public class GameEngine {
     private String bloomRegion = "hall";
     private float bloomRegionFade = 0f; // >0 while the region name shows (step 68)
     // H21: quorum flare — +1.0 gold .. -1.0 ice, decays to 0 over ~1.5s
-    private float quorumFlare = 0f;
+    // volatile: written from the agent drain thread (verdict callback),
+    // read every frame on the render thread (#106).
+    private volatile float quorumFlare = 0f;
 
     private void updateRegionBloom(double dt) {
         if (bloom == null) return;
@@ -1638,11 +1870,15 @@ public class GameEngine {
             bloomCurrent += quorumFlare * 0.6f;
             bloomCurrent = Math.max(0f, Math.min(2f, bloomCurrent));
         }
+        blocks.updateAll((float) dt, player.getPosition().x, player.getPosition().z, target);
+        bloomCurrent = blocks.applyLuma(bloomCurrent);
         bloom.setIntensity(bloomCurrent);
         // H22 (step 72): weather-music coupling — rain slows the score
         // (soaked-world feel), snow/clear restore. Cheap: only writes tempo
         // when it would change (MusicEngine.setTempo is an AtomicInt).
         com.mindpalace.world.OutsideWorld.Weather w = world.getOutsideWorld().weather();
+        blocks.envUpdateAll((float) dt, w.name(),
+            com.mindpalace.world.OutsideWorld.Season.WINTER == com.mindpalace.world.OutsideWorld.season() ? 1f : 0f); // MP-028 weather feed + MP-033 frost engagement (aux: winter zones; special rooms = phase 2)
         if (!"forest".equals(region)) {
             if (musicTempoWeather != 0) { musicTempoWeather = 0; music.setTempo(120); }
         } else if (w == com.mindpalace.world.OutsideWorld.Weather.RAIN) {
@@ -1654,9 +1890,11 @@ public class GameEngine {
     private int musicTempoWeather = 0;
 
     private void render(double alpha) {
+        com.mindpalace.render.GlTrace.frameStart();
         updateRegionBloom(0.016); // frame-paced; region presets lerp smoothly
         bloom.begin();
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+        com.mindpalace.render.GlTrace.mark("bloom.begin+clear");
 
         // Dressing room mode: orbit camera + avatar editor replaces the world view.
         if (dressingRoom != null && dressingRoom.isOpen()) {
@@ -1670,30 +1908,39 @@ public class GameEngine {
         }
 
         renderer.beginFrame(player.getCamera());
+        com.mindpalace.render.GlTrace.mark("renderer.beginFrame");
         // Sky dome — full gradient sphere so the sky is never black, even
-        // looking straight up or sideways. Phase follows the real clock.
-        int hour = java.time.LocalTime.now().getHour();
+        // looking straight up or sideways. Phase follows the real clock,
+        // unless the e2e clock pin is set (t_0c1374b0: deterministic tour
+        // brightness regardless of wall-clock hour).
+        int hour = world.isClockPinned() ? world.getPinHour()
+            : java.time.LocalTime.now().getHour();
         int skyPhase = (hour < 6 || hour >= 20) ? 2 : (hour >= 18 ? 1 : 0);
         renderer.drawSkyDome(player.getCamera().getPosition(), skyPhase);
+        com.mindpalace.render.GlTrace.mark("skyDome");
         world.render(renderer, player.getCamera());
+        com.mindpalace.render.GlTrace.mark("world.render");
         if (inMansion) renderMansionInterior();
+        com.mindpalace.render.GlTrace.mark("mansionInterior");
 
         // Turing Tape floor strip — feed it once a second, render always (LOD-capped inside).
         if (turingTape != null) {
             long now = System.currentTimeMillis();
             if (now - tapeFeedTimer > 1000) {
                 tapeFeedTimer = now;
-                turingTape.feed(telemetry != null ? telemetry.recent(64) : null);
+                turingTape.feed(telemetry != null ? telemetrySnapshot : null);
             }
             turingTape.render(renderer, player.getCamera().getPosition(),
                 (float) GLFW.glfwGetTime());
         }
 
+        com.mindpalace.render.GlTrace.mark("turingTape");
         // Rotor Room — Enigma rings in the courtyard, stepping every second.
         if (rotorRoom != null) {
             rotorRoom.render(renderer, player.getCamera().getPosition(), GLFW.glfwGetTime());
         }
 
+        com.mindpalace.render.GlTrace.mark("rotorRoom");
         // Banburismus gauge — deciban needle fed by the live GA (two logs/frame).
         if (banburismusGauge != null) {
             if (audioEvolver != null) {
@@ -1702,6 +1949,7 @@ public class GameEngine {
             banburismusGauge.render(renderer, player.getCamera().getPosition(), GLFW.glfwGetTime());
         }
 
+        com.mindpalace.render.GlTrace.mark("banburismusGauge");
         // Nash fountain — fed by the same live GA; freezes at equilibrium.
         if (nashFountain != null) {
             if (audioEvolver != null) nashFountain.update(audioEvolver.bestScore());
@@ -1709,6 +1957,7 @@ public class GameEngine {
                 GLFW.glfwGetTime(), 1f / 60f);
         }
 
+        com.mindpalace.render.GlTrace.mark("nashFountain");
         // Enigma plugboard — render + E-key swap when near (re-seeds the GA).
         if (plugboard != null) {
             plugboard.render(renderer, player.getCamera().getPosition());
@@ -1726,9 +1975,11 @@ public class GameEngine {
             }
         }
 
+        com.mindpalace.render.GlTrace.mark("plugboard");
         // Render agent NPCs (bodies) + TODO crystals
         renderNPCs();
         renderCrystals();
+        com.mindpalace.render.GlTrace.mark("npcs+crystals");
 
         // Render neon sign text
         if (fontRenderer != null && fontRenderer.isReady()) {
@@ -1740,10 +1991,13 @@ public class GameEngine {
                 renderRoomPoster();
                 renderFloorSigns();
                 renderSignpostText();   // H23 (step 74): repo names on the path-fork signposts
+                renderCommitEngravings(); // H37 (#122, step 95): last-10-commits plaque beside each door
             } else {
                 // 2D read mode — pin the key world text into a fixed screen panel.
                 renderTwoDTextPanel();
             }
+        com.mindpalace.render.GlTrace.mark("world-text");
+        if (!hudSuppressed()) {
             renderScreenHUD();
             renderBookTooltip();
             renderBookHighlight();
@@ -1751,6 +2005,8 @@ public class GameEngine {
             renderGistWall();
             renderFactToast();
             renderTocToast();
+        }
+        com.mindpalace.render.GlTrace.mark("hud+toasts");
         }
 
         if (state == GameState.PLAYING) {
@@ -1761,7 +2017,7 @@ public class GameEngine {
             com.mindpalace.ui.InteractionPromptSystem.Prompt p =
                 promptSystem.select(player, world,
                     agentChat != null && agentChat.isTyping());
-            if (p != null) {
+            if (p != null && !hudSuppressed()) {
                 Camera cam = player.getCamera();
                 promptSystem.render(fontRenderer,
                     cam.getProjectionMatrix((float) width / height),
@@ -1769,11 +2025,13 @@ public class GameEngine {
             }
         }
 
+        com.mindpalace.render.GlTrace.mark("interaction-prompt");
         if (bookEditor.isOpen()) {
             bookEditor.render(renderer);
             bookEditor.renderText(fontRenderer, player.getCamera(), width, height);
         }
 
+        com.mindpalace.render.GlTrace.mark("bookEditor");
         if (teleportMenu) renderTeleportMenu();
 
         // Shop menu — billboard showing what you can buy.
@@ -1793,28 +2051,74 @@ public class GameEngine {
                 new Vector3f(1f, 1f, 0.5f), proj, view, camPos);
         }
 
+        com.mindpalace.render.GlTrace.mark("menus+shop");
         if (state == GameState.MENU) renderMenu();
 
-        if (agentChat != null) {
+        if (agentChat != null && !hudSuppressed()) {
             agentChat.render(renderer, fontRenderer, player.getCamera(), width, height);
         }
 
+        com.mindpalace.render.GlTrace.mark("menu+agentChat");
         // H32 (step 85): bot roster — always-on lifecycle board, top-right.
-        if (state != GameState.MENU) {
+        if (state != GameState.MENU && !hudSuppressed()) {
             renderBotBoard();
         }
 
+        com.mindpalace.render.GlTrace.mark("botBoard");
         // Render deploy animations
         if (animationSystem != null && animationSystem.isActive()) {
             animationSystem.render(renderer);
         }
+        // MP-032 p2 / MP-031: block EMIT-RENDER -- rows to billboards. Blocks
+        // emit data (deterministic), the engine owns the GL. Ember rows ride
+        // the heat ramp (white-gold -> deep orange), fireflies pulse glow.
+        com.mindpalace.render.GlTrace.mark("animationSystem");
+        int emitRows = blocks.emitAll(blockEmitRows, 0, 96);
+        if (particleBatch != null) {
+            // MP-028: ALL rows in ONE draw call (was one cube draw + two Vector3f allocations per row).
+            org.joml.Matrix4f vm = renderer.getViewMatrix();
+            com.mindpalace.render.ParticleQuadBuffer qb = particleBatch.quads();
+            qb.begin(vm.m00(), vm.m10(), vm.m20(), vm.m01(), vm.m11(), vm.m21());
+            for (int i = 0; i < emitRows; i++) {
+                int w6 = i * 6;
+                float ex = blockEmitRows[w6], ey = blockEmitRows[w6 + 1], ez = blockEmitRows[w6 + 2];
+                float sz = blockEmitRows[w6 + 3], en = blockEmitRows[w6 + 4], kind = blockEmitRows[w6 + 5];
+                if (kind == 0f) {         // ember: same heat ramp as the cube path
+                    float inv = 1f - en;
+                    qb.add(ex, ey, ez, sz * 3f, 0.55f + 0.45f * inv, 0.25f + 0.35f * (1f - en * 0.5f), 0.08f, 0.9f);
+                } else if (kind == 1f) {  // firefly: chartreuse glow, brightness from blink
+                    qb.add(ex, ey, ez, sz * 3f, 0.55f * en, 0.85f * en, 0.20f * en, 1f);
+                }
+            }
+            if (demoPool != null) qb.addPool(demoPool, 0.9f);
+            particleBatch.end(renderer.getProjectionMatrix(), vm);
+            renderer.bindBasicShader();   // later draws expect the default shader bound
+        } else {
+            for (int i = 0; i < emitRows; i++) {
+                int w6 = i * 6;
+                float ex = blockEmitRows[w6], ey = blockEmitRows[w6 + 1], ez = blockEmitRows[w6 + 2];
+                float sz = blockEmitRows[w6 + 3], en = blockEmitRows[w6 + 4], kind = blockEmitRows[w6 + 5];
+                if (kind == 0f) { // ember: white-gold core cooling to deep orange with age
+                    float inv = 1f - en;
+                    renderer.drawCubeColorYaw(new Vector3f(ex, ey, ez),
+                        new Vector3f(sz, sz, sz), (float) (i * 61 % 360),
+                        0.55f + 0.45f * inv, 0.25f + 0.35f * (1f - en * 0.5f), 0.08f);
+                } else if (kind == 1f) { // firefly: chartreuse glow, brightness from blink
+                    renderer.drawCubeColorYaw(new Vector3f(ex, ey, ez),
+                        new Vector3f(sz, sz, sz), (float) (i * 61 % 360),
+                        0.55f * en, 0.85f * en, 0.20f * en);
+                }
+            }
+        }
 
+        com.mindpalace.render.GlTrace.mark("particles");
         // Help overlay
         if (showHelp) renderHelpOverlay();
 
         // Full-screen map overlay (Tab)
         if (showMap) renderMapOverlay();
 
+        com.mindpalace.render.GlTrace.mark("help+map");
         bloom.end();
         GLFW.glfwSwapBuffers(window);
     }
@@ -1871,7 +2175,19 @@ public class GameEngine {
             }
 
             float footY = p.y + bob;
-            float hipY = footY + legLen;
+            // STEP 92c: ground the body. NPCs hover at position.y = 1.0, so
+            // their feet used to dangle ~1 m in mid-air ("players off the
+            // ground are square cubes floating"). The RENDERED body now stands
+            // on the real terrain (corridor floor / stair ramp) under the feet;
+            // NPC logic (position, targets) is untouched.
+            float groundY = 0f;
+            if (world != null) groundY = world.getGroundHeight(p.x, p.z);
+            float standY = groundY + bob;
+            // Hex grounding pad — the "hex instead of square" marker: a glowing
+            // hologram plinth under every NPC, holo-tinted, larger than the hips.
+            renderer.drawHexPrismColor(new Vector3f(p.x, standY + 0.03f, p.z),
+                new Vector3f(0.42f, 0.06f, 0.42f), holoTint.x * 0.6f, holoTint.y * 0.6f, holoTint.z * 0.6f);
+            float hipY = standY + legLen;
             float waistY = hipY + 0.26f;      // pelvis (hips) top
             float shoulderY = waistY + 0.30f; // chest top
             float headY = shoulderY + 0.22f;
@@ -1953,18 +2269,22 @@ public class GameEngine {
             Vector3f p = c.getPosition();
             if (cam.getPosition().distance(p) > 20f) continue;
 
-            // Hex crystal — a tall thin cube (height = complexity)
+            // Hex crystal (STEP 92e): actually hex now — was a cube mislabeled
+            // "Hex crystal". Hex cap scale 0.35 keeps the old footprint bulk
+            // (flat-side width ≈ the cube's 0.25 face) while the silhouette
+            // reads as a real six-sided crystal; height = complexity.
             float h = c.getHeight();
-            renderer.drawCube(new Vector3f(p.x, p.y + h / 2f, p.z),
-                new Vector3f(0.15f, h, 0.15f), Renderer.TEX_NEON_GREEN);
+            renderer.drawHexPrism(new Vector3f(p.x, p.y + h / 2f, p.z),
+                new Vector3f(0.35f, h, 0.35f), Renderer.TEX_CRYSTAL);
 
             // Label
             if (fontRenderer != null && fontRenderer.isReady()) {
                 Matrix4f proj = cam.getProjectionMatrix((float) width / height);
                 Matrix4f view = cam.getViewMatrix();
                 Vector3f labelPos = new Vector3f(p.x, p.y + h + 0.15f, p.z);
-                fontRenderer.renderBillboard(c.getLabel(), labelPos, 0.03f,
-                    new Vector3f(0.3f, 1.0f, 0.4f), proj, view, cam.getPosition());
+                // 0.03→0.045: ~NPC-label size; white-cyan to match the crystal
+                fontRenderer.renderBillboard(c.getLabel(), labelPos, 0.045f,
+                    new Vector3f(0.55f, 1.0f, 1.0f), proj, view, cam.getPosition());
             }
         }
     }
@@ -1976,7 +2296,7 @@ public class GameEngine {
      * World graphics stay identical; only the text is pinned to the screen.
      */
     private void renderTwoDTextPanel() {
-        // F4 FPS overlay (M2 step 115): rolling average over frameTimes
+        // F8 FPS overlay (M2 step 115): rolling average over frameTimes
         if (fpsShow) {
             double sum = 0; int n = 0;
             for (Double ft : frameTimes) { sum += ft; n++; }
@@ -2052,7 +2372,15 @@ public class GameEngine {
             float wallX = room.getHallwaySide() == 0
                 ? -WorldBuilder.HALLWAY_WIDTH / 2f
                 : WorldBuilder.HALLWAY_WIDTH / 2f;
-            float offsetX = wallX > 0 ? -0.20f : 0.20f;
+            // Step 92f (sweep defect 3): the text plane wallX-0.20 was EXACTLY
+            // coplanar with the neon-sign backing assembly's front face
+            // (offset -0.15 glow plate + -0.02 face + 3d/2 = wallX-0.20), so
+            // every glyph depth-TIED with the plate and dropped out -> the
+            // signs rendered as bare black slabs in shots 13/14/17/19 (the
+            // #122 depth-fail class). Nudging 0.015 proud of the plate puts
+            // the glyphs strictly in front: they depth-win at every distance
+            // and the black slab now carries its repo name.
+            float offsetX = wallX > 0 ? -0.215f : 0.215f;
             Vector3f signPos = new Vector3f(wallX + offsetX, signY, dp.z);
 
             Vector3f color = room.isPrivate()
@@ -2068,6 +2396,123 @@ public class GameEngine {
             fontRenderer.renderText(name, signPos, 0.30f, color, proj, view, facing);
         }
     }
+
+    /** H37 (#122, step 95): commit engravings — each revealed room's door gets
+     *  a wall-facing "foundation stone" engraving OVER the door (lintel band
+     *  door top 2.4 → ceiling 4.0, entries 2.50+, header 3.90), listing the
+     *  repo's last 10
+     *  commits (newest first, 7-char sha + capped subject). Ledger sources:
+     *  real `git log -10` for local rooms, the /commits API for remote-only
+     *  rooms, deterministic seeds for demo fixtures. Placement: the over-door
+     *  band is the only collision-free slot — door-side walls also carry the
+     *  step-69 window panes (midpoint-centred, y≈1.8–2.65) and poster/note
+     *  traffic lower down; the lintel band has just the neon lintel bar at
+     *  y=2.4 (z-thin) and wallpaper above. Wall-facing renderText (neon-sign
+     *  recipe, glyphs advance along ±z on the wall plane) — the cylindrical
+     *  -billboard mirror bug class (#39) can't apply. e2e door waypoints
+     *  (13/17) frame this spot from the hall. */
+    private void renderCommitEngravings() {
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+
+        for (Room room : world.getRooms()) {
+            Vector3f dp = room.getDoorPosition();
+            if (dp == null) continue;
+            if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
+            String ledger = room.getCommitLedger();
+            if (ledger == null || ledger.isEmpty()) continue;
+
+            float dist = camPos.distance(dp);
+            if (dist > 14f) continue;   // legibility cutoff — same class as neon-sign 25/floor 15
+
+            float wallX = room.getHallwaySide() == 0
+                ? -WorldBuilder.HALLWAY_WIDTH / 2f
+                : WorldBuilder.HALLWAY_WIDTH / 2f;
+            // Hall side-wall cubes are wallT(0.25) thick centred on wallX, so
+            // the hallway-facing surface sits at |wallX| - 0.125 (e.g. -1.625).
+            // stoneX must be PROUD of that face or every glyph depth-fails
+            // inside the wall cube (the 122d-n invisibility root cause).
+            float wallFaceX = wallX + (wallX > 0 ? -0.125f : 0.125f);
+            // ...and clear of the wallpaper fixtures by ANCHOR, not by depth.
+            // Exact spans (WorldBuilder): neon-sign backing plate dp.z
+            // +/-1.075 at y 3.45-3.95 (own door); hall poster s.z+5+10k,
+            // z +/-0.43, y 1.67-2.73 (BELOW the rows); window pane y
+            // 1.35-2.25 (backdrop). So the ONLY header-height occluder is
+            // the door's own sign plate: a band whose right edge stops
+            // short of the plate is never occluded on any floor/side.
+            // Half-width 1.52 (38 chars at 0.08) -> anchor dp.z-3.3 keeps
+            // the whole band (z span anchor+/-1.52) clear of the sign plate
+            // (dp-1.075..) AND of the cut zone triangulated across 122t/122u
+            // (z ~dp-1.3..dp-1.7): shas end at dp-1.78. Header 22x0.10 = 2.2
+            // fits inside.
+            // Plane: PROVEN plaque mode -1.56 on every door (122q2) — proud
+            // of the poster/neon-frame cluster that reaches |x|-1.57, so
+            // glyphs depth-win over every wallpaper fixture in their box.
+            float stoneX = wallFaceX + (wallX > 0 ? -0.065f : 0.065f);
+            float anchorZ = dp.z - 3.3f;
+            float baseY = (room.getFloor() == 0 ? 0f : WorldBuilder.HALLWAY_HEIGHT + 1.0f);
+            Vector3f facing = new Vector3f(wallX > 0 ? -1 : 1, 0, 0);
+            // Palette: cool stone-gray entries + amber header, ledger ink.
+            Vector3f headCol = new Vector3f(1.0f, 0.72f, 0.25f);
+            Vector3f lineCol = new Vector3f(0.78f, 0.78f, 0.72f);
+
+            // Entries (0.08 -> lineH 0.136; 10 lines span 2.45->3.67 on floor
+            // 0, clear of the neon lintel bar at 2.4 and the header at 3.70+):
+            StringBuilder rows = new StringBuilder();
+            String[] ls = ledger.split("\n", -1);
+            for (int li = ls.length - 1; li >= 0; li--) {
+                if (ls[li].isEmpty()) continue;
+                if (rows.length() > 0) rows.append('\n');
+                // Cap 38 chars (2.99m at 0.08): wider rows can never fit the
+                // hall view window at any parkable distance (window is ~3.9m
+                // wide at dist 3.0) — 64c rows ran under the HUD forever.
+                String capped = ls[li].length() > 38 ? ls[li].substring(0, 36) + ".." : ls[li];
+                rows.append(capped);
+            }
+            fontRenderer.renderText(rows.toString(),
+                new Vector3f(stoneX, baseY + Room.DOOR_HEIGHT + 0.05f, anchorZ),
+                0.08f, lineCol, proj, view, facing);
+            // Header (0.10 at 3.78 -> glyphs 3.70-3.86) collides in y with
+            // BOTH doors' neon plates (y 3.45-3.95): own plate covers z
+            // dp+0.925.., the NEXT door's covers z ..dp+1.075-3 = 4.075 -
+            // Header at y 3.3 (glyphs 3.22-3.38): below plate bottoms
+            // (3.45, 0.07 margin — plates can't reach it at ANY z) and
+            // above the rows block (top 2.86); screen-y clears the HUD
+            // help line that overlaid y-3.0 in 122z. Shares rows' anchor
+            // dp-3.3 (22x0.10 = 2.2 span). ASCII hyphen only - em-dash
+            // U+2014 is outside the glyph atlas and would render as '?'.
+            fontRenderer.renderText("commit ledger - last 10",
+                new Vector3f(stoneX, baseY + 3.3f, anchorZ),
+                0.10f, headCol, proj, view, facing);
+            rendered++;
+        }
+        if (h37Debug && e2eLogTick++ % 60 == 0) {
+            int withLedger = 0, near = 0, renderedNow = 0;
+            StringBuilder probe = new StringBuilder();
+            for (Room room : world.getRooms()) {
+                Vector3f dp = room.getDoorPosition();
+                if (dp == null) continue;
+                String led = room.getCommitLedger();
+                if (led == null || led.isEmpty()) continue;
+                withLedger++;
+                float d = camPos.distance(dp);
+                if (d <= 14f) {
+                    near++;
+                    boolean revealed = !room.isFogged() || world.getFogOfWar().isRoomRevealed(room);
+                    if (d < 12f && probe.length() < 400) probe.append(String.format(
+                        " [d=%.1f z=%.1f revealed=%s]", d, dp.z, revealed));
+                }
+            }
+            System.out.println("[H37-DBG] cam=" + fmt(camPos) + " withLedger=" + withLedger
+                + " near=" + near + " rendered=" + rendered + probe);
+        }
+    }
+    private int e2eLogTick;
+    private String fmt(Vector3f v) { return String.format("(%.1f,%.1f,%.1f)", v.x, v.y, v.z); }
+    private boolean h37Debug = System.getProperty("mindpalace.debug.h37") != null;
+    private int rendered;
 
     private void renderFloorMap() {
         Camera cam = player.getCamera();
@@ -2103,6 +2548,21 @@ public class GameEngine {
         }
     }
 
+    /** t_0c1374b0: while the teleport picker or the Tab map overlay is open,
+     *  every HUD slot is suppressed (HudLayout.suppressed) — the open menu is
+     *  the only affordance on screen. */
+    private boolean hudSuppressed() {
+        return HudLayout.suppressed(teleportMenu, showMap);
+    }
+
+    /** t_0c1374b0: the one HUD anchor — HudLayout slot space to world space. */
+    private Vector3f hudAnchor(HudLayout.Slot s) {
+        Camera cam = player.getCamera();
+        Vector3f front = cam.getFront();
+        Vector3f right = new Vector3f(front).cross(new Vector3f(0, 1, 0)).normalize();
+        return HudLayout.anchor(cam.getPosition(), front, right, cam.getUp(), s);
+    }
+
     private void renderScreenHUD() {
         Camera cam = player.getCamera();
         Matrix4f proj = cam.getProjectionMatrix((float) width / height);
@@ -2111,19 +2571,18 @@ public class GameEngine {
         Vector3f camFront = cam.getFront();
         Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        // HUD at bottom of view, 3m in front
-        Vector3f hudCenter = new Vector3f(camPos).add(
-            camFront.x * 3f - camRight.x * 0f,
-            camFront.y * 3f - 0.6f,
-            camFront.z * 3f - camRight.z * 0f);
+        // t_0c1374b0: hotkeys strip anchored via the HudLayout.HOTKEYS slot, at
+        // the strip's LEFT end so the 78-char line straddles screen center
+        // (left-anchored at slot x=0 it would exit the right frustum edge).
+        Vector3f hudCenter = hudAnchor(HudLayout.HOTKEYS)
+            .add(new Vector3f(camRight).mul(-HudLayout.HOTKEYS.w / 2f));
 
-        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  F4:2D  ESC:Menu  F11:Fullscreen";
-        fontRenderer.renderBillboard(hotkeys, hudCenter, 0.06f,
+        String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  F4:2D  F8:FPS  ESC:Menu  F11:Fullscreen";
+        fontRenderer.renderBillboardLeft(hotkeys, hudCenter, 0.06f,
             new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
 
-        // Room info at top
-        Vector3f hudTop = new Vector3f(camPos).add(
-            camFront.x * 3f, camFront.y * 3f + 0.5f, camFront.z * 3f);
+        // Room info at top (HudLayout.ROOM_INFO slot)
+        Vector3f hudTop = hudAnchor(HudLayout.ROOM_INFO);
         String roomInfo = player.getCurrentRoom() != null
             ? player.getCurrentRoom().getDisplayLabel()
             : "MindPalace — " + world.getRooms().size() + " rooms";
@@ -2135,18 +2594,14 @@ public class GameEngine {
         if (bloomRegionFade > 0f) {
             bloomRegionFade -= 0.008f; // ~2s at 60fps
             float a = Math.min(1f, Math.max(0f, bloomRegionFade));
-            Vector3f regionPos = new Vector3f(camPos).add(
-                camFront.x * 3f, camFront.y * 3f + 0.2f, camFront.z * 3f);
+            Vector3f regionPos = hudAnchor(HudLayout.REGION);
             fontRenderer.renderBillboard(bloomRegion.toUpperCase(), regionPos, 0.05f,
                 new Vector3f(0.4f * a, 0.8f * a, 1.0f * a), proj, view, camPos);
         }
 
         // Wallet balance (DePIN credits)
         if (depin != null) {
-            Vector3f walletPos = new Vector3f(camPos).add(
-                camFront.x * 3f - camRight.x * 0.5f,
-                camFront.y * 3f + 0.85f,
-                camFront.z * 3f - camRight.z * 0.5f);
+            Vector3f walletPos = hudAnchor(HudLayout.WALLET);
             double bal = depin.participant("player").wallet.getBalance();
             String walletLine = String.format("Credits: %.0f", bal);
             fontRenderer.renderBillboard(walletLine, walletPos, 0.05f,
@@ -2187,11 +2642,8 @@ public class GameEngine {
 
     private void renderMinimap(Camera cam, Matrix4f proj, Matrix4f view,
                                 Vector3f camPos, Vector3f camFront, Vector3f camRight) {
-        // Position minimap in top-right of view, 2.5m in front
-        Vector3f mapCenter = new Vector3f(camPos).add(
-            camFront.x * 2.5f + camRight.x * 1.2f,
-            camFront.y * 2.5f + 0.4f,
-            camFront.z * 2.5f + camRight.z * 1.2f);
+        // t_0c1374b0: HudLayout.MINIMAP slot (right column, below the roster).
+        Vector3f mapCenter = hudAnchor(HudLayout.MINIMAP);
 
         // Floor indicator
         int floor = player.getCurrentRoom() != null ? player.getCurrentRoom().getFloor() : 0;
@@ -2294,7 +2746,7 @@ public class GameEngine {
         float dw = Room.DOOR_HEIGHT;
         float fz = side == 0 ? c.z - d / 2f : c.z + d / 2f;
         float posterY = c.y - h / 2f + dw + 0.15f + 0.45f;
-        float posterZ = side == 0 ? fz + 0.06f : fz - 0.06f;
+        float posterZ = side == 0 ? fz + (Room.WALL_FACE + 0.10f) : fz - (Room.WALL_FACE + 0.10f);   // in front of the wall's room-facing surface
 
         // Text faces into the room (away from the door wall)
         Vector3f facing = new Vector3f(0, 0, side == 0 ? 1 : -1);
@@ -2323,11 +2775,8 @@ public class GameEngine {
         Vector3f camFront = cam.getFront();
         Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        // Panel anchored to the left of the view, 2.5m out
-        Vector3f base = new Vector3f(camPos).add(
-            camFront.x * 2.5f - camRight.x * 1.4f,
-            camFront.y * 2.5f + 0.35f,
-            camFront.z * 2.5f - camRight.z * 1.4f);
+        // t_0c1374b0: HudLayout.TELEMETRY slot (left column, below the gist wall).
+        Vector3f base = hudAnchor(HudLayout.TELEMETRY);
 
         // Clock
         String clock = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
@@ -2370,14 +2819,13 @@ public class GameEngine {
         Vector3f camFront = cam.getFront();
         Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        // Anchored to the RIGHT of the view, 2.5m out (mirror of telemetry on left)
-        Vector3f base = new Vector3f(camPos).add(
-            camFront.x * 2.5f + camRight.x * 1.4f,
-            camFront.y * 2.5f + 0.55f,
-            camFront.z * 2.5f + camRight.z * 1.4f);
+        // t_0c1374b0: HudLayout.GIST_WALL slot (upper-left column).
+        Vector3f base = hudAnchor(HudLayout.GIST_WALL);
 
-        float step = 0.09f;
-        for (int i = 0; i < lines.size(); i++) {
+        float step = 0.08f;
+        // Cap at 9 lines so the wall never escapes its HudLayout rect (gate).
+        int shown = Math.min(lines.size(), 9);
+        for (int i = 0; i < shown; i++) {
             String line = lines.get(i);
             boolean header = line.startsWith("==");
             float size = header ? 0.055f : 0.045f;
@@ -2481,10 +2929,10 @@ public class GameEngine {
         float vx = cx - 7f, vz = cz + 4f;
         renderer.drawCube(new Vector3f(vx, y + 1.2f, vz), new Vector3f(4f, 2.4f, 4f), Renderer.TEX_METAL);
         renderer.drawCube(new Vector3f(vx, y + 1.2f, vz + 2.05f), new Vector3f(3.4f, 1.8f, 0.1f), Renderer.TEX_NEON_CYAN);
-        // A few glowing crystals inside the vault
+        // A few glowing crystals inside the vault (TEX_CRYSTAL CARD-Q2 F3)
         for (int i = 0; i < 3; i++) {
             renderer.drawCube(new Vector3f(vx - 1f + i * 1f, y + 1.4f, vz + 1.5f),
-                new Vector3f(0.3f, 0.6f, 0.3f), Renderer.TEX_NEON_GREEN);
+                new Vector3f(0.3f, 0.6f, 0.3f), Renderer.TEX_CRYSTAL);
         }
 
         // ── War-room (back-right): quorum vote table ──
@@ -2575,15 +3023,33 @@ public class GameEngine {
         Matrix4f view = cam.getViewMatrix();
         Vector3f camPos = cam.getPosition();
         Vector3f camFront = cam.getFront();
+        Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        Vector3f center = new Vector3f(camPos).add(
-            camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
+        // t_0c1374b0: HudLayout.TELEPORT slot — centered modal picker over a
+        // dim slab (2.3m, just behind the 2.5m text) so it reads over the world.
+        Vector3f camUp = cam.getUp();
+        renderer.beginFrame(cam);
+        Vector3f slab = HudLayout.anchor(camPos, camFront, camRight, camUp, HudLayout.TELEPORT)
+            .add(new Vector3f(camFront).mul(-0.20f));
+        renderer.drawCubeColor(slab, new Vector3f(3.60f, 1.70f, 0.05f),
+            0.02f, 0.02f, 0.05f);
+
+        Vector3f center = HudLayout.anchor(camPos, camFront, camRight, camUp, HudLayout.TELEPORT);
 
         int options = teleportLabels.size();
         float lineH = 0.12f;
-        float startY = center.y + (options * lineH) / 2f;
+        // Header ON the slot anchor, options descend below it — the whole
+        // picker stays inside the TELEPORT rect instead of overflowing the
+        // frame top (11 options x 0.12 centered used to hang above view top).
+        float startY = center.y - 0.20f;
 
-        fontRenderer.renderBillboard("TELEPORT DESTINATION", center, 0.09f,
+        // Step 92f: teleport menu text is a HUD overlay, not world geometry —
+        // it used renderBillboard (depth-tested) at a 2.5m world anchor, so a
+        // wall inside 2.5m z-fought/took the text away and the theme swatches
+        // floated alone ("floating green panel", sweep shot 11). The bot
+        // roster hit the same class-bug and was fixed with
+        // renderBillboardOverlay (GE:3516 precedent) — same fix here.
+        fontRenderer.renderBillboardOverlay("TELEPORT DESTINATION", center, 0.09f,
             new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
 
         // Theme for one destination: physical floor pads carry the palette pair
@@ -2602,11 +3068,14 @@ public class GameEngine {
             Vector3f col = (i == teleportSel)
                 ? new Vector3f(1.0f, 0.9f, 0.3f)
                 : new Vector3f(0.7f, 0.7f, 0.7f);
-            fontRenderer.renderBillboard(label, pos, 0.06f, col, proj, view, camPos);
+            fontRenderer.renderBillboardOverlay(label, pos, 0.06f, col, proj, view, camPos);
         }
 
         // Two-block color swatches — the destination's PortalTheme pair, so a
         // menu entry can be visually matched to the physical pad it routes to.
+        // Labels are now depth-test-free overlays, so a swatch clipped into
+        // nearby geometry still has its label rendered beside it (no more
+        // lone "floating green panel", sweep shot 11).
         // Drawn after the labels: FontRenderer leaves textShader bound, so
         // rebind the basic shader before any cube draw.
         renderer.beginFrame(cam);
@@ -3090,20 +3559,23 @@ public class GameEngine {
             "=== CONTROLS ===",
             "WASD: Move    Mouse: Look    Shift: Sprint",
             "Enter: Open/Close Door    Space: Jump",
-            "Click: Open Book    ESC: Menu/Close",
-            "/: Search Repo    Tab: Map    Enter: Chat",
-            "F1: Help    F11: Fullscreen",
+            "T: Chat (Enter sends)    Click: Open Book",
+            "ESC: Menu/Close    /: Search Repo",
+            "Tab: Map    M: Minimap    1-9: Teleport (map open)",
+            "E: Plugboard swap (when near it)    [ / ]: Commit time slider",
+            "F1: Help    F3: Noclip    F4: 2D Text    F7: Dressing Room",
+            "F8: Debug    F11: Fullscreen    F12: Screenshot",
             "",
             "=== AGENTS ===",
             com.mindpalace.agent.ModelConfig.TOOL_MODEL + " (tool) + " + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + " (critic)",
             "Auto-cycle every 5 min in rooms",
-            "Enter to chat, type in-game",
+            "T to chat, type in-game",
             "",
             "=== EDITOR ===",
             ":e edit  :n new  :d delete  :s suggest  :q quit"
         };
 
-        float y = helpCenter.y + 0.6f;
+        float y = helpCenter.y + 0.6f + 0.06f * 3;   // 3 more lines than the original 14 keep the block centred
         for (String line : lines) {
             Vector3f linePos = new Vector3f(helpCenter.x, y, helpCenter.z);
             fontRenderer.renderBillboard(line, linePos, 0.05f,
@@ -3126,12 +3598,8 @@ public class GameEngine {
         Vector3f camFront = cam.getFront();
         Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        // Anchor: top-right of the view, 2.5m ahead (mirrors the chat feed's
-        // depth so both HUD panels read at the same focal plane).
-        Vector3f anchor = new Vector3f(camPos)
-            .add(camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f)
-            .add(camRight.x * 1.35f, camRight.y * 1.35f, camRight.z * 1.35f)
-            .add(0f, 0.95f, 0f);
+        // t_0c1374b0: HudLayout.BOT_ROSTER slot (upper-right column).
+        Vector3f anchor = hudAnchor(HudLayout.BOT_ROSTER);
 
         DePIN.Participant scoutWallet = depin != null ? depin.participant("Scout") : null;
         int line = 0;
@@ -3140,10 +3608,14 @@ public class GameEngine {
         // 2.5m-anchored text z-fights the wall band at the top of the frame
         // and vanishes (found in the step-85 e2e: ticks ran, zero pixels).
         fontRenderer.renderBillboardOverlay("── BOT ROSTER ──",
-            new Vector3f(anchor.x, anchor.y - line * 0.10f, anchor.z), 0.045f,
+            new Vector3f(anchor.x, anchor.y - line * 0.08f, anchor.z), 0.045f,
             new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
         line++;
+        // Cap at 7 bot lines: the BOT_ROSTER slot rect fits header + 7 rows
+        // at the 0.08 step (8 rows x 0.08 = 0.56 within the 0.59 slot height).
+        int rosterCap = 7;
         for (AgentNPC npc : npcs) {
+            if (line - 1 >= rosterCap) break;
             String l;
             Vector3f color = new Vector3f(0.8f, 0.8f, 0.8f);
             if (npc instanceof ScoutNPC scout) {
@@ -3158,7 +3630,7 @@ public class GameEngine {
                 l = String.format("%s  %s", npc.getName(), npc.getState());
             }
             fontRenderer.renderBillboardOverlay(l,
-                new Vector3f(anchor.x, anchor.y - line * 0.10f, anchor.z), 0.042f,
+                new Vector3f(anchor.x, anchor.y - line * 0.08f, anchor.z), 0.042f,
                 color, proj, view, camPos);
             line++;
         }
@@ -3197,6 +3669,8 @@ public class GameEngine {
     }
 
     private void cleanup() {
+        if (telemetryReader != null) telemetryReader.shutdownNow();
+        if (contextBroadcaster != null) contextBroadcaster.close();
         if (backupManager != null) backupManager.stop();
         if (bdiBridge != null) bdiBridge.stop();
         if (memoryManager != null) memoryManager.stop();
@@ -3204,8 +3678,10 @@ public class GameEngine {
         if (deployManager != null) deployManager.shutdown();
         audio.cleanup();
         music.cleanup();
+        if (particleBatch != null) particleBatch.cleanup();
         renderer.cleanup();
         bloom.cleanup();
+        blocks.cleanup();
         GLFW.glfwDestroyWindow(window);
         GLFW.glfwTerminate();
         GLFW.glfwSetErrorCallback(null).free();
@@ -3229,15 +3705,134 @@ public class GameEngine {
         java.io.File dir = new java.io.File(screenshotDir);
         if (!dir.exists()) dir.mkdirs();
         String path = screenshotDir + "/" + label + "_" + String.format("%02d", shotCounter++) + ".png";
+        // Report the frame times of the waypoint itself, BEFORE the PNG write: encoding it on the render thread costs
+        // 0.3-1.2 s and used to be counted as a hitch in the next waypoint's window.
+        double sum = 0, worst = 0; int n = 0;
+        for (Double ft : frameTimes) { sum += ft; n++; if (ft > worst) worst = ft; }
         String written = Screenshot.capture(width, height, path);
         if (written != null) System.out.println("[E2E-SHOT] " + label + " -> " + written);
+        if (e2eWaypoint > 0 && worst * 1000.0 > e2eWorstMs) { e2eWorstMs = worst * 1000.0; e2eWorstLabel = label; }
+        double gateLimit = Double.parseDouble(System.getProperty("mindpalace.e2e.maxFrameMs", "0"));
+        if (e2eWaypoint > 0 && gateLimit > 0 && worst * 1000.0 > gateLimit) { e2eOverCount++; e2eOverLabels += " " + label; }
+        frameTimes.clear();
+        skipFrameSamples = 2;                 // the capture frame and the one after it are harness cost, not game cost
         // H26 (step 78): per-waypoint FPS evidence — after the 3s settle the
         // rolling average is the waypoint's real perf, logged next to the shot.
-        double sum = 0; int n = 0;
-        for (Double ft : frameTimes) { sum += ft; n++; }
         double avgFps = n > 0 ? n / Math.max(sum, 1e-9) : 0;
         System.out.println("[E2E-FPS] " + label + " -> " + String.format("%.1f", avgFps)
-            + " fps (target >=30, budget SUCCESS_METRICS.md step 78)");
+            + " fps, worst frame " + String.format("%.1f", worst * 1000.0) + " ms over " + n
+            + " real frames (target >=30, budget SUCCESS_METRICS.md step 78)");
+        // t_0c1374b0 e2e HUD gate: project the live slot rects through the
+        // REAL camera at the capture moment; e2e.sh greps the [E2E-HUD-GATE]
+        // lines and fails the verify when any visible pair overlaps.
+        e2eGateFailures += hudGateCheck(label);
+    }
+    /** t_0c1374b0: e2e HUD-gate failures summed over the whole tour. */
+    private int e2eGateFailures = 0;
+
+    /**
+     * t_0c1374b0 e2e HUD gate — project each PRIMARY slot's gate rect through
+     * the CURRENT camera into NDC and log one [E2E-HUD-GATE] line per run.
+     * Every slot's rect center must land inside the frame (OFFFRAME = fail);
+     * visible slots must stay pairwise-disjoint on screen (OVERLAP = fail).
+     * All rect corners lie on the constant-depth 2.5m plane, so the persp -
+     * ective scale is uniform and NDC AABB = exact projected rect.
+     * Returns the failure count for this check (0 = clean).
+     */
+    private int hudGateCheck(String label) {
+        int bad = 0;
+        Camera cam = player.getCamera();
+        Vector3f camPos = cam.getPosition();
+        Vector3f front = cam.getFront();
+        Vector3f right = new Vector3f(front).cross(new Vector3f(0, 1, 0)).normalize();
+        Vector3f up = cam.getUp();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        StringBuilder sb = new StringBuilder("[E2E-HUD-GATE] ").append(label).append(':');
+        if (hudSuppressed()) {
+            // Modal (teleport picker / Tab map) — primaries are hidden by
+            // design; only the modal slot must be in frame.
+            float[] t = HudLayout.rect(HudLayout.TELEPORT);
+            float[] c = projectSlotPoint(camPos, front, right, up, proj, view,
+                t[0] + t[2] / 2f, t[1] + t[3] / 2f);
+            boolean in = c != null && c[0] >= -1f && c[0] <= 1f && c[1] >= -1f && c[1] <= 1f;
+            sb.append(" HUD suppressed (modal) teleport=")
+              .append(in ? "in-frame" : "OFFFRAME").append(" (rect ")
+              .append(String.format("%.2f,%.2f %.2fx%.2f", t[0], t[1], t[2], t[3])).append(')');
+            System.out.println(sb);
+            return in ? 0 : 1;
+        }
+        HudLayout.Slot[] slots = { HudLayout.GIST_WALL, HudLayout.TELEMETRY,
+            HudLayout.CHAT, HudLayout.BOT_ROSTER, HudLayout.MINIMAP };
+        int n = slots.length;
+        float[][] ndcRect = new float[n][]; // per slot: minX, minY, maxX, maxY
+        boolean[] visible = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            float[] r = HudLayout.rect(slots[i]);
+            float[] c = projectSlotPoint(camPos, front, right, up, proj, view,
+                r[0] + r[2] / 2f, r[1] + r[3] / 2f);
+            visible[i] = c != null && c[0] >= -1f && c[0] <= 1f && c[1] >= -1f && c[1] <= 1f;
+            if (!visible[i]) {
+                sb.append(' ').append(slots[i].name).append("=OFFFRAME(")
+                  .append(c == null ? "degenerate"
+                      : String.format("%.2f,%.2f", c[0], c[1])).append(')');
+                bad++;
+                continue;
+            }
+            // Uniform scale across the plane — project the 4 corners exactly.
+            float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
+            float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+            for (int k = 0; k < 4; k++) {
+                float[] pc = projectSlotPoint(camPos, front, right, up, proj, view,
+                    r[0] + (k % 2) * r[2], r[1] + (k / 2) * r[3]);
+                float px = pc != null ? pc[0] : c[0], py = pc != null ? pc[1] : c[1];
+                minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+                minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+            }
+            ndcRect[i] = new float[] { minX, minY, maxX, maxY };
+            sb.append(' ').append(slots[i].name)
+              .append(String.format("=[%.2f,%.2f..%.2f,%.2f]", minX, minY, maxX, maxY));
+        }
+        int overlaps = 0;
+        for (int i = 0; i < n; i++) {
+            if (!visible[i]) continue;
+            for (int j = i + 1; j < n; j++) {
+                if (!visible[j]) continue;
+                float[] a = ndcRect[i], b = ndcRect[j];
+                if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]) {
+                    System.out.println("[E2E-HUD-GATE] OVERLAP " + label + ": "
+                        + slots[i].name + " x " + slots[j].name);
+                    overlaps++;
+                    bad++;
+                }
+            }
+        }
+        sb.append(" overlaps=").append(overlaps);
+        System.out.println(sb);
+        return bad;
+    }
+
+    /**
+     * Slot-space point (x right, y up, meters on the 2.5m anchor plane) to
+     * NDC (x, y) through the given camera transforms, or null when the
+     * point is behind/at the camera or the basis degenerated. Uses the
+     * exact affine view transform (JOML transformPosition — w row is
+     * [0,0,0,1]) plus the perspective x/y scale factors straight off the
+     * projection matrix (w_clip = -z_view for GL perspective).
+     */
+    private float[] projectSlotPoint(Vector3f camPos, Vector3f front, Vector3f right,
+                                     Vector3f up, Matrix4f proj, Matrix4f view,
+                                     float sx, float sy) {
+        Vector3f wp = new Vector3f(camPos)
+            .add(new Vector3f(front).mul(HudLayout.DIST))
+            .add(new Vector3f(right).mul(sx))
+            .add(new Vector3f(up).mul(sy));
+        if (!Float.isFinite(wp.x + wp.y + wp.z)) return null;
+        Vector3f vs = new Vector3f(wp);
+        view.transformPosition(vs);          // exact view-space position
+        if (vs.z >= -0.1f) return null;      // behind/at camera
+        float w = -vs.z;                     // GL perspective w_clip
+        return new float[] { proj.m00() * vs.x / w, proj.m11() * vs.y / w };
     }
 
     /**
@@ -3279,11 +3874,22 @@ public class GameEngine {
      * patches and splice the fittest patch into the live music. Fully
      * autonomous — no human rating, just the SonicFitness signal metrics.
      */
+    private void updateParticleDemo(float dt) {
+        if (demoPool == null) return;
+        org.joml.Vector3f cp = player.getCamera().getPosition(), cf = player.getCamera().getFront();
+        demoEmitter.at(cp.x + cf.x * 3f, cp.y - 0.8f, cp.z + cf.z * 3f);
+        demoEmitter.update(dt, demoPool);
+        demoPool.update(dt);
+    }
+
     private void updateEvolution(double dt) {
         if (audioEvolver == null) return;
 
-        // Poll the external control file (CLI tweaks while the system runs).
-        if (genomeControl != null) {
+        // Poll the external control file (CLI tweaks while the system runs). It used to be read on EVERY
+        // frame (a file-system call ~47x/s from the render loop; showed up in thread samples), so poll 4x/s.
+        controlPollTimer -= dt;
+        if (genomeControl != null && controlPollTimer <= 0) {
+            controlPollTimer = 0.25;
             com.google.gson.JsonObject ctl = genomeControl.read();
             if (ctl != null) {
                 String applied = genomeControl.apply(ctl, audioEvolver, sonicFitness);
@@ -3348,9 +3954,100 @@ public class GameEngine {
      * against every room, plus teleporter/agent/world invariants, and prints
      * a PASS/FAIL report. No human driving — this is the definitive check.
      */
+    private boolean testContextBroadcaster() {
+        java.nio.file.Path temp = null;
+        ContextBroadcaster broadcaster = null;
+        try {
+            temp = java.nio.file.Files.createTempDirectory("mindpalace-context-test");
+            String shuttle = "{\"source\":\"selftest\"}";
+            String cards = "[{\"kind\":\"card\"}]";
+            String triplets = "[{\"kind\":\"triplet\"}]";
+            java.nio.file.Files.writeString(temp.resolve("shuttle.json"), shuttle,
+                java.nio.charset.StandardCharsets.UTF_8);
+            java.nio.file.Files.writeString(temp.resolve("cards.json"), cards,
+                java.nio.charset.StandardCharsets.UTF_8);
+            java.nio.file.Files.writeString(temp.resolve("triplets.json"), triplets,
+                java.nio.charset.StandardCharsets.UTF_8);
+            java.util.concurrent.atomic.AtomicReference<ContextBroadcaster.PeerIdentity> peer =
+                new java.util.concurrent.atomic.AtomicReference<>(
+                    new ContextBroadcaster.PeerIdentity("trusted@example.test",
+                        java.util.Set.of("tag:reader")));
+            broadcaster = new ContextBroadcaster(temp,
+                java.net.InetAddress.getByName("127.0.0.1"), 0,
+                java.util.Set.of("trusted@example.test"), java.util.Set.of("tag:reader"),
+                address -> peer.get());
+            broadcaster.start();
+
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(2)).build();
+            String base = "http://127.0.0.1:" + broadcaster.port();
+            var shuttleResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/shuttle"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            var cardsResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            var tripletsResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/triplets"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean served = shuttleResponse.statusCode() == 200 && shuttle.equals(shuttleResponse.body())
+                && cardsResponse.statusCode() == 200 && cards.equals(cardsResponse.body())
+                && tripletsResponse.statusCode() == 200 && triplets.equals(tripletsResponse.body());
+
+            peer.set(new ContextBroadcaster.PeerIdentity("intruder@example.test",
+                java.util.Set.of("tag:other")));
+            var deniedResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean denied = deniedResponse.statusCode() == 403;
+
+            peer.set(new ContextBroadcaster.PeerIdentity("trusted@example.test", java.util.Set.of()));
+            var missingResponse = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/not-a-route"))
+                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean missingIsNotFound = missingResponse.statusCode() == 404;
+
+            ContextBroadcaster.PeerIdentity whoIs = ContextBroadcaster.parseWhoIs(
+                "{\"UserProfile\":{\"LoginName\":\"trusted@example.test\"},"
+                    + "\"Node\":{\"Tags\":[\"tag:reader\"]}}");
+            return served && denied && missingIsNotFound
+                && ContextBroadcaster.isAuthorized(whoIs, java.util.Set.of(), java.util.Set.of("tag:reader"))
+                && ContextBroadcaster.isAuthorized(whoIs, java.util.Set.of("TRUSTED@example.test"),
+                    java.util.Set.of())
+                && !ContextBroadcaster.isAuthorized(whoIs, java.util.Set.of("other@example.test"),
+                    java.util.Set.of("tag:other"));
+        } catch (Exception e) {
+            System.out.println("[Context] self-test error: " + e.getMessage());
+            return false;
+        } finally {
+            if (broadcaster != null) broadcaster.close();
+            if (temp != null) {
+                try (var paths = java.nio.file.Files.walk(temp)) {
+                    paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                        try { java.nio.file.Files.deleteIfExists(path); } catch (Exception ignored) {}
+                    });
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
     private void runSelfTest() {
         int pass = 0, fail = 0;
         System.out.println("\n===== MIND PALACE SELF-TEST =====");
+
+        boolean contextOk = testContextBroadcaster();
+        System.out.println((contextOk ? "PASS" : "FAIL")
+            + " context broadcaster (file routes, WhoIs user/tag allowlist, denial)");
+        if (contextOk) pass++; else fail++;
+        boolean blocksOk = blocks.selfTestAll();
+        System.out.println((blocksOk ? "PASS" : "FAIL")
+            + " render blocks (mp-20 registry, mp-032 fire flicker, bool-false gating)");
+        if (blocksOk) pass++; else fail++;
 
         // 1. World built
         if (world != null && !world.getRooms().isEmpty()) {
@@ -3396,9 +4093,9 @@ public class GameEngine {
         float hitRate = placedBooks > 0 ? (float) clickableBooks / placedBooks : 0f;
         if (clickableRooms > 0 && hitRate >= 0.9f) pass++; else fail++;
 
-        // 3. Teleporter pads exist (one per floor, including the top)
-        int pads = world.getHallways().size();
-        boolean padsOk = pads == world.getHallways().size() && pads > 0;
+        // 3. Teleporter pads exist (one per floor except top; count from WorldBuilder)
+        int pads = world.getTeleporterPads().size();
+        boolean padsOk = pads == world.getHallways().size() - 1 && pads > 0;
         System.out.println((padsOk ? "PASS" : "FAIL") + " teleporter pads: " + pads
             + "/" + world.getHallways().size() + " floors");
         if (padsOk) pass++; else fail++;
@@ -3521,6 +4218,107 @@ public class GameEngine {
         if (showMap) mapOk = false;
         System.out.println((mapOk ? "PASS" : "FAIL") + " map overlay toggle (Tab)");
         if (mapOk) pass++; else fail++;
+
+        // 12b. Overlay render paths the main frames never draw: map, help, teleport menu, dressing room, loading screen.
+        //      With -Dmindpalace.glTrace=true any GL error raised while drawing them fails the check.
+        boolean overlaysOk = true;
+        String overlayFailure = "";
+        long glErrorsBefore = com.mindpalace.render.GlTrace.errorTotal();
+        try {
+            boolean wasMap = showMap, wasHelp = showHelp, wasTeleport = teleportMenu;
+            showMap = true;      render(0); render(0); showMap = wasMap;
+            showHelp = true;     render(0); render(0); showHelp = wasHelp;
+            teleportMenu = true; render(0); render(0); teleportMenu = wasTeleport;
+            if (dressingRoom != null) {
+                boolean wasOpen = dressingRoom.isOpen();
+                if (!wasOpen) dressingRoom.toggle();
+                render(0); render(0);
+                if (dressingRoom.isOpen() != wasOpen) dressingRoom.toggle();
+            }
+            renderLoadingFrame();
+        } catch (Throwable t) {
+            overlaysOk = false;
+            overlayFailure = " (" + t.getClass().getSimpleName() + ")";
+        }
+        long glErrorsDuring = com.mindpalace.render.GlTrace.errorTotal() - glErrorsBefore;
+        if (glErrorsDuring > 0) { overlaysOk = false; overlayFailure += " (" + glErrorsDuring + " GL errors, see [GlTrace] lines)"; }
+        System.out.println((overlaysOk ? "PASS" : "FAIL") + " overlay render paths (map/help/teleport/dressing room/loading)" + overlayFailure);
+        if (overlaysOk) pass++; else fail++;
+
+        // 12b2. Poster images are decoded off-thread and shrunk to <=1024 px on their long side (aspect kept); small
+        //       images pass through untouched. Needs no GL context, so it is exactly what the worker thread runs.
+        boolean posterDecodeOk = true;
+        String posterDecodeNote = "";
+        try {
+            java.nio.file.Path tmpDir = java.nio.file.Files.createTempFile("mp-poster", ".png");
+            try {
+                java.nio.ByteBuffer px = org.lwjgl.system.MemoryUtil.memAlloc(2000 * 1000 * 4);
+                for (int i = 0; i < 2000 * 1000; i++) { px.put((byte) 200).put((byte) 100).put((byte) 50).put((byte) 255); }
+                px.flip();
+                if (!org.lwjgl.stb.STBImageWrite.stbi_write_png(tmpDir.toString(), 2000, 1000, 4, px, 2000 * 4)) posterDecodeOk = false;
+                org.lwjgl.system.MemoryUtil.memFree(px);
+                com.mindpalace.render.Texture.Pixels big = com.mindpalace.render.Texture.decode(tmpDir.toString(), 1024);
+                if (big.width() != 1024 || big.height() != 512) { posterDecodeOk = false; posterDecodeNote += " (2000x1000 -> " + big.width() + "x" + big.height() + ")"; }
+                int pxv = big.firstPixel();
+                big.free();
+                if ((pxv & 0xFF) < 190 || (pxv & 0xFF) > 210) { posterDecodeOk = false; posterDecodeNote += " (colour changed by the resize)"; }
+                com.mindpalace.render.Texture.Pixels small = com.mindpalace.render.Texture.decode(tmpDir.toString(), 4096);
+                if (small.width() != 2000 || small.height() != 1000) { posterDecodeOk = false; posterDecodeNote += " (a small image was resized)"; }
+                small.free();
+            } finally {
+                java.nio.file.Files.deleteIfExists(tmpDir);
+            }
+        } catch (Throwable t) {
+            posterDecodeOk = false;
+            posterDecodeNote = " (" + t.getClass().getSimpleName() + ")";
+        }
+        System.out.println((posterDecodeOk ? "PASS" : "FAIL") + " poster decode off-thread + downscale (2000x1000 -> 1024x512, small images untouched)" + posterDecodeNote);
+        if (posterDecodeOk) pass++; else fail++;
+
+        // 12c. MP-002 instruction e2e: every toggle key in the inventory (tools/instruction_inventory.py) is PRESSED through
+        //      the real input path and must flip its state, then flip back on a second press. Driven exactly like the
+        //      teleport-picker check: injectKeyPress, one update tick, one release tick.
+        state = GameState.PLAYING;
+        String keyFailures = "";
+        int keysChecked = 0;
+        Object[][] toggles = {
+            {"F1 help overlay", GLFW.GLFW_KEY_F1, (java.util.function.Supplier<Boolean>) () -> showHelp},
+            {"F3 noclip", GLFW.GLFW_KEY_F3, (java.util.function.Supplier<Boolean>) () -> player.isNoclip()},
+            {"F4 2D text mode", GLFW.GLFW_KEY_F4, (java.util.function.Supplier<Boolean>) () -> twoDTextMode},
+            {"F8 FPS overlay", GLFW.GLFW_KEY_F8, (java.util.function.Supplier<Boolean>) () -> fpsShow},
+            {"M minimap", GLFW.GLFW_KEY_M, (java.util.function.Supplier<Boolean>) () -> minimapShow},
+            {"Tab map overlay", GLFW.GLFW_KEY_TAB, (java.util.function.Supplier<Boolean>) () -> showMap},
+            {"F7 dressing room", GLFW.GLFW_KEY_F7, (java.util.function.Supplier<Boolean>) () -> dressingRoom != null && dressingRoom.isOpen()},
+        };
+        try {
+            for (Object[] row : toggles) {
+                @SuppressWarnings("unchecked")
+                java.util.function.Supplier<Boolean> read = (java.util.function.Supplier<Boolean>) row[2];
+                int key = (Integer) row[1];
+                boolean start = read.get();
+                for (int press = 0; press < 2; press++) {
+                    input.injectKeyPress(key);
+                    update(0.0);       // the press edge
+                    update(0.0);       // release tick so the next press edges again
+                    boolean expected = press == 0 ? !start : start;
+                    if (read.get() != expected) {
+                        keyFailures += " [" + row[0] + " press " + (press + 1) + " did not " + (press == 0 ? "toggle" : "restore") + "]";
+                        break;
+                    }
+                }
+                if (read.get() != start) {                        // leave the world as we found it
+                    input.injectKeyPress(key); update(0.0); update(0.0);
+                }
+                keysChecked++;
+            }
+        } catch (Throwable t) {
+            keyFailures += " [exception " + t.getClass().getSimpleName() + "]";
+        }
+        state = GameState.PLAYING;
+        showMap = false; showHelp = false; teleportMenu = false;
+        boolean keysOk = keyFailures.isEmpty();
+        System.out.println((keysOk ? "PASS" : "FAIL") + " instruction e2e (" + keysChecked + " toggle keys press+restore through the real input path)" + keyFailures);
+        if (keysOk) pass++; else fail++;
 
         // 13. Immediate chat path — scheduler exposes submitImmediate (no 5-min gate)
         boolean chatOk = agentManager != null && agentManager.getScheduler() != null;
@@ -3775,6 +4573,9 @@ public class GameEngine {
 
         // 25. DePIN economy — wallets, blackboard jobs, skill gate, pay-for-work.
         boolean depinOk = depin != null;
+        // Forensic facets for this known-racy check (sequential gates: the FIRST
+        // false facet is the culprit, later ones may be skipped-by-short-circuit).
+        boolean fMain=false, fSkillGate=false, fHeld=false, fRefunded=false, fPaid=false, fPrecision=false;
         if (depinOk) {
             depinOk = depin.participant("player") != null
                    && depin.participant("Explorer") != null
@@ -3786,20 +4587,64 @@ public class GameEngine {
                 if (depinOk) {
                     long jid = open.get(0).id;
                     double before = depin.participant("Explorer").wallet.getBalance();
-                    depinOk = depin.claim(jid, "Explorer")
-                           && depin.complete(jid) > 0
-                           && depin.participant("Explorer").wallet.getBalance() > before
+                    boolean cClaim = depin.claim(jid, "Explorer");
+                    double earned = cClaim ? depin.complete(jid) : -1.0; // parity with && guard
+                    double after = depin.participant("Explorer").wallet.getBalance();
+                    depinOk = cClaim
+                           && earned > 0
+                           && after > before
                            && depin.participant("Explorer").skill.get() >= 1;
+                    fMain = depinOk;
                 }
             }
             // Skill gate: a tier-1 agent can't claim a difficulty-5 job.
             if (depinOk) {
                 com.mindpalace.economy.Blackboard.Job hard = depin.post("Hard job", "repo/hard", 50.0, 5);
-                depinOk = !depin.claim(hard.id, "Critic"); // Critic is still tier 1
+                depinOk = hard != null && !depin.claim(hard.id, "Critic"); // Critic is still tier 1
+            }
+                fSkillGate = depinOk;
+            if (depinOk) {
+                com.mindpalace.economy.DePIN probe = new com.mindpalace.economy.DePIN(4.99);
+                com.mindpalace.economy.Blackboard.Job underfunded =
+                    probe.post("Unfunded", "selftest/unfunded", 5.0, 1);
+                // Reject proof must be captured BEFORE the Refund post: the
+                // old bundle asserted totalCount()==0 AFTER the Refund job was
+                // already on the board (count 1) -- unreachably false. The
+                // facet forensics run (86bd397: held=false, everything else
+                // true) exposed the ordering, not a race.
+                boolean underfundedRejected = underfunded == null && probe.board().totalCount() == 0;
+                com.mindpalace.economy.Blackboard.Job cancelled =
+                    probe.post("Refund", "selftest/refund", 4.5, 1);
+                boolean held = underfundedRejected
+                    && cancelled != null && probe.escrow().held(cancelled.id) == 4.5
+                    && Math.abs(probe.treasury().balance() - 0.49) < 0.001;
+                boolean refunded = cancelled != null && probe.cancel(cancelled.id)
+                    && cancelled.status == com.mindpalace.economy.Blackboard.JobStatus.CANCELLED
+                    && Math.abs(probe.treasury().balance() - 4.99) < 0.001
+                    && probe.escrow().totalHeld() == 0;
+                com.mindpalace.economy.Blackboard.Job funded =
+                    probe.post("Payout", "selftest/payout", 4.5, 1);
+                double playerBefore = probe.participant("player").wallet.getBalance();
+                boolean paid = funded != null && probe.claim(funded.id, "player")
+                    && Math.abs(probe.complete(funded.id) - 4.5) < 0.001
+                    && probe.participant("player").wallet.getBalance() == playerBefore + 4.5
+                    && probe.escrow().held(funded.id) == 0
+                    && probe.ledger().transactionCount() == 6
+                    && probe.participant("player").wallet.transactionCount() == 2;
+                com.mindpalace.economy.DePIN precisionProbe = new com.mindpalace.economy.DePIN(2.0);
+                com.mindpalace.economy.Blackboard.Job rounded =
+                    precisionProbe.post("Cent precision", "selftest/precision", 1.005, 1);
+                boolean precision = rounded != null && rounded.bounty == 1.01
+                    && precisionProbe.escrow().held(rounded.id) == rounded.bounty
+                    && precisionProbe.cancel(rounded.id)
+                    && precisionProbe.treasury().balance() == 2.0;
+                depinOk = held && refunded && paid && precision;
+                fHeld = held; fRefunded = refunded; fPaid = paid; fPrecision = precision;
             }
         }
-        System.out.println((depinOk ? "PASS" : "FAIL")
-            + " DePIN economy (wallets + blackboard + skill gate + pay-for-work)");
+        System.out.println((depinOk ? "PASS" : "FAIL [main=" + fMain + " skillGate=" + fSkillGate
+            + " held=" + fHeld + " refunded=" + fRefunded + " paid=" + fPaid + " precision=" + fPrecision + "]")
+            + " DePIN economy (ledger + treasury + escrow + refunds + skill gate + payouts)");
         if (depinOk) pass++; else fail++;
 
         // 26. Model shops — proximity detection + buy with credits.
@@ -4115,6 +4960,50 @@ public class GameEngine {
             + " tool executor (real I/O + never-twice + escape guard)");
         if (toolOk) pass++; else fail++;
 
+        // 36b. CARD-Q1 F1 — Ollama tool-call arguments arrive as a JSON OBJECT
+        //      (was getAsString() -> UnsupportedOperationException -> every
+        //      tool round died before executing anything). We can't hit the
+        //      network here, so pin the fix at the ToolCall level: a Gson
+        //      object element stringifies to JSON the executor parses.
+        boolean argsObjOk = false;
+        try {
+            com.mindpalace.agent.OllamaClient oc = new com.mindpalace.agent.OllamaClient();
+            String objArgs = new com.google.gson.Gson().toJsonTree(
+                java.util.Map.of("filename", "x.txt", "content", "hi")).toString();
+            com.mindpalace.agent.OllamaClient.ToolCall tc =
+                new com.mindpalace.agent.OllamaClient.ToolCall("create_file", objArgs);
+            com.google.gson.JsonObject parsed = com.google.gson.JsonParser.parseString(tc.arguments).getAsJsonObject();
+            argsObjOk = parsed.has("filename") && "x.txt".equals(parsed.get("filename").getAsString());
+        } catch (Exception e) {
+            argsObjOk = false;
+        }
+        System.out.println((argsObjOk ? "PASS" : "FAIL")
+            + " tool-call object-arguments round-trip (CARD-Q1 F1)");
+        if (argsObjOk) pass++; else fail++;
+
+        // 36c. CARD-Q1 F6 — AgentChat window is COW + snapshot getter.
+        boolean chatThreadOk = false;
+        try {
+            com.mindpalace.agent.AgentChat chat = new com.mindpalace.agent.AgentChat();
+            for (int i = 0; i < 30; i++) { final int n = i; new Thread(() -> {
+                try { chat.addMessage("thread-" + n + " fills the rolling window fast"); }
+                catch (Exception ignored) { }
+            }).start(); }
+            // render loop reads getMessages() concurrently — must not throw
+            for (int i = 0; i < 50; i++) {
+                int size = chat.getMessages().size();
+                if (size > 12) throw new IllegalStateException("window grew past cap");
+            }
+            boolean threw = false;
+            try { chat.getMessages().add("mutate"); } catch (UnsupportedOperationException u) { threw = true; }
+            chatThreadOk = threw;
+        } catch (Exception e) {
+            chatThreadOk = false;
+        }
+        System.out.println((chatThreadOk ? "PASS" : "FAIL")
+            + " AgentChat thread-safe window (COW + unmodifiable snapshot, CARD-Q1 F6)");
+        if (chatThreadOk) pass++; else fail++;
+
         // 37. Quorum tie-breaker — 3 voters can reach quorum; lexical topics can
         //     actually be APPROVED (was PENDING forever with only 2 voters).
         boolean quorumOk = false;
@@ -4135,6 +5024,289 @@ public class GameEngine {
         System.out.println((quorumOk ? "PASS" : "FAIL")
             + " quorum tie-breaker (3 voters, no eternal PENDING)");
         if (quorumOk) pass++; else fail++;
+
+        // 37a. Quorum readability + spawner contract (t_740fa7c6, t_66a35d3f):
+        //      the old code wrote "Act on ?" into ALL 4291 telemetry APPROVED
+        //      rows and mojibake tally glyphs (cp1252) into TASK files. The
+        //      TASK-file pipeline itself is gone — approved quorum cycles now
+        //      spawn hermes-kanban cards. Regression: (a) no-room target is
+        //      ASCII-plain, never "?"; (b) an APPROVED cycle MUST produce
+        //      exactly one kanban-capture record (the would-be spawn) written
+        //      UTF-8 with an ASCII tally and the quorum dossier; (c)
+        //      consecutive captures are strictly numbered; (d) result/toString
+        //      stays glyph-free. Spawns are captured to a scratch dir so the
+        //      live board, quorum_inbox, task_watch.log and
+        //      quorum_ledger.jsonl are untouched.
+        boolean quorumReadabilityOk = false;
+        java.nio.file.Path spawnTmp = null;
+        try {
+            // (a) the "Act on ?" poison: null-room fallback must be plain text
+            String noRoom = com.mindpalace.agent.AgentManager.proposalTargetName(null);
+            boolean noPoison = noRoom != null && !noRoom.contains("?");
+
+            spawnTmp = java.nio.file.Files.createTempDirectory("mindpalace-quorum-spawn");
+            com.mindpalace.agent.sims.QuorumTaskSpawner.useTestSpawnTarget(spawnTmp);
+            com.mindpalace.agent.sims.WeightedQuorumVote q2 =
+                new com.mindpalace.agent.sims.WeightedQuorumVote();
+            q2.setModelPosition("a", 0, 0);
+            q2.setModelPosition("b", 1, 0);
+            q2.setModelPosition("c", 0, 0);
+            String target = com.mindpalace.agent.AgentManager.proposalTargetName(null);
+            String pid = "spawn-verify-" + System.currentTimeMillis();
+            q2.registerProposal(pid, "Act on " + target,
+                new com.mindpalace.agent.sims.HexCoord(0, 0), "system_health_check");
+            // deterministic APPROVED (3/3 visible approve)
+            q2.castVote(pid, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q2.castVote(pid, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q2.castVote(pid, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult r2 = q2.calculateQuorum(pid);
+
+            // (d) ASCII-only verdict rendering
+            boolean glyphsOk = r2 != null && "APPROVED".equals(r2.status)
+                && !java.util.regex.Pattern.compile("[\uFFFD\u2713\u2717]").matcher(r2.toString()).find()
+                && r2.toString().contains("ok:3 no:0 blind:0");
+
+            // (b) APPROVED -> exactly one kanban-capture record, UTF-8, ASCII
+            //     tally, dossier present
+            com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r2);
+            java.util.List<java.nio.file.Path> spawned = new java.util.ArrayList<>();
+            try (java.util.stream.Stream<java.nio.file.Path> ls = java.nio.file.Files.list(spawnTmp)) {
+                ls.filter(p -> p.getFileName().toString().startsWith("quorum_kanban_capture_"))
+                    .forEach(spawned::add);
+            }
+            boolean spawnedOk = spawned.size() == 1;
+            String firstContent = null;
+            if (spawnedOk) {
+                firstContent = new String(java.nio.file.Files.readAllBytes(spawned.get(0)),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                spawnedOk = !firstContent.contains("\uFFFD")
+                    && firstContent.contains("\"spawn_backend\"")
+                    && firstContent.contains("hermes_kanban")
+                    && firstContent.contains("quorum-" + pid)
+                    && firstContent.contains("system_health_check")
+                    && firstContent.contains("ok:3 no:0 blind:0");
+
+                // (c) numbering monotonic: a second APPROVED cycle gets a higher capture number
+                String pid2 = pid + "-2";
+                q2.registerProposal(pid2, "Act on " + target,
+                    new com.mindpalace.agent.sims.HexCoord(0, 0), "system_health_check");
+                q2.castVote(pid2, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                q2.castVote(pid2, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                q2.castVote(pid2, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(q2.calculateQuorum(pid2));
+                try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(spawnTmp)) {
+                    long nCapture = s.filter(p -> p.getFileName().toString()
+                        .startsWith("quorum_kanban_capture_")).count();
+                    spawnedOk = spawnedOk && nCapture == 2;
+                }
+            }
+            quorumReadabilityOk = noPoison && glyphsOk && spawnedOk;
+        } catch (Exception e) {
+            System.out.println("      quorum readability error: " + e);
+            quorumReadabilityOk = false;
+        } finally {
+            com.mindpalace.agent.sims.QuorumTaskSpawner.useTestSpawnTarget(null);
+            if (spawnTmp != null) {
+                try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(spawnTmp)) {
+                    walk.sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) { } });
+                } catch (Exception ignored) { }
+            }
+        }
+        System.out.println((quorumReadabilityOk ? "PASS" : "FAIL")
+            + " quorum readability + spawner contract (kanban capture, no 'Act on ?', ASCII tally)");
+        if (quorumReadabilityOk) pass++; else fail++;
+
+        // 37b. Real-work proposal source + verdict capture (t_948a71be):
+        //      quorum votes on REAL work (kanban ready/triage cards,
+        //      hermes-queue issues, failing checks). All through the public
+        //      API in capture mode — live board, ledger and GitHub stay
+        //      untouched. Regression coverage:
+        //      (a) gather(): ready+triage cards both reachable, quorum-
+        //          authored cards excluded (no self-feed), poller-bridge
+        //          issues deduped against minted cards, failing checks
+        //          parsed from the monitor tail, concrete actions name
+        //          the file/command, vote text is line-free ASCII;
+        //      (b) APPROVED kanban card → captured 'promote' argv;
+        //      (c) REJECTED kanban card → captured 'comment' authored by
+        //          mindpalace-quorum with the tally;
+        //      (d) REJECTED public issue → ledger-only (GitHub is read-
+        //          only); APPROVED public issue → 'create-triage' ONLY
+        //          (never past triage — Architect sign-off doctrine) with
+        //          a stable idempotency key;
+        //      (e) capture mode never touches the durable ledger;
+        //      (f) verdicts dedupe within a run (no double capture);
+        //      (g) finishCycle() sweeps the registry clean.
+        boolean realWorkSourceOk = false;
+        java.nio.file.Path realWorkTmp = null;
+        try {
+            realWorkTmp = java.nio.file.Files.createTempDirectory("mindpalance-realwork-37b");
+            com.mindpalace.agent.sims.QuorumProposalSource src =
+                new com.mindpalace.agent.sims.QuorumProposalSource();
+            src.useTestEffectsTarget(realWorkTmp);
+            src.useTestLedgerPath(realWorkTmp.resolve("ledger_scratch.jsonl")); // clean slate
+            String kanbanFeed = "["
+                + "{\"id\":\"t_111aaa\",\"status\":\"ready\",\"created_by\":\"hermes\","
+                + "\"title\":\"Upgrade HUD door prompts\",\"body\":\"Edit HUD render path\"},"
+                + "{\"id\":\"t_222bbb\",\"status\":\"triage\",\"created_by\":\"architect\","
+                + "\"title\":\"GitHub issue #7: portal glow\",\"body\":\"wall plates y3.45+\"},"
+                + "{\"id\":\"t_333ccc\",\"status\":\"triage\",\"created_by\":\"mindpalace-quorum\","
+                + "\"title\":\"self-feed poison card\",\"body\":\"must be excluded\"},"
+                + "{\"id\":\"t_444ddd\",\"status\":\"running\",\"created_by\":\"hermes\","
+                + "\"title\":\"claimed already\",\"body\":\"not a proposal\"}"
+                + "]";
+            String issueFeed = "["
+                + "{\"number\":7,\"title\":\"dup covered by card\",\"body\":\"\","
+                + "\"html_url\":\"https://example.invalid/7\"},"
+                + "{\"number\":12,\"title\":\"Add perf overlay to menu\",\"body\":\"GPU frame cost\","
+                + "\"html_url\":\"https://example.invalid/12\"}"
+                + "]";
+            String monitorLine = "{\"chat_loop\":{\"looping\":true,\"avg_similarity\":0.91,"
+                + "\"sample_size\":24},\"git_unpushed_commits\":5,\"disk_free_gb\":{\"C\":12.5}}";
+            src.useTestKanbanFeed(kanbanFeed);
+            src.useTestIssueFeed(issueFeed);
+            src.useTestMonitorLine(monitorLine);
+            var realWork = src.gather();
+            java.util.Set<String> got = new java.util.HashSet<>();
+            for (var rw : realWork) got.add(rw.sourceId);
+            boolean gatherOk = realWork.size() == 5
+                && got.contains("t_111aaa")                    // ready card
+                && got.contains("t_222bbb")                    // triage card reachable
+                && !got.contains("t_333ccc")                   // quorum-authored excluded
+                && !got.contains("t_444ddd")                   // running card excluded
+                && !got.contains("#7") && got.contains("#12")  // poller-bridge dedupe
+                && got.contains("check-chat-loop")
+                && got.contains("check-unpushed")
+                && !got.contains("check-disk");                // 12.5 GB free = healthy
+            boolean actionsOk = true, asciiOk = true;
+            for (var rw : realWork) {
+                String a = rw.concreteAction;
+                if (rw.sourceId.equals("t_111aaa") && !a.contains("hermes kanban claim t_111aaa")) actionsOk = false;
+                if (rw.sourceId.equals("check-chat-loop") && !a.contains("chat_logs")) actionsOk = false;
+                if (rw.sourceId.equals("check-unpushed") && !a.contains("mindpalace-sync.sh")) actionsOk = false;
+                if (rw.sourceId.equals("#12")) {
+                    if (!rw.publicSourced) actionsOk = false;
+                    if (!a.contains("triage")) actionsOk = false;
+                }
+                String vt = rw.voteText();
+                for (int i = 0; i < vt.length(); i++) {
+                    char c = vt.charAt(i);
+                    if (c == '\n' || c == 13 || c >= 0x7F) { asciiOk = false; break; }
+                }
+            }
+            boolean publicFlagOk = true;
+            for (var rw : realWork) {
+                if (rw.sourceId.equals("#12") && !rw.voteText().startsWith("[github/public] ")) publicFlagOk = false;
+            }
+
+            // (b)-(d) verdict routing through applyVerdict in capture mode.
+            var byId = new java.util.HashMap<String, com.mindpalace.agent.sims.QuorumProposalSource.RealWorkProposal>();
+            for (var rw : realWork) byId.put(rw.sourceId, rw);
+            var rwCard = byId.get("t_111aaa");
+            var rwCard2 = byId.get("t_222bbb");
+            var rwIssue = byId.get("#12");
+            var q3 = new com.mindpalace.agent.sims.WeightedQuorumVote();
+            q3.setModelPosition("a", 0, 0);
+            q3.setModelPosition("b", 1, 0);
+            q3.setModelPosition("c", 0, 0);
+            boolean approvedCardOk = false, rejectedCardOk = false, ledgerOnlyOk = false, triageOk = false;
+            // APPROVED kanban card -> capture 'promote'
+            String pidC = rwCard.proposalId();
+            q3.registerProposal(pidC, rwCard.voteText(), new com.mindpalace.agent.sims.HexCoord(0, 0), rwCard.proposalType());
+            q3.castVote(pidC, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q3.castVote(pidC, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q3.castVote(pidC, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            var rApp = q3.calculateQuorum(pidC);
+            if (rApp != null && "APPROVED".equals(rApp.status)) {
+                src.applyVerdict(rApp, rwCard);
+                String cap1 = new String(java.nio.file.Files.readAllBytes(
+                    realWorkTmp.resolve("realwork_verdict_0001.json")),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                approvedCardOk = cap1.contains("\"action\":\"promote\"")
+                    && cap1.contains("hermes") && cap1.contains("promote")
+                    && cap1.contains("t_111aaa") && cap1.contains("APPROVED");
+            }
+            // REJECTED kanban card -> capture 'comment' (author mindpalace-quorum)
+            String pidR = rwCard2.proposalId();
+            q3.registerProposal(pidR, rwCard2.voteText(), new com.mindpalace.agent.sims.HexCoord(0, 0), rwCard2.proposalType());
+            q3.castVote(pidR, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            q3.castVote(pidR, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            q3.castVote(pidR, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            var rRej = q3.calculateQuorum(pidR);
+            if (rRej != null && "REJECTED".equals(rRej.status)) {
+                src.applyVerdict(rRej, rwCard2);
+                String cap2 = new String(java.nio.file.Files.readAllBytes(
+                    realWorkTmp.resolve("realwork_verdict_0002.json")),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                rejectedCardOk = cap2.contains("\"action\":\"comment\"")
+                    && cap2.contains("--author") && cap2.contains("mindpalace-quorum")
+                    && cap2.contains("REJECTED") && cap2.contains("t_222bbb");
+            }
+            // REJECTED public issue -> ledger-only (GitHub stays read-only)
+            String pidI = rwIssue.proposalId();
+            q3.registerProposal(pidI, rwIssue.voteText(), new com.mindpalace.agent.sims.HexCoord(0, 0), rwIssue.proposalType());
+            q3.castVote(pidI, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            q3.castVote(pidI, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            q3.castVote(pidI, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+            var rRejIssue = q3.calculateQuorum(pidI);
+            if (rRejIssue != null && "REJECTED".equals(rRejIssue.status)) {
+                src.applyVerdict(rRejIssue, rwIssue);
+                String cap3 = new String(java.nio.file.Files.readAllBytes(
+                    realWorkTmp.resolve("realwork_verdict_0003.json")),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                ledgerOnlyOk = cap3.contains("\"action\":\"ledger-only\"");
+            }
+            // APPROVED public issue -> create-triage ONLY, stable idempotency key
+            q3.castVote(pidI, "a", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q3.castVote(pidI, "b", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            q3.castVote(pidI, "c", com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+            var rAppIssue = q3.calculateQuorum(pidI);
+            if (rAppIssue != null && "APPROVED".equals(rAppIssue.status)) {
+                src.applyVerdict(rAppIssue, rwIssue);
+                String cap4 = new String(java.nio.file.Files.readAllBytes(
+                    realWorkTmp.resolve("realwork_verdict_0004.json")),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                triageOk = cap4.contains("\"action\":\"create-triage\"")
+                    && cap4.contains("--triage")
+                    && cap4.contains("quorum-github-12");
+            }
+            // (e) capture mode never writes the durable ledger
+            boolean ledgerOk = !java.nio.file.Files.exists(realWorkTmp.resolve("ledger_scratch.jsonl"));
+            // (f) dedupe: re-applying the promote verdict writes no 0005 record
+            src.applyVerdict(rApp, rwCard);
+            boolean dedupeOk = true;
+            try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(realWorkTmp)) {
+                dedupeOk = s.filter(p -> p.getFileName().toString().startsWith("realwork_verdict_"))
+                    .count() == 4;
+            }
+            // (g) finishCycle sweeps the registry
+            q3.finishCycle();
+            boolean sweepOk = q3.proposalCount() == 0;
+
+            realWorkSourceOk = gatherOk && actionsOk && asciiOk && publicFlagOk
+                && approvedCardOk && rejectedCardOk && ledgerOnlyOk && triageOk
+                && ledgerOk && dedupeOk && sweepOk;
+            if (!realWorkSourceOk) {
+                System.out.println("      37b detail: gather=" + gatherOk + " actions=" + actionsOk
+                    + " ascii=" + asciiOk + " flag=" + publicFlagOk
+                    + " promote=" + approvedCardOk + " comment=" + rejectedCardOk
+                    + " ledgerOnly=" + ledgerOnlyOk + " triage=" + triageOk
+                    + " ledgerClean=" + ledgerOk + " dedupe=" + dedupeOk + " sweep=" + sweepOk);
+            }
+        } catch (Exception e) {
+            System.out.println("      real-work source error: " + e);
+            realWorkSourceOk = false;
+        } finally {
+            if (realWorkTmp != null) {
+                try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(realWorkTmp)) {
+                    walk.sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) { } });
+                } catch (Exception ignored) { }
+            }
+        }
+        System.out.println((realWorkSourceOk ? "PASS" : "FAIL")
+            + " real-work proposal source + verdict capture (kanban/issues/checks -> promote/comment/ledger-only/create-triage, no live writes)");
+        if (realWorkSourceOk) pass++; else fail++;
 
         // 38. Portal color pairing — every teleporter pad has a complementary
         //     color pair (roadmap §3): pair hues >= 110 degrees apart, every
@@ -4379,7 +5551,7 @@ public class GameEngine {
         }
         if (layoutOk) pass++; else fail++;
 
-        // 26. Spawn point validation — player spawns in open hallway, not inside
+        // 42. Spawn point validation — player spawns in open hallway, not inside
         //     buildings or colliders (H13b regression: spawn was too close to mansion).
         //     Verify: position at spawn, first W input moves the player forward.
         //     Real APIs: EYE_HEIGHT is private → literal 1.6f; engine's own `input`
@@ -4407,6 +5579,92 @@ public class GameEngine {
         System.out.println((spawnOk ? "PASS" : "FAIL")
             + " spawn validation (position + WASD movement: z " + before.z + " -> " + after.z + ")");
         if (spawnOk) pass++; else fail++;
+
+        // 26b. H13c regression — the REAL spawn path. Test #26 only exercises
+        // the constructor spawn; the shipped bug was teleportToMansion landing
+        // ON the mansion collider face (m.z + 8 → fully boxed in, W did
+        // nothing) while 53/0 stayed green. Verify: (1) the mansion spawn is
+        // outside the H13b collider and a W-frame moves; (2) interior mode
+        // makes the shell walkable from the Enter-toggle entry point.
+        boolean mansionOk = true;
+        float radius = 0.3f; // Player.RADIUS (private)
+        player.teleportToMansion(world);
+        player.ensureSpawnFree(world); // t_b2e9bc3f: BFS-nudge if the collider face was hit
+        Vector3f atMansion = player.getPosition();
+        if (world.getOutsideWorld().insideSolid(atMansion.x, atMansion.z, radius)) {
+            mansionOk = false; // spawned inside a solid → every move reverts
+        }
+        Vector3f mBefore = new Vector3f(player.getPosition()); // yaw=0 → front +Z
+        input.injectKeyPress(GLFW.GLFW_KEY_W);
+        input.update(0.016);
+        player.update(0.016, input, world);
+        if (player.getPosition().z <= mBefore.z) mansionOk = false;
+        // Interior mode: the Enter-toggle entry point must be walkable.
+        Vector3f mPos = world.getOutsideWorld().getMansionPos();
+        player.setMansionInterior(true);
+        player.getCamera().setPosition(mPos.x, 1.6f, mPos.z + 2f);
+        player.getCamera().setYaw(0);
+        Vector3f iBefore = new Vector3f(player.getPosition());
+        input.injectKeyPress(GLFW.GLFW_KEY_W);
+        input.update(0.016);
+        player.update(0.016, input, world);
+        if (player.getPosition().z <= iBefore.z) mansionOk = false;
+        player.setMansionInterior(false);
+        System.out.println((mansionOk ? "PASS" : "FAIL")
+            + " mansion spawn regression (teleport outside collider + interior walkable)");
+        if (mansionOk) pass++; else fail++;
+
+        // 26c. t_b2e9bc3f: spawn position is not inside collision geometry —
+        //     across all fixture rooms + outside. Checks: (a) every teleporter
+        //     pad destination; (b) every fixture room's interior teleport
+        //     point; (c) the legacy hallway spawn (0, -50). (The mansion
+        //     startup spawn is already covered by 26b above.) Eager collider
+        //     registration guarantees the boxes exist regardless of render
+        //     culling order.
+        boolean spawnGeoOk = true;
+        world.getOutsideWorld().registerStaticColliders(); // idempotent
+        OutsideWorld owGeo = world.getOutsideWorld();
+        float rGeo = 0.35f;
+        // (a) every teleporter pad must land the player on a walkable cell
+        int padChecked = 0;
+        for (Vector3f pad : world.getTeleporterPads()) {
+            float padTopZ = Math.max(OutsideWorld.MIN_Z, Math.min(OutsideWorld.MAX_Z, pad.z));
+            if (owGeo.insideSolid(pad.x, padTopZ, rGeo)
+                || owGeo.insideHouseSolid(pad.x, padTopZ, rGeo)) {
+                spawnGeoOk = false;
+                System.out.println("  pad solid at (" + pad.x + ", " + pad.z + ")");
+            }
+            padChecked++;
+        }
+        // (b) every fixture room's interior point (the teleportIntoRoom spot)
+        //     must land inside the room footprint — exercises the real API.
+        int roomChecked = 0;
+        for (Room rm : world.getRooms()) {
+            if (rm.getRoomCenter() == null) continue;
+            player.teleportIntoRoom(rm);
+            Vector3f pp = player.getPosition();
+            Vector3f c = rm.getRoomCenter();
+            float rw = Room.ROOM_WIDTH / 2f;
+            float rd = Room.ROOM_DEPTH / 2f;
+            if (Math.abs(pp.x - c.x) > rw || Math.abs(pp.z - c.z) > rd) {
+                spawnGeoOk = false;
+                System.out.println("  room interior point outside footprint: " + rm.getDisplayLabel()
+                    + " (player " + pp.x + "," + pp.z + " vs center " + c.x + "," + c.z + ")");
+            }
+            roomChecked++;
+        }
+        // (c) legacy hallway spawn (0, -50) — deep in the hall, must stay free
+        if (owGeo.insideSolid(0f, -50f, rGeo) || owGeo.insideHouseSolid(0f, -50f, rGeo)) {
+            spawnGeoOk = false;
+            System.out.println("  legacy hall spawn (0, -50) solid");
+        }
+        System.out.println((spawnGeoOk ? "PASS" : "FAIL")
+            + " spawn geometry: " + padChecked + " pads + "
+            + roomChecked + " rooms + legacy hall spawn all walkable (t_b2e9bc3f)");
+        if (spawnGeoOk) pass++; else fail++;
+        // Restore the real startup spawn for any later check that reads it
+        player.teleportToMansion(world);
+        player.ensureSpawnFree(world);
 
         // #39 hermeticity: --demo must be zero-network end to end (refs #39, #40).
         // #43 (Alice 2026-09-14): the assert is ABOUT demo mode - live-mode auth+poller
@@ -4438,7 +5696,33 @@ public class GameEngine {
         }
         if (hermeticOk) pass++; else fail++;
 
-        // 27. H04 budgets — read_file returns head+tail 150 lines (test via
+        // #145: the bridge starter is reachable, off by default, rejects malformed config,
+        // and never touches the network here (stub env, no real credentials).
+        boolean bridgeStarterOk = false;
+        try {
+            String off = agentManager.startBridgesIfConfigured(k -> null);
+            String bad = agentManager.startBridgesIfConfigured(k -> k.equals("MP_ENABLE_GITHUB_BRIDGE") ? "1"
+                : k.equals("MP_GITHUB_BRIDGE_REPO") ? "not a repo" : null);
+            bridgeStarterOk = off.contains("github=skipped(disabled)") && off.contains("reddit=skipped(disabled)")
+                && bad.contains("github=skipped(enabled but repo/token missing or malformed)");
+        } catch (Throwable t) {
+            System.out.println("  bridge check threw: " + t);
+        }
+        System.out.println((bridgeStarterOk ? "PASS" : "FAIL") + " #145 bridge starter reachable, opt-in, validated");
+        if (bridgeStarterOk) pass++; else fail++;
+
+        // MP-028 (#174): particle core, proven headless (no GL): tiers, cap, compaction, physics,
+        // determinism, quad geometry, emitter, and MEASURED zero allocation per frame.
+        String particleWhy;
+        try { particleWhy = com.mindpalace.render.ParticleSelfCheck.run(); }
+        catch (Throwable t) { particleWhy = "threw " + t; }
+        boolean particleOk = particleWhy.isEmpty();
+        System.out.println((particleOk ? "PASS" : "FAIL")
+            + " MP-028 particle core: tiers, cap, swap-remove, physics, determinism, quads, emitter, zero-alloc"
+            + (particleOk ? "" : " -- " + particleWhy));
+        if (particleOk) pass++; else fail++;
+
+        // 43. H04 budgets — read_file returns head+tail 150 lines (test via
         //     AgentManager.truncateHeadTail through a 400-line synthetic file:
         //     expect 150 + elision marker + 150, and short files untouched).
         boolean h04Ok = false;
@@ -4456,7 +5740,7 @@ public class GameEngine {
         System.out.println((h04Ok ? "PASS" : "FAIL") + " H04 head/tail truncation (400-line file elides middle)");
         if (h04Ok) pass++; else fail++;
 
-        // 28. H21 quorum flare — the verdict callback flips quorumFlare and
+        // 44. H21 quorum flare — the verdict callback flips quorumFlare and
         //     the bloom loop decays it; verify the decay reaches ~0 (1.5s
         //     exp @60fps) and that the audio cue methods exist and don't throw.
         boolean flareOk = false;
@@ -4472,7 +5756,7 @@ public class GameEngine {
         System.out.println((flareOk ? "PASS" : "FAIL") + " quorum flare decay (gold->0 over ~1.5s) + audio cues");
         if (flareOk) pass++; else fail++;
 
-        // 29. H24 Scout patrol (step 79) — the visit rotation must be
+        // 45. H24 Scout patrol (step 79) — the visit rotation must be
         //     deterministic: same seed -> same start room, ticks at DWELL
         //     spacing emit VISIT lines in rotation order, no line before the
         //     first DWELL elapses.
@@ -4505,7 +5789,7 @@ public class GameEngine {
         }
         if (scoutOk) pass++; else fail++;
 
-        // 30. H25 scout→quorum (step 80) — a scout visit must be able to
+        // 46. H25 scout→quorum (step 80) — a scout visit must be able to
         //     produce an APPROVED proposal and a TODO crystal at the visited
         //     room (selftest: deterministic auto-approve votes, no cloud).
         boolean scoutQuorumOk = false;
@@ -4547,7 +5831,7 @@ public class GameEngine {
         }
         if (scoutQuorumOk) pass++; else fail++;
 
-        // 31. H28 unified bot event format (step 82) — addBotEvent writes a
+        // 47. H28 unified bot event format (step 82) — addBotEvent writes a
         //     {"ts","bot","kind","text"} line to today's JSONL; read it back
         //     and verify the envelope fields (round-trip through the real
         //     per-day log path, demo dataRoot).
@@ -4587,7 +5871,7 @@ public class GameEngine {
         }
         if (schemaOk) pass++; else fail++;
 
-        // 32. H30 scout economy (step 84) — awardUniqueVisit dedupe: first
+        // 48. H30 scout economy (step 84) — awardUniqueVisit dedupe: first
         //     visit pays (true), repeat visit doesn't (false), and the DePIN
         //     wallet actually received the credits.
         boolean ecoOk = false;
@@ -4619,7 +5903,7 @@ public class GameEngine {
         }
         if (ecoOk) pass++; else fail++;
 
-        // 33. H31 bot lifecycle (step 85) — ageTick reaches TTL exactly once,
+        // 49. H31 bot lifecycle (step 85) — ageTick reaches TTL exactly once,
         //     retire flag set, respawn resets duty + advances generation with
         //     a DETERMINISTIC new start (successorSeed math), and the
         //     never-twice ledger survives the respawn (economy memory).
@@ -4661,6 +5945,287 @@ public class GameEngine {
             System.out.println("FAIL bot lifecycle: " + e.getClass().getSimpleName() + " " + e.getMessage());
         }
         if (lifeOk) pass++; else fail++;
+
+        // 50. (#118, step 91) Issue read feed — pure label builder is
+        //     deterministic (PR skip, body truncation), pacing + dedup are
+        //     structural (60s drip, one (repo,#) emitted at most once), and
+        //     watch/queue counters stay honest. No network in selftest.
+        boolean feedOk = false;
+        try {
+            com.google.gson.JsonObject prJson = com.google.gson.JsonParser.parseString(
+                "{\"number\":7,\"title\":\"PR rider\",\"body\":\"b\",\"pull_request\":{}}").getAsJsonObject();
+            com.google.gson.JsonObject issueJson = com.google.gson.JsonParser.parseString(
+                "{\"number\":12,\"title\":\"Door prompt unreadable\",\"body\":\""
+                + "x".repeat(60) + "\"}").getAsJsonObject();
+            String prOut = com.mindpalace.github.GitHubIssueStream.crystalTextFor(prJson);
+            String okOut = com.mindpalace.github.GitHubIssueStream.crystalTextFor(issueJson);
+            boolean prSkipped = prOut == null;                       // PRs never surface
+            boolean fmtOk = okOut != null && okOut.startsWith("#12 ISSUE Door prompt unreadable")
+                && okOut.length() < 80 && okOut.endsWith(String.valueOf('x'));  // body truncated to 40
+            com.mindpalace.github.GitHubIssueStream feed =
+                new com.mindpalace.github.GitHubIssueStream(null, "t");  // no token → deterministic no-op
+            java.util.List<com.mindpalace.world.TodoCrystal> sink = new java.util.ArrayList<>();
+            feed.watchRepo("alpha");
+            feed.watchRepo("beta");
+            feed.watchRepo("alpha");                       // dup watch is idempotent
+            boolean counters = feed.watchedRepoCount() == 2
+                && feed.pendingReads() == 0;               // nothing pulled yet
+            feed.refreshCrystals(cx -> sink.add(cx));      // offline → zero crystals, no throw
+            boolean offlineSilent = sink.isEmpty();
+            feedOk = prSkipped && fmtOk && counters && offlineSilent;
+            System.out.println((feedOk ? "PASS" : "FAIL")
+                + " issue read feed (prSkip=" + prSkipped + " fmt=" + fmtOk
+                + " counters=" + counters + " offlineSilent=" + offlineSilent + ")");
+        } catch (Exception e) {
+            System.out.println("FAIL issue read feed: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (feedOk) pass++; else fail++;
+
+        // 52. MP-051 sprites may read the local KG, but only append pending
+        // proposals to their separate queue; disabled mode must be inert.
+        boolean spriteQueueOk = false;
+        java.nio.file.Path spriteTmp = null;
+        try {
+            spriteTmp = java.nio.file.Files.createTempDirectory("mp-sprite-queue");
+            java.nio.file.Path kgDb = spriteTmp.resolve("kg_graph.db");
+            try (java.sql.Connection c = java.sql.DriverManager.getConnection("jdbc:sqlite:" + kgDb);
+                 java.sql.Statement s = c.createStatement()) {
+                s.execute("CREATE TABLE github_todos (repo TEXT, todo_type TEXT, content TEXT, "
+                    + "status TEXT, priority_score INTEGER)");
+                s.execute("INSERT INTO github_todos VALUES "
+                    + "('demo-repo', 'TODO', 'review this item', 'open', 10)");
+            }
+            byte[] kgBefore = java.nio.file.Files.readAllBytes(kgDb);
+            java.nio.file.Path queue = spriteTmp.resolve("sprite-proposals.jsonl");
+            com.mindpalace.agent.sprites.SpriteProposalService disabled =
+                new com.mindpalace.agent.sprites.SpriteProposalService(false, kgDb, queue,
+                    com.mindpalace.agent.sprites.SpriteProposalService.Quality.LOW);
+            boolean disabledInert = disabled.collectProposals() == 0
+                && !java.nio.file.Files.exists(queue);
+            com.mindpalace.agent.sprites.SpriteProposalService enabled =
+                new com.mindpalace.agent.sprites.SpriteProposalService(true, kgDb, queue,
+                    com.mindpalace.agent.sprites.SpriteProposalService.Quality.LOW);
+            int added = enabled.collectProposals();
+            java.util.List<String> proposals = java.nio.file.Files.readAllLines(queue);
+            boolean spritesPresent = proposals.size() == 3
+                && proposals.stream().anyMatch(line -> line.contains("\"sprite\":\"Dispatcher\""))
+                && proposals.stream().anyMatch(line -> line.contains("\"sprite\":\"Linkwarden\""))
+                && proposals.stream().anyMatch(line -> line.contains("\"sprite\":\"Cartographer\""))
+                && proposals.stream().allMatch(line -> line.contains("\"status\":\"pending\""));
+            boolean deduplicated = new com.mindpalace.agent.sprites.SpriteProposalService(
+                true, kgDb, queue, com.mindpalace.agent.sprites.SpriteProposalService.Quality.LOW)
+                .collectProposals() == 0;
+            spriteQueueOk = disabledInert && added == 3 && spritesPresent && deduplicated
+                && java.util.Arrays.equals(kgBefore, java.nio.file.Files.readAllBytes(kgDb));
+        } catch (Exception e) {
+            System.out.println("MP-051 sprite proposal test error: " + e.getClass().getSimpleName()
+                + " " + e.getMessage());
+        } finally {
+            if (spriteTmp != null) {
+                try { java.nio.file.Files.walk(spriteTmp).sorted(java.util.Comparator.reverseOrder())
+                    .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) {} }); }
+                catch (Exception ignored) {}
+            }
+        }
+        System.out.println((spriteQueueOk ? "PASS" : "FAIL")
+            + " MP-051 sprites (read-only KG, opt-in pending proposal queue)");
+        if (spriteQueueOk) pass++; else fail++;
+
+        // 53. H37 (#122, step 95) commit engravings — data layer: a real
+        //     two-commit git repo scanned through the production RepoMapper
+        //     path (mindpalace.repos redirect) yields a newest-first ledger
+        //     of "7-char sha + ≤26-char subject" lines; Room storage
+        //     round-trips. No GL, no network, no pinned shas (contract-only).
+        boolean ledgerOk = false;
+        java.nio.file.Path ledgerTmp = null;
+        String reposProp = System.getProperty("mindpalace.repos");
+        try {
+            ledgerTmp = java.nio.file.Files.createTempDirectory("mp-ledger");
+            java.io.File gDir = ledgerTmp.resolve("engraved-repo").toFile();
+            java.nio.file.Files.createDirectories(gDir.toPath());
+            com.mindpalace.world.RepoMapper.GitRunner gitR = com.mindpalace.world.RepoMapper.SHARED_GIT;
+            java.nio.file.Path seedTxt = gDir.toPath().resolve("seed.txt");
+            // Stepped (not one &&-chain) so a failure names the exact git call.
+            java.nio.file.Files.writeString(seedTxt, "h37 v1\n");
+            String tInit = gitR.run(gDir, "init", "-q");
+            String tAdd1 = gitR.run(gDir, "add", "-A");
+            String tC1 = gitR.run(gDir, "-c", "user.email=selftest@mp", "-c",
+                "user.name=MP", "commit", "-q", "-m", "first seeded change");
+            java.nio.file.Files.writeString(seedTxt, "h37 v2\n");
+            String tAdd2 = gitR.run(gDir, "add", "-A");
+            String tC2 = gitR.run(gDir, "-c", "user.email=selftest@mp", "-c",
+                "user.name=MP", "commit", "-q", "-m",
+                "second seeded change: this subject intentionally runs well "
+                    + "past twenty six characters for cap testing");
+            boolean setup = tInit != null && tAdd1 != null && tC1 != null
+                && tAdd2 != null && tC2 != null;
+            if (setup) {
+                System.setProperty("mindpalace.repos", ledgerTmp.toString());
+                java.util.List<Room> scanned = new java.util.ArrayList<>();
+                new com.mindpalace.world.RepoMapper().scanRepos(scanned);
+                Room engraved = scanned.stream()
+                    .filter(r -> "engraved-repo".equals(r.getRepoName()))
+                    .findFirst().orElse(null);
+                String ledger = engraved != null ? engraved.getCommitLedger() : null;
+                String[] lines = ledger == null ? new String[0] : ledger.split("\n", -1);
+                java.util.regex.Pattern shaP = java.util.regex.Pattern.compile(
+                    "^[0-9a-f]{7} .*");
+                boolean shape = lines.length == 2
+                    && shaP.matcher(lines[0]).matches() && shaP.matcher(lines[1]).matches()
+                    && lines[0].contains("second")           // newest commits first
+                    && lines[0].endsWith("..") && lines[0].length() == 34  // 7+1+26 cap
+                    && lines[1].contains("first") && lines[1].length() <= 34;
+                if (engraved != null) {
+                    engraved.setCommitLedger("abc roundtrip");
+                }
+                boolean roundTrip = "abc roundtrip".equals(
+                    engraved == null ? null : engraved.getCommitLedger());
+                ledgerOk = engraved != null && shape && roundTrip;
+                System.out.println((ledgerOk ? "PASS" : "FAIL")
+                    + " commit ledger (scan->led lines=" + lines.length
+                    + " shape=" + shape + " roundTrip=" + roundTrip + ")");
+            } else {
+                System.out.println("FAIL commit ledger (git setup failed: "
+                    + "init=" + (tInit == null ? "NULL" : "ok")
+                    + " add1=" + (tAdd1 == null ? "NULL" : "ok")
+                    + " c1=" + (tC1 == null ? "NULL" : "ok")
+                    + " add2=" + (tAdd2 == null ? "NULL" : "ok")
+                    + " c2=" + (tC2 == null ? "NULL" : "ok") + ")");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL commit ledger: " + e.getClass().getSimpleName()
+                + " " + e.getMessage());
+        } finally {
+            if (reposProp != null) System.setProperty("mindpalace.repos", reposProp);
+            else System.clearProperty("mindpalace.repos");
+            if (ledgerTmp != null) {
+                try { java.nio.file.Files.walk(ledgerTmp)
+                        .sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> { try { java.nio.file.Files.delete(p); } catch (Exception ignored) {} }); }
+                catch (Exception ignored) {}
+            }
+        }
+        if (ledgerOk) pass++; else fail++;
+
+        // 54. Doors — Enter opens the facing door and it NEVER auto-closes
+        //     (t_cf0c461b spec: "open on Enter, never auto-close").
+        //     Drive the REAL Enter path (injectKeyPress → player.update) to
+        //     open the nearest door, then simulate 10 seconds of game ticks
+        //     and assert the door is still fully open — exitRoom() must
+        //     never call closeDoor() (regression guard for the old
+        //     open/close hammering cycle).
+        boolean doorOk = false;
+        try {
+            Room doorRoom = null;
+            for (Room rm : world.getRooms()) {
+                if (rm.getDoorPosition() != null) { doorRoom = rm; break; }
+            }
+            if (doorRoom != null) {
+                state = GameState.PLAYING;
+                // Hermetic reset: teleportToPad clears currentRoom (earlier
+                // selftests may leave the player inside a room — Enter would
+                // then take the exitRoom branch and never reach findDoor),
+                // and update(1.5) decays teleportCooldown/interactCooldown
+                // to 0. Mirrors the passing teleporter-behavior test's setup.
+                player.teleportToPad(0, world);
+                update(1.5);
+                // Stand within findDoor()'s 3m reach of the door, outside
+                // the room (currentRoom == null), matching exitRoom()'s
+                // convention: side-0 doors approached from dp.x + 1.2.
+                Vector3f dp0 = doorRoom.getDoorPosition();
+                // Reveal the door hex — findDoor() skips fogged rooms whose
+                // hex is unrevealed, and update(1.5) revealed the pad area.
+                world.getFogOfWar().reveal(dp0);
+                float approachX = doorRoom.getHallwaySide() == 0 ? dp0.x + 1.2f : dp0.x - 1.2f;
+                player.getCamera().setPosition(approachX, 1.6f, dp0.z);
+                player.getCamera().setYaw(doorRoom.getHallwaySide() == 0 ? 0f : 180f);
+                player.update(0.016, input, world); // settle physics/ground clamp
+                input.injectKeyPress(GLFW.GLFW_KEY_ENTER);
+                input.update(0.016);                // merge into keys[]
+                player.update(0.016, input, world); // Enter → findDoor → enterRoom → openDoor
+                boolean opened = player.getCurrentRoom() == doorRoom
+                    && doorRoom.getDoorAnimTarget() >= 1f;
+                // 10s wall-clock sim (100 × 0.1s ticks): door must STAY open.
+                // Full dt path also exercises updateDoorAnimation in update().
+                // Persistence invariant: doorAnimTarget stays 1 for the whole
+                // 10s — an auto-close would revert it to 0. The panel slides
+                // at 3 u/s (~0.4s to fully open), so doorOpenAmount is only
+                // checked AFTER the full 10s: checking it per-tick would break
+                // out while the open animation is still in flight (which also
+                // stranded interactCooldown > 0 and swallowed the exit Enter).
+                boolean stillOpen = true;
+                for (int i = 0; i < 100; i++) {
+                    update(0.1); // real update(): door animation ticks live
+                    if (doorRoom.getDoorAnimTarget() < 1f) { stillOpen = false; break; }
+                }
+                boolean fullyOpen10s = doorRoom.getDoorAnimTarget() >= 1f
+                    && doorRoom.getDoorOpenAmount() > 0.99f;
+                // Second Enter (exit) must ALSO leave the door open.
+                input.injectKeyPress(GLFW.GLFW_KEY_ENTER);
+                input.update(0.016);
+                player.update(0.016, input, world);
+                update(0.1);
+                boolean exitKeptOpen = player.getCurrentRoom() == null
+                    && doorRoom.getDoorOpenAmount() > 0.99f;
+                doorOk = opened && stillOpen && fullyOpen10s && exitKeptOpen;
+                System.out.println((doorOk ? "PASS" : "FAIL")
+                    + " door open-on-Enter never-auto-close (opened=" + opened
+                    + " stillOpen10s=" + stillOpen + " exitKeptOpen=" + exitKeptOpen + ")");
+            } else {
+                System.out.println("FAIL door persistence (no room with a door)");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL door persistence: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (doorOk) pass++; else fail++;
+
+        // 34. HUD slot overlap gate (t_0c1374b0): the five non-modal primary
+        //     slots are pairwise-disjoint in the abstract slot table
+        //     (HudLayout.rect + intersects), every primary rect fits the
+        //     2.5m frustum placement envelope, and the modal TELEPORT slot
+        //     fits the envelope too (it is alone on screen, so frame bounds
+        //     are its only constraint). Pinning the table here means a new
+        //     panel that collides with a live one fails at build time; the
+        //     e2e gate ([E2E-HUD-GATE] in updateE2ETour) re-checks the same
+        //     slots through the REAL camera at every waypoint framing.
+        boolean hudOk = true;
+        try {
+            HudLayout.Slot[] primaries = { HudLayout.GIST_WALL, HudLayout.TELEMETRY,
+                HudLayout.CHAT, HudLayout.BOT_ROSTER, HudLayout.MINIMAP };
+            // Placement envelope from HudLayout's javadoc (X in [-1.75, +3.15],
+            // Y in [-1.30, +1.62]) widened by 0.01 for float-sum error —
+            // BOT_ROSTER's right edge sums to 3.1000001f, not 3.10f.
+            for (int i = 0; hudOk && i < primaries.length; i++) {
+                float[] ri = HudLayout.rect(primaries[i]);
+                if (ri[0] < -1.76f || ri[0] + ri[2] > 3.16f
+                    || ri[1] < -1.31f || ri[1] + ri[3] > 1.63f) {
+                    System.out.println("FAIL hud gate: " + primaries[i].name
+                        + " rect off-frame (" + ri[0] + "," + ri[1] + " "
+                        + ri[2] + "x" + ri[3] + ")");
+                    hudOk = false; break;
+                }
+                for (int j = i + 1; j < primaries.length && hudOk; j++) {
+                    if (HudLayout.intersects(ri, HudLayout.rect(primaries[j]))) {
+                        System.out.println("FAIL hud gate: " + primaries[i].name
+                            + " intersects " + primaries[j].name);
+                        hudOk = false;
+                    }
+                }
+            }
+            float[] tp = HudLayout.rect(HudLayout.TELEPORT);
+            if (tp[0] < -1.76f || tp[0] + tp[2] > 3.16f
+                || tp[1] < -1.31f || tp[1] + tp[3] > 1.63f) {
+                System.out.println("FAIL hud gate: teleport rect off-frame");
+                hudOk = false;
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL hud gate: " + e.getClass().getSimpleName() + " " + e.getMessage());
+            hudOk = false;
+        }
+        System.out.println((hudOk ? "PASS" : "FAIL")
+            + " hud slot overlap gate (5 primaries pairwise-disjoint + in frame, teleport in frame)");
+        if (hudOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
@@ -4777,11 +6342,6 @@ public class GameEngine {
     private void updateAutodrive(double dt) {
         world.tick((float) dt);
         updatePatches(dt);
-        // H26 (step 78): the rolling FPS deque is fed in update(), but the E2E
-        // tour runs on updateAutodrive() — feed it here too or every waypoint
-        // reports 0.0 fps and the perf budget has no evidence.
-        frameTimes.addLast(dt);
-        if (frameTimes.size() > 120) frameTimes.removeFirst();
 
         // Step 80: the scout patrol + NPC behaviors run in the tour too, so
         // the E2E log carries live [Scout] VISIT + [Quorum] evidence.
@@ -4790,6 +6350,13 @@ public class GameEngine {
         // ── E2E waypoint tour: named stops, labeled shots, clean exit ──
         if (e2eMode) {
             updateE2ETour(dt);
+            return;
+        }
+
+        // STEP 94v5 white-catch: lake orbit — 40 bearings × shore ring +
+        // raised-pitch ring (moon-in-frame views), one labeled shot each.
+        if (orbitMode) {
+            updateOrbit(dt);
             return;
         }
 
@@ -4847,6 +6414,63 @@ public class GameEngine {
     }
 
     /**
+     * STEP 94v5 white-catch orbit. 40 stations around the lake: bearing i covers
+     * the full 360° at shoreline standing height (pitch -6° water-fill), then a
+     * raised-pitch ring catches the moon disc + streak column in one view (the
+     * "white in the water" free-look framing). 0.6 s dwell per station = wave/
+     * sparkle/foam phase variety; System.exit cleans up for scripted capture.
+     */
+    private void updateOrbit(double dt) {
+        world.tick((float) dt);
+        updatePatches(dt);
+        updateNPCs(dt);
+
+        final int stations = 40;
+        final int total = stations * 2;
+        float lakeX = world.getOutsideWorld().getLakeCenter().x;
+        float lakeZ = world.getOutsideWorld().getLakeCenter().z;
+
+        orbitTimer += (float) dt;
+        if (orbitTimer < 0.6) return;          // dwell: let wave phases advance
+        orbitTimer = 0;
+
+        int step = orbitStep;
+        boolean raised = step >= stations;
+        int bearing = step % stations;         // 0..39
+        float ang = (float) (bearing * Math.PI * 2.0 / stations);
+        // shoreline ring: just outside the sand berm (rx 30 / rz 20 ellipse)
+        float sx = lakeX + (float) Math.sin(ang) * 33f;
+        float sz = lakeZ + (float) Math.cos(ang) * 23f;
+        // raised ring: pulled back so the moon arc fits above the far shore
+        float rx = lakeX + (float) Math.sin(ang) * 44f;
+        float rz = lakeZ + (float) Math.cos(ang) * 34f;
+        boolean high = raised;
+        float px = high ? rx : sx;
+        float pz = high ? rz : sz;
+
+        Camera cam = player.getCamera();
+        cam.setPosition(new Vector3f(px, 2.2f, pz));
+        // look at lake center; raised ring tilts up 14° to hold moon + streak
+        Vector3f aim = new Vector3f(lakeX, high ? 7.5f : 0.0f, lakeZ).sub(
+            new Vector3f(px, 2.2f, pz)).normalize();
+        cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+        cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+
+        java.io.File dir = new java.io.File(screenshotDir);
+        if (!dir.exists()) dir.mkdirs();
+        String path = screenshotDir + "/orbit_" + String.format("%02d", step) + ".png";
+        String written = Screenshot.capture(width, height, path);
+        if (written != null) System.out.println("[ORBIT-SHOT] " + step + " -> " + written);
+
+        orbitStep++;
+        if (orbitStep >= total) {
+            System.out.println("[ORBIT] complete — " + total + " stations captured. Exiting.");
+            cleanup();
+            System.exit(0);
+        }
+    }
+
+    /**
      * E2E waypoint tour — the amazing test flow. Scripted stops, each with a
      * labeled screenshot and an [E2E] marker the harness greps. Exits cleanly
      * after the last waypoint (System.exit(0)) so CI can chain:
@@ -4895,9 +6519,13 @@ public class GameEngine {
                 cam.setYaw(90); cam.setPitch(0);
                 if (shoot) { captureLabeled("06_room_doorway"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 6 -> { // crystals — TODO field from above-ish
-                p.set(-2.0f, hallY + 1.7f, (hallZ0 + hallZ1) / 2f);
-                cam.setYaw(180); cam.setPitch(20f);
+            case 6 -> { // crystals — TODO field down the hall, on-axis
+                // CARD-Q2 F1: stand ON the hall center-line (x=0; x=-2.0 was
+                // 0.25m past the side-0 wall line, frame of wall+ceiling) and
+                // look DOWN-hall slightly (pitch=-20; positive pitch looks
+                // UP here — Camera.front.y = sin(pitch)).
+                p.set(0f, hallY + 1.7f, (hallZ0 + hallZ1) / 2f);
+                cam.setYaw(180); cam.setPitch(-20f);
                 if (shoot) { captureLabeled("07_todo_crystals"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 7 -> { // end of hall — looking back (whole mansion)
@@ -4905,9 +6533,27 @@ public class GameEngine {
                 cam.setYaw(180); cam.setPitch(0);
                 if (shoot) { captureLabeled("08_hall_lookback"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 8 -> { // agents — NPC area from a corner
-                p.set(1.5f, hallY + 1.7f, hallZ0 + 10f);
-                cam.setYaw(-45); cam.setPitch(-5);
+            case 8 -> { // agents — camera docks to the FIRST live NPC and
+                // aims at a second one (falls back to the old hall corner
+                // when the roster is empty). A static corner could not
+                // guarantee an NPC in frame — spawnNpcs place at room
+                // centers and patrol, so the shot used to come out empty
+                // and 92c's grounding/pads had no visual proof.
+                if (!npcs.isEmpty()) {
+                    AgentNPC host = npcs.get(0);
+                    Vector3f hp = host.getPosition();
+                    p.set(hp.x + 2.2f, hp.y + 0.9f, hp.z + 2.2f);
+                    Vector3f aimAt = npcs.size() > 1 ? new Vector3f(npcs.get(1).getPosition())
+                            : new Vector3f(hp.x, hp.y - 0.4f, hp.z);
+                    aimAt.y -= 0.2f; // frame the feet + pad, not the head
+                    Vector3f dir = new Vector3f(aimAt).sub(p).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(dir.x, dir.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(
+                            Math.max(-1f, Math.min(1f, dir.y)))));
+                } else {
+                    p.set(1.5f, hallY + 1.7f, hallZ0 + 10f);
+                    cam.setYaw(-45); cam.setPitch(-5);
+                }
                 if (shoot) { captureLabeled("09_agents"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 9 -> { // portal pad — floor 0's themed teleporter (Amber/Cerulean)
@@ -4922,39 +6568,76 @@ public class GameEngine {
                 // its pad, rebuild destinations, open the menu. Face DOWN-HALL
                 // so the 2.5m text anchor sits in open corridor, not in the
                 // wall the pad backs onto (depth-tested billboard would hide).
-                List<Vector3f> pads15 = world.getTeleporterPads();
-                if (pads15.size() > 2) {
-                    Vector3f pad2 = pads15.get(2);
-                    player.teleportToFloor(2, world);
-                    player.getCamera().setPosition(pad2.x, pad2.y + 1.7f, pad2.z);
-                    cam.setYaw(180); cam.setPitch(-8);
-                    rebuildTeleportDestinations();
-                    teleportMenu = true;
-                    teleportSel = 0;
+                // The side effects run ONCE (latched), not per physics tick:
+                // a per-tick teleportToFloor spam-collapses the tour (see the
+                // e2ePadLatch note).
+                if (e2ePadLatch) { // hold the same pad pose the one-shot set (idempotent, like every other waypoint)
+                    List<Vector3f> padsHold = world.getTeleporterPads();
+                    if (padsHold.size() > 2) {
+                        Vector3f pad2h = padsHold.get(2);
+                        player.getCamera().setPosition(pad2h.x, pad2h.y + 1.7f, pad2h.z);
+                        cam.setYaw(180); cam.setPitch(-8);
+                    }
                 } else {
-                    p.set(0f, hallY + 1.7f, hallZ1 - 7f);
-                    cam.setYaw(0); cam.setPitch(-12f);
+                    List<Vector3f> pads15 = world.getTeleporterPads();
+                    if (pads15.size() > 2) {
+                        Vector3f pad2 = pads15.get(2);
+                        player.teleportToFloor(2, world);
+                        player.getCamera().setPosition(pad2.x, pad2.y + 1.7f, pad2.z);
+                        cam.setYaw(180); cam.setPitch(-8);
+                        rebuildTeleportDestinations();
+                        teleportMenu = true;
+                        teleportSel = 0;
+                        e2ePadLatch = true;
+                    } else {
+                        p.set(0f, hallY + 1.7f, hallZ1 - 7f);
+                        cam.setYaw(0); cam.setPitch(-12f);
+                    }
                 }
-                if (shoot) { captureLabeled("11_floor2_picker"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) {
+                    captureLabeled("11_floor2_picker");
+                    // t_0c1374b0: close the picker after its shot — leaving
+                    // teleportMenu=true suppressed EVERY HUD slot for all
+                    // later waypoints (12-17), incl. the forest-path after
+                    // shot showing zero HUD. The picker is only evidence for
+                    // THIS waypoint; modal suppression must not leak.
+                    teleportMenu = false;
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                    e2ePadLatch = false;
+                }
             }
             case 11 -> { // nash fountain — courtyard pool beside the rotor rings
-                p.set(3.5f, hallY + 1.7f, hallZ0 - 10f);
-                cam.setYaw(0); cam.setPitch(-5);
-                if (shoot) { captureLabeled("11_nash_fountain"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                // Courtyard walls sit at z=-24..-12 (courtZ=-24, cd=12); the
+                // first attempt z=-10 stood OUTSIDE the z=-12 wall (wallpaper
+                // photo). Second attempt z=-16/yaw180 was inside but the
+                // fountain (fx=0) sat 60° off-axis — out of the 70° FOV, only
+                // the red couches showed. Third take: stand EAST of the
+                // fountain at (6, -18), yaw -90 (-X), fountain dead ahead 6 m.
+                // Yaw-0 (+Z) never faces the fountain — it faces the palace.
+                // (Step 92f)
+                p.set(6f, hallY + 1.7f, hallZ0 - 18f);
+                cam.setYaw(-90); cam.setPitch(-5);
+                if (shoot) { captureLabeled("12_nash_fountain"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 12 -> { // door prompt — the unified interaction prompt at a repo door
-                // Stand ~1.5m in front of the FIRST room's door (side 0 doors
+                // Stand ~2.5m in front of the FIRST room's door (side 0 doors
                 // sit at x=-1.75; the prompt renders HUD-anchored above center
                 // whenever a door is within 3m reach + facing).
                 Vector3f door0 = null;
                 for (Room rm : world.getRooms()) {
+                    // CARD-Q2 F5: WorldBuilder skips drawing fogged doors
+                    // (world/WorldBuilder.java:671) — a fogged-door shot is a
+                    // plain wall with a floating prompt. Skip like it does.
+                    if (rm.isFogged() && !world.getFogOfWar().isRoomRevealed(rm)) continue;
                     if (rm.getDoorPosition() != null) { door0 = rm.getDoorPosition(); break; }
                 }
                 if (door0 != null) {
-                    // face the door from the hall center-line, ~1.5m away
+                    // face the door from the hall center-line, ~2.5m away
                     // (side-0 doors sit at x=-1.75, side-1 at x=+1.75 — stand
-                    // toward the hall interior, i.e. toward x=0)
-                    float towardHall = door0.x < 0 ? 1.5f : -1.5f;
+                    // toward the hall interior, i.e. toward x=0). 1.5m jammed
+                    // the slab into the whole frame (dark shot 13); 2.5m keeps
+                    // the door in prompt reach (<3m DOOR_RANGE) but in context.
+                    float towardHall = door0.x < 0 ? 2.5f : -2.5f;
                     Vector3f stand = new Vector3f(door0.x + towardHall, door0.y + 0.7f, door0.z);
                     p.set(stand);
                     Vector3f aim = new Vector3f(door0).sub(stand).normalize();
@@ -5008,24 +6691,185 @@ public class GameEngine {
                 // and the emissive pane on the adjacent wall segment right
                 // beside it. FOV-proof — no assumptions about hFOV needed.
                 Vector3f door0 = null;
+                Room ledgerRoom = null;
+                float bestD = Float.MAX_VALUE;
                 for (Room rm : world.getRooms()) {
-                    if (rm.getDoorPosition() != null && rm.getHallwaySide() == 0) { door0 = rm.getDoorPosition(); break; }
+                    Vector3f dp2 = rm.getDoorPosition();
+                    if (dp2 == null || rm.getHallwaySide() != 0) continue;
+                    String led = rm.getCommitLedger();
+                    if (led == null || led.isEmpty()) continue;
+                    float d = Math.abs(dp2.z - (hallZ0 + 6f));
+                    if (d < bestD) { bestD = d; door0 = dp2; ledgerRoom = rm; }
                 }
-                if (door0 != null) {
-                    p.set(0f, door0.y + 0.7f, door0.z + 2.2f);
-                    Vector3f aim = new Vector3f(door0.x - 0.6f, door0.y + 0.6f, door0.z - 1.2f).sub(p).normalize();
+                if (door0 != null && ledgerRoom != null) {
+                    // Reveal the door hex deterministically: the engraving
+                    // skips unrevealed rooms and an unrevealed door renders
+                    // as a black fog slab. No teleport here: entering the
+                    // room would OPEN its door panel (doorAnimTarget=1),
+                    // and the raised panel + lit interior block the very
+                    // band above the doorway (seen in 17l).
+                    world.getFogOfWar().reveal(new Vector3f(door0.x, door0.y, door0.z));
+                    // H37v park: HEAD-ON opposite the band (x 1.6, dist
+                    // 3.16 -> k ~290 px/unit): 38c rows x 535-1385 - all
+                    // inside frame; symmetric view kills grazing variables.
+                    // H37v2: anchor dp-3.3 (band z 4.7 +/-1.52 vs plate at
+                    // 6.925+ and the 6.25-6.6 cut zone); park y 1.6 with aim
+                    // +2.7 lifts the band up-frame (122u had it sunk low).
+                    float bandZ = door0.z - 3.3f;
+                    p.set(1.6f, door0.y + 1.6f, bandZ);
+                    Vector3f aim = new Vector3f(-1.56f, door0.y + 2.7f, bandZ).sub(p).normalize();
                     cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
                     cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                    if (shoot) {
+                                                Matrix4f vp = new Matrix4f(cam.getProjectionMatrix((float) width / height))
+                            .mul(cam.getViewMatrix());
+                        float stoneX = -1.56f;
+                        // H37u boundary projection: first/mid/last char of
+                        // header and each capped row, using the same
+                        // per-line-centered layout as FontRenderer - printed
+                        // numbers instead of eyeballed pixels.
+                        StringBuilder bp = new StringBuilder();
+                        String hd = "commit ledger - last 10";
+                        java.util.List<String> lines = new java.util.ArrayList<>();
+                        for (String ln : ledgerRoom.getCommitLedger().replace("\r", "").split("\n", -1)) {
+                            if (ln.isEmpty()) continue;
+                            if (lines.size() >= 10) break;
+                            lines.add(ln.length() > 38 ? ln.substring(0, 36) + ".." : ln);
+                        }
+                        java.util.Collections.reverse(lines);
+                        for (int li = -1; li < lines.size(); li++) {
+                            boolean isHdr = li == -1;
+                            String txt = isHdr ? hd : lines.get(li);
+                            float cs = isHdr ? 0.10f : 0.08f;
+                            float y = isHdr ? 3.3f
+                                : Room.DOOR_HEIGHT + 0.05f + li * 0.090f;
+                            float half = txt.length() * cs / 2f;
+                            int[] ends = txt.length() > 2
+                                ? new int[]{0, txt.length() / 2, txt.length() - 1}
+                                : new int[]{0, txt.length() - 1};
+                            for (int e : ends) {
+                                float z = bandZ - (e * cs - half + cs / 2f);
+                                Vector4f gv = new Vector4f(stoneX, y, z, 1f).mul(vp);
+                                float gx = (gv.x() / gv.w() * 0.5f + 0.5f) * width;
+                                float gy = (1f - (gv.y() / gv.w() * 0.5f + 0.5f)) * height;
+                                bp.append(" ").append(isHdr ? "HDR" : "R" + li).append(e)
+                                    .append('\'').append(txt.charAt(e)).append('\'')
+                                    .append("@z").append(String.format("%.2f", z))
+                                    .append("->").append(String.format("(%.0f,%.0f)", gx, gy));
+                            }
+                            if (isHdr) bp.append(" |");
+                        }
+                        System.out.println("[H37-BOUND] park=" + fmt(p)
+                            + " door0z=" + door0.z
+                            + " dist=" + String.format("%.2f", p.distance(door0))
+                            + " ledgerLen=" + ledgerRoom.getCommitLedger().length()
+                            + " rows=" + lines.size()
+                            + " rendered=" + rendered);
+                        System.out.println("[H37-BOUND] " + bp);
+                    }
                 } else {
                     p.set(0f, hallY + 1.7f, hallZ0 + 12f);
                     cam.setYaw(-75); cam.setPitch(4f);
                 }
                 if (shoot) { captureLabeled("17_hall_windows"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            case 17 -> { // MP-004: poster wall — the poster board faces INTO the room (and its text renders only for the
+                         // room you are standing in), so look at it from inside the first room, aimed at the board.
+                Room pr = null;
+                for (Room rm : world.getRooms()) {
+                    if (rm.getRoomCenter() != null) { pr = rm; break; }
+                }
+                if (pr != null) {
+                    // The poster TEXT is drawn only for player.getCurrentRoom(), which is set by entering the room (Enter at the
+                    // door / teleportIntoRoom), never by camera position; the tour moves the camera directly, so enter properly.
+                    if (player.getCurrentRoom() != pr) player.teleportIntoRoom(pr);
+                    Vector3f rc = pr.getRoomCenter();
+                    int side = pr.getHallwaySide();
+                    float fz = side == 0 ? rc.z - Room.ROOM_DEPTH / 2f : rc.z + Room.ROOM_DEPTH / 2f;
+                    float floorY = rc.y - Room.ROOM_HEIGHT / 2f;
+                    float boardY = floorY + Room.DOOR_HEIGHT + 0.15f + 0.45f;       // same formula as WorldBuilder / renderRoomPoster
+                    p.set(rc.x, floorY + 1.7f, fz + (side == 0 ? 3.2f : -3.2f));
+                    Vector3f aim = new Vector3f(rc.x, boardY, fz).sub(p).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                } else {
+                    p.set(0f, hallY + 1.7f, hallZ0 + 12f);
+                    cam.setYaw(-75); cam.setPitch(15f);
+                }
+                if (shoot) { captureLabeled("18_poster_wall"); player.teleportToFloor(0, world); /* leave the room again */ e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 18 -> { // MP-004: gist wall — today a HUD overlay on the right of the view (MP-011 makes it a world wall)
+                p.set(0f, hallY + 1.7f, hallZ0 + 4f);
+                cam.setYaw(0); cam.setPitch(0);
+                if (shoot) {
+                    System.out.println("[E2E-NOTE] gist wall lines=" + (gistWall == null ? "none (no wall)" : String.valueOf(gistWall.getLines().size()))
+                        + (demoMode ? " (demo mode: no network, empty wall is expected)" : ""));
+                    captureLabeled("19_gist_wall"); e2eWaypoint++; e2ePhaseTimer = 0;
+                }
+            }
+            case 19 -> { // MP-004 + 92d: sky — aim AT the actual sun/moon body (shared arc formula)
+                p.set(0f, 1.7f, -50f);
+                int hr = java.time.LocalTime.now().getHour();
+                int body = (hr >= 5 && hr < 19) ? hr : (hr + 12) % 24; // sun's hour, else the moon's arc hour
+                Vector3f tgt = WorldBuilder.celestialPosition(body, p);
+                Vector3f aim = new Vector3f(tgt).sub(p).normalize();
+                cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                if (shoot) { captureLabeled("20_sky"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 20 -> { // MP-004: water — the traveling-wave lake from its shore
+                Vector3f lake = world.getOutsideWorld().getLakeCenter();
+                p.set(lake.x, 2.2f, lake.z + 16f);
+                cam.setYaw(180); cam.setPitch(-18f);
+                if (shoot) { captureLabeled("21_water"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 21 -> { // t_b2e9bc3f — real mansion spawn, post-nudge view
+                // One-shot: run the exact startup path (teleport + BFS spawn
+                // validation) so the shot proves the player is OUTSIDE the
+                // mansion shell, not stuck in the collider face.
+                if (!e2eMansionDone) {
+                    player.teleportToMansion(world);
+                    player.ensureSpawnFree(world);
+                    e2eMansionDone = true;
+                }
+                cam.setYaw(0); cam.setPitch(2f); // face the mansion front
+                if (shoot) { captureLabeled("22_mansion_spawn"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 17 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 22 waypoints captured. Exiting.");
+                int exitCode = 0;
+                // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
+                // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software
+                // rasteriser (Mesa llvmpipe in CI) frame times mean nothing, so the gate only WARNS there.
+                double limitMs = Double.parseDouble(System.getProperty("mindpalace.e2e.maxFrameMs", "0"));
+                if (limitMs > 0) {
+                    String gpu = String.valueOf(GL11.glGetString(GL11.GL_RENDERER));
+                    boolean software = gpu.toLowerCase().matches(".*(llvmpipe|softpipe|swrast|software|microsoft basic render).*");
+                    // One slow waypoint is usually the machine (a Defender scan, a model loading); a regression such as render-thread
+                    // I/O or per-room texture creation shows at SEVERAL waypoints. Fail only when >= N waypoints exceed the limit.
+                    int needOver = Integer.getInteger("mindpalace.e2e.maxOverWaypoints", 3);
+                    boolean over = e2eOverCount >= needOver;
+                    String line = "worst steady-state frame " + String.format("%.1f", e2eWorstMs) + " ms at " + e2eWorstLabel
+                        + "; " + e2eOverCount + " waypoint(s) over " + String.format("%.0f", limitMs) + " ms" + e2eOverLabels
+                        + " (fail at >= " + needOver + ", gpu: " + gpu + ")";
+                    if (over && software) System.out.println("[PERF_WARN] " + line + " — software rasteriser, not failing");
+                    else if (over) { System.out.println("[PERF_FAIL] " + line); exitCode = 2; }
+                    else System.out.println("[PERF_OK] " + line);
+                }
+                // t_0c1374b0: HUD gate verdict — a nonzero counter fails the
+                // tour itself (e2e.sh also greps per-shot [E2E-HUD-GATE]
+                // lines, this is the authoritative single-number exit).
+                System.out.println("[E2E-HUD-GATE] SUMMARY failures=" + e2eGateFailures
+                    + " (OVERLAP = two visible primary slots intersect on screen; "
+                    + "OFFFRAME = slot anchor left the frustum)");
+                if (e2eGateFailures > 0) {
+                    System.out.println("[E2E] HUD gate FAILED — " + e2eGateFailures + " failure(s). Exiting 1.");
+                    cleanup();
+                    System.exit(1);
+                }
+                System.out.println("[E2E] HUD gate passed — 0 failures. Exiting 0.");
                 cleanup();
-                System.exit(0);
+                System.exit(exitCode);
             }
         }
         cam.setPosition(p);

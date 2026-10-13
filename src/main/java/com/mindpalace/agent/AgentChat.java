@@ -5,6 +5,7 @@ import com.mindpalace.render.FontRenderer;
 import com.mindpalace.render.Camera;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import com.mindpalace.ui.HudLayout;
 import java.util.*;
 import java.io.*;
 import java.nio.file.*;
@@ -19,7 +20,12 @@ import java.nio.file.*;
  * private repo — the "LLM model chats" archive.
  */
 public class AgentChat {
-    private final List<String> messages = new ArrayList<>();
+    // CARD-Q1 F6: written from three non-game threads (scheduler drain
+    // worker, userWorker, critic callback) while render() iterates on the
+    // game thread. CopyOnWriteArrayList + snapshot getter closes the
+    // CME/IndexOutOfBounds window; 12-entry rolling window makes COW free.
+    private final List<String> messages = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final Object windowLock = new Object(); // serialises WRITERS only (see renderMessage)
     private static final int MAX_MESSAGES = 12;   // rolling window
     private static final int MAX_LEN = 96;        // truncate long lines
 
@@ -46,12 +52,22 @@ public class AgentChat {
     private void renderMessage(String msg) {
         if (msg == null || msg.isEmpty()) return;
         String clean = msg.replace('\n', ' ').replace('\r', ' ');
+        List<String> chunks = new ArrayList<>();
         while (clean.length() > MAX_LEN) {
-            messages.add(clean.substring(0, MAX_LEN));
+            chunks.add(clean.substring(0, MAX_LEN));
             clean = clean.substring(MAX_LEN);
         }
-        messages.add(clean);
-        while (messages.size() > MAX_MESSAGES) messages.remove(0);
+        chunks.add(clean);
+        // CARD-Q1 F6 (real fix): the old add() THEN trim-loop was two steps, so with several
+        // writers a lock-free reader could see the window at 13-15 (CI check 36c "window grew past
+        // cap", failing ~4 runs in 6). Make room BEFORE adding, one writer at a time; readers stay
+        // lock-free (COW), and can never observe more than MAX_MESSAGES.
+        synchronized (windowLock) {
+            for (String c : chunks) {
+                while (messages.size() >= MAX_MESSAGES) messages.remove(0);
+                messages.add(c);
+            }
+        }
         System.out.println("[AgentChat] " + msg);
     }
 
@@ -183,24 +199,27 @@ public class AgentChat {
         Vector3f right = new Vector3f(front).cross(new Vector3f(0, 1, 0)).normalize();
         Vector3f up = new Vector3f(right).cross(front).normalize();
 
-        // Anchor at top of view, 2.5m in front
-        Vector3f anchor = new Vector3f(camPos)
-            .add(front.x * 2.5f, front.y * 2.5f, front.z * 2.5f)
-            .add(up.x * 0.9f, up.y * 0.9f, up.z * 0.9f);
+        // Lower-left column — HudLayout.CHAT slot (t_0c1374b0): the feed
+        // used to hang at the top-center of the view and collided with the
+        // roster column. Same 2.5m plane, same true-up basis, new fixed
+        // slot position.
+        Vector3f anchor = HudLayout.anchor(camPos, front, right, up, HudLayout.CHAT);
 
         // Show last N messages, newest at bottom
-        int start = Math.max(0, messages.size() - 8);
+        // Snapshot once: size() then get(i) on the live list can straddle a writer's remove(0).
+        List<String> snap = List.copyOf(messages);
+        int start = Math.max(0, snap.size() - 8);
         float lineH = 0.09f;
         float y = anchor.y;
-        for (int i = start; i < messages.size(); i++) {
-            String line = messages.get(i);
+        for (int i = start; i < snap.size(); i++) {
+            String line = snap.get(i);
             Vector3f pos = new Vector3f(anchor.x, y, anchor.z);
             Vector3f color = line.startsWith("[Critic]") ? new Vector3f(1.0f, 0.7f, 0.2f)
                           : line.startsWith("[Explorer]") ? new Vector3f(0.2f, 0.9f, 1.0f)
                           : line.startsWith("[Tool") || line.startsWith("[Auto") ? new Vector3f(0.2f, 0.9f, 1.0f)
                           : line.startsWith("[You]") ? new Vector3f(0.4f, 1.0f, 0.4f)
                           : new Vector3f(0.8f, 0.8f, 0.8f);
-            font.renderBillboard(line, pos, 0.045f, color, proj, view, camPos);
+            font.renderBillboardLeft(line, pos, 0.045f, color, proj, view, camPos);
             y -= lineH;
         }
 
@@ -208,10 +227,12 @@ public class AgentChat {
         if (typing) {
             String prompt = "> " + input.toString() + "_";
             Vector3f pos = new Vector3f(anchor.x, y - 0.05f, anchor.z);
-            font.renderBillboard(prompt, pos, 0.05f, new Vector3f(0.4f, 1.0f, 0.4f), proj, view, camPos);
+            font.renderBillboardLeft(prompt, pos, 0.05f, new Vector3f(0.4f, 1.0f, 0.4f), proj, view, camPos);
         }
     }
 
     public boolean isOpen() { return true; } // always on
-    public List<String> getMessages() { return messages; }
+    /** CARD-Q1 F6: a real unmodifiable SNAPSHOT (was Collections.unmodifiableList(messages), which is
+     *  a live VIEW of the window, so a caller's size()/get(i) could straddle a writer). */
+    public List<String> getMessages() { return List.copyOf(messages); }
 }

@@ -380,3 +380,12 @@ sector), **portal** (teleporter sector), **text** (font sector). Then grow the
 registry toward "enough blocks to populate anything."
 
 **Status:** `NOT-STARTED` (vision only; bloom + live-add are the two existing seeds).
+
+## 2026-10-04 (b) · Block-assembly shells 1-3 + DePIN-selftest ordering fix
+- [x] MP-20 Block/BlockRegistry/FireBlock — commit b4b987f (compiled under real openjdk 17.0.20.1, behavioral proof: lawful flicker band, bit-identical determinism, failed-selftest blocks stay dark / bool-false law; hidden-block applyLuma leak caught by probe, fixed to ACTIVE-only)
+- [x] MP-028 WeatherBlock (v1.1 envUpdate seam) — commit 1e39c71 (tau-math re-derived gates; registry 2/2 active)
+- [x] DePIN economy selftest: underfunded-reject proof now captured BEFORE Refund post — commit d07d3d2 (facet forensics [main=true skillGate=true held=false ...] proved ordering bug, not race; totalCount()==0 was asserted after the Refund post landed — check never passed on CI since the economy merge)
+- [x] CI verify: d07d3d2 GREEN on origin — first-ever CI pass for the DePIN check (58/0)
+- [x] MP-033 IceBlock phase 1 (frost shimmer + glint in bloom chain) — commit fefe219 (aux-engaged via WINTER season feed; P1-P7 first-run green; proof on openjdk 17.0.20.1: winter composite [0.5424,0.8502], bit-identical 3-block determinism; phase 2 = crystals+rim tint under #179)
+- [x] MP-032 phase 2 (HELIX EDITION) + MP-031 fireflies — commit 742307b (contract v1.2: emitRender rows KIND 0/1 + emitAll; helical closed-form embers [r=R0+RG*age, slow spiral omega 1.2-2.2], firefly Lissajous chorus w/ golden-angle phyllotaxis + real-clock night envelope; SLOT_EMPTY=-1 sentinel root-caused the P6 invisible-ember bug; engine draw pass at world-path seam; probes 4/4 on openjdk 17.0.20.1; PR #244 [WIP] spec superseded-by-landing)
+- [x] CI verify: 14a0e6b GREEN on origin (Package + hermetic selftest + emit-render seam; 742307b run was cancelled by scheduler serialization, superseded)

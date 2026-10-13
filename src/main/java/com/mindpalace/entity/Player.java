@@ -39,6 +39,11 @@ public class Player {
     private int padFloor = -1;      // floor of the pad the player is standing on (-1 = none)
     private boolean onPlanetPad = false; // standing on the planet's return pad
     private boolean noclip = false;  // free-fly (no collision, no gravity) for testing
+    private boolean mansionInterior = false; // H13c: inside the mansion shell
+
+    // t_b2e9bc3f stuck-detector state: WASD held while the player barely moves.
+    private double stuckTimer;
+    private Vector3f stuckRefPos;
 
     public Player() {
         camera = new Camera();
@@ -54,6 +59,97 @@ public class Player {
     public void setChatTyping(boolean t) { this.chatTyping = t; }
     public void setNoclip(boolean n) { this.noclip = n; }
     public boolean isNoclip() { return noclip; }
+    /** H13c: mansion interior mode — collide() clamps to the shell, not solids. */
+    public void setMansionInterior(boolean m) { this.mansionInterior = m; }
+
+    /**
+     * t_b2e9bc3f: validate the player's current position against collision
+     * geometry (open world + houses). When the position tests solid — e.g. the
+     * historical mansion spawn (20, 1.6, -172) sits ON the mansion box's +Z
+     * face, which insideSolid() pads by the player radius — BFS outward on a
+     * 0.5m grid to the nearest free cell and move there. Returns true when a
+     * nudge happened (or false if the spot was already free / no free cell
+     * found within the search radius, in which case the position is left
+     * untouched).
+     *
+     * Uses a fixed generous radius (0.35f — RADIUS is private and slightly
+     * stricter clearance is safer for spawns than for per-frame collision).
+     * Colliders must be registered before this runs (OutsideWorld
+     * .registerStaticColliders() — GameEngine calls it right after build()).
+     */
+    public boolean ensureSpawnFree(WorldBuilder world) {
+        final float r = 0.35f;
+        final float step = 0.5f;
+        OutsideWorld ow = world.getOutsideWorld();
+        Vector3f p = camera.getPosition();
+        if (!isInsideCollision(ow, p.x, p.z, r)) return false;
+        Vector3f free = findNearestFreeCell(ow, p.x, p.z, r, step, 60);
+        if (free != null) {
+            // NB: p aliases the camera's live position vector — capture the
+            // origin coords BEFORE setPosition() mutates it out from under us.
+            System.out.println("[SPAWN-FIX] spawn cell solid (" + p.x + ", " + p.z
+                + ") -> nudged to (" + free.x + ", " + free.z + ")");
+            camera.setPosition(free.x, p.y, free.z);
+            return true;
+        }
+        System.out.println("[SPAWN-FIX] spawn cell solid but no free cell within "
+            + (60 * step) + "m — leaving position (player can noclip out)");
+        return false;
+    }
+
+    /**
+     * t_b2e9bc3f stuck-detector: called from update() when WASD has been held
+     * for >1s with <0.1m net displacement. Nudges to the nearest free cell —
+     * but ONLY when the current cell actually tests solid. Merely leaning on
+     * a wall (position free, velocity cancelled by the collide clamp) is
+     * normal play and must never teleport the player.
+     */
+    private void recoverIfWedged(WorldBuilder world) {
+        OutsideWorld ow = world.getOutsideWorld();
+        Vector3f p = camera.getPosition();
+        if (!isInsideCollision(ow, p.x, p.z, 0.35f)) return;
+        Vector3f free = findNearestFreeCell(ow, p.x, p.z, 0.35f, 0.5f, 60);
+        if (free != null) {
+            // p aliases the camera's live vector — log BEFORE it is mutated.
+            System.out.println("[STUCK_RECOVERY] WASD >1s with zero displacement inside solid at ("
+                + p.x + ", " + p.z + ") -> nudged to (" + free.x + ", " + free.z + ")");
+            camera.setPosition(free.x, p.y, free.z);
+            velocity.set(0, 0, 0);
+        }
+    }
+
+    /** Solid test shared by spawn validation and the stuck-detector nudge. */
+    private static boolean isInsideCollision(OutsideWorld ow, float x, float z, float r) {
+        return ow.insideSolid(x, z, r) || ow.insideHouseSolid(x, z, r);
+    }
+
+    /**
+     * BFS ring search for the nearest non-solid cell, starting at (x,z) and
+     * spiraling out on a fixed grid. maxSteps bounds the search radius in
+     * cells (60 * 0.5m = 30m — the mansion footprint is 22x16m, so a spawn
+     * anywhere on/inside it resolves well within budget). Returns null when
+     * every probed cell is solid.
+     */
+    private static Vector3f findNearestFreeCell(OutsideWorld ow, float x, float z,
+                                                float r, float step, int maxSteps) {
+        for (int ring = 0; ring <= maxSteps; ring++) {
+            // Ring 0 probes the origin cell; ring N probes the square outline
+            // N cells out. Grid-aligned offsets keep the walk deterministic.
+            int n = ring * 2 + 1;
+            for (int ix = 0; ix < n; ix++) {
+                for (int iz = 0; iz < n; iz++) {
+                    // Only cells exactly on the ring's square outline
+                    if (ring > 0 && ix != 0 && ix != n - 1 && iz != 0 && iz != n - 1) continue;
+                    float cx = x + (ix - (n - 1) / 2f) * step;
+                    float cz = z + (iz - (n - 1) / 2f) * step;
+                    if (cx < -OutsideWorld.HALF_W + r || cx > OutsideWorld.HALF_W - r) continue;
+                    if (cz < OutsideWorld.MIN_Z + r || cz > OutsideWorld.MAX_Z - r) continue;
+                    if (!isInsideCollision(ow, cx, cz, r)) return new Vector3f(cx, 0, cz);
+                }
+            }
+        }
+        return null;
+    }
 
     public void update(double dt, Input input, WorldBuilder world) {
         float dtf = (float) dt;
@@ -140,6 +236,29 @@ public class Player {
 
         camera.setPosition(newPos);
 
+        // t_b2e9bc3f stuck-detector: WASD held for >1s yet the player has
+        // moved <0.1m from the reference — the classic wedged-in-solid
+        // symptom. Nudge to the nearest free cell (recoverIfWedged only acts
+        // when the current cell tests solid, so leaning on walls is safe).
+        boolean wasdHeld = input.isKeyDown(GLFW.GLFW_KEY_W) || input.isKeyDown(GLFW.GLFW_KEY_A)
+            || input.isKeyDown(GLFW.GLFW_KEY_S) || input.isKeyDown(GLFW.GLFW_KEY_D);
+        if (wasdHeld && !noclip && currentRoom == null) {
+            if (stuckRefPos == null) { stuckRefPos = new Vector3f(newPos); stuckTimer = 0; }
+            stuckTimer += dt;
+            if (stuckTimer > 1.0 && newPos.distance(stuckRefPos) < 0.1f) {
+                recoverIfWedged(world);
+                stuckTimer = 0;
+                stuckRefPos = null;
+            } else if (newPos.distance(stuckRefPos) >= 0.1f) {
+                // Moving fine — reset the window
+                stuckTimer = 0;
+                stuckRefPos.set(newPos);
+            }
+        } else {
+            stuckTimer = 0;
+            stuckRefPos = null;
+        }
+
         // Teleport pad — detect standing on a pad (destination chosen in GameEngine)
         teleportCooldown -= dt;
         padFloor = -1;
@@ -211,6 +330,20 @@ public class Player {
         float hw = WorldBuilder.HALLWAY_WIDTH / 2f - 0.1f;
 
         if (currentRoom == null) {
+            // H13c mansion interior: the shell is ONE solid AABB with no
+            // doorway strip, so H13b resolution freezes every spot inside.
+            // While interior mode is on, skip solids and clamp to the inner
+            // shell face — same pattern as the room clamp further down.
+            if (mansionInterior) {
+                Vector3f m = world.getOutsideWorld().getMansionPos();
+                float iw = OutsideWorld.MANSION_W / 2f - r - 0.15f; // half-width minus wall half-thickness
+                float id = OutsideWorld.MANSION_D / 2f - r - 0.15f; // half-depth minus wall half-thickness
+                if (next.x < m.x - iw) next.x = m.x - iw;
+                if (next.x > m.x + iw) next.x = m.x + iw;
+                if (next.z < m.z - id) next.z = m.z - id;
+                if (next.z > m.z + id) next.z = m.z + id;
+                return next;
+            }
             // Open world: free roam within the big outside bounds (no corridor
             // clamp). The player can walk the full 300×250m world.
             if (world.isInOpenWorld(next.x, next.z)) {
@@ -303,6 +436,9 @@ public class Player {
         for (Room room : world.getRooms()) {
             Vector3f dp = room.getDoorPosition();
             if (dp == null) continue;
+            // CARD-Q2 F6: keep Enter consistent with the fog-gated prompt —
+            // fogged rooms have no drawn door to walk through.
+            if (room.isFogged() && !world.getFogOfWar().isRoomRevealed(room)) continue;
             float d = origin.distance(dp);
             if (d < bestDist) { bestDist = d; best = room; }
         }
@@ -361,6 +497,7 @@ public class Player {
         if (floor < 0 || floor >= world.getHallways().size()) return;
         Hallway hw = world.getHallways().get(floor);
         currentRoom = null;
+        mansionInterior = false;
         // Arrive standing on the destination floor's pad, facing back down the
         // hallway. Landing at the hallway start meant pads emitted but never
         // received, so they never formed a network. The teleportCooldown below
@@ -382,6 +519,7 @@ public class Player {
         if (padIndex < 0 || padIndex >= pads.size()) return;
         Vector3f pad = pads.get(padIndex);
         currentRoom = null;
+        mansionInterior = false;
         camera.setPosition(pad.x, pad.y + EYE_HEIGHT, pad.z);
         camera.setYaw(0);
         camera.setPitch(0);
@@ -397,7 +535,14 @@ public class Player {
     public void teleportToMansion(WorldBuilder world) {
         Vector3f m = world.getOutsideWorld().getMansionPos();
         currentRoom = null;
-        camera.setPosition(m.x, m.y + EYE_HEIGHT, m.z + 8f);
+        mansionInterior = false; // spawn is the front yard, not the shell
+        // Spawn 4m in front of the grand door (-Z face). The old +Z offset
+        // (m.z + 8) landed exactly ON the mansion wall face — inside the
+        // H13b collider — so resolveAxis saw every escape blocked and
+        // reverted all movement: player spawned in a wall, could not move.
+        // -12 clears the collider (footprint ends at m.z - 8) AND the
+        // door re-trigger zone (m.z - 9 ± 3).
+        camera.setPosition(m.x, m.y + EYE_HEIGHT, m.z - 12f);
         camera.setYaw(0);
         camera.setPitch(0);
         velocity.set(0, 0, 0);
@@ -412,6 +557,7 @@ public class Player {
         if (world.getHallways().isEmpty()) return;
         Hallway hw = world.getHallways().get(0);
         currentRoom = null;
+        mansionInterior = false;
         // Outside sits at frontZ - 48 on floor 0 (see WorldBuilder.renderOutside)
         float outZ = hw.getStart().z - 2.0f - 48.0f + 12.0f;
         camera.setPosition(0f, hw.getStart().y + EYE_HEIGHT, outZ);
@@ -427,6 +573,7 @@ public class Player {
     /** Teleport onto the planet surface (radial gravity open world). */
     public void teleportToPlanet(WorldBuilder world) {
         currentRoom = null;
+        mansionInterior = false;
         world.setPlanetActive(true);
         Vector3f c = world.getPlanetCenter();
         float R = world.getPlanetRadius();

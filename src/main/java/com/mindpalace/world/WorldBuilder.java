@@ -41,10 +41,34 @@ public class WorldBuilder {
     private FogOfWar fogOfWar;
     private final OutsideWorld outsideWorld = new OutsideWorld();
 
+    /**
+     * t_0c1374b0: optional in-game clock pin for e2e determinism. Null = live
+     * wall clock (default). When set, every sky-phase / lighting decision
+     * (GameEngine sky dome, WorldBuilder celestial + hallway windows) honors
+     * the pin instead of java.time.LocalTime, so an evening tour renders the
+     * same daytime scenes the brightness thresholds were calibrated on.
+     */
+    private Integer clockPin = null;
+    public void setClockPin(Integer hour) { this.clockPin = hour; }
+    public boolean isClockPinned() { return clockPin != null; }
+    public int getPinHour() { return clockPin != null ? clockPin : 12; }
+    private int effectiveHour() {
+        return clockPin != null ? clockPin : java.time.LocalTime.now().getHour();
+    }
+
     // Lazily-loaded repo poster images (path -> GPU texture). Loaded on first
     // render of each room's poster; falls back to the diagram when absent.
     private final Map<String, Texture> posterTextures = new HashMap<>();
     private final Set<String> posterLoadFailed = new HashSet<>();
+    // Poster images are decoded on ONE background thread (stb decode + disk read cost 100-500 ms on the render thread the
+    // first time a room came into view). Only the GL upload stays on the render thread, at most one per frame.
+    private final Map<String, java.util.concurrent.Future<Texture.Pixels>> posterDecodes = new HashMap<>();
+    private final java.util.concurrent.ExecutorService posterDecoder = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "poster-decoder");
+        t.setDaemon(true);
+        return t;
+    });
+    private int posterUploadsThisFrame;
 
     // Global animation clock (seconds) — drives pulsing teleporters, neon, etc.
     public float time = 0f;
@@ -235,6 +259,7 @@ public class WorldBuilder {
     public void setLayout(RoomLayout l) { this.activeLayout = l; }
 
     public void render(Renderer r, Camera camera) {
+        posterUploadsThisFrame = 0;
         Vector3f camPos = camera.getPosition();
         Vector3f camFront = camera.getFront();
         this.camX = camPos.x;
@@ -259,7 +284,7 @@ public class WorldBuilder {
             Hallway hw0 = hallways.isEmpty() ? null : hallways.get(0);
             if (hw0 != null) {
                 float frontZ = hw0.getStart().z - 2.0f;
-                renderOutside(r, hw0.getStart().y, frontZ - 48.0f);
+                renderOutside(r, hw0.getStart().y, frontZ - 48.0f, camPos);
             }
         }
 
@@ -547,17 +572,79 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(cx - cw / 2f, cy, cz), new Vector3f(t, ch, cd), Renderer.TEX_WALLPAPER);
         r.drawCube(new Vector3f(cx + cw / 2f, cy, cz), new Vector3f(t, ch, cd), Renderer.TEX_WALLPAPER);
 
-        // Central fountain
+        // Central fountain — fully hexagonal (step 92f). Square water violated
+        // the "water is hex, not square" directive and the square basin read
+        // as a featureless grey block from the hall door (sweep ledger:
+        // "reads as white cylinder, no basin"). drawCube can't rotate, so a
+        // hollow rim isn't available; instead the basin is a solid hex plinth
+        // with the water surface as a raised hex prism — reads as a styled
+        // fountain from every angle.
         float fx = cx, fz = cz;
-        // Basin
-        r.drawCube(new Vector3f(fx, floorY + 0.3f, fz), new Vector3f(3f, 0.5f, 3f), Renderer.TEX_CONCRETE);
-        // Water (blue)
-        r.drawCube(new Vector3f(fx, floorY + 0.55f, fz), new Vector3f(2.6f, 0.05f, 2.6f), Renderer.TEX_NEON_CYAN);
-        // Center pillar
-        r.drawCube(new Vector3f(fx, floorY + 0.8f, fz), new Vector3f(0.3f, 0.6f, 0.3f), Renderer.TEX_WHITE);
-        // Top tier
-        r.drawCube(new Vector3f(fx, floorY + 1.1f, fz), new Vector3f(1.2f, 0.15f, 1.2f), Renderer.TEX_WHITE);
-        r.drawCube(new Vector3f(fx, floorY + 1.2f, fz), new Vector3f(0.8f, 0.05f, 0.8f), Renderer.TEX_NEON_CYAN);
+        // Basin plinth (hex)
+        r.drawHexPrism(new Vector3f(fx, floorY + 0.28f, fz), new Vector3f(1.7f, 0.56f, 1.7f), Renderer.TEX_CONCRETE);
+        // Water surface (hex) resting on the plinth. STEP 94: the old single
+        // TEX_NEON_CYAN disc shared its tint with the NPC pads and read as a
+        // glowing pad, not water. Stacked layers instead — pale foam rim
+        // slightly LARGER and LOWER than the water body, water gradient
+        // deep-teal — the same cue stack as the lake. Gentle bob (sine of
+        // world clock) so the surface is alive without wave-grid cost.
+        float fbob = 0.012f * (float) Math.sin(time * 2.2f);
+        // STEP 94v6 (all-blue night water — the fountain was the second
+        // white-hex-water site the v5 lake patch never covered): the foam
+        // rims were written (0.90,0.97,1.0) — luminance ~0.96, deep inside
+        // BloomEffect's bright pass — so at night the rims and the TEX_WHITE
+        // top tier self-added to the same screen-white hex plates the
+        // Architect flagged on the lake (r12 frame 12: white plate on the
+        // top-tier water). At night every fountain hex-water-adjacent tier
+        // now stays in the blue family below the 0.5 kne...[truncated]
+        boolean fnight = TimeClock.hour() < 6
+            || TimeClock.hour() >= 18;
+        // Foam rim (pale, larger, tucked under the water edge).
+        // v6: at night the rim is DEEP-CYAN (below the bloom knee) — the
+        // old pale-white rim was the fountain's white hex plate.
+        if (fnight) {
+            // STEP 94v7 (Architect: slight purple hue): fountain night tiers
+            // drift with the lake — mild indigo-violet lean, still deep-cyan
+            // family and far below the bloom knee. Day branch untouched.
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 0.575f, fz),
+                new Vector3f(1.48f, 0.05f, 1.48f), 0.09f, 0.33f, 0.49f);
+        } else {
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 0.575f, fz),
+                new Vector3f(1.48f, 0.05f, 1.48f), 0.90f, 0.97f, 1.0f);
+        }
+        // Main water body
+        r.drawHexPrismColor(new Vector3f(fx, floorY + 0.60f + fbob, fz),
+            new Vector3f(1.34f, 0.06f, 1.34f), 0.16f, 0.50f, 0.72f);
+        // Deep center layer
+        r.drawHexPrismColor(new Vector3f(fx, floorY + 0.625f + fbob, fz),
+            new Vector3f(0.95f, 0.05f, 0.95f), 0.08f, 0.32f, 0.55f);
+        // Center pillar (hex) — v6: night reads steel-blue, not white
+        if (fnight) {
+            r.drawHexPrism(new Vector3f(fx, floorY + 0.92f, fz),
+                new Vector3f(0.21f, 0.6f, 0.21f), Renderer.TEX_NEON_CYAN);
+        } else {
+            r.drawHexPrism(new Vector3f(fx, floorY + 0.92f, fz),
+                new Vector3f(0.21f, 0.6f, 0.21f), Renderer.TEX_WHITE);
+        }
+        // Top tier: hex plinth + hex water (same layered water stack)
+        // v6: night plinth is steel-blue (below the knee), not TEX_WHITE.
+        if (fnight) {
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 1.305f, fz),
+                new Vector3f(1.2f, 0.16f, 1.2f), 0.10f, 0.38f, 0.50f);
+        } else {
+            r.drawHexPrism(new Vector3f(fx, floorY + 1.30f, fz),
+                new Vector3f(1.2f, 0.16f, 1.2f), Renderer.TEX_WHITE);
+        }
+        if (fnight) {
+            // v7 purple drift: rim tiers (0.07,0.36,0.47)→(0.09,0.33,0.49).
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 1.40f, fz),
+                new Vector3f(0.86f, 0.05f, 0.86f), 0.09f, 0.33f, 0.49f);
+        } else {
+            r.drawHexPrismColor(new Vector3f(fx, floorY + 1.40f, fz),
+                new Vector3f(0.86f, 0.05f, 0.86f), 0.90f, 0.97f, 1.0f);
+        }
+        r.drawHexPrismColor(new Vector3f(fx, floorY + 1.43f + fbob, fz),
+            new Vector3f(0.70f, 0.06f, 0.70f), 0.16f, 0.50f, 0.72f);
 
         // Couches (left side)
         for (int i = 0; i < 2; i++) {
@@ -609,47 +696,81 @@ public class WorldBuilder {
             new Vector3f(4f, 0.3f, 0.06f), Renderer.TEX_NEON_AMBER);
     }
 
-    private void renderOutside(Renderer r, float floorY, float outZ) {
+    private void renderOutside(Renderer r, float floorY, float outZ, Vector3f camPos) {
         // The expanded open world (Phase I) — ~300×250m of forest, lake,
         // mansion, hospital, factory, TOC tree, towns, shops, inventions.
         // Delegated to OutsideWorld; the sky dome is drawn by GameEngine, so
         // the old flat band-stack sky (which never meshed at the horizon) is
-        // gone. Sun/moon/stars are billboarded against the sky dome here.
+        // gone. Sun/moon/stars ride the sky arc here (step 92d: real spheres
+        // on a diurnal orbit, not the old fixed square slabs).
         outsideWorld.render(r, floorY, camX, camZ, time);
-        renderCelestial(r, floorY, outZ);
+        renderCelestial(r, camPos);
     }
 
-    /** Sun/moon/stars billboarded against the sky dome (follows the camera). */
-    private void renderCelestial(Renderer r, float floorY, float outZ) {
-        int hour = java.time.LocalTime.now().getHour();
-        boolean night = hour < 6 || hour >= 20;
-        boolean dusk = hour >= 18 && hour < 20;
-        // Billboard the celestial body high in the sky, offset from the camera
-        // so it stays visible as the player walks the big world.
-        float skyY = floorY + 30f;
-        float backZ = camZ - 40f;   // far behind the camera's view
-        if (night) {
-            r.drawCubeColor(new Vector3f(camX - 20f, skyY, backZ),
-                new Vector3f(3f, 3f, 0.05f), 0.85f, 0.88f, 0.95f);
-            for (int ring = 1; ring <= 3; ring++) {
-                float a = 0.25f * (float) Math.cos(ring * 0.9f) + 0.25f;
-                float s = 3f + ring * 1.2f;
-                r.drawCubeColor(new Vector3f(camX - 20f, skyY, backZ - 0.01f * ring),
-                    new Vector3f(s, s, 0.03f), 0.85f * a, 0.88f * a, 0.95f * a);
+    /** Sun/moon sky-arc position (STEP 92d) — camera-relative, shared with the
+     *  E2E sky waypoint so aim-at-target uses the SAME formula (no drift).
+     *  hour24 = sun's clock hour; pass hour+12 for the moon. Sunrise 06:00 at
+     *  the east horizon (−X), noon highest, sunset 18:00 west (+X), with a
+     *  fixed south (+Z) lean so bodies sit inside a pitched view. */
+    public static Vector3f celestialPosition(int hour24, Vector3f cam) {
+        int h = ((hour24 % 24) + 24) % 24;
+        float theta = (float) Math.toRadians((h - 6) * 15f);   // 6h→0°, 12h→90°, 18h→180°
+        // STEP 94v7: bodies belong in SPACE, not parked on the ground. The
+        // old dist=44 arc sank to +4 u above the camera at dusk — halo big
+        // enough to clip terrain, so the sun visibly "sat on the ground".
+        // Arc to 140 u out (inside far plane 200, inside sky dome 150), peak
+        // +112 u above the camera at noon, min +9.5 u at horizon. Radii are
+        // scaled (44/140) so ANGULAR size is unchanged from the old look.
+        float dist = 140f;
+        return new Vector3f(
+            cam.x - (float) Math.cos(theta) * dist,
+            cam.y + 9.5f + (float) Math.sin(theta) * dist * (34f / 44f),
+            cam.z + 14f * (140f / 44f));
+    }
+
+    /** Sun/moon/stars: real spheres on a diurnal arc (step 92d). The old
+     *  implementation bolted flat square cube-slabs to one fixed sky spot —
+     *  the "square sun/moon" — and never moved them. */
+    private void renderCelestial(Renderer r, Vector3f camPos) {
+        int hour = TimeClock.hour();
+        boolean sunUp = hour >= 5 && hour < 19;
+        boolean moonUp = hour >= 18 || hour < 7;
+        // STEP 94v7: at 140 u out the distance fog would eat ~35% of each
+        // body's color — kill fog for the celestial pass only, restore after.
+        if (sunUp || moonUp) r.setFogEnabled(0.0f);
+        if (sunUp) {
+            Vector3f sp = celestialPosition(hour, camPos);
+            if (sp.y > camPos.y) { // risen above the horizon
+                float t = Math.max(0f, Math.min(1f, (sp.y - camPos.y - 9.5f) / (140f * 34f / 44f))); // 0 horizon → 1 high
+                // Layered glow: wide soft halo → mid glow → bright core.
+                // v7: radii ×(140/44) — same angular size, now 140 u out.
+                r.drawSphereColor(sp, new Vector3f(20.7f, 20.7f, 20.7f), 1.00f, 0.55f + 0.20f * t, 0.25f + 0.15f * t);
+                r.drawSphereColor(sp, new Vector3f(14.0f, 14.0f, 14.0f), 1.00f, 0.62f + 0.26f * t, 0.28f + 0.22f * t);
+                r.drawSphereColor(sp, new Vector3f(8.3f, 8.3f, 8.3f), 1.00f, 0.78f, 0.42f);
             }
-            // Full star field + real named constellations (Big Dipper, Orion,
-            // Cassiopeia, Cygnus, Leo, Scorpius, Taurus, Lyra) with twinkle.
-            Constellation.render(r, camX, skyY, camZ, time);
-        } else {
-            float[] core = dusk ? new float[]{1.0f, 0.55f, 0.30f} : new float[]{1.0f, 0.85f, 0.35f};
-            r.drawCubeColor(new Vector3f(camX, skyY, backZ),
-                new Vector3f(3.5f, 3.5f, 0.05f), core[0], core[1], core[2]);
-            for (int ring = 1; ring <= 4; ring++) {
-                float a = 0.5f * (float) Math.cos(ring * 0.7f) + 0.5f;
-                float s = 3.5f + ring * 1.4f;
-                r.drawCubeColor(new Vector3f(camX, skyY, backZ - 0.01f * ring),
-                    new Vector3f(s, s, 0.03f), core[0] * a, core[1] * a, core[2] * a);
+        }
+        if (moonUp) {
+            Vector3f mp = celestialPosition(hour + 12, camPos);
+            if (mp.y > camPos.y) {
+                // Pale glow + core + face craters (billboarded toward camera).
+                // v7: HALF SIZE (Architect: moon could be smaller by 1/2) and
+                // 140 u out — radii ×0.5×(140/44), face details scale along.
+                r.drawSphereColor(mp, new Vector3f(6.05f, 6.05f, 6.05f), 0.50f, 0.55f, 0.68f);
+                r.drawSphereColor(mp, new Vector3f(3.8f, 3.8f, 3.8f), 0.90f, 0.92f, 0.98f);
+                Vector3f dir = new Vector3f(camPos).sub(mp).normalize(); // moon → camera
+                Vector3f lat = new Vector3f(dir.z, 0, -dir.x).normalize();
+                r.drawSphereColor(new Vector3f(mp).add(new Vector3f(dir).mul(1.05f)).add(new Vector3f(lat).mul(0.35f)),
+                    new Vector3f(0.67f, 0.67f, 0.67f), 0.76f, 0.78f, 0.86f);
+                r.drawSphereColor(new Vector3f(mp).add(new Vector3f(dir).mul(0.95f)).add(new Vector3f(lat).mul(-0.40f)).sub(0f, 0.09f, 0f),
+                    new Vector3f(0.47f, 0.47f, 0.47f), 0.78f, 0.80f, 0.88f);
+                r.drawSphereColor(new Vector3f(mp).add(new Vector3f(dir).mul(1.10f)).add(0f, 0.15f, 0f),
+                    new Vector3f(0.41f, 0.41f, 0.41f), 0.74f, 0.76f, 0.85f);
             }
+        }
+        if (sunUp || moonUp) r.setFogEnabled(1.0f);
+        // Stars: strict night gate, matched to the sky-dome night phase.
+        if (hour >= 20 || hour < 6) {
+            Constellation.render(r, camPos.x, camPos.y + 26f, camPos.z, time);
         }
     }
 
@@ -714,7 +835,11 @@ public class WorldBuilder {
     private void renderHallwayWindows(Renderer r, Vector3f s, Hallway hw, float wallX, int side) {
         float len = hw.getEnd().z - s.z;
         float dw = Room.DOOR_WIDTH, dh = Room.DOOR_HEIGHT;
-        int hour = java.time.LocalTime.now().getHour();
+        // v7 TimeClock is the pin-aware choke point (--time N); t_0c1374b0's
+        // per-class clockPin/effectiveHour was folded into it (GameEngine
+        // still calls world.setClockPin/isClockPinned/getPinHour — pinned
+        // flag mirrors TimeClock's override).
+        int hour = TimeClock.hour();
         boolean night = hour < 6 || hour >= 18;
         // midpoints between consecutive doors get one pane each
         List<Float> doorZs = new ArrayList<>();
@@ -787,18 +912,26 @@ public class WorldBuilder {
         else if (act >= 3) color = Renderer.TEX_NEON_AMBER;
         else if (act >= 1) color = Renderer.TEX_NEON_GREEN;
         else color = room.isPrivate() ? Renderer.TEX_NEON_PINK : Renderer.TEX_NEON_CYAN;
-        float t = 0.06f; // trim thickness
+        float t = 0.10f; // trim thickness — 2x so frames stay visible on-axis
+                         // (at 0.06 the posts sat only 0.025 proud of the wall
+                         // face and aliased away at hallway distance)
 
-        // Two vertical side posts
-        r.drawCube(new Vector3f(wallX + offsetX, floorY + dh / 2f, doorZ - dw / 2f),
-            new Vector3f(t, dh, t), color);
-        r.drawCube(new Vector3f(wallX + offsetX, floorY + dh / 2f, doorZ + dw / 2f),
-            new Vector3f(t, dh, t), color);
+        // Two vertical side posts — proud of the wall face (wallX±0.125) by
+        // ~0.055 so they never sink into the wall or flicker out; extended
+        // upward t/2 so the post/lintel corner overlaps with no gap.
+        r.drawCube(new Vector3f(wallX + offsetX, floorY + (dh + t) / 2f, doorZ - dw / 2f),
+            new Vector3f(t, dh + t, t), color);
+        r.drawCube(new Vector3f(wallX + offsetX, floorY + (dh + t) / 2f, doorZ + dw / 2f),
+            new Vector3f(t, dh + t, t), color);
         // Top lintel
         r.drawCube(new Vector3f(wallX + offsetX, floorY + dh, doorZ),
             new Vector3f(t, t, dw), color);
-        // Soft glow halo (static) behind the trim
-        r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.02f : 0.02f), floorY + dh / 2f, doorZ),
+        // Soft glow halo behind the trim — nestled between the wall face
+        // (wallX∓0.125) and the post fronts (wallX∓0.17: halo front at
+        // wallX∓0.145), proud of the wall, recessed behind the posts, so
+        // no faces are coplanar (the old halo front sat exactly on the
+        // post-front plane → z-fight shimmer).
+        r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.025f : 0.025f), floorY + dh / 2f, doorZ),
             new Vector3f(0.02f, dh + 0.2f, dw + 0.2f), Renderer.TEX_NEON_AMBER);
     }
 
@@ -815,8 +948,11 @@ public class WorldBuilder {
                 float fw = 0.8f, fh = 1.0f, fd = 0.04f;
                 r.drawCube(new Vector3f(wallX + offsetX, py, pz),
                     new Vector3f(fd + 0.02f, fh + 0.06f, fw + 0.06f), Renderer.TEX_DOOR);
-                // Poster (white)
-                r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.01f : 0.01f), py, pz),
+                // Poster (white) — proud of the frame's camera-side face by
+                // 0.01: the old offsets (-0.01) put the poster front at
+                // EXACTLY the frame front plane (coplanar) → brown/white
+                // z-fight flicker ("poster overhang", sweep shot 05).
+                r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.02f : 0.02f), py, pz),
                     new Vector3f(fd, fh, fw), Renderer.TEX_WHITE);
             }
         }
@@ -876,7 +1012,8 @@ public class WorldBuilder {
         // Repo poster board — above the door, shows repo name/language/stars.
         // Dark backing plate; the text is drawn by GameEngine.renderRoomPoster().
         float posterY = c.y - h / 2f + dw + 0.15f + 0.45f;
-        float posterZ = side == 0 ? fz + 0.03f : fz - 0.03f;
+        // The plate used to sit at fz +/- 0.03, i.e. INSIDE the 0.2 m front wall, so the plate, bars, image and text were all invisible.
+        float posterZ = side == 0 ? fz + (Room.WALL_FACE + 0.03f) : fz - (Room.WALL_FACE + 0.03f);
         r.drawCube(new Vector3f(c.x, posterY, posterZ),
             new Vector3f(2.2f, 0.7f, 0.04f), Renderer.TEX_CEILING);
 
@@ -889,7 +1026,7 @@ public class WorldBuilder {
         Texture posterTex = getPosterTexture(room);
         float posterFacingYaw = side == 0 ? (float) Math.PI : 0f;
         if (posterTex != null) {
-            r.drawImageQuad(posterTex, new Vector3f(c.x, posterY, posterZ),
+            r.drawImageQuad(posterTex, new Vector3f(c.x, posterY, side == 0 ? posterZ + 0.025f : posterZ - 0.025f),   // in FRONT of the plate
                 1.9f, 0.6f, posterFacingYaw);
         } else {
             renderPosterDiagram(r, room, c.x, posterY, posterZ, side);
@@ -1027,13 +1164,22 @@ public class WorldBuilder {
         Texture tex = posterTextures.get(path);
         if (tex != null) return tex;
         if (posterLoadFailed.contains(path)) return null;
+        java.util.concurrent.Future<Texture.Pixels> pending = posterDecodes.get(path);
+        if (pending == null) {                        // first sight of this poster: start decoding, draw the diagram meanwhile
+            posterDecodes.put(path, posterDecoder.submit(() -> Texture.decode(path, 1024)));
+            return null;
+        }
+        if (!pending.isDone() || posterUploadsThisFrame >= 1) return null;     // not decoded yet / this frame's upload budget is spent
+        posterDecodes.remove(path);
         try {
-            tex = new Texture(path);
+            tex = Texture.upload(pending.get());
+            posterUploadsThisFrame++;
             posterTextures.put(path, tex);
             return tex;
         } catch (Exception e) {
             posterLoadFailed.add(path);
-            System.err.println("[Poster] image load failed: " + path + " — " + e.getMessage());
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            System.err.println("[Poster] image load failed: " + path + " — " + cause.getMessage());
             return null;
         }
     }

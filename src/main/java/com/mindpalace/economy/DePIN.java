@@ -24,9 +24,9 @@ public class DePIN {
         public final AtomicInteger skill = new AtomicInteger(0);
         public int completed = 0;
 
-        Participant(String name, double initial) {
+        Participant(String name, double initial, EconomyLedger ledger) {
             this.name = name;
-            this.wallet = new Wallet(name, initial);
+            this.wallet = new Wallet(name, initial, ledger);
         }
 
         /** Skill tier derived from completed jobs (1..5). */
@@ -36,19 +36,33 @@ public class DePIN {
         }
     }
 
+    private final EconomyLedger ledger = new EconomyLedger();
+    private final Treasury treasury;
+    private final Escrow escrow = new Escrow(ledger);
     private final Blackboard board = new Blackboard();
     private final Map<String, Participant> participants = new LinkedHashMap<>();
     private final Map<Long, String> claims = new HashMap<>();  // jobId -> claimant
 
     public DePIN() {
+        this(Treasury.configuredInitialBalance());
+    }
+
+    public DePIN(double initialTreasury) {
+        treasury = new Treasury(ledger, initialTreasury);
         register("player", 100.0);
     }
 
     public Blackboard board() { return board; }
+    public EconomyLedger ledger() { return ledger; }
+    public Treasury treasury() { return treasury; }
+    public Escrow escrow() { return escrow; }
 
     /** Register a participant (agent or player). Idempotent. */
     public synchronized Participant register(String name, double initial) {
-        return participants.computeIfAbsent(name, n -> new Participant(n, initial));
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("Participant name must not be blank");
+        }
+        return participants.computeIfAbsent(name, n -> new Participant(n, initial, ledger));
     }
 
     public synchronized Participant participant(String name) { return participants.get(name); }
@@ -56,7 +70,8 @@ public class DePIN {
 
     /** Post a job with a bounty; source pays the bounty upfront into escrow. */
     public synchronized Blackboard.Job post(String title, String topic, double bounty, int difficulty) {
-        return board.post(title, topic, bounty, difficulty);
+        return board.post(title, topic, bounty, difficulty,
+            jobId -> escrow.reserve(jobId, bounty));
     }
 
     /** Agent claims an open job it is skilled enough for. */
@@ -65,23 +80,39 @@ public class DePIN {
         Blackboard.Job j = board.get(jobId);
         if (p == null || j == null) return false;
         if (j.difficulty > p.tier()) return false;   // skill gate
-        if (!board.claim(jobId, agent)) return false;
-        claims.put(jobId, agent);
-        return true;
+        synchronized (board) {
+            if (j.status != Blackboard.JobStatus.OPEN || escrow.held(jobId) <= 0) return false;
+            if (!board.claim(jobId, agent)) return false;
+            claims.put(jobId, agent);
+            return true;
+        }
     }
 
     /** Complete a claimed job: pay bounty, raise skill. Returns payout. */
     public synchronized double complete(long jobId) {
         String agent = claims.get(jobId);
-        Blackboard.Job j = board.complete(jobId);
-        if (j == null || agent == null) return 0.0;
+        Blackboard.Job j = board.get(jobId);
+        if (j == null || agent == null || j.status != Blackboard.JobStatus.CLAIMED) return 0.0;
         Participant p = participants.get(agent);
         if (p == null) return 0.0;
-        p.wallet.earn(j.bounty, "job #" + jobId + " " + j.title);
-        p.skill.incrementAndGet();
-        p.completed++;
-        claims.remove(jobId);
-        return j.bounty;
+        synchronized (board) {
+            if (board.get(jobId) != j || j.status != Blackboard.JobStatus.CLAIMED) return 0.0;
+            if (!escrow.release(jobId, p.wallet)) return 0.0;
+            if (board.complete(jobId) == null) return 0.0;
+            p.skill.incrementAndGet();
+            p.completed++;
+            claims.remove(jobId);
+            return j.bounty;
+        }
+    }
+
+    /** Cancel an unclaimed job and return its reserved bounty to the treasury. */
+    public synchronized boolean cancel(long jobId) {
+        synchronized (board) {
+            Blackboard.Job job = board.get(jobId);
+            return job != null && job.status == Blackboard.JobStatus.OPEN
+                && escrow.refund(jobId) && board.cancel(jobId);
+        }
     }
 
     /** Agent spends credits on an upgrade (returns true on success). */
@@ -96,7 +127,7 @@ public class DePIN {
         for (String t : topics) {
             int diff = 1 + (i % 5);
             double bounty = 5.0 + diff * 5.0;
-            board.post("Maintain " + t, t, bounty, diff);
+            post("Maintain " + t, t, bounty, diff);
             i++;
         }
     }

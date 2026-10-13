@@ -4,7 +4,12 @@
 ; Build: iscc mindpalace.iss
 
 #define MyAppName "MindPalace"
-#define MyAppVersion "1.0.0"
+; Version injected on the ISCC command line (/DMyAppVersion=...) by the build
+; scripts, mirroring MindPalace.iss. The fallback only applies when ISCC is
+; run by hand without the flag — the pom version moves (1.0.0 -> 1.1.0-beta1).
+#ifndef MyAppVersion
+#define MyAppVersion "1.1.0-beta1"
+#endif
 #define MyAppPublisher "AEGIS System"
 #define MyAppURL "https://github.com/chrisalunlloyd2-sudo/mindpalace"
 #define MyAppExeName "mindpalace.exe"

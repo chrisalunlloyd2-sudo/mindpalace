@@ -18,21 +18,74 @@ public class Texture {
     /** Private no-arg constructor for static factory methods (grass, etc.). */
     private Texture() {}
 
-    public Texture(String path) {
+    /** Decoded RGBA pixels, ready for {@link #upload}. Decoding needs no GL context, so it can run on a worker thread. */
+    public static final class Pixels {
+        final ByteBuffer data;
+        final int width, height;
+        final boolean stbOwned;          // true: free with stbi_image_free; false: our own memAlloc (resized copy)
+        Pixels(ByteBuffer data, int width, int height, boolean stbOwned) {
+            this.data = data; this.width = width; this.height = height; this.stbOwned = stbOwned;
+        }
+        public int width() { return width; }
+        public int height() { return height; }
+        /** Release the pixels without uploading them (self-check / failed uploads). */
+        public void free() { if (stbOwned) STBImage.stbi_image_free(data); else MemoryUtil.memFree(data); }
+        /** First RGBA pixel, for round-trip checks. */
+        public int firstPixel() { return data.getInt(0); }
+    }
+
+    /** Decode an image file to RGBA (flipped vertically, like the GL convention). Safe off the render thread:
+     *  the flip is requested through stb's THREAD-local override, so it cannot race the global flag. */
+    public static Pixels decode(String path) {
+        return decode(path, Integer.MAX_VALUE);
+    }
+
+    /** As {@link #decode(String)}, but an image larger than maxDim on its long side is downscaled (aspect kept) on THIS
+     *  thread, so the render thread only uploads a small texture. A 4000 px poster upload + mipmap chain stalled a frame. */
+    public static Pixels decode(String path, int maxDim) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             IntBuffer w = stack.mallocInt(1);
             IntBuffer h = stack.mallocInt(1);
             IntBuffer comp = stack.mallocInt(1);
-
-            STBImage.stbi_set_flip_vertically_on_load(true);
+            STBImage.stbi_set_flip_vertically_on_load_thread(1);
             ByteBuffer data = STBImage.stbi_load(path, w, h, comp, 4); // force RGBA
-
             if (data == null) {
                 throw new RuntimeException("Failed to load texture: " + path + " — " + STBImage.stbi_failure_reason());
             }
+            int iw = w.get(0), ih = h.get(0);
+            int longSide = Math.max(iw, ih);
+            if (longSide > maxDim) {
+                int ow = Math.max(1, Math.round(iw * (float) maxDim / longSide));
+                int oh = Math.max(1, Math.round(ih * (float) maxDim / longSide));
+                ByteBuffer out = MemoryUtil.memAlloc(ow * oh * 4);
+                ByteBuffer ok = org.lwjgl.stb.STBImageResize.stbir_resize_uint8_srgb(
+                    data, iw, ih, 0, out, ow, oh, 0, org.lwjgl.stb.STBImageResize.STBIR_RGBA);
+                if (ok != null) {
+                    STBImage.stbi_image_free(data);
+                    return new Pixels(out, ow, oh, false);
+                }
+                MemoryUtil.memFree(out);          // resize failed: fall back to the full-size image
+            }
+            return new Pixels(data, iw, ih, true);
+        }
+    }
 
-            width = w.get(0);
-            height = h.get(0);
+    /** Create the GL texture from decoded pixels and free them. Render thread only (needs the GL context). */
+    public static Texture upload(Pixels p) {
+        Texture t = new Texture();
+        t.uploadPixels(p);
+        return t;
+    }
+
+    public Texture(String path) {
+        uploadPixels(decode(path));
+    }
+
+    private void uploadPixels(Pixels p) {
+        {
+            ByteBuffer data = p.data;
+            width = p.width;
+            height = p.height;
 
             id = GL30.glGenTextures();
             GL30.glBindTexture(GL30.GL_TEXTURE_2D, id);
@@ -46,7 +99,7 @@ public class Texture {
                 GL30.GL_RGBA, GL30.GL_UNSIGNED_BYTE, data);
             GL30.glGenerateMipmap(GL30.GL_TEXTURE_2D);
 
-            STBImage.stbi_image_free(data);
+            if (p.stbOwned) STBImage.stbi_image_free(data); else MemoryUtil.memFree(data);
         }
     }
 

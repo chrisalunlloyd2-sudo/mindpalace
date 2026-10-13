@@ -9,8 +9,18 @@ import java.util.*;
  * Particles are billboarded colored dots rendered in 3D.
  */
 public class AnimationSystem {
-    private final List<Particle> particles = new ArrayList<>();
-    private final List<BuildBlock> buildBlocks = new ArrayList<>();
+    // t_b2e9bc3f gate fix: LiveUpdate's poller thread mutates these lists
+    // (startConstructionAnimation / startGlowPulse) while the engine loop
+    // iterates them in update()/render() — that race crashed the e2e tour
+    // with ConcurrentModificationException at AnimationSystem.java:181
+    // (observed 2026-10-01, 7 live-added rooms colliding with render).
+    // Doctrine (see memory / repo history): synchronized list + snapshot at
+    // EVERY iterate site. Mutators and update() take `this`; render() works
+    // from lock-scoped snapshots.
+    private final List<Particle> particles =
+        Collections.synchronizedList(new ArrayList<>());
+    private final List<BuildBlock> buildBlocks =
+        Collections.synchronizedList(new ArrayList<>());
     private final Random rand = new Random();
     private boolean active;
     private Vector3f source;
@@ -52,8 +62,9 @@ public class AnimationSystem {
         }
     }
 
-    /** Start a deploy animation at a world position. */
-    public void startDeployAnimation(Vector3f worldPos) {
+    /** Start a deploy animation at a world position. Takes `this` — same lock
+     *  the engine loop's update()/render() hold while touching the lists. */
+    public synchronized void startDeployAnimation(Vector3f worldPos) {
         active = true;
         source = new Vector3f(worldPos);
         elapsed = 0;
@@ -84,7 +95,7 @@ public class AnimationSystem {
      * Start a "construction" animation — blocks rise from the floor and assemble
      * into a structure (GTA Vice City loading style). Used for live code updates.
      */
-    public void startConstructionAnimation(Vector3f center, List<Vector3f> blockTargets,
+    public synchronized void startConstructionAnimation(Vector3f center, List<Vector3f> blockTargets,
                                            List<Vector3f> blockSizes, List<Integer> texIds) {
         active = true;
         source = new Vector3f(center);
@@ -100,8 +111,9 @@ public class AnimationSystem {
         }
     }
 
-    /** Start a glow pulse on a neon sign. */
-    public void startGlowPulse(Vector3f signPos) {
+    /** Start a glow pulse on a neon sign. Called from the LiveUpdate poller
+     *  thread; synchronized against the engine loop like the other mutators. */
+    public synchronized void startGlowPulse(Vector3f signPos) {
         for (int i = 0; i < 30; i++) {
             Vector3f vel = new Vector3f(
                 (rand.nextFloat() - 0.5f) * 0.5f,
@@ -118,9 +130,11 @@ public class AnimationSystem {
         }
     }
 
-    /** Update all particles. */
+    /** Update all particles. Engine loop thread only — but mutations are
+     *  also serialized against the LiveUpdate poller thread via `this`. */
     public void update(float dt) {
         if (!active) return;
+        synchronized (this) {
         elapsed += dt;
 
         // Update construction blocks
@@ -173,15 +187,24 @@ public class AnimationSystem {
         if (elapsed > 4f && particles.isEmpty() && buildBlocks.isEmpty()) {
             active = false;
         }
+        } // synchronized (this)
     }
 
-    /** Render all particles as colored cubes. */
+    /** Render all particles as colored cubes. Runs on the render thread while
+     *  the LiveUpdate poller may mutate the lists — iterate lock-scoped
+     *  snapshots, never the live lists (CME at the old line 181). */
     public void render(Renderer renderer) {
+        final List<BuildBlock> blocksSnap;
+        final List<Particle> partsSnap;
+        synchronized (this) {
+            blocksSnap = new ArrayList<>(buildBlocks);
+            partsSnap = new ArrayList<>(particles);
+        }
         // Construction blocks first (they're the "building" effect)
-        for (BuildBlock b : buildBlocks) {
+        for (BuildBlock b : blocksSnap) {
             renderer.drawCube(b.pos, b.size, b.texId);
         }
-        for (Particle p : particles) {
+        for (Particle p : partsSnap) {
             float alpha = p.life / p.maxLife;
             Vector3f faded = new Vector3f(
                 p.color.x * alpha,

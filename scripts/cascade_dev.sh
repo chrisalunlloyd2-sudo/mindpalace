@@ -33,7 +33,7 @@ log() { printf '[cascade %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 log "guard: sweeping orphan game processes"
 tasklist | grep -iE "^java(w)?\.exe" | awk '{print $2}' | while read -r pid; do
   log "guard: killing orphan java pid $pid"
-  taskkill //PID "$pid" //F >/dev/null 2>&1 || true
+  taskkill /PID "$pid" /F >/dev/null 2>&1 || true
 done
 
 # ── 2. freeze live jar ──────────────────────────────────────────────
@@ -51,7 +51,12 @@ log "build: OK"
 
 # ── 4. selftest (H265: via test_bot — writes target/selftest_result.json) ──
 log "selftest: running (test_bot --run-selftest)"
-cp -f target/mindpalace-1.1.0-beta1-shaded.jar mindpalace-live.jar
+# Version-proof glob (jar-swap bug class cbb33ad): the shade plugin REPLACES
+# the main artifact, so the runnable jar is target/mindpalace-<ver>.jar —
+# the old hardcoded -1.1.0-beta1-shaded.jar name was a fossil.
+LIVE_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE 'original-|-shaded' | head -1)
+[ -n "$LIVE_JAR" ] || { log "no built jar in target/ — build failed?"; exit 1; }
+cp -f "$LIVE_JAR" mindpalace-live.jar
 if ! timeout 110 python scripts/test_bot.py --run-selftest; then
   log "SELFTEST FAILED — JSON evidence in target/selftest_result.json"
   python scripts/test_bot.py --steplog || true   # post the failure too
@@ -114,3 +119,8 @@ log "CASCADE COMPLETE: $H_ID verified + shipped"
 # evidence. Failure here must not fail the cascade (evidence is bonus).
 python scripts/test_bot.py --steplog || log "steplog: post failed (non-fatal)"
 python scripts/scout_bot.py --metrics >/dev/null 2>&1 || true
+python scripts/scout_bot.py --botmetrics >/dev/null 2>&1 || true
+python scripts/scout_bot.py --botsteplog || log "botsteplog: post failed (non-fatal)"
+# ── 9. H50 (step 98): weekly self-report -> reports/ + step-log ──────
+# Internally 7d-guarded; every-cascade callers safe.
+python scripts/scout_bot.py --weeklyreport || log "weeklyreport: post failed (non-fatal)"

@@ -35,8 +35,9 @@ public class GitHubPollBridge {
     private final Path ledgerFile;
     private final long pollIntervalMs;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-    private final HttpClient httpClient = HttpClient.newHttpClient();
-
+    private final HttpClient httpClient = HttpClient.newBuilder()
+        .connectTimeout(java.time.Duration.ofSeconds(10))
+        .build();
     // Track processed issues (deduplication)
     private final Set<Integer> processedIssueNumbers = ConcurrentHashMap.newKeySet();
 
@@ -104,6 +105,9 @@ public class GitHubPollBridge {
             .uri(URI.create(url))
             .header("Accept", "application/vnd.github.v3+json")
             .header("Authorization", "token " + githubToken)
+            // Hard cap on the whole exchange (connect+read): a stalled API
+            // must fail fast, never wedge the poll thread forever.
+            .timeout(java.time.Duration.ofSeconds(30))
             .GET()
             .build();
 

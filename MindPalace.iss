@@ -10,7 +10,11 @@
 ; Build:  ISCC.exe MindPalace.iss   (from the repo root)
 
 #define MyAppName "MindPalace"
-#define MyAppVersion "1.0.0"
+; Version injected by build-warm-installer.sh (/DMyAppVersion=...). The
+; fallback only applies when ISCC is run by hand without the flag.
+#ifndef MyAppVersion
+#define MyAppVersion "1.1.0-beta1"
+#endif
 #define MyAppPublisher "AIGEN_SYS"
 #define MyAppExeName "MindPalace.exe"
 #define MyAppSource "installer\MindPalace"

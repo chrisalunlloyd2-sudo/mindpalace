@@ -20,6 +20,99 @@ public class OllamaClient {
     // invariant physical — a second caller blocks until the first model unloads.
     private final Object modelGate = new Object();
 
+    // Keep-alive window for the one resident model. "0" restores the old cold-shot
+    // (unload after every reply). Measured 2026-10-03: unload-per-call costs 3.8-5.6 s
+    // per call vs ~0.5 s hot (first disk-cold load up to 86 s). Override with
+    // -Dmindpalace.ollama.keepAlive=... or env MP_OLLAMA_KEEP_ALIVE (e.g. "0", "2m", "5m").
+    private static final String KEEP_ALIVE = resolveKeepAlive();
+    // The one hot model; guarded by modelGate. A different model evicts it first,
+    // so at most one model stays resident regardless of Ollama's own limits.
+    private String hotModel;
+
+    private static String resolveKeepAlive() {
+        String v = System.getProperty("mindpalace.ollama.keepAlive", System.getenv("MP_OLLAMA_KEEP_ALIVE"));
+        return (v == null || v.isBlank()) ? "5m" : v.trim();
+    }
+
+    // model -> does Ollama report native tool-calling for it (cached; #144)
+    private final java.util.concurrent.ConcurrentHashMap<String, Boolean> toolSupport = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * True when Ollama's /api/show lists "tools" in the model's capabilities
+     * (e.g. llama3.2:1b yes, phi3:mini no). A model without it silently ignores
+     * the tools payload, so tool rounds must not be routed to it. If Ollama is
+     * unreachable or too old to report capabilities, the answer is not cached
+     * and only the configured TOOL_MODEL is assumed capable.
+     */
+    public boolean supportsTools(String model) {
+        Boolean cached = toolSupport.get(model);
+        if (cached != null) return cached;
+        try {
+            JsonObject b = new JsonObject();
+            b.addProperty("model", model);
+            Request r = new Request.Builder().url(BASE + "/show")
+                .post(RequestBody.create(b.toString(), MediaType.parse("application/json"))).build();
+            try (Response resp = http.newCall(r).execute()) {
+                if (resp.isSuccessful() && resp.body() != null) {
+                    JsonObject o = gson.fromJson(resp.body().string(), JsonObject.class);
+                    if (o != null && o.has("capabilities") && o.get("capabilities").isJsonArray()) {
+                        boolean yes = false;
+                        for (JsonElement e : o.getAsJsonArray("capabilities")) {
+                            if ("tools".equals(e.getAsString())) { yes = true; break; }
+                        }
+                        toolSupport.put(model, yes);
+                        return yes;
+                    }
+                }
+            }
+        } catch (IOException | RuntimeException ignored) { /* fall through to the safe default */ }
+        return ModelConfig.TOOL_MODEL.equals(model);
+    }
+
+    // Context window requested per call. Without it Ollama applies ITS default, which on this machine was
+    // 131072 tokens: a 1.2B model loaded at 6.4 GB (KV cache ~5 GB) instead of ~1.5 GB, with multi-second
+    // loads and ~1 GB RAM left free (observed 2026-10-06 via /api/ps context_length). Tool budget is 4000
+    // tokens, so 8192 is ample. Override: -Dmindpalace.ollama.numCtx=... or env MP_OLLAMA_NUM_CTX.
+    private static final int NUM_CTX = resolveNumCtx();
+
+    private static int resolveNumCtx() {
+        String v = System.getProperty("mindpalace.ollama.numCtx", System.getenv("MP_OLLAMA_NUM_CTX"));
+        try {
+            int n = (v == null || v.isBlank()) ? 8192 : Integer.parseInt(v.trim());
+            return Math.max(2048, Math.min(n, 131072));
+        } catch (NumberFormatException e) {
+            return 8192;
+        }
+    }
+
+    private static void applyOptions(JsonObject body) {
+        JsonObject opts = body.has("options") && body.get("options").isJsonObject() ? body.getAsJsonObject("options") : new JsonObject();
+        opts.addProperty("num_ctx", NUM_CTX);
+        body.add("options", opts);
+    }
+
+    private static void applyKeepAlive(JsonObject body) {
+        if (KEEP_ALIVE.matches("\\d+")) body.addProperty("keep_alive", Long.parseLong(KEEP_ALIVE));
+        else body.addProperty("keep_alive", KEEP_ALIVE);
+    }
+
+    /** Caller must hold modelGate. Unloads the previously hot model when switching. */
+    private void evictPreviousModelLocked(String model) {
+        String prev = hotModel;
+        hotModel = model;
+        if (prev == null || prev.equals(model) || "0".equals(KEEP_ALIVE)) return;
+        try {
+            JsonObject b = new JsonObject();
+            b.addProperty("model", prev);
+            b.addProperty("prompt", "");
+            b.addProperty("stream", false);
+            b.addProperty("keep_alive", 0);
+            Request r = new Request.Builder().url(BASE + "/generate")
+                .post(RequestBody.create(b.toString(), MediaType.parse("application/json"))).build();
+            try (Response resp = http.newCall(r).execute()) { /* best effort */ }
+        } catch (IOException ignored) { /* eviction is best effort; the next load still works */ }
+    }
+
     public OllamaClient() {
         http = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -69,10 +162,10 @@ public class OllamaClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
-        // COLD-SHOT: unload immediately after the reply — never more than one
-        // model resident in RAM. Slower (disk reload each turn) by design: the
-        // game's frames never compete with an idle model's memory footprint.
-        body.addProperty("keep_alive", 0);
+        // ONE-HOT: the model stays resident for KEEP_ALIVE (default 5m); a different
+        // model evicts it (see evictPreviousModelLocked). "0" = old cold-shot policy.
+        applyKeepAlive(body);
+        applyOptions(body);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -91,6 +184,7 @@ public class OllamaClient {
 
         try {
             synchronized (modelGate) {
+                evictPreviousModelLocked(model);
                 Request r = new Request.Builder()
                     .url(BASE + "/chat")
                     .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
@@ -98,12 +192,16 @@ public class OllamaClient {
                 try (Response resp = http.newCall(r).execute()) {
                     if (!resp.isSuccessful() || resp.body() == null) return null;
                     JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
+                    // CARD-Q1 F13: bodies with no `message` object (or a
+                    // malformed JSON) NPE / throw JsonSyntaxException — both
+                    // are RuntimeExceptions and escaped the IOException catch.
+                    if (result == null || result.getAsJsonObject("message") == null) return null;
                     JsonObject msg = result.getAsJsonObject("message");
                     if (msg.has("content") && !msg.get("content").isJsonNull()) return msg.get("content").getAsString();
                     return "";
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             return null;
         }
     }
@@ -127,8 +225,9 @@ public class OllamaClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
-        // COLD-SHOT: same policy as chat() — one model resident, zero after.
-        body.addProperty("keep_alive", 0);
+        // Same one-hot keep-alive policy as chat().
+        applyKeepAlive(body);
+        applyOptions(body);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -156,6 +255,7 @@ public class OllamaClient {
 
         try {
             synchronized (modelGate) {
+                evictPreviousModelLocked(model);
                 Request r = new Request.Builder()
                     .url(BASE + "/chat")
                     .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
@@ -171,14 +271,21 @@ public class OllamaClient {
                             JsonObject tc = el.getAsJsonObject();
                             JsonObject fn = tc.getAsJsonObject("function");
                             String name = fn.get("name").getAsString();
-                            String args = fn.has("arguments") ? fn.get("arguments").getAsString() : "{}";
+                            // CARD-Q1 F1: Ollama returns arguments as a JSON
+                            // OBJECT; getAsString() throws and killed every
+                            // tool round. Accept both shapes.
+                            JsonElement a = fn.has("arguments") ? fn.get("arguments") : null;
+                            String args = (a == null || a.isJsonNull()) ? "{}"
+                                : a.isJsonPrimitive() ? a.getAsString() : a.toString();
                             calls.add(new ToolCall(name, args));
                         }
                     }
                     return new ToolResult(content, calls);
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // CARD-Q1 F1: RuntimeException (UnsupportedOperationException,
+            // NPE, JsonSyntaxException) must not silently kill the round.
             return new ToolResult(null, List.of());
         }
     }

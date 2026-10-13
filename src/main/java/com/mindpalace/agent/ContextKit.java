@@ -30,8 +30,10 @@ public final class ContextKit {
         this.kv = new KVTree(model, kvSeed);
     }
 
-    /** Set the KG neighborhood (called when the room changes / FOW lifts). */
-    public void setKgNodes(List<String> nodes) {
+    /** Set the KG neighborhood (called when the room changes / FOW lifts).
+     *  Synchronized (#106): setKgNodes (clear→addAll) races render()/kgNodes()
+     *  from worker threads — clear-during-iterate would corrupt the render. */
+    public synchronized void setKgNodes(List<String> nodes) {
         kgNodes.clear();
         if (nodes != null) kgNodes.addAll(nodes);
     }
@@ -52,7 +54,9 @@ public final class ContextKit {
     public Map<String, Float> kvSnapshot() { return kv.snapshot(); }
 
     public com.mindpalace.agent.sims.AdapterType loraAdapter() { return loraAdapter; }
-    public List<String> kgNodes() { return Collections.unmodifiableList(kgNodes); }
+    /** Snapshot of the KG neighborhood (#106): callers must not iterate the
+     *  live list while another thread calls setKgNodes. */
+    public synchronized List<String> kgNodes() { return new ArrayList<>(kgNodes); }
     public long turns() { return turns; }
 
     /**
@@ -65,13 +69,14 @@ public final class ContextKit {
         StringBuilder sb = new StringBuilder(256);
         sb.append("[ctx model=").append(model)
           .append(" lora=").append(loraAdapter).append(']');
-        if (!kgNodes.isEmpty()) {
+        List<String> nodes = kgNodes();
+        if (!nodes.isEmpty()) {
             sb.append(" [kg ");
-            for (int i = 0; i < Math.min(kgNodes.size(), 5); i++) {
+            for (int i = 0; i < Math.min(nodes.size(), 5); i++) {
                 if (i > 0) sb.append(',');
-                sb.append(kgNodes.get(i));
+                sb.append(nodes.get(i));
             }
-            if (kgNodes.size() > 5) sb.append("…+").append(kgNodes.size() - 5);
+            if (nodes.size() > 5) sb.append("…+").append(nodes.size() - 5);
             sb.append(']');
         }
         Map<String, Float> snap = kv.snapshot();

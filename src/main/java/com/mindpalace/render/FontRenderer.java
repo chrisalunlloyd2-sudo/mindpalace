@@ -91,8 +91,8 @@ public class FontRenderer {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_CLAMP);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_CLAMP);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, ATLAS_W, atlasH, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf);
     }
 
@@ -182,6 +182,87 @@ public class FontRenderer {
     }
 
     /**
+     * Left-aligned billboard — HUD panel text. The plain renderBillboard
+     * centers the string on `position`, which is what you want for one-off
+     * labels but wrong for column panels: every line centers independently
+     * and the column turns into a ragged staircase. This variant keeps the
+     * anchor as the LEFT edge of the first glyph, so a panel's lines stack
+     * into a clean column under one anchor (task t_0c1374b0 de-overlap).
+     * Same orientation math as renderBillboard.
+     */
+    public void renderBillboardLeft(String text, Vector3f position, float charSize, Vector3f color,
+                                    Matrix4f projection, Matrix4f view, Vector3f camPos) {
+        Vector3f toCam = new Vector3f(camPos).sub(position).normalize();
+        renderInternalLeft(text, position, charSize, color, projection, view, toCam);
+    }
+
+    /** renderInternal with left-edge anchoring (see renderBillboardLeft). */
+    private void renderInternalLeft(String text, Vector3f position, float charSize, Vector3f color,
+                                    Matrix4f projection, Matrix4f view, Vector3f facingNormal) {
+        if (!ready || text == null || text.isEmpty()) return;
+        if (text.indexOf('\n') >= 0 || text.indexOf('\r') >= 0) {
+            String[] lines = text.replace("\r", "").split("\n", -1);
+            float lineH = charSize * 1.7f;
+            for (int li = 0; li < lines.length; li++) {
+                if (lines[li].isEmpty()) continue;
+                Vector3f p = new Vector3f(position.x, position.y + li * lineH, position.z);
+                renderInternalLeft(lines[li], p, charSize, color, projection, view, facingNormal);
+            }
+            return;
+        }
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        textShader.bind();
+        textShader.setUniform("projection", projection);
+        textShader.setUniform("view", view);
+        textShader.setUniform("textColor", new Vector4f(color.x, color.y, color.z, 1.0f));
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
+        textShader.setUniform("tex", 0);
+        textShader.setUniform("atlasRows", (float) rows);
+        GL30.glBindVertexArray(vao);
+        // No centering: startX is the anchor itself. Everything else matches
+        // the billboard branch of renderInternal (cylindrical basis, H31-fix
+        // column-major translation).
+        float startX = position.x;
+        // Basis from the LINE OF SIGHT (toCam), not view rows: right =
+        // cross(toCam, worldUp) is screen-right at every yaw with no sign
+        // flips — view-row math (the old idiom) collapsed glyphs at yaw
+        // 45/135 (text pile) and mirrored text at 90/270 (JOML probe).
+        Vector3f toCamH = new Vector3f(facingNormal.x, 0f, facingNormal.z);
+        if (toCamH.lengthSquared() < 1e-6f) toCamH.set(0f, 0f, -1f);
+        toCamH.normalize();
+        Vector3f cameraRight = new Vector3f(toCamH.z, 0f, -toCamH.x);
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            int gi = glyphIndex.getOrDefault(c, questionIdx);
+            Matrix4f model = new Matrix4f();
+            float bx = position.x + cameraRight.x * (i * charSize);
+            float by = position.y;
+            float bz = position.z + cameraRight.z * (i * charSize);
+            // Column-major (H31-fix): column 0 = the FULL screen-right vector
+            // (its x AND z — the old layout dropped right.z, collapsing glyph
+            // advance to zero width at yaw 45/135), column 2 = the toCam
+            // forward so the quad faces the camera. +X follows screen-right,
+            // so English is never mirrored at any viewing angle.
+            model.set(
+                cameraRight.x,  0f,             toCamH.x,          0f,
+                0f,             1f,             0f,                0f,
+                cameraRight.z,  0f,             toCamH.z,          0f,
+                bx,             by,             bz,                1f
+            );
+            model.scale(charSize, charSize * 1.6f, 1f);
+            textShader.setUniform("model", model);
+            textShader.setUniform("glyphIndex", gi);
+            GL11.glDrawElements(GL11.GL_TRIANGLES, 6, GL11.GL_UNSIGNED_INT, 0);
+        }
+        GL30.glBindVertexArray(0);
+        GL11.glEnable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_BLEND);
+    }
+
+    /**
      * Overlay billboard — HUD-style text that is NEVER occluded by world
      * geometry: the depth test is disabled for the draw, so a prompt anchored
      * 3m in front of the camera still reads even when the player is standing
@@ -217,6 +298,7 @@ public class FontRenderer {
             }
             return;
         }
+        final int previousProgram = Shader.currentProgram();   // text must not leave its shader bound for the next draw
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_CULL_FACE);
@@ -235,8 +317,23 @@ public class FontRenderer {
         // Precompute a proper cylindrical-billboard basis ONCE per string from the
         // view matrix. cameraRight/Up are the view's local right/up (transposed
         // inverse = for a pure rigid view, the transpose is the inverse rotation).
-        Vector3f cameraRight = new Vector3f(view.transpose().getColumn(0, new Vector3f()).x, 0f, view.transpose().getColumn(0, new Vector3f()).z).normalize();
-        Vector3f cameraForward = new Vector3f(view.transpose().getColumn(2, new Vector3f()).x, 0f, view.transpose().getColumn(2, new Vector3f()).z).normalize();
+        // H33-fix: transpose a COPY — JOML transpose() mutates in place, and
+        // the old chained view.transpose() calls mutated the caller's view
+        // (accidentally restored by transposing an even number of times).
+        // Screen-right in world space = view^T column 0; the old glyph span
+        // used only its x component (col0 = (right.x, 0, 0)), so at yaw≈±90°
+        // the span collapsed to zero width and EVERY text quad vanished —
+        // e2e shots 13/14 lost the whole HUD facing doors (yaw ≈ -90/75).
+        // Span the full horizontal screen-right instead: correct at every
+        // yaw, never mirrored (screen-x = dot(P-cam, right) ∝ +local x).
+        // (t_0c1374b0 independently derives the basis from the line of sight
+        // in its own renderInternalLeft — both fix the same yaw-collapse; the
+        // view^T form here is the one e2e-verified in v7.)
+        Matrix4f rt = new Matrix4f(view).transpose();
+        Vector3f r0 = rt.getColumn(0, new Vector3f());
+        Vector3f cameraRight = new Vector3f(r0.x, 0f, r0.z).normalize();
+        Vector3f f2 = rt.getColumn(2, new Vector3f());
+        Vector3f cameraForward = new Vector3f(f2.x, 0f, f2.z).normalize();
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             int gi = glyphIndex.getOrDefault(c, questionIdx);
@@ -259,20 +356,36 @@ public class FontRenderer {
                 // so EVERY billboard glyph rendered at the world origin —
                 // billboard text was effectively invisible from most of the
                 // map (the long-standing "no HUD text in screenshots" bug).
+                // t_0c1374b0: column 0 now carries the FULL screen-right
+                // vector (x AND z — the old layout dropped right.z, collapsing
+                // glyph advance to zero width at yaw 45/135), and column 2 is
+                // the toCam forward so the quad faces the camera.
                 float bx = position.x + cameraRight.x * (i * charSize);
                 float by = position.y;
                 float bz = position.z + cameraRight.z * (i * charSize);
                 model.set(
-                    cameraRight.x, 0f,               0f,               0f,
+                    cameraRight.x, 0f,               cameraRight.z,    0f,
                     0f,             1f,              0f,               0f,
                     cameraForward.x, 0f,             cameraForward.z,  0f,
                     bx,             by,              bz,               1f
                 );
                 model.scale(charSize, charSize * 1.6f, 1f);
             } else {
-                // Wall-facing text: lay flat on the wall, rotated so +X is right
-                // along the wall and -Z faces into the room (unchanged behavior).
-                model.translate(cx, position.y, position.z).rotateY(angleY)
+                // Wall-facing text: rotate the glyph so its native +Z normal
+                // becomes the wall's facing normal, then advance each glyph
+                // along the wall TANGENT (the rotated +X = (cosA, 0, -sinA)).
+                // H37b fix (#122): the old code advanced centers along WORLD
+                // X — correct only for normals ±Z (end walls: genome, posters);
+                // on hallway SIDE walls (normal ±X: doors, neon signs, commit
+                // engravings) the string marched into/through the wall,
+                // leaving glyphs buried and edge-on (the dash columns in e2e
+                // shots 8/13). For normal ±Z this is byte-identical to before.
+                float cosA = (float) Math.cos(angleY);
+                float sinA = (float) Math.sin(angleY);
+                float along = i * charSize - totalW / 2f + charSize / 2f;
+                model.translate(position.x + cosA * along, position.y,
+                                position.z - sinA * along)
+                     .rotateY(angleY)
                      .scale(charSize, charSize * 1.6f, 1f);
             }
             textShader.setUniform("model", model);
@@ -282,6 +395,7 @@ public class FontRenderer {
         GL30.glBindVertexArray(0);
         GL11.glEnable(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_BLEND);
+        Shader.restoreProgram(previousProgram);
     }
 
     public void cleanup() {

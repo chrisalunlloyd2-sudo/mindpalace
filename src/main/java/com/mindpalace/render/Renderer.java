@@ -15,6 +15,8 @@ public class Renderer {
     private Matrix4f viewMatrix = new Matrix4f();
 
     /** Matrices for the per-frame frustum culler (perf). */
+    /** Re-bind the default shader after a batch renderer (e.g. ParticleBatch) used its own. */
+    public void bindBasicShader() { basicShader.bind(); }
     public Matrix4f getProjectionMatrix() { return projectionMatrix; }
     public Matrix4f getViewMatrix() { return viewMatrix; }
     private Vector3f viewPos = new Vector3f();
@@ -56,7 +58,8 @@ public class Renderer {
     public static final int TEX_WATER = 24;
     public static final int TEX_WOOD = 25;
     public static final int TEX_BARK = 26;
-    private static final int TEX_COUNT = 28;
+    public static final int TEX_CRYSTAL = 28;  // CARD-Q2 F3: TODO crystals' own emissive slot
+    private static final int TEX_COUNT = 29;
 
     private Texture[] textures = new Texture[TEX_COUNT];
 
@@ -92,6 +95,7 @@ public class Renderer {
         textures[TEX_NEON_CYAN]  = new Texture(0.0f, 0.9f, 1.0f);
         textures[TEX_NEON_PINK]  = new Texture(1.0f, 0.2f, 0.6f);
         textures[TEX_NEON_GREEN] = new Texture(0.1f, 1.0f, 0.3f);
+        textures[TEX_CRYSTAL] = new Texture(0.55f, 1.0f, 1.0f); // white-cyan, crystals only
         textures[TEX_NEON_AMBER] = new Texture(1.0f, 0.7f, 0.1f);
         textures[TEX_NEON_RED] = new Texture(1.0f, 0.2f, 0.15f);
         textures[TEX_HARDWOOD] = new Texture(0.35f, 0.20f, 0.10f);
@@ -158,35 +162,47 @@ public class Renderer {
         drawMesh(getCubeMesh(), model, texId);
     }
 
+    private final org.joml.Vector3f solidScratch = new org.joml.Vector3f();
+
+    /** Flat colour for the next draw via the shader (useTexture == 2). Quantised to 8 bits per channel exactly like the
+     *  1x1 textures it replaces, but with NO GL object: creating a texture per new colour cost 15-40 ms each on the
+     *  Intel iGPU the first time a room's colours came into view, and was the main remaining first-sight hitch. */
+    private void solidColor(float r, float g, float b) {
+        solidScratch.set(((int) (r * 255) & 0xFF) / 255f, ((int) (g * 255) & 0xFF) / 255f, ((int) (b * 255) & 0xFF) / 255f);
+        basicShader.setUniform("solidColor", solidScratch);
+        basicShader.setUniform("useTexture", 2);
+    }
+
     /** Draw a cube with an arbitrary RGB color, rotated around Y (for clothing layers). */
     public void drawCubeColorYaw(Vector3f position, Vector3f size, float yaw, float r, float g, float b) {
-        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(b*255);
-        Texture tex = colorCache.get(key);
-        if (tex == null) { tex = new Texture(r, g, b); colorCache.put(key, tex); }
         Matrix4f model = new Matrix4f().translate(position).rotateY(yaw).scale(size);
+        GlTrace.expectProgram(basicShader.getId(), "cubeColorYaw");
+        GlTrace.mark("cubeColorYaw:enter");
         basicShader.setUniform("model", model);
-        tex.bind(0);
-        basicShader.setUniform("useTexture", 1);
+        GlTrace.mark("cubeColorYaw:model-uniform");
+        solidColor(r, g, b);
+        GlTrace.mark("cubeColorYaw:useTexture-uniform");
         getCubeMesh().render();
+        GlTrace.mark("cubeColorYaw:mesh.render");
     }
 
     /** Draw a cube with the Cortana hologram shader — fresnel rim + scanlines + data lines. */
     public void drawHologramCube(Vector3f position, Vector3f size, float yaw, Vector3f tint, float time) {
+        GlTrace.mark("hologram:enter");
         hologramShader.bind();
+        GlTrace.mark("hologram:bind");
         hologramShader.setUniform("projection", projectionMatrix);
         hologramShader.setUniform("view", viewMatrix);
         hologramShader.setUniform("model", new Matrix4f().translate(position).rotateY(yaw).scale(size));
         hologramShader.setUniform("viewPos", viewPos);
         hologramShader.setUniform("tint", tint);
         hologramShader.setUniform("time", time);
+        GlTrace.mark("hologram:uniforms");
         getCubeMesh().render();
+        GlTrace.mark("hologram:mesh.render");
         basicShader.bind();  // restore the default shader for subsequent draws
     }
 
-    // Cache of solid-color textures keyed by quantized RGB, so gradient bands
-    // (cosine-interpolated sky, water shimmer) can paint arbitrary colors
-    // without a texture per shade.
-    private final java.util.Map<Integer, Texture> colorCache = new java.util.HashMap<>();
 
     // Sky dome gradient texture (rebuilt when the day/night phase changes).
     private Texture skyDomeTex;
@@ -220,13 +236,9 @@ public class Renderer {
 
     /** Draw a cube with an arbitrary RGB color (cached 1x1 texture). */
     public void drawCubeColor(Vector3f position, Vector3f size, float r, float g, float b) {
-        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(b*255);
-        Texture tex = colorCache.get(key);
-        if (tex == null) { tex = new Texture(r, g, b); colorCache.put(key, tex); }
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         basicShader.setUniform("model", model);
-        tex.bind(0);
-        basicShader.setUniform("useTexture", 1);
+        solidColor(r, g, b);
         getCubeMesh().render();
     }
 
@@ -237,16 +249,12 @@ public class Renderer {
         float len = dir.length();
         if (len < 1e-4f) return;
         dir.normalize();
-        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(bl*255);
-        Texture tex = colorCache.get(key);
-        if (tex == null) { tex = new Texture(r, g, bl); colorCache.put(key, tex); }
         // rotateTowards aligns the cube's +Z with dir (the long axis).
         Matrix4f model = new Matrix4f().translate(mid)
             .rotateTowards(dir, new Vector3f(0, 1, 0))
             .scale(thickness, thickness, len);
         basicShader.setUniform("model", model);
-        tex.bind(0);
-        basicShader.setUniform("useTexture", 1);
+        solidColor(r, g, bl);
         getCubeMesh().render();
     }
 
@@ -369,14 +377,103 @@ public class Renderer {
 
     /** Draw a sphere with an arbitrary RGB color (cached 1x1 texture). */
     public void drawSphereColor(Vector3f position, Vector3f size, float r, float g, float b) {
-        int key = ((int)(r*255) << 16) | ((int)(g*255) << 8) | (int)(b*255);
-        Texture tex = colorCache.get(key);
-        if (tex == null) { tex = new Texture(r, g, b); colorCache.put(key, tex); }
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         basicShader.setUniform("model", model);
-        tex.bind(0);
-        basicShader.setUniform("useTexture", 1);
+        solidColor(r, g, b);
         getSphereMesh().render();
+    }
+
+    /** Toggle distance fog for out-of-atmosphere bodies (STEP 94v7: sun/moon
+     *  now sit 140 u out — without this the distance fog would wash a third
+     *  of their color into pale haze and they'd read as milky discs). */
+    public void setFogEnabled(float on) {
+        basicShader.setUniform("fogEnabled", on);
+    }
+
+    // ── Hex prism (step 92a) ─────────────────────────────────────────────────
+
+    private Mesh hexPrismMesh;
+    private Mesh getHexPrismMesh() {
+        if (hexPrismMesh == null) hexPrismMesh = createHexPrismMesh();
+        return hexPrismMesh;
+    }
+
+    /** Six-sided vertical prism. Pointy-top hexagonal caps (top/bottom), unit
+     *  size, centered at origin: cap radius 0.5 in X/Z, half-height 0.5 in Y.
+     *  Scale (sizeX, sizeY, sizeZ) stretches it like drawCube does. */
+    private Mesh createHexPrismMesh() {
+        final int SIDES = 6, PER_V = 8;
+        float r = 0.5f, half = 0.5f;
+        float[] va = new float[(SIDES * 4 + 2 * (SIDES + 1)) * PER_V];
+        int[] ia = new int[SIDES * 6 + 2 * SIDES * 3];
+        int vi = 0, ii = 0;
+        // Side walls: each face gets its own 4 verts (flat normals, cube-style).
+        // Winding: a_bot, a_top, b_top, b_bot → triangles face outward.
+        for (int i = 0; i < SIDES; i++) {
+            float a0 = (float) Math.toRadians(30 + 60 * i);
+            float a1 = (float) Math.toRadians(30 + 60 * (i + 1));
+            float x0 = (float) Math.cos(a0) * r, z0 = (float) Math.sin(a0) * r;
+            float x1 = (float) Math.cos(a1) * r, z1 = (float) Math.sin(a1) * r;
+            float am = (float) Math.toRadians(30 + 60 * i + 30);
+            float nx = (float) Math.cos(am), nz = (float) Math.sin(am);
+            float u0 = i / (float) SIDES, u1 = (i + 1) / (float) SIDES;
+            int b = vi;
+            vi = putVertex(va, vi, x0, -half, z0, nx, 0, nz, u0, 0);
+            vi = putVertex(va, vi, x0,  half, z0, nx, 0, nz, u0, 1);
+            vi = putVertex(va, vi, x1,  half, z1, nx, 0, nz, u1, 1);
+            vi = putVertex(va, vi, x1, -half, z1, nx, 0, nz, u1, 0);
+            ia[ii++] = b; ia[ii++] = b + 1; ia[ii++] = b + 2;
+            ia[ii++] = b; ia[ii++] = b + 2; ia[ii++] = b + 3;
+        }
+        // Top cap (+Y fan): center + ring in increasing-angle order.
+        // CAP WINDING (STEP 92b fix, proven by window-space test vs cube top):
+        // with the 30°-anchored CCW-in-XZ ring, (center, ring_i, ring_i+1)
+        // faces DOWN — GL culling removed the cap from above, so every water
+        // cell rendered as a bare wall sliver ("bars on grass"). Flip both
+        // caps so +Y faces up / -Y faces down; walls were already correct.
+        int topCenter = vi / PER_V;
+        vi = putVertex(va, vi, 0, half, 0, 0, 1, 0, 0.5f, 0.5f);
+        int topRing = vi / PER_V;
+        for (int i = 0; i < SIDES; i++) {
+            float a = (float) Math.toRadians(30 + 60 * i);
+            float x = (float) Math.cos(a) * r, z = (float) Math.sin(a) * r;
+            vi = putVertex(va, vi, x, half, z, 0, 1, 0, 0.5f + 0.5f * x / r, 0.5f + 0.5f * z / r);
+            ia[ii++] = topCenter; ia[ii++] = topRing + (i + 1) % SIDES; ia[ii++] = topRing + i;
+        }
+        // Bottom cap (−Y fan): mirror winding so it faces down.
+        int botCenter = vi / PER_V;
+        vi = putVertex(va, vi, 0, -half, 0, 0, -1, 0, 0.5f, 0.5f);
+        int botRing = vi / PER_V;
+        for (int i = 0; i < SIDES; i++) {
+            float a = (float) Math.toRadians(30 + 60 * i);
+            float x = (float) Math.cos(a) * r, z = (float) Math.sin(a) * r;
+            vi = putVertex(va, vi, x, -half, z, 0, -1, 0, 0.5f + 0.5f * x / r, 0.5f + 0.5f * z / r);
+            ia[ii++] = botCenter; ia[ii++] = botRing + i; ia[ii++] = botRing + (i + 1) % SIDES;
+        }
+        return new Mesh(va, ia);
+    }
+
+    private int putVertex(float[] va, int vi, float px, float py, float pz,
+                          float nx, float ny, float nz, float u, float v) {
+        va[vi++] = px; va[vi++] = py; va[vi++] = pz;
+        va[vi++] = nx; va[vi++] = ny; va[vi++] = nz;
+        va[vi++] = u;  va[vi++] = v;
+        return vi;
+    }
+
+    /** Draw a hexagonal prism scaled to `size` (cap radius = size.x/z sides,
+     *  height = size.y), with a texture. */
+    public void drawHexPrism(Vector3f position, Vector3f size, int texId) {
+        Matrix4f model = new Matrix4f().translate(position).scale(size);
+        drawMesh(getHexPrismMesh(), model, texId);
+    }
+
+    /** Draw a hexagonal prism with an arbitrary RGB color. */
+    public void drawHexPrismColor(Vector3f position, Vector3f size, float r, float g, float b) {
+        Matrix4f model = new Matrix4f().translate(position).scale(size);
+        basicShader.setUniform("model", model);
+        solidColor(r, g, b);
+        getHexPrismMesh().render();
     }
 
     public void resize(int w, int h) {
@@ -389,8 +486,8 @@ public class Renderer {
         if (cubeMesh != null) cubeMesh.cleanup();
         if (quadMesh != null) quadMesh.cleanup();
         if (sphereMesh != null) sphereMesh.cleanup();
+        if (hexPrismMesh != null) hexPrismMesh.cleanup();
         for (Texture t : textures) if (t != null) t.cleanup();
-        for (Texture t : colorCache.values()) if (t != null) t.cleanup();
         if (skyDomeTex != null) skyDomeTex.cleanup();
     }
 }

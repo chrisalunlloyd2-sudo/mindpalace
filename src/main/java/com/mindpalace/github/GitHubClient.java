@@ -41,8 +41,17 @@ public class GitHubClient {
             p.getOutputStream().write("protocol=https\nhost=github.com\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
             p.getOutputStream().flush();
             p.getOutputStream().close();
+            // t_b2e9bc3f gate fix: GCM intermittently wedges (observed twice
+            // this session — jstack showed the engine hung in readAllBytes on
+            // GCM's stdout). waitFor()/readAllBytes block forever, freezing
+            // startup. Bound the whole handshake to 12s and destroy the child
+            // on timeout — the engine already has a fallback path.
+            boolean finished = p.waitFor(12, TimeUnit.SECONDS);
+            if (!finished) {
+                p.destroyForcibly();
+                System.err.println("[GitHub] Credential Manager timed out after 12s — using fallback auth");
+            }
             String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-            p.waitFor();
 
             for (String line : out.split("\n")) {
                 if (line.toLowerCase().startsWith("password=")) {
@@ -76,6 +85,8 @@ public class GitHubClient {
     // this was the only fetch method in the class without a cache.
     private static final long REPO_LIST_CACHE_TTL_MS = 10 * 60 * 1000L;
     private volatile List<Room> cachedRepoList;
+    private volatile int lastFetchLogCount = -1;   // log the fetch only when the count changes (or hourly)
+    private volatile long lastFetchLogAt;
     private volatile long cachedRepoListAt;
 
     /**
@@ -129,7 +140,12 @@ public class GitHubClient {
             }
         }
 
-        System.out.println("[GitHub] Fetched " + rooms.size() + " repos from GitHub");
+        long nowLog = System.currentTimeMillis();
+        if (rooms.size() != lastFetchLogCount || nowLog - lastFetchLogAt > 3_600_000L) {
+            System.out.println("[GitHub] Fetched " + rooms.size() + " repos from GitHub");
+            lastFetchLogCount = rooms.size();
+            lastFetchLogAt = nowLog;
+        }
         cachedRepoList = rooms;
         cachedRepoListAt = System.currentTimeMillis();
         return rooms;
@@ -151,7 +167,7 @@ public class GitHubClient {
     private final java.util.Map<String, CacheEntry<String>> fileCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Clear all API caches (forces fresh fetches; used by the editor after writes). */
-    public void clearCache() { contentsCache.clear(); fileCache.clear(); clearRepoListCache(); }
+    public void clearCache() { contentsCache.clear(); fileCache.clear(); commitCache.clear(); clearRepoListCache(); }
 
     public List<Book> fetchRepoContents(String repoName) throws IOException {
         List<Book> books = new ArrayList<>();
@@ -215,6 +231,107 @@ public class GitHubClient {
     /**
      * Create or update a file in a repo.
      */
+    // ── Issue reads (#118, step 91): GitHubIssueStream is the ADD-ONLY write
+    // half (agents raise); this is the read half — pure GET, never wired to
+    // close/edit/delete. TTL-cached like the fetchers above so room visits
+    // and round-robin drains don't hammer the API.
+    private final java.util.Map<String, CacheEntry<List<OpenIssue>>> issueCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Minimal open-issue shape for in-world display + step-92 verdicts. */
+    public record OpenIssue(int number, String title, String body) {}
+
+    /**
+     * List open issues for a repo (newest first, cap 20). PRs (which ride
+     * this endpoint) are filtered out; an API error returns an empty list —
+     * the read path never blows up the caller.
+     */
+    public List<OpenIssue> listOpenIssues(String repoName) throws IOException {
+        CacheEntry<List<OpenIssue>> hit = issueCache.get(repoName);
+        if (hit != null && hit.fresh()) return hit.value;
+
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName
+                + "/issues?state=open&per_page=20&sort=created&direction=desc")
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+
+        List<OpenIssue> issues = new ArrayList<>();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return issues;
+            issues = parseOpenIssues(resp.body().string());
+        }
+        issueCache.put(repoName, new CacheEntry<>(issues));
+        return issues;
+    }
+
+    /** Pure parse of a GET /issues JSON array → OpenIssues (PR rows dropped). */
+    public static List<OpenIssue> parseOpenIssues(String body) {
+        List<OpenIssue> issues = new ArrayList<>();
+        JsonArray arr = JsonParser.parseString(body).getAsJsonArray();
+        for (JsonElement el : arr) {
+            JsonObject obj = el.getAsJsonObject();
+            if (obj.has("pull_request")) continue; // PRs ride the issues endpoint
+            String text = obj.has("body") && !obj.get("body").isJsonNull()
+                ? obj.get("body").getAsString() : "";
+            issues.add(new OpenIssue(
+                obj.get("number").getAsInt(),
+                obj.get("title").getAsString(),
+                text));
+        }
+        return issues;
+    }
+
+    // ── H37 (#122, step 95): commit engravings for remote-only rooms ──
+    // Door plaques engrave the last 10 commits. Local rooms read real
+    // `git log -10` in RepoMapper; remote-only rooms (no local clone) need
+    // this /commits read — same 10-minute TTL cache pattern as the other
+    // read paths, empty list on API error (read path never blows up the caller).
+    private final java.util.Map<String, CacheEntry<List<String>>> commitCache =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Last 10 commit one-liners for a repo ("sha subject", newest first).
+     * Cached 10 minutes; an API error returns an empty list. Pure-parse
+     * companion below mirrors parseOpenIssues for selftest coverage.
+     */
+    public List<String> listRecentCommits(String repoName) throws IOException {
+        CacheEntry<List<String>> hit = commitCache.get(repoName);
+        if (hit != null && hit.fresh()) return hit.value;
+
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/commits?per_page=10")
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+
+        List<String> commits = new ArrayList<>();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return commits;
+            commits = parseRecentCommits(resp.body().string());
+        }
+        commitCache.put(repoName, new CacheEntry<>(commits));
+        return commits;
+    }
+
+    /** Pure parse of a GET /commits JSON array → "sha subject" one-liners (last 10). */
+    public static List<String> parseRecentCommits(String body) {
+        List<String> out = new ArrayList<>();
+        JsonArray arr = JsonParser.parseString(body).getAsJsonArray();
+        for (JsonElement el : arr) {
+            if (out.size() >= 10) break;
+            JsonObject obj = el.getAsJsonObject();
+            String sha = obj.get("sha").getAsString();
+            if (sha.length() > 7) sha = sha.substring(0, 7);
+            JsonObject ci = obj.getAsJsonObject("commit");
+            String msg = ci.get("message").getAsString();
+            int nl = msg.indexOf('\n');
+            String subject = nl >= 0 ? msg.substring(0, nl) : msg;
+            out.add(sha + " " + subject);
+        }
+        return out;
+    }
+
     public boolean upsertFile(String repoName, String filePath, String content, String commitMessage, String sha) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("message", commitMessage);

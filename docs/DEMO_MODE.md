@@ -29,7 +29,7 @@ language, size, file list. Edit it to shape your own demo palace.
 The selftest + E2E already run headless; add `--demo` for a fully
 hermetic run (no GitHub rate limits on CI runners):
 
-    java -jar mindpalace-1.0.0.jar --selftest --demo
+    java -jar mindpalace-live.jar --selftest --demo
 
 ## Status
 

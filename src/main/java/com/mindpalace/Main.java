@@ -25,10 +25,15 @@ public class Main {
                 engine.setSelfTest();
             } else if (args[i].equals("--demo")) {
                 engine.setDemo();
+            } else if (args[i].equals("--orbit") && i + 1 < args.length) {
+                engine.setOrbit(args[i + 1]);
             } else if (args[i].equals("--stress") && i + 1 < args.length) {
                 engine.setStress(Integer.parseInt(args[i + 1]));
             }
         }
+        // STEP 94v7: --time N pins the WHOLE world hour (sky/water/moon/stars)
+        // for reproducible night/dusk QA captures; default = real clock.
+        com.mindpalace.world.TimeClock.parseArg(args);
         engine.run();
     }
 }

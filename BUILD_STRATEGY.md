@@ -13,7 +13,9 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
   org.codehaus.plexus.classworlds.launcher.Launcher clean package
 ```
 
-Output: `target/mindpalace-1.0.0.jar` (~21 MB, shaded with LWJGL natives).
+Output: `target/mindpalace-<version>.jar` (~21 MB, shaded with LWJGL natives) —
+version moves (1.0.0 → 1.1.0-beta1), so resolve by glob:
+`JAR="$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)"`.
 
 **Jar lock rule:** the running game holds the jar. Before rebuild, kill java:
 ```bash
@@ -23,13 +25,18 @@ wmic process where "name='java.exe'" get processid | grep -E "[0-9]" | while rea
 ## Self-test (the canonical gate)
 
 ```bash
-"$JAVA_HOME/bin/java" -jar target/mindpalace-1.0.0.jar --selftest
+JAR="$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)"
+"$JAVA_HOME/bin/java" -jar "$JAR" --selftest
 ```
 
-13 checks: world build, book raycast, teleporter pads, agents, crystals, KG,
+54 checks (run-report; the source organizes them under 49 numbered sections):
+world build, book raycast, teleporter pads, agents, crystals, KG,
 font, editor-open, teleporter destinations, ESC menu, bloom, map toggle,
-immediate chat. Exit 0 = green. **This is the source of truth** — the system
-verification tracker is stale (replays a deleted `hermes-verify-raycast.py`).
+immediate chat — and more covering mouse turn radius, room personality,
+solve loop, DePIN economy, model shops, genetics/evolution, telemetry,
+quorum tie-breaker, TimeMachine, layout determinism, spawn validation, H-series
+(H04/H21/H24/H25/H28/H30/H31). Exit 0 = green. **Count lives in GameEngine.runSelfTest()** —
+this file quotes it, not the other way round.
 
 ## Bloom testing (the hard-won procedure)
 
@@ -64,8 +71,8 @@ TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | \
 # delete the existing asset, then:
 curl -s -X POST -H "Authorization: token $TOKEN" \
   -H "Content-Type: application/java-archive" \
-  --data-binary "@target/mindpalace-1.0.0.jar" \
-  "https://uploads.github.com/repos/chrisalunlloyd2-sudo/mindpalace/releases/372054705/assets?name=mindpalace-1.0.0.jar"
+  --data-binary "@$BUILD_JAR" \
+  "https://uploads.github.com/repos/chrisalunlloyd2-sudo/mindpalace/releases/$RELEASE_ID/assets?name=$(basename "$BUILD_JAR")"
 ```
 
 GitHub rejects duplicate asset names (HTTP 422) — delete the old asset first.

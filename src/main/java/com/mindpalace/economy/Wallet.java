@@ -1,7 +1,7 @@
 package com.mindpalace.economy;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Wallet — a DePIN participant's balance + transaction ledger.
@@ -14,39 +14,61 @@ import java.util.List;
  */
 public class Wallet {
     private final String owner;
-    private double balance;
-    private final List<String> ledger = new ArrayList<>();
+    private final EconomyLedger ledger;
+    private final String accountId;
 
     public Wallet(String owner, double initial) {
+        this(owner, initial, new EconomyLedger());
+    }
+
+    Wallet(String owner, double initial, EconomyLedger ledger) {
+        if (owner == null || owner.trim().isEmpty()) {
+            throw new IllegalArgumentException("Wallet owner must not be blank");
+        }
         this.owner = owner;
-        this.balance = initial;
-        ledger.add("GENESIS +" + fmt(initial) + " -> " + owner);
+        this.ledger = ledger;
+        this.accountId = "wallet:" + owner;
+        ledger.openAccount(accountId, initial, "Wallet opened for " + owner);
     }
 
     public String getOwner() { return owner; }
-    public double getBalance() { return balance; }
+    public double getBalance() { return ledger.balance(accountId); }
 
     /** Earn credits for completed work. Returns true on success. */
-    public synchronized boolean earn(double amount, String reason) {
-        if (amount <= 0) return false;
-        balance += amount;
-        ledger.add("+" + fmt(amount) + " " + reason);
-        return true;
+    public boolean earn(double amount, String reason) {
+        return ledger.credit(accountId, amount, reason, null);
     }
 
     /** Spend credits. Fails (returns false) if funds are insufficient. */
-    public synchronized boolean spend(double amount, String reason) {
-        if (amount <= 0 || amount > balance) return false;
-        balance -= amount;
-        ledger.add("-" + fmt(amount) + " " + reason);
-        return true;
+    public boolean spend(double amount, String reason) {
+        return ledger.debit(accountId, amount, reason, null);
     }
 
     /** Whether the wallet can afford `amount`. */
-    public synchronized boolean canAfford(double amount) { return amount >= 0 && balance >= amount; }
+    public boolean canAfford(double amount) {
+        long cents = EconomyLedger.toCents(amount);
+        return cents >= 0 && getBalance() >= cents / 100.0;
+    }
 
-    public synchronized List<String> getLedger() { return new ArrayList<>(ledger); }
-    public synchronized int transactionCount() { return ledger.size(); }
+    public List<String> getLedger() {
+        List<String> history = new java.util.ArrayList<>();
+        for (EconomyLedger.Entry entry : ledger.entriesFor(accountId)) {
+            boolean incoming = accountId.equals(entry.to);
+            String sign = incoming ? "+" : "-";
+            if (entry.type == EconomyLedger.Type.GENESIS) {
+                history.add("GENESIS +" + fmt(entry.amount) + " -> " + owner);
+            } else {
+                history.add(sign + fmt(entry.amount) + " " + entry.reason);
+            }
+        }
+        return history;
+    }
 
-    private static String fmt(double v) { return String.format("%.2f", v); }
+    public int transactionCount() {
+        return ledger.entriesFor(accountId).size();
+    }
+
+    String accountId() { return accountId; }
+
+    private static String fmt(double v) { return String.format(Locale.ROOT, "%.2f", v); }
 }

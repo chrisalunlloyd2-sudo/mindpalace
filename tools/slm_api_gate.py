@@ -40,6 +40,10 @@ DEFAULT_ALLOW = {
 
 
 def gen(prompt: str, n: int = 80, timeout: int = 90) -> str:
+    """Gen.
+
+    Args: prompt, n, timeout.
+    """
     body = json.dumps({
         "model": MODEL, "prompt": prompt, "stream": False,
         "keep_alive": KEEP_ALIVE,
@@ -87,6 +91,10 @@ def verify_block(code: str, allow: set) -> dict:
 
 
 def main(argv):
+    """Main.
+
+    Args: argv.
+    """
     args = [a for a in argv if not a.startswith("--")]
     extra = set()
     for i, a in enumerate(argv):

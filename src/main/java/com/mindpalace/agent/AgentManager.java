@@ -3,6 +3,7 @@ package com.mindpalace.agent;
 import com.google.gson.*;
 import com.mindpalace.agent.sims.*;
 import com.mindpalace.integration.*;
+import com.mindpalace.agent.sprites.SpriteProposalService;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.LegacyRepoClassifier;
@@ -32,6 +33,21 @@ public class AgentManager {
         if (dir == null || dir.isEmpty()) dir = System.getProperty("mindpalace.repos", "C:/Users/viper/AIGEN_SYS/repos");
         return Paths.get(dir);
     }
+
+    /**
+     * ASCII-safe target name for quorum proposals and telemetry details
+     * (t_740fa7c6). When no room is in focus, the old literal "?" leaked into
+     * every proposal ("Act on ?"), every telemetry record, and every spawned
+     * TASK file — 4291 APPROVED + 1215 REJECTED ledger rows, 100% "Act on ?".
+     * Returns the repo name when known, an explicit world-wide fallback when
+     * not. Pure ASCII so it survives cp1252 consoles and telemetry round-trips.
+     */
+    public static String proposalTargetName(Room room) {
+        if (room != null && room.getRepoName() != null && !room.getRepoName().isBlank()) {
+            return room.getRepoName();
+        }
+        return "[no room in focus - world-wide check]";
+    }
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private final Gson gson = new Gson();
     private final ModelScheduler modelScheduler;  // serializes ALL model calls
@@ -46,11 +62,13 @@ public class AgentManager {
     private final ModelLifespan criticLifespan;
     private final ModelLifespan chatLifespan;   // direct conversational thread
 
-    // Current context
-    private Room currentRoom;
-    private Book currentBook;
-    private String lastUserMessage;
-    private final Set<String> discoveredRepos = new HashSet<>();
+    // Current context — written by the game thread, read from agent/drain
+    // threads: volatile scalars + concurrent collections (#106).
+    private volatile Room currentRoom;
+    private volatile Book currentBook;
+    private volatile String lastUserMessage;
+    /** Concurrent: written by the game thread (setContext), read/copied by agent threads (#106). */
+    private final Set<String> discoveredRepos = ConcurrentHashMap.newKeySet();
 
     // Tool execution — the missing half of the tool loop. The tool agent can now
     // actually read/edit/create/delete files in the current room's repo via the
@@ -102,8 +120,9 @@ public class AgentManager {
     //     → dominant topics → quorum proposals → FOW-gated vote
     //     → APPROVED topics → scan non-legacy repos for matching TODO/FIXME
     //     → spawn/activate TODO crystals → tool agent solves (quorum-gated)
-    private final List<String> approvedTopics = new ArrayList<>();  // topics the quorum approved
-    private long lastLexicalScan = 0;                                // throttle chat-log reads
+    /** Copy-on-write: agent thread writes, game thread reads via getApprovedTopics (#106). */
+    private final List<String> approvedTopics = new CopyOnWriteArrayList<>();  // topics the quorum approved
+    private volatile long lastLexicalScan = 0;                                // throttle chat-log reads
     private static final long LEXICAL_SCAN_MS = 60_000;              // re-scan chat logs every 60s
     private static final Path CHAT_LOG_DIR = Paths.get("chat_logs");
 
@@ -113,13 +132,14 @@ public class AgentManager {
     private Consumer<String> onConsoleLog;
     private Consumer<List<Issue>> onIssues;   // fired when the lexical bridge finds issues
 
-    // State
-    private boolean running;
-    private boolean available;
-    private long lastAutoCycle;
+    // State — read from agent/drain threads while the game thread writes (#106).
+    private volatile boolean running;
+    private volatile boolean available;
+    private volatile long lastAutoCycle;
     // TASK_0128 redo: -Dmindpalace.cycleMs=N speeds the autonomous cycle for
     // data collection (e.g. 30000 = 5 cycles/min). Live default stays 5 min.
     private static final long CYCLE_MS = Long.getLong("mindpalace.cycleMs", 5 * 60 * 1000L);
+    private SpriteProposalService spriteProposalService;
 
     // Tool definitions for the tool-calling agent
     private static final List<JsonObject> TOOLS = buildTools();
@@ -145,6 +165,22 @@ public class AgentManager {
         // FOW/quorum/LoRA populated even with no Ollama daemon reachable
         // (CI has none). Wiring must not depend on a live HTTP probe.
         initSimsParity();
+
+        // MP-051 sprites are opt-in and only read the local KG. Their output is
+        // appended to a separate review queue; no proposal is executed here.
+        if (!selfTest) {
+            spriteProposalService = SpriteProposalService.fromSystemProperties();
+            if (spriteProposalService.isEnabled()) {
+                scheduler.scheduleWithFixedDelay(() -> {
+                    try {
+                        int count = spriteProposalService.collectProposals();
+                        if (count > 0) log("[Sprites] queued " + count + " read-only proposals");
+                    } catch (Exception ex) {
+                        log("[Sprites] KG proposal scan failed: " + ex.getMessage());
+                    }
+                }, 0, spriteProposalService.intervalSeconds(), TimeUnit.SECONDS);
+            }
+        }
 
         available = ollama.isAvailable();
         if (!available) {
@@ -199,9 +235,10 @@ public class AgentManager {
     public void setContext(Room room, Book book) {
         this.currentRoom = room;
         this.currentBook = book;
-        // Track discovery: when a fogged room is revealed, agents "discover" it
-        if (room != null && !discoveredRepos.contains(room.getRepoName())) {
-            discoveredRepos.add(room.getRepoName());
+        // Track discovery: when a fogged room is revealed, agents "discover" it.
+        // ConcurrentSet.add is atomic — replaces the contains→add check-then-act (#106).
+        // Null repo name guarded: ConcurrentHashMap key sets reject null (HashSet accepted it).
+        if (room != null && room.getRepoName() != null && discoveredRepos.add(room.getRepoName())) {
             log("[AgentManager] Discovered repo: " + room.getRepoName()
                 + (room.isFogged() ? " (fog lifted)" : ""));
         }
@@ -241,6 +278,9 @@ public class AgentManager {
         this.issueStream = stream;
     }
 
+    /** The add-only issue stream (read side wired by the engine; may be null). */
+    public com.mindpalace.github.GitHubIssueStream getIssueStream() { return issueStream; }
+
     // ── Telemetry ──────────────────────────────────────────────────────
 
     private com.mindpalace.backup.Telemetry telemetry;
@@ -248,11 +288,23 @@ public class AgentManager {
     /** Inject the unified telemetry ledger (append-only, paced). */
     public void setTelemetry(com.mindpalace.backup.Telemetry t) {
         this.telemetry = t;
+        // TASK_0132: wire quorum vote recording — one telemetry row per cast
+        // vote (real/strip/abstain/blind/sim vocabulary), null-safe so a game
+        // run without telemetry never breaks voting.
+        if (t != null && quorum != null) {
+            quorum.setVoteSink(rec -> t.record(com.mindpalace.backup.Telemetry.QUORUM,
+                "quorum_vote", rec.toDetail()));
+            com.mindpalace.agent.sims.QuorumTaskSpawner.setTelemetrySink(
+                (outcome, detail) -> t.record(com.mindpalace.backup.Telemetry.QUORUM,
+                    outcome, detail));
+        }
     }
 
     // ── Context kits (per-model wrapper: LoRA + KG + KV, never mixed) ──
 
-    private final Map<String, ContextKit> kits = new LinkedHashMap<>();
+    /** Concurrent: game thread (onUserChat→ctx), agent thread (solveOne), drain worker
+     *  (executeToolRound→ctx/kit) all race computeIfAbsent here (#106). */
+    private final Map<String, ContextKit> kits = new ConcurrentHashMap<>();
 
     /** The kit for a model — created on first use, persistent thereafter. */
     private ContextKit kit(String model) {
@@ -267,11 +319,13 @@ public class AgentManager {
     /** Render the riding context prefix for a model (LoRA+KG+KV in one line). */
     private String ctx(String model) {
         ContextKit k = kit(model);
-        // Refresh the KG neighborhood when a room is present.
-        if (currentRoom != null && knowledgeGraph != null) {
+        // Refresh the KG neighborhood when a room is present. Room snapshotted
+        // once: a mid-call room change must not misattribute the neighborhood (#106).
+        Room room = currentRoom;
+        if (room != null && knowledgeGraph != null) {
             List<String> nodes = new ArrayList<>();
-            for (Room nb : knowledgeGraph.neighbors(currentRoom)) nodes.add(nb.getRepoName());
-            nodes.add(currentRoom.getRepoName());
+            for (Room nb : knowledgeGraph.neighbors(room)) nodes.add(nb.getRepoName());
+            nodes.add(room.getRepoName());
             k.setKgNodes(nodes);
         }
         return k.render();
@@ -291,9 +345,10 @@ public class AgentManager {
      * closed, edited, or deleted. Returns the number of issues raised.
      */
     public int raiseApprovedTopics() {
+        Room room = currentRoom; // snapshot once per call (#106)
         if (issueStream == null || approvedTopics.isEmpty()) return 0;
-        if (currentRoom == null) return 0;
-        String repo = currentRoom.getRepoName();
+        if (room == null) return 0;
+        String repo = room.getRepoName();
         int raised = 0;
         for (String topic : approvedTopics) {
             int n = issueStream.raise(repo,
@@ -346,11 +401,11 @@ public class AgentManager {
             return;
         }
 
-        log("[AgentManager] Auto-cycle — agents discussing " + (currentRoom != null ? currentRoom.getRepoName() : "?"));
+        log("[AgentManager] Auto-cycle — agents discussing " + proposalTargetName(currentRoom));
 
         // Telemetry: record the cycle itself (paced, append-only).
         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.AGENT,
-            "cycle", currentRoom != null ? currentRoom.getRepoName() : "?");
+            "cycle", proposalTargetName(currentRoom));
 
         // Route the tool agent's model by task complexity (SIMS1337 ModelRouter).
         Complexity cx = Complexity.estimate(context);
@@ -381,7 +436,7 @@ public class AgentManager {
             log("[AgentManager] critic skipped — no tool actions to review this cycle");
         } else {
             String criticPrompt = ctx(CRITIC_MODEL)
-                + "\nThe tool agent just did, in room " + (currentRoom != null ? currentRoom.getRepoName() : "?")
+                + "\nThe tool agent just did, in room " + proposalTargetName(currentRoom)
                 + ":\n" + actions
                 + "\nEvaluate these CONCRETE actions. Name the files touched. "
                 + "Is the result correct for the language? Should we proceed, "
@@ -440,16 +495,39 @@ public class AgentManager {
     private void runQuorumVote(String context) {
         try {
             String id = "cycle-" + System.currentTimeMillis();
-            String type = proposalRotator.next(); // TASK_0128: rotate through 5 proposal types
-            String text = "Act on " + (currentRoom != null ? currentRoom.getRepoName() : "?");
-            quorum.registerProposal(id, text, new HexCoord(0, 0), type);
+            // t_740fa7c6: null-room fallback must be ASCII-plain. The old "Act on ?"
+            // string was written into ALL 4291 telemetry APPROVED rows — a "?" is
+            // indistinguishable from a mojibake glyph and hides which repo (or none)
+            // the cycle targeted.
+            // TASK_0128 redo: rotate through the 5 proposal types so the ledger
+            // accrues per-type data instead of 100% system_health_check.
+            String text = "Act on " + proposalTargetName(currentRoom);
+            quorum.registerProposal(id, text, new HexCoord(0, 0), proposalRotator.next());
+            // t_948a71be: real-work overlay — register the actual backlog
+            // (kanban ready/triage cards, hermes-queue issues, failing checks)
+            // BEFORE the voting round so the same model pass votes on all of
+            // them and handleRealWorkVerdicts applies each result. Kept in a
+            // finally so the source never survives a failed cycle in a
+            // half-applied state.
+            java.util.List<com.mindpalace.agent.sims.QuorumProposalSource.RealWorkProposal> realWork = null;
+            try {
+                realWork = realWorkSource.gather();
+                for (var rw : realWork) {
+                    quorum.registerProposal(rw.proposalId(), rw.voteText(),
+                        new HexCoord(0, 0), rw.proposalType());
+                }
+            } catch (Exception e) {
+                log("[AgentManager] real-work gather failed (synthetic cycle still ran): " + e.getMessage());
+                realWork = null;
+            }
             quorum.advanceTimePulse(0.1);
             quorum.actualVoteAll(modelScheduler);
             WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
             if (r != null) {
                 log("[AgentManager] quorum: " + r);
+                String voteQuality = com.mindpalace.agent.sims.VoteQualityLedger.summarize(r.voteOutcomes);
                 if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.QUORUM,
-                    r.status, text);
+                    r.status, text + " | " + voteQuality);
                 // TASK_0128 redo: ledger EVERY cycle (any outcome) so the
                 // diversity report can measure per-type approval rates.
                 // APPROVED cycles are logged by QuorumTaskSpawner itself
@@ -469,15 +547,64 @@ public class AgentManager {
                 if ("APPROVED".equals(r.status)) {
                     try {
                         com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r);
+                        log("[AgentManager] TASK spawn handled: " + r.proposalId);
                     } catch (Exception e) {
-                        log("[AgentManager] TASK spawn failed: " + e.getMessage());
+                        log("[AgentManager] TASK spawn FAILED: " + e);
                     }
                 }
             }
+            // t_948a71be: apply each real-work verdict (promote / comment /
+            // create-triage) — the synthetic cycle's own handling above is
+            // unaffected ("never delete, only merge").
+            if (realWork != null && !realWork.isEmpty()) {
+                try {
+                    handleRealWorkVerdicts(realWork);
+                } catch (Exception e) {
+                    log("[AgentManager] real-work verdict application failed: " + e.getMessage());
+                }
+            }
+            // t_948a71be: unconditional post-verdict sweep — also clears the
+            // synthetic cycle-<ts> proposal when gather() returned empty
+            // (otherwise dead synthetic ids pile up cycle over cycle).
+            quorum.finishCycle();
         } catch (Exception e) {
             log("[AgentManager] quorum error: " + e.getMessage());
         }
     }
+
+    /**
+     * t_948a71be: calculate + apply a verdict per real-work proposal.
+     * Voting happened in the shared actualVoteAll round above; this only
+     * reads the results. The source's applyVerdict promotes approved
+     * kanban cards, comments on rejected ones, and parks approved public
+     * items in triage — never past it (Architect sign-off doctrine).
+     */
+    private void handleRealWorkVerdicts(
+            java.util.List<com.mindpalace.agent.sims.QuorumProposalSource.RealWorkProposal> realWork) {
+        for (var rw : realWork) {
+            WeightedQuorumVote.QuorumResult wr;
+            try {
+                wr = quorum.calculateQuorum(rw.proposalId());
+            } catch (Exception e) {
+                log("[AgentManager] real-work quorum calc failed for " + rw.sourceId + ": " + e.getMessage());
+                continue;
+            }
+            if (wr == null) continue;
+            log("[AgentManager] real-work quorum: " + wr);
+            if (telemetry != null) {
+                telemetry.record(com.mindpalace.backup.Telemetry.QUORUM, wr.status, rw.voteText());
+            }
+            try {
+                realWorkSource.applyVerdict(wr, rw);
+            } catch (Exception e) {
+                log("[AgentManager] real-work verdict failed for " + rw.sourceId + ": " + e.getMessage());
+            }
+        }
+    }
+
+    /** t_948a71be: source of real-work proposals (kanban + issues + checks). */
+    private final com.mindpalace.agent.sims.QuorumProposalSource realWorkSource =
+        new com.mindpalace.agent.sims.QuorumProposalSource();
 
     /** H21: game-side hook for quorum verdicts (set by GameEngine). */
     public void setQuorumVerdictCallback(java.util.function.Consumer<String> cb) {
@@ -720,7 +847,7 @@ public class AgentManager {
     }
 
     /** The topics the quorum has approved (for telemetry + self-test). */
-    public List<String> getApprovedTopics() { return approvedTopics; }
+    public List<String> getApprovedTopics() { return new ArrayList<>(approvedTopics); }
 
     // ── Solve loop ─────────────────────────────────────────────────────
 
@@ -823,14 +950,28 @@ public class AgentManager {
         modelScheduler.submitToolRound(() -> executeToolRound(context));
     }
 
+    /** Model for a tool round: the routed model when Ollama reports tool support, else TOOL_MODEL (#144). */
+    private String toolRoundModel() {
+        String m = routedModel;
+        if (ollama.supportsTools(m)) return m;
+        log("[AgentManager] " + m + " has no native tool calling; tool round uses " + TOOL_MODEL + " (#144)");
+        return TOOL_MODEL;
+    }
+
     /** One tool round-trip: model → tool_calls → execute → feed back → final text. */
     private void executeToolRound(String context) {
         try {
+            // #144: the router picks by complexity, but tiers like tinyllama/phi/phi3 have no
+            // native tool calling and would silently no-op. Tool rounds use a model that
+            // Ollama reports as tool-capable (the routed one if it is, else TOOL_MODEL).
+            final String toolModel = toolRoundModel();
             List<Map<String, String>> msgs = new ArrayList<>();
-            msgs.add(Map.of("role", "system", "content", ctx(routedModel) + "\n" + TOOL_SYSTEM_PROMPT));
+            // Static instructions FIRST, the per-turn context line LAST: Ollama reuses work on an unchanged
+            // prompt prefix, and this order measured 13.2 s -> 2.7 s prompt eval per call (llama3.2:1b, 363 tokens).
+            msgs.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT + "\n" + ctx(toolModel)));
             msgs.add(Map.of("role", "user", "content", context + "\n\nTake ONE concrete action using your tools."));
 
-            OllamaClient.ToolResult tr = ollama.chatWithTools(routedModel, msgs, TOOLS);
+            OllamaClient.ToolResult tr = ollama.chatWithTools(toolModel, msgs, TOOLS);
             if (tr == null || tr.toolCalls.isEmpty()) {
                 if (tr != null && tr.content != null && !tr.content.isEmpty()) {
                     emit(onToolMessage, "[Tool] " + tr.content);
@@ -880,7 +1021,7 @@ public class AgentManager {
             feedback.add(Map.of("role", "user", "content",
                 "You just took the actions shown above. In ONE line: what did you "
                 + "learn from the results, and what is the next concrete step?"));
-            OllamaClient.ToolResult sr = ollama.chatWithTools(routedModel, feedback, List.<com.google.gson.JsonObject>of());
+            OllamaClient.ToolResult sr = ollama.chatWithTools(toolModel, feedback, List.<com.google.gson.JsonObject>of());
             if (sr != null && sr.content != null && !sr.content.isEmpty()) {
                 emit(onToolMessage, "[Tool] " + sr.content);
             }
@@ -911,8 +1052,11 @@ public class AgentManager {
 
     /** Execute a single tool call against the current room's repo. */
     private String executeTool(OllamaClient.ToolCall call) {
-        if (currentRoom == null) return "no room context";
-        String repo = currentRoom.getRepoName();
+        // Single read: currentRoom changing mid-call must not misattribute a
+        // file op to the wrong repo (the issue's double-read race, #106).
+        Room room = currentRoom;
+        if (room == null) return "no room context";
+        String repo = room.getRepoName();
         try {
             JsonObject args = gson.fromJson(call.arguments, JsonObject.class);
             String filename = args.has("filename") ? args.get("filename").getAsString() : null;
@@ -926,8 +1070,9 @@ public class AgentManager {
                         return content != null ? truncateHeadTail(filename, content) : "read failed";
                     }
                     // Local fallback
-                    if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Path fp = java.nio.file.Path.of(currentRoom.getLocalPath(), filename);
+                    if (room.getLocalPath() != null) {
+                        java.nio.file.Path fp = jailedLocalPath(room, filename);
+                        if (fp == null) return "path escapes repo: " + filename;
                         if (java.nio.file.Files.exists(fp)) {
                             String c = java.nio.file.Files.readString(fp);
                             if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "read", filename);
@@ -948,7 +1093,7 @@ public class AgentManager {
                     String finalContent = content;
                     if (oldStr != null && !oldStr.isEmpty()) {
                         String newStr = args.has("new_string") ? args.get("new_string").getAsString() : "";
-                        String current = readCurrentFile(repo, filename);
+                        String current = readCurrentFile(room, repo, filename);
                         if (current == null) return "edit failed (cannot read current " + filename + ")";
                         if (!current.contains(oldStr))
                             return "edit failed: old_string not found in " + filename
@@ -971,8 +1116,10 @@ public class AgentManager {
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
                         return ok ? "edited " + filename : "edit failed";
                     }
-                    if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), finalContent);
+                    if (room.getLocalPath() != null) {
+                        java.nio.file.Path fp = jailedLocalPath(room, filename);
+                        if (fp == null) return "path escapes repo: " + filename;
+                        java.nio.file.Files.writeString(fp, finalContent);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
                         return "edited " + filename + " (local)";
                     }
@@ -988,8 +1135,10 @@ public class AgentManager {
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename);
                         return ok ? "created " + filename : "create failed";
                     }
-                    if (currentRoom.getLocalPath() != null) {
-                        java.nio.file.Files.writeString(java.nio.file.Path.of(currentRoom.getLocalPath(), filename), content);
+                    if (room.getLocalPath() != null) {
+                        java.nio.file.Path fp = jailedLocalPath(room, filename);
+                        if (fp == null) return "path escapes repo: " + filename;
+                        java.nio.file.Files.writeString(fp, content);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename);
                         return "created " + filename + " (local)";
                     }
@@ -1001,8 +1150,10 @@ public class AgentManager {
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
                         return ok ? "deleted " + filename : "delete failed";
                     }
-                    if (currentRoom.getLocalPath() != null) {
-                        boolean ok = java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(currentRoom.getLocalPath(), filename));
+                    if (room.getLocalPath() != null) {
+                        java.nio.file.Path fp = jailedLocalPath(room, filename);
+                        if (fp == null) return "path escapes repo: " + filename;
+                        boolean ok = java.nio.file.Files.deleteIfExists(fp);
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
                         return ok ? "deleted " + filename + " (local)" : "delete failed (no such file)";
                     }
@@ -1064,9 +1215,10 @@ public class AgentManager {
         return false;
     }
 
-    private final java.util.Set<String> rephraseAttempts = java.util.Collections.newSetFromMap(new java.util.LinkedHashMap<>() {
+    /** Synchronized: drain worker + userWorker (chat model) both emit concurrently (#106). */
+    private final java.util.Set<String> rephraseAttempts = java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.LinkedHashMap<>() {
         protected boolean removeEldestEntry(java.util.Map.Entry<String, Boolean> e) { return size() > 24; }
-    });
+    }));
 
     private void emit(Consumer<String> cb, String msg) {
         if (cb == null) return;
@@ -1100,17 +1252,35 @@ public class AgentManager {
 
     // ── Tool definitions ──
 
+    /**
+     * CARD-Q1 F9 (path jail): resolve a model-supplied filename against the
+     * current room's local checkout, refusing escapes. Mirrors ToolExecutor's
+     * invariant: normalize() must stay inside the repo root; absolute paths
+     * and {@code ../} traversals are rejected. Returns null when the filename
+     * escapes (caller reports and refuses the operation).
+     */
+    private java.nio.file.Path jailedLocalPath(Room room, String filename) {
+        if (filename == null || room == null || room.getLocalPath() == null) return null;
+        try {
+            java.nio.file.Path root = java.nio.file.Path.of(room.getLocalPath()).toAbsolutePath().normalize();
+            java.nio.file.Path p = root.resolve(filename).normalize();
+            return p.startsWith(root) ? p : null;
+        } catch (Exception e) {
+            return null; // invalid path (e.g. absolute with wrong root)
+        }
+    }
+
     /** H05: fetch current file content (github first, then local) for patch edits. */
-    private String readCurrentFile(String repo, String filename) {
+    private String readCurrentFile(Room room, String repo, String filename) {
         if (github != null && github.isAuthenticated()) {
             try {
                 return github.fetchFileContent(repo, filename);
             } catch (Exception ignored) { }
         }
-        if (currentRoom != null && currentRoom.getLocalPath() != null) {
+        if (room != null && room.getLocalPath() != null) {
             try {
-                java.nio.file.Path fp = java.nio.file.Path.of(currentRoom.getLocalPath(), filename);
-                if (java.nio.file.Files.exists(fp)) return java.nio.file.Files.readString(fp);
+                java.nio.file.Path fp = jailedLocalPath(room, filename);
+                if (fp != null && java.nio.file.Files.exists(fp)) return java.nio.file.Files.readString(fp);
             } catch (Exception ignored) { }
         }
         return null;
@@ -1294,7 +1464,7 @@ public class AgentManager {
                 } catch (Exception e) {
                     log("[Reddit] ERROR starting bridge: " + e.getMessage());
                 }
-            });
+            }, state);
             oauthServer.start();
             String authUrl = redditClient.getAuthorizationUrl(state);
             log("[Reddit] OAuth initialized. Visit this URL to authorize:");
@@ -1329,6 +1499,56 @@ public class AgentManager {
         } catch (Exception e) {
             log("[GitHub] ERROR initializing bridge: " + e.getMessage());
         }
+    }
+
+    /**
+     * #145: the single startup path for the Reddit and GitHub bridges. Both are OFF
+     * unless explicitly enabled AND credentialed through the environment, because
+     * they feed public-sourced input (GitHub issues -> TASK files, Reddit -> quorum)
+     * and the public-feedback gate needs the Architect's sign-off first. Secrets are
+     * only ever read from env and never logged. The caller (GameEngine) invokes it once at startup.
+     *
+     * GitHub: MP_ENABLE_GITHUB_BRIDGE=1, MP_GITHUB_BRIDGE_REPO=owner/name, MP_GITHUB_BRIDGE_TOKEN
+     * Reddit: MP_ENABLE_REDDIT_BRIDGE=1, MP_REDDIT_CLIENT_ID, MP_REDDIT_CLIENT_SECRET, MP_REDDIT_SUBREDDIT
+     *
+     * @param env environment lookup (System::getenv in production, a stub in tests)
+     * @return one-line status, e.g. "github=skipped(disabled) reddit=skipped(disabled)"
+     */
+    public String startBridgesIfConfigured(java.util.function.Function<String, String> env) {
+        StringBuilder status = new StringBuilder();
+
+        String gh;
+        if (!"1".equals(env.apply("MP_ENABLE_GITHUB_BRIDGE"))) {
+            gh = "skipped(disabled)";
+        } else {
+            String repo = env.apply("MP_GITHUB_BRIDGE_REPO");
+            String token = env.apply("MP_GITHUB_BRIDGE_TOKEN");
+            if (repo == null || !repo.matches("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+") || token == null || token.isBlank()) {
+                gh = "skipped(enabled but repo/token missing or malformed)";
+            } else {
+                String[] p = repo.split("/", 2);
+                initGitHub(p[0], p[1], token);
+                gh = "started(" + repo + ")";
+            }
+        }
+        status.append("github=").append(gh);
+
+        String rd;
+        if (!"1".equals(env.apply("MP_ENABLE_REDDIT_BRIDGE"))) {
+            rd = "skipped(disabled)";
+        } else {
+            String id = env.apply("MP_REDDIT_CLIENT_ID");
+            String secret = env.apply("MP_REDDIT_CLIENT_SECRET");
+            String sub = env.apply("MP_REDDIT_SUBREDDIT");
+            if (id == null || id.isBlank() || secret == null || secret.isBlank() || sub == null || !sub.matches("[A-Za-z0-9_]{2,21}")) {
+                rd = "skipped(enabled but credentials/subreddit missing or malformed)";
+            } else {
+                rd = initReddit(id, secret, sub) != null ? "awaiting-authorization" : "failed";
+            }
+        }
+        status.append(" reddit=").append(rd);
+        log("[AgentManager] bridges: " + status);
+        return status.toString();
     }
 
     public GitHubPollBridge getGitHubBridge() { return githubBridge; }

@@ -29,15 +29,34 @@ system — the world is running right now, most hours of most days.
 5. **Perf budget**: target hardware is Intel HD 510 / GeForce 945M-class,
    OpenGL 3.3. Cheap adds only — material/color/text changes over new
    geometry or particle systems, unless a task says otherwise.
+6. **ONE game open at a time — the user's emphatic rule.** Before launching
+   the game (or any java/javaw), sweep every existing java process first
+   (`tasklist | grep -iE java`); kill strays with single-slash taskkill
+   (`taskkill /F /PID <pid>` — never `//F`). Never assume a cron script
+   guards this for you: 2026-09-30 two mindpalace-live.jar instances ran
+   side-by-side for hours because a launch skipped the sweep. After any
+   launch you perform, verify `tasklist` shows exactly ONE java process
+   before finishing the turn.
 
 ## Build & verify
 ```
 mvn clean compile              # compile check
-java -jar target/mindpalace-1.0.0.jar --selftest   # must report "0 failed"
+java -jar "$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)" --selftest   # must report "0 failed"
 bash e2e.sh                    # full build+selftest+waypoint-tour+screenshot verify
 ```
 `e2e.sh` and the game's own self-test are the real gate — a clean `mvn
 package` alone is not proof of anything working.
+
+## Release
+`scripts/release_phase.sh` is the H33/H33a release pipeline and supports
+three modes:
+```
+bash scripts/release_phase.sh --dry-run [VER]   # preview version/stamp edits only
+bash scripts/release_phase.sh --rehearse VER    # full release gates locally; reverts version edits
+bash scripts/release_phase.sh --cut VER         # rehearse + commit/tag/push + GitHub release
+```
+Use `--dry-run` first to confirm the target version update, `--rehearse` to
+prove the full pipeline is green without shipping, then `--cut` to publish.
 
 ## Module map (`src/main/java/com/mindpalace/`)
 - **engine/** — `GameEngine` (main loop, rendering, input dispatch),
@@ -75,7 +94,8 @@ package` alone is not proof of anything working.
   `AnimationSystem`.
 
 ## Where data lives
-- `mindpalace_memory/telemetry.db` — SQLite, table `events(id, ts, category,
+- `AIGEN_SYS/mindpalace_memory/telemetry.db` (i.e. `C:\Users\viper\AIGEN_SYS\mindpalace_memory\telemetry.db`,
+  NOT inside the repo) — SQLite, table `events(id, ts, category,`
   event, detail)`, categories: agent/quorum/depin/system. Append-only ledger.
 - `mindpalace_memory/memory.db`, `mindpalace_memory/evolution/` — GA archive
   (gen-N.json/.wav pairs), grows over time; not yet pruned.
@@ -103,9 +123,43 @@ else — including the models above that the game actually depends on. Fixed
 2026-09-01 to keep everything installed. If you ever touch that function
 again, keep the allowlist matching reality, not a guess.
 
-## Known race (mitigated, stay aware)
-`mindpalace-sync.sh` (no-agent, every 30 min) kills every `java.exe` before
-rebuilding. If your own session is mid-build/mid-selftest when that fires,
-you'll see a spurious "BUILD FAILED" that isn't your code's fault — commit
-what's good, and if a build fails for no reason you can find in your own
-diff, suspect this race before suspecting your code.
+## Known landmine: taskkill //flags (fixed 2026-09-30, stay aware)
+`taskkill //F //PID <pid>` DOES NOT WORK in this Git Bash — there is no
+MSYS-style `//`→`/` conversion here, so Windows receives literal `//F` and
+rejects it ("Invalid argument"), silently, whenever `2>/dev/null` swallows
+stderr. Consequence in `mindpalace-sync.sh`: the kill-before-rebuild loop
+never actually killed the game (a full 12:06 sync cycle left the old game
+running), and the pre-flight sweep never reaped stale javas. All kill sites
+now use single-slash `/F /PID` (commit 73f888a, proven: 12:12 cycle show
+`SUCCESS: terminated` before `clean package`). When adding Windows process
+management to a new script, use single-slash taskkill always.
+
+## Known race (fixed 2026-09-27, stay aware)
+`mindpalace-sync.sh` (no-agent, every 30 min) reaps stale java processes before
+rebuilding, but commit 7226a10 narrowed the sweep: only javas older than 30 min
+whose command line lacks 'mindpalace' get killed — and both the live game and
+your own build/selftest javas carry 'mindpalace' on their command line (repo
+path, jar name), so the live game and session work are never targets; this
+covers `java.exe` and `javaw.exe` alike. Hung selftests are bounded
+independently by `timeout 420` (step 5). The only reaping candidates left are
+javas >30 min with no 'mindpalace' in their command line (unrelated processes).
+Two more 2026-09-27 fixes in the same file: self-heal (step 1b) relaunches
+mindpalace-live.jar when the world is found dark — before the nothing-to-ship
+early exit, so the game never sits dark just because no new work shipped — and
+ONE-game enforcement (enforce_one_game) runs unconditionally on both relaunch
+and self-heal paths. If a build fails for no reason you can find in your own
+diff, suspect your diff, not this sweep.
+
+## Hermes Kanban worktree base regression (MP-044)
+Hermes owns `hermes_cli/kanban_db.py`; it is not part of this repository, and
+`hermes update` can replace edits made only in the installed copy. The regression
+is tracked upstream in [issue #86574](https://github.com/NousResearch/hermes-agent/issues/86574)
+and [PR #86611](https://github.com/NousResearch/hermes-agent/pull/86611), which
+was still open on 2026-10-04; the PR is the recovery source until it merges. The
+required invariant is that a newly created project worktree uses a freshly
+fetched remote default branch, not a stale local `HEAD`; retries reuse their
+existing branch unchanged, and repositories without an `origin` may fall back
+to `HEAD`. After a Hermes update, verify the upstream change is still present
+and run `tests/hermes_cli/test_kanban_worktree_isolation.py` in the Hermes
+checkout. Keep the durable fix in Hermes upstream rather than copying its
+database module into MindPalace.

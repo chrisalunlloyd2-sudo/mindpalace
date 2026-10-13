@@ -32,7 +32,7 @@ JVM = ["-Dprism.order=sw", "-Dprism.vsync=false",
 EXPECTED_LABELS = ["01_spawn_view", "02_rotor_rings", "03_turing_tape",
                    "04_banburismus_gauge", "05_main_hall", "06_room_doorway",
                    "07_todo_crystals", "08_hall_lookback", "09_agents",
-                   "10_portal_pad", "11_floor2_picker", "11_nash_fountain",
+                   "10_portal_pad", "11_floor2_picker", "12_nash_fountain",
                    "13_door_prompt", "14_plugboard", "15_forest_path",
                    "16_room_interior", "17_hall_windows"]
 # shots are written as NN_label_MM.png (waypoint + frame index)
@@ -144,7 +144,13 @@ def verify_shots(d):
 def run_selftest():
     jar = REPO / "mindpalace-live.jar"
     if not jar.exists():
-        jar = REPO / "target" / "mindpalace-1.0.0.jar"
+        # Version-proof glob: pom version moves (1.0.0 -> 1.1.0-beta1 -> ...)
+        # made the hardcoded mindpalace-1.0.0.jar fallback dead (jar-swap
+        # bug class cbb33ad).
+        built = sorted(p for p in (REPO / "target").glob("mindpalace-*.jar")
+                       if "original-" not in p.name and "-shaded" not in p.name)
+        if built:
+            jar = built[0]
     try:
         r = subprocess.run([JAVA, *JVM, "-jar", str(jar), "--selftest"],
                            capture_output=True, timeout=120, cwd=str(REPO))
@@ -175,8 +181,15 @@ def stress(n):
     console = REPO / "target" / f"stress-console.log"
     print(f"stress: launching {rounds} burst rounds (watching for exceptions)")
     try:
+        # Frozen-jar preference (standing launch rule): run the live copy
+        # when it exists; else resolve target/ by version-proof glob.
+        stress_jar = REPO / "mindpalace-live.jar"
+        if not stress_jar.exists():
+            built = sorted(p for p in (REPO / "target").glob("mindpalace-*.jar")
+                           if "original-" not in p.name and "-shaded" not in p.name)
+            stress_jar = built[0] if built else stress_jar
         r = subprocess.run(
-            [JAVA, *JVM, "-cp", str(REPO / "target" / "mindpalace-1.1.0-beta1.jar"),
+            [JAVA, *JVM, "-cp", str(stress_jar),
              "com.mindpalace.Main", "--demo", "--stress", str(rounds)],
             capture_output=True, timeout=300, cwd=str(REPO))
         blob = ((r.stdout or b"") + (r.stderr or b"")).decode("utf-8", errors="replace")
