@@ -41,6 +41,21 @@ public class WorldBuilder {
     private FogOfWar fogOfWar;
     private final OutsideWorld outsideWorld = new OutsideWorld();
 
+    /**
+     * t_0c1374b0: optional in-game clock pin for e2e determinism. Null = live
+     * wall clock (default). When set, every sky-phase / lighting decision
+     * (GameEngine sky dome, WorldBuilder celestial + hallway windows) honors
+     * the pin instead of java.time.LocalTime, so an evening tour renders the
+     * same daytime scenes the brightness thresholds were calibrated on.
+     */
+    private Integer clockPin = null;
+    public void setClockPin(Integer hour) { this.clockPin = hour; }
+    public boolean isClockPinned() { return clockPin != null; }
+    public int getPinHour() { return clockPin != null ? clockPin : 12; }
+    private int effectiveHour() {
+        return clockPin != null ? clockPin : java.time.LocalTime.now().getHour();
+    }
+
     // Lazily-loaded repo poster images (path -> GPU texture). Loaded on first
     // render of each room's poster; falls back to the diagram when absent.
     private final Map<String, Texture> posterTextures = new HashMap<>();
@@ -820,6 +835,10 @@ public class WorldBuilder {
     private void renderHallwayWindows(Renderer r, Vector3f s, Hallway hw, float wallX, int side) {
         float len = hw.getEnd().z - s.z;
         float dw = Room.DOOR_WIDTH, dh = Room.DOOR_HEIGHT;
+        // v7 TimeClock is the pin-aware choke point (--time N); t_0c1374b0's
+        // per-class clockPin/effectiveHour was folded into it (GameEngine
+        // still calls world.setClockPin/isClockPinned/getPinHour — pinned
+        // flag mirrors TimeClock's override).
         int hour = TimeClock.hour();
         boolean night = hour < 6 || hour >= 18;
         // midpoints between consecutive doors get one pane each

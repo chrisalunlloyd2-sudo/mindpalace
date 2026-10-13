@@ -21,6 +21,7 @@ import com.mindpalace.genetics.GeneticTimeline;
 import com.mindpalace.ui.HUD;
 import com.mindpalace.ui.BookEditor;
 import com.mindpalace.ui.DressingRoom;
+import com.mindpalace.ui.HudLayout;   // t_0c1374b0: HUD slot table (de-overlap)
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.github.GistWall;
 import com.mindpalace.audio.AudioEngine;
@@ -359,7 +360,13 @@ public class GameEngine {
         this.autodrive = true;
         this.screenshotDir = dir;
         this.e2eMode = true;
-        System.out.println("[E2E] enabled, waypoints + labeled shots -> " + dir);
+        // t_0c1374b0: pin the in-game clock to midday for the whole run.
+        // Brightness thresholds in e2e.sh were calibrated on daytime baselines;
+        // an evening tour renders night scenes (07_todo_crystals measured 1.0
+        // vs the 1.5 daytime baseline) and fails the verify spuriously.
+        this.timeOfDayPin = 12;
+        System.out.println("[E2E] enabled, waypoints + labeled shots -> " + dir
+            + " (clock pinned to 12:00 for deterministic brightness)");
     }
 
     /** STEP 94v5 white-catch: orbit the lake shore and capture wave/sparkle/
@@ -370,6 +377,9 @@ public class GameEngine {
         this.orbitMode = true;
         System.out.println("[ORBIT] enabled -> " + dir);
     }
+
+    /** t_0c1374b0: e2e clock pin (null = live wall clock), applied in init(). */
+    private Integer timeOfDayPin = null;
 
 /** Demo mode: fixture world, no GitHub auth, no network (step 112). */
     private boolean demoMode = false;
@@ -514,6 +524,9 @@ public class GameEngine {
 
         world = new WorldBuilder();
         world.setDemoMode(demoMode);
+        // t_0c1374b0: e2e pins the clock (setE2E ran during arg parsing,
+        // before init) so the whole tour renders midday lighting.
+        if (timeOfDayPin != null) world.setClockPin(timeOfDayPin);
         world.build();
 
         // t_b2e9bc3f: register the static building boxes NOW, not on the first
@@ -1897,8 +1910,11 @@ public class GameEngine {
         renderer.beginFrame(player.getCamera());
         com.mindpalace.render.GlTrace.mark("renderer.beginFrame");
         // Sky dome — full gradient sphere so the sky is never black, even
-        // looking straight up or sideways. Phase follows the real clock.
-        int hour = java.time.LocalTime.now().getHour();
+        // looking straight up or sideways. Phase follows the real clock,
+        // unless the e2e clock pin is set (t_0c1374b0: deterministic tour
+        // brightness regardless of wall-clock hour).
+        int hour = world.isClockPinned() ? world.getPinHour()
+            : java.time.LocalTime.now().getHour();
         int skyPhase = (hour < 6 || hour >= 20) ? 2 : (hour >= 18 ? 1 : 0);
         renderer.drawSkyDome(player.getCamera().getPosition(), skyPhase);
         com.mindpalace.render.GlTrace.mark("skyDome");
@@ -1981,6 +1997,7 @@ public class GameEngine {
                 renderTwoDTextPanel();
             }
         com.mindpalace.render.GlTrace.mark("world-text");
+        if (!hudSuppressed()) {
             renderScreenHUD();
             renderBookTooltip();
             renderBookHighlight();
@@ -1988,6 +2005,7 @@ public class GameEngine {
             renderGistWall();
             renderFactToast();
             renderTocToast();
+        }
         com.mindpalace.render.GlTrace.mark("hud+toasts");
         }
 
@@ -1999,7 +2017,7 @@ public class GameEngine {
             com.mindpalace.ui.InteractionPromptSystem.Prompt p =
                 promptSystem.select(player, world,
                     agentChat != null && agentChat.isTyping());
-            if (p != null) {
+            if (p != null && !hudSuppressed()) {
                 Camera cam = player.getCamera();
                 promptSystem.render(fontRenderer,
                     cam.getProjectionMatrix((float) width / height),
@@ -2036,13 +2054,13 @@ public class GameEngine {
         com.mindpalace.render.GlTrace.mark("menus+shop");
         if (state == GameState.MENU) renderMenu();
 
-        if (agentChat != null) {
+        if (agentChat != null && !hudSuppressed()) {
             agentChat.render(renderer, fontRenderer, player.getCamera(), width, height);
         }
 
         com.mindpalace.render.GlTrace.mark("menu+agentChat");
         // H32 (step 85): bot roster — always-on lifecycle board, top-right.
-        if (state != GameState.MENU) {
+        if (state != GameState.MENU && !hudSuppressed()) {
             renderBotBoard();
         }
 
@@ -2530,6 +2548,21 @@ public class GameEngine {
         }
     }
 
+    /** t_0c1374b0: while the teleport picker or the Tab map overlay is open,
+     *  every HUD slot is suppressed (HudLayout.suppressed) — the open menu is
+     *  the only affordance on screen. */
+    private boolean hudSuppressed() {
+        return HudLayout.suppressed(teleportMenu, showMap);
+    }
+
+    /** t_0c1374b0: the one HUD anchor — HudLayout slot space to world space. */
+    private Vector3f hudAnchor(HudLayout.Slot s) {
+        Camera cam = player.getCamera();
+        Vector3f front = cam.getFront();
+        Vector3f right = new Vector3f(front).cross(new Vector3f(0, 1, 0)).normalize();
+        return HudLayout.anchor(cam.getPosition(), front, right, cam.getUp(), s);
+    }
+
     private void renderScreenHUD() {
         Camera cam = player.getCamera();
         Matrix4f proj = cam.getProjectionMatrix((float) width / height);
@@ -2538,19 +2571,18 @@ public class GameEngine {
         Vector3f camFront = cam.getFront();
         Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        // HUD at bottom of view, 3m in front
-        Vector3f hudCenter = new Vector3f(camPos).add(
-            camFront.x * 3f - camRight.x * 0f,
-            camFront.y * 3f - 0.6f,
-            camFront.z * 3f - camRight.z * 0f);
+        // t_0c1374b0: hotkeys strip anchored via the HudLayout.HOTKEYS slot, at
+        // the strip's LEFT end so the 78-char line straddles screen center
+        // (left-anchored at slot x=0 it would exit the right frustum edge).
+        Vector3f hudCenter = hudAnchor(HudLayout.HOTKEYS)
+            .add(new Vector3f(camRight).mul(-HudLayout.HOTKEYS.w / 2f));
 
         String hotkeys = "WASD:Move  Mouse:Look  Enter:Door  Click:Book  Tab:Map  F4:2D  F8:FPS  ESC:Menu  F11:Fullscreen";
-        fontRenderer.renderBillboard(hotkeys, hudCenter, 0.06f,
+        fontRenderer.renderBillboardLeft(hotkeys, hudCenter, 0.06f,
             new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
 
-        // Room info at top
-        Vector3f hudTop = new Vector3f(camPos).add(
-            camFront.x * 3f, camFront.y * 3f + 0.5f, camFront.z * 3f);
+        // Room info at top (HudLayout.ROOM_INFO slot)
+        Vector3f hudTop = hudAnchor(HudLayout.ROOM_INFO);
         String roomInfo = player.getCurrentRoom() != null
             ? player.getCurrentRoom().getDisplayLabel()
             : "MindPalace — " + world.getRooms().size() + " rooms";
@@ -2562,18 +2594,14 @@ public class GameEngine {
         if (bloomRegionFade > 0f) {
             bloomRegionFade -= 0.008f; // ~2s at 60fps
             float a = Math.min(1f, Math.max(0f, bloomRegionFade));
-            Vector3f regionPos = new Vector3f(camPos).add(
-                camFront.x * 3f, camFront.y * 3f + 0.2f, camFront.z * 3f);
+            Vector3f regionPos = hudAnchor(HudLayout.REGION);
             fontRenderer.renderBillboard(bloomRegion.toUpperCase(), regionPos, 0.05f,
                 new Vector3f(0.4f * a, 0.8f * a, 1.0f * a), proj, view, camPos);
         }
 
         // Wallet balance (DePIN credits)
         if (depin != null) {
-            Vector3f walletPos = new Vector3f(camPos).add(
-                camFront.x * 3f - camRight.x * 0.5f,
-                camFront.y * 3f + 0.85f,
-                camFront.z * 3f - camRight.z * 0.5f);
+            Vector3f walletPos = hudAnchor(HudLayout.WALLET);
             double bal = depin.participant("player").wallet.getBalance();
             String walletLine = String.format("Credits: %.0f", bal);
             fontRenderer.renderBillboard(walletLine, walletPos, 0.05f,
@@ -2614,11 +2642,8 @@ public class GameEngine {
 
     private void renderMinimap(Camera cam, Matrix4f proj, Matrix4f view,
                                 Vector3f camPos, Vector3f camFront, Vector3f camRight) {
-        // Position minimap in top-right of view, 2.5m in front
-        Vector3f mapCenter = new Vector3f(camPos).add(
-            camFront.x * 2.5f + camRight.x * 1.2f,
-            camFront.y * 2.5f + 0.4f,
-            camFront.z * 2.5f + camRight.z * 1.2f);
+        // t_0c1374b0: HudLayout.MINIMAP slot (right column, below the roster).
+        Vector3f mapCenter = hudAnchor(HudLayout.MINIMAP);
 
         // Floor indicator
         int floor = player.getCurrentRoom() != null ? player.getCurrentRoom().getFloor() : 0;
@@ -2750,11 +2775,8 @@ public class GameEngine {
         Vector3f camFront = cam.getFront();
         Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        // Panel anchored to the left of the view, 2.5m out
-        Vector3f base = new Vector3f(camPos).add(
-            camFront.x * 2.5f - camRight.x * 1.4f,
-            camFront.y * 2.5f + 0.35f,
-            camFront.z * 2.5f - camRight.z * 1.4f);
+        // t_0c1374b0: HudLayout.TELEMETRY slot (left column, below the gist wall).
+        Vector3f base = hudAnchor(HudLayout.TELEMETRY);
 
         // Clock
         String clock = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
@@ -2797,14 +2819,13 @@ public class GameEngine {
         Vector3f camFront = cam.getFront();
         Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        // Anchored to the RIGHT of the view, 2.5m out (mirror of telemetry on left)
-        Vector3f base = new Vector3f(camPos).add(
-            camFront.x * 2.5f + camRight.x * 1.4f,
-            camFront.y * 2.5f + 0.55f,
-            camFront.z * 2.5f + camRight.z * 1.4f);
+        // t_0c1374b0: HudLayout.GIST_WALL slot (upper-left column).
+        Vector3f base = hudAnchor(HudLayout.GIST_WALL);
 
-        float step = 0.09f;
-        for (int i = 0; i < lines.size(); i++) {
+        float step = 0.08f;
+        // Cap at 9 lines so the wall never escapes its HudLayout rect (gate).
+        int shown = Math.min(lines.size(), 9);
+        for (int i = 0; i < shown; i++) {
             String line = lines.get(i);
             boolean header = line.startsWith("==");
             float size = header ? 0.055f : 0.045f;
@@ -3002,13 +3023,25 @@ public class GameEngine {
         Matrix4f view = cam.getViewMatrix();
         Vector3f camPos = cam.getPosition();
         Vector3f camFront = cam.getFront();
+        Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        Vector3f center = new Vector3f(camPos).add(
-            camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f);
+        // t_0c1374b0: HudLayout.TELEPORT slot — centered modal picker over a
+        // dim slab (2.3m, just behind the 2.5m text) so it reads over the world.
+        Vector3f camUp = cam.getUp();
+        renderer.beginFrame(cam);
+        Vector3f slab = HudLayout.anchor(camPos, camFront, camRight, camUp, HudLayout.TELEPORT)
+            .add(new Vector3f(camFront).mul(-0.20f));
+        renderer.drawCubeColor(slab, new Vector3f(3.60f, 1.70f, 0.05f),
+            0.02f, 0.02f, 0.05f);
+
+        Vector3f center = HudLayout.anchor(camPos, camFront, camRight, camUp, HudLayout.TELEPORT);
 
         int options = teleportLabels.size();
         float lineH = 0.12f;
-        float startY = center.y + (options * lineH) / 2f;
+        // Header ON the slot anchor, options descend below it — the whole
+        // picker stays inside the TELEPORT rect instead of overflowing the
+        // frame top (11 options x 0.12 centered used to hang above view top).
+        float startY = center.y - 0.20f;
 
         // Step 92f: teleport menu text is a HUD overlay, not world geometry —
         // it used renderBillboard (depth-tested) at a 2.5m world anchor, so a
@@ -3565,12 +3598,8 @@ public class GameEngine {
         Vector3f camFront = cam.getFront();
         Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
-        // Anchor: top-right of the view, 2.5m ahead (mirrors the chat feed's
-        // depth so both HUD panels read at the same focal plane).
-        Vector3f anchor = new Vector3f(camPos)
-            .add(camFront.x * 2.5f, camFront.y * 2.5f, camFront.z * 2.5f)
-            .add(camRight.x * 1.35f, camRight.y * 1.35f, camRight.z * 1.35f)
-            .add(0f, 0.95f, 0f);
+        // t_0c1374b0: HudLayout.BOT_ROSTER slot (upper-right column).
+        Vector3f anchor = hudAnchor(HudLayout.BOT_ROSTER);
 
         DePIN.Participant scoutWallet = depin != null ? depin.participant("Scout") : null;
         int line = 0;
@@ -3579,10 +3608,14 @@ public class GameEngine {
         // 2.5m-anchored text z-fights the wall band at the top of the frame
         // and vanishes (found in the step-85 e2e: ticks ran, zero pixels).
         fontRenderer.renderBillboardOverlay("── BOT ROSTER ──",
-            new Vector3f(anchor.x, anchor.y - line * 0.10f, anchor.z), 0.045f,
+            new Vector3f(anchor.x, anchor.y - line * 0.08f, anchor.z), 0.045f,
             new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
         line++;
+        // Cap at 7 bot lines: the BOT_ROSTER slot rect fits header + 7 rows
+        // at the 0.08 step (8 rows x 0.08 = 0.56 within the 0.59 slot height).
+        int rosterCap = 7;
         for (AgentNPC npc : npcs) {
+            if (line - 1 >= rosterCap) break;
             String l;
             Vector3f color = new Vector3f(0.8f, 0.8f, 0.8f);
             if (npc instanceof ScoutNPC scout) {
@@ -3597,7 +3630,7 @@ public class GameEngine {
                 l = String.format("%s  %s", npc.getName(), npc.getState());
             }
             fontRenderer.renderBillboardOverlay(l,
-                new Vector3f(anchor.x, anchor.y - line * 0.10f, anchor.z), 0.042f,
+                new Vector3f(anchor.x, anchor.y - line * 0.08f, anchor.z), 0.042f,
                 color, proj, view, camPos);
             line++;
         }
@@ -3689,6 +3722,117 @@ public class GameEngine {
         System.out.println("[E2E-FPS] " + label + " -> " + String.format("%.1f", avgFps)
             + " fps, worst frame " + String.format("%.1f", worst * 1000.0) + " ms over " + n
             + " real frames (target >=30, budget SUCCESS_METRICS.md step 78)");
+        // t_0c1374b0 e2e HUD gate: project the live slot rects through the
+        // REAL camera at the capture moment; e2e.sh greps the [E2E-HUD-GATE]
+        // lines and fails the verify when any visible pair overlaps.
+        e2eGateFailures += hudGateCheck(label);
+    }
+    /** t_0c1374b0: e2e HUD-gate failures summed over the whole tour. */
+    private int e2eGateFailures = 0;
+
+    /**
+     * t_0c1374b0 e2e HUD gate — project each PRIMARY slot's gate rect through
+     * the CURRENT camera into NDC and log one [E2E-HUD-GATE] line per run.
+     * Every slot's rect center must land inside the frame (OFFFRAME = fail);
+     * visible slots must stay pairwise-disjoint on screen (OVERLAP = fail).
+     * All rect corners lie on the constant-depth 2.5m plane, so the persp -
+     * ective scale is uniform and NDC AABB = exact projected rect.
+     * Returns the failure count for this check (0 = clean).
+     */
+    private int hudGateCheck(String label) {
+        int bad = 0;
+        Camera cam = player.getCamera();
+        Vector3f camPos = cam.getPosition();
+        Vector3f front = cam.getFront();
+        Vector3f right = new Vector3f(front).cross(new Vector3f(0, 1, 0)).normalize();
+        Vector3f up = cam.getUp();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        StringBuilder sb = new StringBuilder("[E2E-HUD-GATE] ").append(label).append(':');
+        if (hudSuppressed()) {
+            // Modal (teleport picker / Tab map) — primaries are hidden by
+            // design; only the modal slot must be in frame.
+            float[] t = HudLayout.rect(HudLayout.TELEPORT);
+            float[] c = projectSlotPoint(camPos, front, right, up, proj, view,
+                t[0] + t[2] / 2f, t[1] + t[3] / 2f);
+            boolean in = c != null && c[0] >= -1f && c[0] <= 1f && c[1] >= -1f && c[1] <= 1f;
+            sb.append(" HUD suppressed (modal) teleport=")
+              .append(in ? "in-frame" : "OFFFRAME").append(" (rect ")
+              .append(String.format("%.2f,%.2f %.2fx%.2f", t[0], t[1], t[2], t[3])).append(')');
+            System.out.println(sb);
+            return in ? 0 : 1;
+        }
+        HudLayout.Slot[] slots = { HudLayout.GIST_WALL, HudLayout.TELEMETRY,
+            HudLayout.CHAT, HudLayout.BOT_ROSTER, HudLayout.MINIMAP };
+        int n = slots.length;
+        float[][] ndcRect = new float[n][]; // per slot: minX, minY, maxX, maxY
+        boolean[] visible = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            float[] r = HudLayout.rect(slots[i]);
+            float[] c = projectSlotPoint(camPos, front, right, up, proj, view,
+                r[0] + r[2] / 2f, r[1] + r[3] / 2f);
+            visible[i] = c != null && c[0] >= -1f && c[0] <= 1f && c[1] >= -1f && c[1] <= 1f;
+            if (!visible[i]) {
+                sb.append(' ').append(slots[i].name).append("=OFFFRAME(")
+                  .append(c == null ? "degenerate"
+                      : String.format("%.2f,%.2f", c[0], c[1])).append(')');
+                bad++;
+                continue;
+            }
+            // Uniform scale across the plane — project the 4 corners exactly.
+            float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
+            float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+            for (int k = 0; k < 4; k++) {
+                float[] pc = projectSlotPoint(camPos, front, right, up, proj, view,
+                    r[0] + (k % 2) * r[2], r[1] + (k / 2) * r[3]);
+                float px = pc != null ? pc[0] : c[0], py = pc != null ? pc[1] : c[1];
+                minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+                minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+            }
+            ndcRect[i] = new float[] { minX, minY, maxX, maxY };
+            sb.append(' ').append(slots[i].name)
+              .append(String.format("=[%.2f,%.2f..%.2f,%.2f]", minX, minY, maxX, maxY));
+        }
+        int overlaps = 0;
+        for (int i = 0; i < n; i++) {
+            if (!visible[i]) continue;
+            for (int j = i + 1; j < n; j++) {
+                if (!visible[j]) continue;
+                float[] a = ndcRect[i], b = ndcRect[j];
+                if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]) {
+                    System.out.println("[E2E-HUD-GATE] OVERLAP " + label + ": "
+                        + slots[i].name + " x " + slots[j].name);
+                    overlaps++;
+                    bad++;
+                }
+            }
+        }
+        sb.append(" overlaps=").append(overlaps);
+        System.out.println(sb);
+        return bad;
+    }
+
+    /**
+     * Slot-space point (x right, y up, meters on the 2.5m anchor plane) to
+     * NDC (x, y) through the given camera transforms, or null when the
+     * point is behind/at the camera or the basis degenerated. Uses the
+     * exact affine view transform (JOML transformPosition — w row is
+     * [0,0,0,1]) plus the perspective x/y scale factors straight off the
+     * projection matrix (w_clip = -z_view for GL perspective).
+     */
+    private float[] projectSlotPoint(Vector3f camPos, Vector3f front, Vector3f right,
+                                     Vector3f up, Matrix4f proj, Matrix4f view,
+                                     float sx, float sy) {
+        Vector3f wp = new Vector3f(camPos)
+            .add(new Vector3f(front).mul(HudLayout.DIST))
+            .add(new Vector3f(right).mul(sx))
+            .add(new Vector3f(up).mul(sy));
+        if (!Float.isFinite(wp.x + wp.y + wp.z)) return null;
+        Vector3f vs = new Vector3f(wp);
+        view.transformPosition(vs);          // exact view-space position
+        if (vs.z >= -0.1f) return null;      // behind/at camera
+        float w = -vs.z;                     // GL perspective w_clip
+        return new float[] { proj.m00() * vs.x / w, proj.m11() * vs.y / w };
     }
 
     /**
@@ -5845,6 +5989,53 @@ public class GameEngine {
         }
         if (doorOk) pass++; else fail++;
 
+        // 34. HUD slot overlap gate (t_0c1374b0): the five non-modal primary
+        //     slots are pairwise-disjoint in the abstract slot table
+        //     (HudLayout.rect + intersects), every primary rect fits the
+        //     2.5m frustum placement envelope, and the modal TELEPORT slot
+        //     fits the envelope too (it is alone on screen, so frame bounds
+        //     are its only constraint). Pinning the table here means a new
+        //     panel that collides with a live one fails at build time; the
+        //     e2e gate ([E2E-HUD-GATE] in updateE2ETour) re-checks the same
+        //     slots through the REAL camera at every waypoint framing.
+        boolean hudOk = true;
+        try {
+            HudLayout.Slot[] primaries = { HudLayout.GIST_WALL, HudLayout.TELEMETRY,
+                HudLayout.CHAT, HudLayout.BOT_ROSTER, HudLayout.MINIMAP };
+            // Placement envelope from HudLayout's javadoc (X in [-1.75, +3.15],
+            // Y in [-1.30, +1.62]) widened by 0.01 for float-sum error —
+            // BOT_ROSTER's right edge sums to 3.1000001f, not 3.10f.
+            for (int i = 0; hudOk && i < primaries.length; i++) {
+                float[] ri = HudLayout.rect(primaries[i]);
+                if (ri[0] < -1.76f || ri[0] + ri[2] > 3.16f
+                    || ri[1] < -1.31f || ri[1] + ri[3] > 1.63f) {
+                    System.out.println("FAIL hud gate: " + primaries[i].name
+                        + " rect off-frame (" + ri[0] + "," + ri[1] + " "
+                        + ri[2] + "x" + ri[3] + ")");
+                    hudOk = false; break;
+                }
+                for (int j = i + 1; j < primaries.length && hudOk; j++) {
+                    if (HudLayout.intersects(ri, HudLayout.rect(primaries[j]))) {
+                        System.out.println("FAIL hud gate: " + primaries[i].name
+                            + " intersects " + primaries[j].name);
+                        hudOk = false;
+                    }
+                }
+            }
+            float[] tp = HudLayout.rect(HudLayout.TELEPORT);
+            if (tp[0] < -1.76f || tp[0] + tp[2] > 3.16f
+                || tp[1] < -1.31f || tp[1] + tp[3] > 1.63f) {
+                System.out.println("FAIL hud gate: teleport rect off-frame");
+                hudOk = false;
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL hud gate: " + e.getClass().getSimpleName() + " " + e.getMessage());
+            hudOk = false;
+        }
+        System.out.println((hudOk ? "PASS" : "FAIL")
+            + " hud slot overlap gate (5 primaries pairwise-disjoint + in frame, teleport in frame)");
+        if (hudOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -6212,7 +6403,17 @@ public class GameEngine {
                         cam.setYaw(0); cam.setPitch(-12f);
                     }
                 }
-                if (shoot) { captureLabeled("11_floor2_picker"); teleportMenu = false; /* the picker must not stay open over every later shot */ e2eWaypoint++; e2ePhaseTimer = 0; e2ePadLatch = false; }
+                if (shoot) {
+                    captureLabeled("11_floor2_picker");
+                    // t_0c1374b0: close the picker after its shot — leaving
+                    // teleportMenu=true suppressed EVERY HUD slot for all
+                    // later waypoints (12-17), incl. the forest-path after
+                    // shot showing zero HUD. The picker is only evidence for
+                    // THIS waypoint; modal suppression must not leak.
+                    teleportMenu = false;
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                    e2ePadLatch = false;
+                }
             }
             case 11 -> { // nash fountain — courtyard pool beside the rotor rings
                 // Courtyard walls sit at z=-24..-12 (courtZ=-24, cd=12); the
@@ -6464,6 +6665,18 @@ public class GameEngine {
                     else if (over) { System.out.println("[PERF_FAIL] " + line); exitCode = 2; }
                     else System.out.println("[PERF_OK] " + line);
                 }
+                // t_0c1374b0: HUD gate verdict — a nonzero counter fails the
+                // tour itself (e2e.sh also greps per-shot [E2E-HUD-GATE]
+                // lines, this is the authoritative single-number exit).
+                System.out.println("[E2E-HUD-GATE] SUMMARY failures=" + e2eGateFailures
+                    + " (OVERLAP = two visible primary slots intersect on screen; "
+                    + "OFFFRAME = slot anchor left the frustum)");
+                if (e2eGateFailures > 0) {
+                    System.out.println("[E2E] HUD gate FAILED — " + e2eGateFailures + " failure(s). Exiting 1.");
+                    cleanup();
+                    System.exit(1);
+                }
+                System.out.println("[E2E] HUD gate passed — 0 failures. Exiting 0.");
                 cleanup();
                 System.exit(exitCode);
             }
