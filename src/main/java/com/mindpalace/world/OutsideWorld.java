@@ -262,6 +262,11 @@ public class OutsideWorld {
     // ── Lake ─────────────────────────────────────────────────────────────────
 
     private void renderLake(Renderer r, float floorY, float time) {
+        // STEP 95v8: the lake's night-purple look was calibrated in v7 under
+        // the HOME light with its own draw-level night math (albedo drop,
+        // moon path, budget). It must NOT ride the phase light — wrap the
+        // pass so every phase draws byte-identical to v7.
+        r.pushHomeLight();
         float lx = lakeCenter.x, lz = lakeCenter.z;
         // STEP 92b: hex-cell traveling-wave surface. The old surface was a grid
         // of SQUARE wave cubes — the lake read as a square pool. A pointy-top
@@ -507,6 +512,7 @@ public class OutsideWorld {
                     new Vector3f(hr, 0.08f, hr), 0.62f, 0.55f, 0.40f);
             }
         }
+        r.popLight(); // STEP 95v8: end lake/home-pair bypass
     }
 
     // ── Forest (Fibonacci phyllotaxis, deciduous + evergreen) ──

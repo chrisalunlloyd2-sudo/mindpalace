@@ -26,6 +26,11 @@ public class Renderer {
     // Live-tunable lighting (hot-applied by PatchManager without a restart)
     private float ambientStrength = 0.70f;
     private final Vector3f lightColor = new Vector3f(1.0f, 0.9f, 0.7f);
+    /** STEP 95v8: PatchManager's hot-applied HOME values — the engine's clock
+     *  phase switch may override the effective light per skyPhase and restore
+     *  these by day. */
+    private float homeAmbient = 0.70f;
+    private final Vector3f homeLightColor = new Vector3f(1.0f, 0.9f, 0.7f);
     private final Vector3f lightOffset = new Vector3f(0.0f, 3.0f, 0.0f);
     private final Vector3f tintColor = new Vector3f(1.0f, 1.0f, 1.0f); // per-room accent
 
@@ -130,12 +135,79 @@ public class Renderer {
     }
 
     // ── Live graphics tuning (hot-applied by PatchManager) ──
-    public void setAmbient(float a) { ambientStrength = a; }
-    public void setLightColor(float r, float g, float b) { lightColor.set(r, g, b); }
+    /** STEP 95v8: PatchManager's hot-applied values are treated as HOME
+     *  values — the engine's clock phase switch (GameEngine.render) may
+     *  override the effective light per skyPhase and restore them by day. */
+    public void setAmbient(float a) {
+        homeAmbient = a;
+        // STEP 95v8: if a push/pop light-bypass is active, the effective pair
+        // belongs to that draw block (emitter/lake/sky) — store HOME only,
+        // popLight will restore the bypass pair untouched.
+        if (!lightOverride) ambientStrength = a;
+    }
+    public void setLightColor(float r, float g, float b) {
+        homeLightColor.set(r, g, b);
+        if (!lightOverride) lightColor.set(r, g, b);
+    }
     public void setLightOffset(float x, float y, float z) { lightOffset.set(x, y, z); }
     public float getAmbient() { return ambientStrength; }
     /** Per-room language accent tint (1,1,1 = neutral). */
     public void setTint(float r, float g, float b) { tintColor.set(r, g, b); }
+
+    /** STEP 95v8 — light-bypass stack (single slot). Emitters that must NOT
+     *  ride the night phase light (sky dome, lake, moon/stars) draw under a
+     *  pushed pair; pop restores what was effective. Rendered draw-level RGB
+     *  values are untouched, so colors keep their identity. */
+    private boolean lightOverride = false;
+    private float savedAmbient = 0.70f;
+    private final Vector3f savedColor = new Vector3f(1.0f, 0.9f, 0.7f);
+    /** Save the effective pair and install (amb,r,g,b) for the duration.
+     *  Uniforms latch MID-FRAME here (same pattern as setFogEnabled) so the
+     *  bypass is visible to draws between push and pop, not just next frame. */
+    public void pushLight(float amb, float r, float g, float b) {
+        if (lightOverride) return; // no nesting
+        lightOverride = true;
+        savedAmbient = ambientStrength;
+        savedColor.set(lightColor);
+        ambientStrength = amb;
+        lightColor.set(r, g, b);
+        basicShader.bind();
+        basicShader.setUniform("lightColor", lightColor);
+        basicShader.setUniform("ambientStrength", ambientStrength);
+    }
+    /** Full-bright celestial emitters (moon/stars light themselves). */
+    public void pushLight() { pushLight(1.0f, 1f, 1f, 1f); }
+    /** Home pair (PatchManager values) — byte-stable sky/water in ANY phase. */
+    public void pushHomeLight() {
+        pushLight(homeAmbient, homeLightColor.x, homeLightColor.y,
+            homeLightColor.z);
+    }
+    public void popLight() {
+        if (!lightOverride) return;
+        lightOverride = false;
+        ambientStrength = savedAmbient;
+        lightColor.set(savedColor);
+        basicShader.bind();
+        basicShader.setUniform("lightColor", lightColor);
+        basicShader.setUniform("ambientStrength", ambientStrength);
+    }
+
+    // ── STEP 95v8: engine-side clock phase switch (called once per frame,
+    // right before beginFrame latches the uniforms) ──
+    private boolean phaseNight = false; // WorldBuilder queries for celestials
+    public boolean isPhaseNight() { return phaseNight; }
+    /** NIGHT: cool dim ambience for walls/interiors/town tiles. */
+    public void setPhaseLight(float amb, float r, float g, float b) {
+        phaseNight = true;
+        ambientStrength = amb;
+        lightColor.set(r, g, b);
+    }
+    /** DAY/DUSK: home pair — byte-identical no-op vs the v7 pipeline. */
+    public void restoreHomeLight() {
+        phaseNight = false;
+        ambientStrength = homeAmbient;
+        lightColor.set(homeLightColor);
+    }
 
     public void drawMesh(Mesh mesh, Matrix4f model, int texId) {
         basicShader.setUniform("model", model);
@@ -224,12 +296,17 @@ public class Renderer {
             skyDomePhase = phase;
         }
         GL11.glDisable(GL11.GL_DEPTH_TEST);
+        // STEP 95v8: the dome must NOT ride the night phase light — the
+        // purple/indigo night gradient is v7-ACCEPTED. Draw under the HOME
+        // (PatchManager) pair, byte-identical in every phase.
+        pushHomeLight();
         basicShader.setUniform("fogEnabled", 0.0f);
         Matrix4f model = new Matrix4f().translate(camPos).scale(150f, 150f, 150f);
         basicShader.setUniform("model", model);
         skyDomeTex.bind(0);
         basicShader.setUniform("useTexture", 1);
         getSphereMesh().render();
+        popLight();
         basicShader.setUniform("fogEnabled", 1.0f);
         GL11.glEnable(GL11.GL_DEPTH_TEST);
     }
