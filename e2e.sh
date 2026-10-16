@@ -35,7 +35,11 @@ echo "=== [2/4] SELFTEST ==="
 # tour = world build + 17 waypoints × 6s + margin. 700s: tonight's box hit
 # 400s with the selftest STILL in world build (LiveUpdate rooms) — same
 # budget as the tour, since it is the same work.
-timeout 700 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# t_ffb1dd32 (2026-10-16): with the 22-waypoint tour budget at 1200, the
+# selftest phase hit timeout 700 mid-suite (27 PASS lines, no RESULT, killed
+# at ~10:47 while the world was still cycling) — same box, same contention.
+# Raised to the same 1200 so both phases cap at identical budgets.
+timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --selftest > /tmp/e2e_selftest.log 2>&1
 grep -a "RESULT" /tmp/e2e_selftest.log | tail -1
@@ -47,7 +51,12 @@ rm -rf "$DIR"; mkdir -p "$DIR"
 # regardless of the real wall clock. Day shot 12_nash_fountain keeps its
 # bright-sky look via the day branch — fnight uses the same TimeClock now.
 # t_0c1374b0: 700s budget — world build alone runs ~5min on the Intel HD 510.
-timeout 700 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# t_ffb1dd32 (2026-10-16): waypoint list grew 17→22 (labels at line ~66) while
+# the budget stayed 700 — tour was SIGTERM-killed after waypoint 07 with the
+# world live and no crash in the log. World build ~5-8min + 22 waypoints ×
+# (6s framing + FPS eval at 3-13 fps on this box) needs ~1200s. Same raise
+# precedent as 420→700 above.
+timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --e2e "$DIR" --time 21 > /tmp/e2e_tour.log 2>&1
 grep -aE "\[E2E\]|\[E2E-SHOT\]|\[E2E-HUD-GATE\] SUMMARY" /tmp/e2e_tour.log
