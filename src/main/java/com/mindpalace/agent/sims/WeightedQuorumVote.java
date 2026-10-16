@@ -32,8 +32,10 @@ public class WeightedQuorumVote {
     /** Minimum REAL votes (approve+reject — never blind/sim/abstain) for a verdict. */
     public static final int REAL_VOTE_MIN = 2;
 
-    /** Max wait for one model's vote before it abstains (was implicit 30s). */
-    private static final long VOTE_TIMEOUT_MS = 30_000;
+    /** Max wait for one model's vote before it abstains. Default 30s; deepseek-r1
+     * think-blocks at CPU speed can exceed 30s even warm/queued-clear — override
+     * with -Dmindpalace.vote.timeoutMs=... if r1 ballots starve (t_e29e1f81). */
+    private static final long VOTE_TIMEOUT_MS = Long.getLong("mindpalace.vote.timeoutMs", 30_000L);
 
     public static final class ModelPosition {
         public final String name;

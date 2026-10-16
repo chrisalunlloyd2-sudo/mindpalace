@@ -120,6 +120,20 @@ public class OllamaClient {
         else body.addProperty("keep_alive", EFFECTIVE_KEEP_ALIVE);
     }
 
+    /**
+     * MULTI-RESIDENT (t_e29e1f81): the one-model gate is bypassed — vote ballots
+     * and agent/user calls may overlap server-side (each model keeps its own
+     * runner up to OLLAMA_MAX_LOADED_MODELS; NumParallel=1 only queues
+     * same-model requests). Serializing the HTTP call through modelGate would
+     * make a ballot wait up to a full agent generation (~120s) and blow its
+     * 30s future — observed pre-patch. One-hot mode keeps the physical
+     * single-runner invariant.
+     */
+    private <T> T withGate(java.util.function.Supplier<T> work) {
+        if (MULTI_RESIDENT) return work.get();
+        synchronized (modelGate) { return work.get(); }
+    }
+
     /** Caller must hold modelGate. Unloads the previously hot model when switching. */
     private void evictPreviousModelLocked(String model) {
         // MULTI-RESIDENT: never force-unload — LRU + OLLAMA_MAX_LOADED_MODELS
@@ -213,7 +227,7 @@ public class OllamaClient {
         }
 
         try {
-            synchronized (modelGate) {
+            return withGate(() -> {
                 evictPreviousModelLocked(model);
                 Request r = new Request.Builder()
                     .url(BASE + "/chat")
@@ -229,9 +243,13 @@ public class OllamaClient {
                     JsonObject msg = result.getAsJsonObject("message");
                     if (msg.has("content") && !msg.get("content").isJsonNull()) return msg.get("content").getAsString();
                     return "";
+                } catch (IOException e) {
+                    // Supplier lambdas cannot throw checked exceptions — mirror
+                    // the old outer catch here instead.
+                    return null;
                 }
-            }
-        } catch (IOException | RuntimeException e) {
+            });
+        } catch (RuntimeException e) {
             return null;
         }
     }
@@ -284,7 +302,7 @@ public class OllamaClient {
         }
 
         try {
-            synchronized (modelGate) {
+            return withGate(() -> {
                 evictPreviousModelLocked(model);
                 Request r = new Request.Builder()
                     .url(BASE + "/chat")
@@ -311,9 +329,13 @@ public class OllamaClient {
                         }
                     }
                     return new ToolResult(content, calls);
+                } catch (IOException e) {
+                    // Supplier lambdas cannot throw checked exceptions — mirror
+                    // the old outer catch here instead.
+                    return new ToolResult(null, List.of());
                 }
-            }
-        } catch (IOException | RuntimeException e) {
+            });
+        } catch (RuntimeException e) {
             // CARD-Q1 F1: RuntimeException (UnsupportedOperationException,
             // NPE, JsonSyntaxException) must not silently kill the round.
             return new ToolResult(null, List.of());

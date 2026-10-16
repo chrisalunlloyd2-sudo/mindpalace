@@ -29,9 +29,14 @@ public class ModelScheduler {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final BlockingQueue<Job> queue = new LinkedBlockingQueue<>();
     // Dedicated user-chat worker — exempt from the "one model at a time" rule.
-    // A user reply must never serialize behind a 10-30s tool/agent call.
+    // A user reply must never serialize behind a slow tool/agent call.
     private final ExecutorService userWorker = Executors.newSingleThreadExecutor();
     private final BlockingQueue<Job> userQueue = new LinkedBlockingQueue<>();
+    // Dedicated vote worker (t_e29e1f81): quorum ballots get their own lane so
+    // a 30s vote future NEVER queues behind the 5-min spacing sleep or an
+    // in-flight agent call on the main worker. Same fence, same telemetry.
+    private final ExecutorService voteWorker = Executors.newSingleThreadExecutor();
+    private final BlockingQueue<Job> voteQueue = new LinkedBlockingQueue<>();
 
     // Dynamic spacing — widened when the user is actively playing (idle detector)
     private volatile long spacingMs = MIN_SPACING_MS;
@@ -75,6 +80,7 @@ public class ModelScheduler {
         this.ollama = ollama;
         worker.submit(this::drainLoop);
         userWorker.submit(this::drainImmediateLoop);
+        voteWorker.submit(this::drainVoteLoop);
     }
 
     /** Submit a chat request. Returns a future that completes when it runs. */
@@ -84,15 +90,18 @@ public class ModelScheduler {
 
     /**
      * Submit a quorum VOTE request (WeightedQuorumVote.actualVoteAll path).
-     * Votes carry their own 30s future timeout, which the 5-minute spacing
-     * gate can never satisfy: a spacing sleep of up to 5 minutes guaranteed
-     * every real ballot ABSTAINed at exactly 30,000 ms (observd 2026-10-15/16:
-     * ~1,001 abstain_timeout telemetry rows, zero real approvals, while sim
-     * votes recorded latency 0). Votes still run on the single worker thread
-     * — never two model calls at once — but SKIP the 5-minute spacing wait.
+     * Votes carry their own configurable timeout (mindpalace.vote.timeoutMs,
+     * default 30s), which the main queue's 5-minute spacing gate can never
+     * satisfy: a spacing sleep of up to 5 minutes guaranteed every real ballot
+     * ABSTAINed at exactly 30,000 ms (observed 2026-10-15/16: ~1,001
+     * abstain_timeout telemetry rows, zero real approvals, while sim votes
+     * recorded latency 0). Votes run on their OWN worker thread — one ballot
+     * at a time, never blocking or blocked by agent/user lanes.
      */
     public CompletableFuture<String> submitVote(String model, String prompt, ModelLifespan lifespan) {
-        return enqueue(model, prompt, lifespan, true);
+        CompletableFuture<String> f = new CompletableFuture<>();
+        voteQueue.add(new Job(model, prompt, lifespan, f, true));
+        return f;
     }
 
     /**
@@ -171,6 +180,54 @@ public class ModelScheduler {
                 lastStatus = "error: " + e.getMessage();
                 // CARD-Q1 F13: complete the future exceptionally so user-chat
                 // callers get an immediate failure instead of hanging forever.
+                if (job != null && job.future != null) job.future.completeExceptionally(e);
+            }
+        }
+    }
+
+    /**
+     * Vote drain loop (t_e29e1f81) — runs quorum ballots on their own worker
+     * thread, one at a time, with NO 5-min spacing (the vote future's own
+     * timeout is the latency budget). Same resource fence as the user lane:
+     * a fenced ballot re-queues and backs off. Telemetry still counts every
+     * ballot so avg latency stays meaninful.
+     */
+    private void drainVoteLoop() {
+        while (!Thread.currentThread().isInterrupted()) {
+            // Same CARD-Q1 F13 hoist: a dropped call must still release the
+            // ballot's waiting future (it times into an ABSTAIN otherwise).
+            Job job = null;
+            try {
+                job = voteQueue.take();
+                if (!resourcesAvailable()) {
+                    fencedCount.incrementAndGet();
+                    lastFenceAt.set(System.currentTimeMillis());
+                    lastStatus = "fenced (vote)";
+                    voteQueue.add(job);          // re-queue for later
+                    Thread.sleep(FENCE_RECHECK_MS);
+                    continue;
+                }
+                lastModel = job.model;
+                lastStatus = "vote " + job.model;
+                long t0 = System.currentTimeMillis();
+                String resp;
+                if (job.lifespan != null) {
+                    resp = job.lifespan.chat(job.prompt);
+                } else {
+                    resp = ollama.chat(job.model, job.prompt, "");
+                }
+                long latency = System.currentTimeMillis() - t0;
+                totalCalls.incrementAndGet();
+                totalLatencyMs.addAndGet(latency);
+                lastCallAt.set(System.currentTimeMillis());
+                lastStatus = "idle";
+                job.future.complete(resp);
+            } catch (InterruptedException e) {
+                if (job != null && job.future != null) job.future.completeExceptionally(e);
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                lastStatus = "error: " + e.getMessage();
                 if (job != null && job.future != null) job.future.completeExceptionally(e);
             }
         }
@@ -266,7 +323,7 @@ public class ModelScheduler {
     public long getDriftEvents() { return driftEvents.get(); }
     public void recordDrift() { driftEvents.incrementAndGet(); }
 
-    public void shutdown() { worker.shutdownNow(); userWorker.shutdownNow(); }
+    public void shutdown() { worker.shutdownNow(); userWorker.shutdownNow(); voteWorker.shutdownNow(); }
 
     /** Set dynamic spacing (idle detector: slow when playing, never below 5 min). */
     public void setSpacingMs(long ms) { this.spacingMs = Math.max(MIN_SPACING_MS, ms); }
