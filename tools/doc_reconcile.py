@@ -17,7 +17,7 @@ SUFFIX = {".java", ".py", ".sh", ".yml", ".yaml", ".xml", ".md", ".json", ".bat"
 
 # item label -> regexes that should hit in the source IF the item is built
 EVIDENCE = {
-    "NEXT_100 #91 open-issue crystals": [r"list(?:Open)?Issues|refreshCrystals|watchRepo", r"TODO crystal|renderCrystals"],
+    "NEXT_100 #91 open-issue crystals": [r"list(Open)?Issues|refreshCrystals|watchRepo", r"TODO crystal|renderCrystals"],
     "NEXT_100 #92 issue verdicts (quorum votes, comment add-only)": [r"issue.?verdict", r"createIssueComment|postIssueComment|addComment"],
     "NEXT_100 #93 repo health rollup": [r"health.?rollup|repoHealth|HealthRollup"],
     "NEXT_100 #94 nightly repo sweep": [r"nightly.?sweep|RepoSweep"],
