@@ -32,8 +32,10 @@ public class WeightedQuorumVote {
     /** Minimum REAL votes (approve+reject — never blind/sim/abstain) for a verdict. */
     public static final int REAL_VOTE_MIN = 2;
 
-    /** Max wait for one model's vote before it abstains (was implicit 30s). */
-    private static final long VOTE_TIMEOUT_MS = 30_000;
+    /** Max wait for one model's vote before it abstains. Default 30s; deepseek-r1
+     * think-blocks at CPU speed can exceed 30s even warm/queued-clear — override
+     * with -Dmindpalace.vote.timeoutMs=... if r1 ballots starve (t_e29e1f81). */
+    private static final long VOTE_TIMEOUT_MS = Long.getLong("mindpalace.vote.timeoutMs", 30_000L);
 
     public static final class ModelPosition {
         public final String name;
@@ -243,6 +245,10 @@ public class WeightedQuorumVote {
      * model that gives nothing Usable ABSTAINS (labeled) — NO random fallback.
      * Blind votes (FOW-blocked) are automatic and outcome=blind.
      */
+    // t_e29e1f81 root-cause fix: quorum ballots were queued behind the 5-minute
+    // MODEL-spacing gate but only waited 30s — every real vote ABSTAINed at
+    // 30,000 ms by construction. Votes now use the spacing-exempt submitVote
+    // lane (still serialized on the single worker; never two models at once).
     public void actualVoteAll(ModelScheduler scheduler) {
         for (Proposal p : proposals.values()) {
             for (ModelPosition mp : models.values()) {
@@ -253,7 +259,7 @@ public class WeightedQuorumVote {
                 long t0 = System.currentTimeMillis();
                 String resp;
                 try {
-                    var future = scheduler.submit(mp.name, buildVotingPrompt(p, mp.name), null);
+                    var future = scheduler.submitVote(mp.name, buildVotingPrompt(p, mp.name), null);
                     resp = future.get(VOTE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
                 } catch (java.util.concurrent.TimeoutException e) {
                     castVote(p.id, mp.name, Vote.ABSTAIN, VoteQualityLedger.ABSTAIN_TIMEOUT, VOTE_TIMEOUT_MS);
