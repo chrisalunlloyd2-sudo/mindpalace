@@ -83,6 +83,19 @@ public class ModelScheduler {
     }
 
     /**
+     * Submit a quorum VOTE request (WeightedQuorumVote.actualVoteAll path).
+     * Votes carry their own 30s future timeout, which the 5-minute spacing
+     * gate can never satisfy: a spacing sleep of up to 5 minutes guaranteed
+     * every real ballot ABSTAINed at exactly 30,000 ms (observd 2026-10-15/16:
+     * ~1,001 abstain_timeout telemetry rows, zero real approvals, while sim
+     * votes recorded latency 0). Votes still run on the single worker thread
+     * — never two model calls at once — but SKIP the 5-minute spacing wait.
+     */
+    public CompletableFuture<String> submitVote(String model, String prompt, ModelLifespan lifespan) {
+        return enqueue(model, prompt, lifespan, true);
+    }
+
+    /**
      * Submit a raw tool-calling round to run on the single worker thread (so it
      * never overlaps another model call). The Runnable is executed in the drain
      * loop; it should call ollama.chatWithTools itself and handle the result.
