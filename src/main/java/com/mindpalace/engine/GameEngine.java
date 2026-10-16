@@ -1907,15 +1907,33 @@ public class GameEngine {
             return;
         }
 
+        // SKY + CLOCK PHASE (STEP 95v8) — computed BEFORE beginFrame because
+        // light uniforms latch there. Sky dome: full gradient sphere so the
+        // sky is never black, even looking straight up or sideways. Phase
+        // follows the real clock, unless the e2e clock pin is set
+        // (t_0c1374b0: deterministic tour brightness regardless of wall-clock
+        // hour). The scene light now rides the SAME phase — walls used to
+        // stay warm-orange at midnight because it ignored the clock.
+        // int hour = world.isClockPinned() ? world.getPinHour()
+        //     : java.time.LocalTime.now().getHour();
+        // STEP 95v8: --time N sets only TimeClock's static override, never
+        // the world pin (that's e2e-only) — the pin never reached the engine
+        // and orbit tours rendered wall-clock light. Fall back to the single
+        // TimeClock choke; world pin still wins for e2e determinism.
+        int hour = world.isClockPinned() ? world.getPinHour()
+            : com.mindpalace.world.TimeClock.hour();
+        int skyPhase = (hour < 6 || hour >= 20) ? 2 : (hour >= 18 ? 1 : 0);
+        if (skyPhase == 2) {
+            // Night: cool dim ambience everywhere — interiors stop reading
+            // as lamp-lit rooms. Celestial emitters bypass via pushLight/
+            // popLight and stay full-bright.
+            renderer.setPhaseLight(0.30f, 0.52f, 0.60f, 0.85f);
+        } else {
+            // Day/dusk: byte-identical no-op — HOME (PatchManager) light rules.
+            renderer.restoreHomeLight();
+        }
         renderer.beginFrame(player.getCamera());
         com.mindpalace.render.GlTrace.mark("renderer.beginFrame");
-        // Sky dome — full gradient sphere so the sky is never black, even
-        // looking straight up or sideways. Phase follows the real clock,
-        // unless the e2e clock pin is set (t_0c1374b0: deterministic tour
-        // brightness regardless of wall-clock hour).
-        int hour = world.isClockPinned() ? world.getPinHour()
-            : java.time.LocalTime.now().getHour();
-        int skyPhase = (hour < 6 || hour >= 20) ? 2 : (hour >= 18 ? 1 : 0);
         renderer.drawSkyDome(player.getCamera().getPosition(), skyPhase);
         com.mindpalace.render.GlTrace.mark("skyDome");
         world.render(renderer, player.getCamera());
@@ -6809,7 +6827,9 @@ public class GameEngine {
             }
             case 19 -> { // MP-004 + 92d: sky — aim AT the actual sun/moon body (shared arc formula)
                 p.set(0f, 1.7f, -50f);
-                int hr = java.time.LocalTime.now().getHour();
+                // v8: route through the TimeClock choke (v7 doctrine — no
+                // world-visible LocalTime.now() stragglers; --time pins this).
+                int hr = com.mindpalace.world.TimeClock.hour();
                 int body = (hr >= 5 && hr < 19) ? hr : (hr + 12) % 24; // sun's hour, else the moon's arc hour
                 Vector3f tgt = WorldBuilder.celestialPosition(body, p);
                 Vector3f aim = new Vector3f(tgt).sub(p).normalize();

@@ -732,6 +732,11 @@ public class WorldBuilder {
      *  implementation bolted flat square cube-slabs to one fixed sky spot —
      *  the "square sun/moon" — and never moved them. */
     private void renderCelestial(Renderer r, Vector3f camPos) {
+        // STEP 95v8: moon/stars are EMITTERS at night — wrap the pass in a
+        // full-bright bypass so the night phase dim never touches them.
+        // Day: NO wrap — the sun rides the home pair exactly like v7
+        // (day byte-stable no-op).
+        if (r.isPhaseNight()) r.pushLight();
         int hour = TimeClock.hour();
         boolean sunUp = hour >= 5 && hour < 19;
         boolean moonUp = hour >= 18 || hour < 7;
@@ -772,6 +777,7 @@ public class WorldBuilder {
         if (hour >= 20 || hour < 6) {
             Constellation.render(r, camPos.x, camPos.y + 26f, camPos.z, time);
         }
+        if (r.isPhaseNight()) r.popLight();
     }
 
 
