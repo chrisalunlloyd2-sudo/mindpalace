@@ -80,6 +80,14 @@ body the player actually sees and touches.
    walk-through (the pre-H13b bug).
 5. **Add-only GitHub** — IssueStream never closes/edits; step-log issue #9
    is append-only evidence.
+6. **Fleet distribution** — the game is one cell of the viper hive. Cells
+   (kernel-localhost, kernel-sandbox, kernel-<hostname>) exchange proven
+   workflows through the fleet gist `04debe0724a26fdee12a9e6d82c4eb56`
+   (`fleet_status.jsonl` + `workflow_logits.jsonl`), append-only, revision-
+   versioned; the GistWall (above) renders its read side every 60s. Flow
+   packaging, hive topology, logit schema/distribution, and backup
+   automation are specified in `docs/FLOWS.md`, `docs/HIVE_INTEGRATION.md`,
+   and `docs/LOGIT_BACKUP_DISTRIBUTION.md`.
 
 ## Verification (every change ships through this)
 
