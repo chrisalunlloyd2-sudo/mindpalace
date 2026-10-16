@@ -58,6 +58,18 @@ public class Player {
     public void setAudio(AudioEngine a) { this.audio = a; }
     public void setChatTyping(boolean t) { this.chatTyping = t; }
     public void setNoclip(boolean n) { this.noclip = n; }
+
+    /** PERF-A2 determinism support: zero all carried physics state so a replay
+     *  pass starts from the same motion state as a fresh spawn (velocity,
+     *  ground/cooldown/stuck-detector). Camera pose is set separately. */
+    public void resetForDeterminism() {
+        velocity.set(0f, 0f, 0f);
+        onGround = true;
+        stuckTimer = 0;
+        stuckRefPos = null;
+        interactCooldown = 0;
+        teleportCooldown = 0;
+    }
     public boolean isNoclip() { return noclip; }
     /** H13c: mansion interior mode — collide() clamps to the shell, not solids. */
     public void setMansionInterior(boolean m) { this.mansionInterior = m; }

@@ -1,0 +1,10 @@
+{
+  "_comment": "PERF-A2 default input track (docs/AUTONOMOUS_PERF_TEST.md D2): walks the main hall centerline (x=0) forward at MOVE_SPEED=6.0 m/s for ~10 s, a 2 s two-key turn (W+D + 30 deg/s right), then idles 3 s, then loops. Total 15 s of motion per loop; at -Dmindpalace.frameLock=8.3 that is ~1800 sim frames/loop. Snapshot frames are rendered-frame indexes (deterministic under frame lock): mid-walk (150), turn entry (950), late turn (1250).",
+  "segments": [
+    { "t0": 0.0,  "t1": 10.0, "keys": ["W"],   "mouseDx": 0.0,  "mouseDy": 0.0 },
+    { "t0": 10.0, "t1": 12.0, "keys": ["W","D"], "mouseDx": 30.0, "mouseDy": 0.0 },
+    { "t0": 12.0, "t1": 15.0, "keys": [],     "mouseDx": 0.0,  "mouseDy": 0.0 }
+  ],
+  "snapshots": [150, 950, 1250],
+  "loop": true
+}

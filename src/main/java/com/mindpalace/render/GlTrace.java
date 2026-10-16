@@ -28,7 +28,17 @@ public final class GlTrace {
     private static long profLast, profUpdateNs;
     private static volatile long profFrames;
 
+    // PERF-A2 (t_5155f104): slowest stage of the frame just completed — the
+    // perf CSV reads these per frame (PROF on); "none"/0 when PROF is off.
+    private static double lastSlowestMs;
+    private static String lastSlowestName = "none";
+
     public static long frameCount() { return profFrames; }
+
+    /** PERF-A2: slowest measured stage (ms) of the frame just completed (0 when PROF off). */
+    public static double profSlowestMs() { return PROF ? lastSlowestMs : 0.0; }
+    /** PERF-A2: name of the slowest measured stage ("none" when PROF off). */
+    public static String profSlowestName() { return PROF ? lastSlowestName : "none"; }
 
     /** The game loop reports how long this frame's update() ticks took. */
     public static void noteUpdate(long ns) { if (PROF) profUpdateNs += ns; }
@@ -42,7 +52,12 @@ public final class GlTrace {
     private static void profFrameStart() {
         profMark("frame-start (bloom.end + swap + update + loop)");
         long total = 0;
-        for (int i = 0; i < profN; i++) total += profNs[i];
+        long worstNs = 0; int worstIdx = profN > 0 ? 0 : -1;
+        for (int i = 0; i < profN; i++) {
+            total += profNs[i];
+            if (profNs[i] > worstNs) { worstNs = profNs[i]; worstIdx = i; }
+        }
+        if (worstIdx >= 0) { lastSlowestName = profNames[worstIdx]; lastSlowestMs = worstNs / 1e6; }
         profFrames = profFrames + 1;
         if (total > HITCH_NS) {
             StringBuilder sb = new StringBuilder("[FrameProf] frame ").append(profFrames).append(": ").append(total / 1_000_000)
