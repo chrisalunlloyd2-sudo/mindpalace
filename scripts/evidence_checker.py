@@ -105,15 +105,16 @@ def validate_evidence(card, repo_dir=None, strict=False):
 
     selftest = str(evidence.get("selftest", "")).strip()
     if selftest:
-        # An explicit zero-failures phrase ("54 passed, 0 failed") always
-        # wins first — FAILURE_MARKER_RE matches the word "failed" inside
-        # it too, and must not reject a genuinely passing result (PR #281
-        # review: this exact regression).
-        if SELFTEST_ZERO_FAILED_RE.search(selftest):
-            pass
-        elif FAILURE_MARKER_RE.search(selftest):
+        # The legitimate zero-failures phrase ("0 failed"/"54/0") must not
+        # make FAILURE_MARKER_RE blind to a DIFFERENT failure sitting
+        # alongside it in the same string ("54/0; 1 failed", "skipped (0
+        # failed)", "0 failed; ERROR: timed out" must all still reject —
+        # PR #281 review: a blanket short-circuit let all three through).
+        # Strip only the zero-failures substring out, then scan what's left.
+        remainder = SELFTEST_ZERO_FAILED_RE.sub("", selftest)
+        if FAILURE_MARKER_RE.search(remainder):
             reasons.append(f"evidence.selftest '{selftest}' reports a failure, not zero failures")
-        else:
+        elif not SELFTEST_ZERO_FAILED_RE.search(selftest):
             reasons.append(f"evidence.selftest '{selftest}' doesn't show zero failures")
 
     build = str(evidence.get("build", "")).strip()
@@ -153,15 +154,28 @@ def check_card(path, repo_dir=None, strict=False):
     return validate_evidence(card, repo_dir=repo_dir, strict=strict)
 
 
-def scan_task_dir(task_dir, repo_dir=None, strict=False):
+def _card_status_only(path):
+    """Cheap read — just the status field, no evidence validation (no commit subprocess)."""
+    try:
+        card = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return _status(card)
+
+
+def list_task_paths(task_dir):
     task_dir = Path(task_dir)
     if not task_dir.is_dir():
         # A typo'd or unmounted queue path must never read as "zero cards,
         # all clean" — that would silently bypass the whole gate (PR #281
         # review). Missing is the caller's problem to report, not ours to hide.
         raise NotADirectoryError(f"--task-dir '{task_dir}' does not exist or is not a directory")
+    return sorted(task_dir.glob("TASK_*.json"))
+
+
+def scan_task_dir(task_dir, repo_dir=None, strict=False):
     results = []
-    for path in sorted(task_dir.glob("TASK_*.json")):
+    for path in list_task_paths(task_dir):
         ok, reasons = check_card(path, repo_dir=repo_dir, strict=strict)
         results.append((path, ok, reasons))
     return results
@@ -194,16 +208,20 @@ def main():
 
     if args.task_dir:
         try:
-            results = scan_task_dir(args.task_dir, repo_dir=repo_dir)
+            task_paths = list_task_paths(args.task_dir)
         except NotADirectoryError as e:
             print(f"FAIL  {e}")
             sys.exit(1)
         if args.spot_check:
-            completed = [r for r in results if _status(json.loads(Path(r[0]).read_text(encoding="utf-8"))) in COMPLETE_STATUSES]
-            if not completed:
+            # Only read status (cheap) for every card; only the ONE chosen
+            # card gets the expensive full validation (commit subprocess
+            # etc.) — spot-checking "one card a day" must not cost as much
+            # as validating the whole queue (PR #281 review).
+            completed_paths = [p for p in task_paths if _card_status_only(p) in COMPLETE_STATUSES]
+            if not completed_paths:
                 print(f"spot-check: no completed cards found in {args.task_dir}")
             else:
-                path, _, _ = random.choice(completed)
+                path = random.choice(completed_paths)
                 ok, reasons = check_card(path, repo_dir=repo_dir, strict=True)
                 if ok:
                     print(f"SPOT-CHECK PASS  {path}")
@@ -213,6 +231,7 @@ def main():
                     for r in reasons:
                         print(f"      - {r}")
         else:
+            results = scan_task_dir(args.task_dir, repo_dir=repo_dir)
             for path, ok, reasons in results:
                 if ok:
                     print(f"PASS  {path}")
