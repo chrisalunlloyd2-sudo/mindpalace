@@ -17,7 +17,7 @@ SUFFIX = {".java", ".py", ".sh", ".yml", ".yaml", ".xml", ".md", ".json", ".bat"
 
 # item label -> regexes that should hit in the source IF the item is built
 EVIDENCE = {
-    "NEXT_100 #91 open-issue crystals": [r"listIssues", r"TODO crystal|renderCrystals"],
+    "NEXT_100 #91 open-issue crystals": [r"list(Open)?Issues|refreshCrystals|watchRepo", r"TODO crystal|renderCrystals"],
     "NEXT_100 #92 issue verdicts (quorum votes, comment add-only)": [r"issue.?verdict", r"createIssueComment|postIssueComment|addComment"],
     "NEXT_100 #93 repo health rollup": [r"health.?rollup|repoHealth|HealthRollup"],
     "NEXT_100 #94 nightly repo sweep": [r"nightly.?sweep|RepoSweep"],
@@ -58,14 +58,30 @@ EVIDENCE = {
 
 
 def files():
-    """Files (function)."""
+    """Files (function).
+
+    The .worktrees guard filters OTHER task worktrees when running from the
+    primary checkout. It must be evaluated relative to ROOT: when ROOT itself
+    lives inside .worktrees (project-linked kanban worktree), every resolved
+    path contains .worktrees and an absolute-parts check would exclude the
+    whole source tree (MP verify 2026-10-15 — scan yielded only pom.xml +
+    INSTALLER.md). ROOT-relative 'target'/'.worktrees' parts are equivalent
+    for the primary checkout and safe inside a worktree.
+    """
     for base in SCAN:
         if base.is_file():
             yield base
         elif base.is_dir():
             for p in base.rglob("*"):
-                if p.is_file() and p.suffix in SUFFIX and ".worktrees" not in p.parts and "target" not in p.parts:
-                    yield p
+                if not p.is_file() or p.suffix not in SUFFIX:
+                    continue
+                try:
+                    rel = p.relative_to(ROOT).parts
+                except ValueError:
+                    continue
+                if "target" in rel or ".worktrees" in rel:
+                    continue
+                yield p
 
 
 def first_commit(pattern, rel):

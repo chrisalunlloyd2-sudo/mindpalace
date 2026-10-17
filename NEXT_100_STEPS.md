@@ -63,7 +63,7 @@
 ## PHASE D — Quorum ↔ GitHub Deep (89–98)
 - [x] **89** H33 GitHub releases — cascade tags v0.x.y per phase, builds installer exe, uploads to Release (gh release create; token from Credential Manager)
 - [x] **90** H33a version bump automation — pom.xml version + INSTALLER.md stamp on every phase completion
-- [ ] **91** (reconciled 2026-10-06: not done — the TODO crystals come from the lexical bridge scanning code, not from `GitHubClient.listIssues`) H34 open-issue crystals — GitHubClient.listIssues → TODO crystals; agents see repo issues in-world
+- [x] **91** (reconciled 2026-10-15: SHIPPED — the 2026-10-06 "not done" note was a false negative: it grepped the literal symbol `listIssues`, but the shipped read API is `GitHubClient.listOpenIssues` (GitHubClient.java:248) feeding `GitHubIssueStream.refreshCrystals` → GameEngine `spawnIssueCrystal` (feat(#118), commit 38964fa, 2026-10-03; selftest check "issue read feed" green 69/0 at 931d37b)). H34 open-issue crystals — GitHubClient.listIssues → TODO crystals; agents see repo issues in-world
 - [ ] **92** H35 issue verdicts — quorum votes on issues; verdict posted as comment (add-only, never close)
 - [ ] **93** H36 repo health rollup — issues/TODO-density/last-push age → KG attribute + room glow intensity
 - [ ] **94** H36a nightly 143-repo sweep — quota-free bot job
