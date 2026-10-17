@@ -3044,20 +3044,19 @@ public class GameEngine {
         Vector3f camRight = new Vector3f(camFront).cross(new Vector3f(0, 1, 0)).normalize();
 
         // t_0c1374b0: HudLayout.TELEPORT slot — centered modal picker over a
-        // dim slab so it reads over the world. STEP 96v9a: the old fixed-size
-        // 3.6×1.7 axis-aligned slab only faced the camera when the player
-        // stood axis-aligned (yaw-0 cube face normal is +Z while camFront is
-        // (sinYaw,0,cosYaw)) — at oblique yaw it fell to an edge-on sliver.
-        // Now: camera-facing yaw, screen-cover scale (FOV 70°: half-height
-        // tan35°·2.3 ≈ 1.61 → 2×pad width, 2×pad height covers 16:9 + pitch)
-        // and a depth-free draw so a wall inside 2.3 m can't slice it.
+        // dim slab so it reads over the world. STEP 96v9a: full-frame dim
+        // backdrop — screen-center anchor (slot x-offset is for the TEXT,
+        // not the veil), 8×5 screen-cover at 2.3 m (needs ±3.13 × ±1.77 for
+        // FOV 70° @16:9), camera-facing yaw (rotateY takes RADIANS — cam yaw
+        // is degrees), depth-free so a wall inside 2.3 m can't slice it.
         Vector3f camUp = cam.getUp();
         renderer.beginFrame(cam);
-        Vector3f slab = HudLayout.anchor(camPos, camFront, camRight, camUp, HudLayout.TELEPORT)
+        Vector3f slab = HudLayout.anchor(camPos, camFront, camRight, camUp,
+            HudLayout.TELEPORT.at(0f, 0f)) // screen-center veil (text keeps its slot)
             .add(new Vector3f(camFront).mul(-0.20f));
         GL11.glDisable(GL11.GL_DEPTH_TEST);
-        renderer.drawCubeColorYaw(slab, new Vector3f(7.60f, 3.70f, 0.05f), cam.getYaw(),
-            0.02f, 0.02f, 0.05f);
+        renderer.drawCubeColorYaw(slab, new Vector3f(8.0f, 5.0f, 0.05f),
+            (float) Math.toRadians(cam.getYaw()), 0.02f, 0.02f, 0.05f);
         GL11.glEnable(GL11.GL_DEPTH_TEST);
 
         Vector3f center = HudLayout.anchor(camPos, camFront, camRight, camUp, HudLayout.TELEPORT);
