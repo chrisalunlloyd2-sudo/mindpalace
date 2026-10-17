@@ -129,14 +129,15 @@ public final class StatusSnapshot {
             suffix = string(currentTailnet, "MagicDNSSuffix");
         }
 
-        Node self = parseNode(objectAt(root, "Self"));
+        JsonObject users = objectAt(root, "User");
+        Node self = parseNode(objectAt(root, "Self"), users);
         Map<String, Node> byHost = new LinkedHashMap<>();
         Map<String, Node> byIp = new LinkedHashMap<>();
         JsonObject peers = objectAt(root, "Peer");
         if (peers != null) {
             for (Map.Entry<String, JsonElement> entry : peers.entrySet()) {
                 if (!entry.getValue().isJsonObject()) continue;
-                Node node = parseNode(entry.getValue().getAsJsonObject());
+                Node node = parseNode(entry.getValue().getAsJsonObject(), users);
                 if (node == null) continue;
                 if (!node.hostName().isEmpty()) {
                     byHost.putIfAbsent(node.hostName().toLowerCase(Locale.ROOT), node);
@@ -152,13 +153,18 @@ public final class StatusSnapshot {
         return new StatusSnapshot(self, byHost, byIp, suffix);
     }
 
-    private static Node parseNode(JsonObject obj) {
+    private static Node parseNode(JsonObject obj, JsonObject users) {
         if (obj == null) return null;
         String hostName = string(obj, "HostName");
         String dnsName = string(obj, "DNSName");
         JsonObject profile = objectAt(obj, "UserProfile");
         String login = string(obj, "LoginName");
         if (login.isEmpty() && profile != null) login = string(profile, "LoginName");
+        if (login.isEmpty() && users != null) {
+            // Real `tailscale status --json` carries only UserID per node; the login lives
+            // in the top-level "User" table.
+            login = string(objectAt(users, string(obj, "UserID")), "LoginName");
+        }
         JsonElement nodeObj = obj.get("Node");
         JsonObject tagsSource = nodeObj != null && nodeObj.isJsonObject()
             ? nodeObj.getAsJsonObject()

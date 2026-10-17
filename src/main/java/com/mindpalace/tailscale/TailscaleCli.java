@@ -36,9 +36,12 @@ public final class TailscaleCli {
     public static TailscaleCli defaultCli() {
         String bin = System.getProperty("mindpalace.tailscale.bin");
         if (bin == null || bin.isBlank()) bin = System.getenv("MP_TAILSCALE_BIN");
-        return new TailscaleCli(
-            bin == null || bin.isBlank() ? "tailscale" : bin.trim(),
-            DEFAULT_TIMEOUT);
+        if (bin == null || bin.isBlank()) {
+            // The Windows installer does not put tailscale on PATH.
+            java.io.File win = new java.io.File("C:\\Program Files\\Tailscale\\tailscale.exe");
+            bin = win.isFile() ? win.getPath() : "tailscale";
+        }
+        return new TailscaleCli(bin.trim(), DEFAULT_TIMEOUT);
     }
 
     /** Test seam: explicit binary path and timeout. */

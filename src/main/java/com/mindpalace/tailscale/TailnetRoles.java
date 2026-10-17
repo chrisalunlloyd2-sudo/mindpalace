@@ -148,8 +148,16 @@ public final class TailnetRoles {
     private static final class SystemTags {
         static void applyDefaults(Set<String> architectLogins, Set<String> allowUsers,
                                   Set<String> allowTags) {
-            architectLogins.add(prop("mindpalace.tailscale.architect.login",
-                "MP_TAILSCALE_ARCHITECT_LOGIN", ""));
+            // Me-to-me trust: the tailnet owner is whoever this node is logged in as. Every
+            // device on that login (PCs, phone, agents) is the Architect; no ACL tag or admin
+            // console step is needed. An explicit property/env value overrides the derived one.
+            String owner = prop("mindpalace.tailscale.architect.login",
+                "MP_TAILSCALE_ARCHITECT_LOGIN", "");
+            if (owner.isEmpty()) owner = ownerLogin();
+            if (!owner.isEmpty()) {
+                architectLogins.add(owner);
+                allowUsers.add(owner);
+            }
             String users = prop("mindpalace.tailscale.allow.users",
                 "MP_TAILSCALE_ALLOW_USERS", "");
             for (String user : users.split(",")) {
@@ -161,6 +169,24 @@ public final class TailnetRoles {
             for (String tag : tags.split(",")) {
                 if (!tag.isBlank()) allowTags.add(tag.trim().toLowerCase(Locale.ROOT));
             }
+        }
+
+        private static volatile String cachedOwner;
+        private static volatile long ownerCheckedAt;
+
+        /** This node's own tailnet login, or "" when tailscale is absent (fail-closed). Cached 60 s. */
+        static String ownerLogin() {
+            long now = System.currentTimeMillis();
+            String cached = cachedOwner;
+            if (cached != null && now - ownerCheckedAt < 60_000L) return cached;
+            String login = "";
+            try {
+                StatusSnapshot.Node self = TailscaleCli.defaultCli().status().self();
+                if (self != null && self.login() != null) login = self.login().trim();
+            } catch (Exception | LinkageError ignored) { /* no tailscale: no owner, nobody is architect */ }
+            cachedOwner = login;
+            ownerCheckedAt = now;
+            return login;
         }
 
         private static String prop(String systemKey, String envKey, String fallback) {
