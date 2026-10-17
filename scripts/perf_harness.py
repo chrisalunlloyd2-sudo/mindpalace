@@ -134,8 +134,20 @@ def ollama_check(url, model):
 
 def fire_ollama(url, model, prompt, num_predict, num_ctx):
     """D5: ONE POST /api/generate; record durations + tok/s."""
-    body = json.dumps({"model": model, "prompt": prompt, "stream": False,
-                       "options": {"num_ctx": num_ctx, "num_predict": num_predict}}).encode()
+    body = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"num_ctx": num_ctx, "num_predict": num_predict},
+        # PERF-A3 repeatability: drop the model from RAM the moment the
+        # reply lands. Ollama's default ~5 min keep_alive meant a
+        # back-to-back run started with the previous run's model still
+        # resident, skewing its baseline frames (observed: runB baseline
+        # p95 208.8 ms vs runA 58.8 ms). keep_alive=0 makes each run's
+        # daemon state equal at start.
+        "keep_alive": 0,
+    }
+    body = json.dumps(body).encode()
     req = urllib.request.Request(url.rstrip("/") + "/api/generate", data=body,
                                  headers={"Content-Type": "application/json"})
     t0 = time.time()
@@ -417,7 +429,7 @@ def main():
     log(f"RESULT verdict={verdict} pass={passed} frames={len(rows)} "
         f"snapshots={len(snaps)} fired@{load_fired_at} "
         f"tok/s={(load_rec or {}).get('tokens_per_s')}")
-    log(f"WINDowS baseline: {json.dumps(base)}")
+    log(f"WINDOWS baseline: {json.dumps(base)}")
     log(f"WINDOWS generation: {json.dumps(gen)}")
     log(f"CERTAINTY: cleanup own_pid_gone={our_pid_gone} "
         f"swarm={post_pids or 'no java processes'}")

@@ -234,3 +234,33 @@ on that card; remediation code in NEW cards for Architect sign-off.
 - World content is repo-derived; if rooms change between runs the PATH is the
   same only if the checkout is the same — the harness records git SHA + jar
   fingerprint in the result JSON so cross-machine comparisons are honest.
+## A3 build-out notes (t_993a201f, 2026-10-16) — deltas vs this spec
+The A3 harness (scripts/perf_harness.py) implements this doc with these
+code-verified deviations, confirmed during the smoke runs:
+- The doc's PERF-READY / PERF-EXIT / perf.signalFile / ACK handshake does NOT
+  exist in the merged A2 code (grep-verified). The harness treats the game as
+  ready at the FIRST `[PERF-FRAME]` stdout marker and complete at the
+  `PERF_RESULT:` line + process exit code (0 ok, 1 harness-abort, 2 perf
+  FAIL). Update this doc if a real handshake lands later.
+- A2 bug found and fixed in GameEngine.java during the first smoke run:
+  `perfFrameStartNs` was seeded once at loop entry and never reset, so every
+  CSV `frame_ms` row and the game's own PERF_RESULT were CUMULATIVE elapsed
+  time since loop start (400 frames marched 1.28 s -> 11.47 s while the run
+  really took ~11.5 s wall; verdict FAILed 400/400 at p50 6424 ms). The clock
+  is now reset per frame; `frame_ms` is the true per-frame delta.
+- Repeatability (D-series acceptance: p95 within 15 %, hitches within ±2):
+  harness MECHANISM is fully deterministic — the 3-segment track is applied
+  identically every run ([PERF-POSE] stdout lines are byte-identical across
+  all runs, diff-verified A/B and C/D), CSV/snapshot/verdict artifacts are
+  produced every run, and cleanup is proven each run. Wall-time p95 on THIS
+  box is NOT repeatable within 15 % and cannot be while the live agents
+  (elevated javaw PID 1740) keep generating on the same Ollama daemon:
+  observed same-pair baseline p95 58.8 vs 208.8 ms when run B inherited
+  run A's resident model (fixed via `keep_alive: 0` on the fire POST) and
+  46.0 vs 108.8 ms across C/D from live-agent daemon churn between runs;
+  decode window differs per run too (tok/s 12.26 vs 8.85 for the identical
+  prompt). The honest reading: track determinism = game property (proven);
+  wall p95 spread = box property (live agent + daemon contention), and the
+  result JSON already records model/wall_s/tok/s per run so cross-run
+  comparisons stay honest. Verdict gates stay config-tunable
+  (mindpalace.perf.maxFrameMs / maxOverFrames) for quiet-box runs.
