@@ -132,20 +132,30 @@ def ollama_check(url, model):
     return False
 
 
-def fire_ollama(url, model, prompt, num_predict, num_ctx):
-    """D5: ONE POST /api/generate; record durations + tok/s."""
+def fire_ollama(url, model, prompt, num_predict, num_ctx, num_thread=None,
+                keep_alive=0):
+    """D5: ONE POST /api/generate; record durations + tok/s.
+    PERF-A4: num_thread pass-through (Ollama default over-subscribes the
+    decoder against the game/GL threads — matrix test 32/64/128 × thread
+    1/2/3). keep_alive parametrised so the matrix runner can override the
+    A3 default (=0) without editing the harness."""
+    options = {"num_ctx": num_ctx, "num_predict": num_predict}
+    if num_thread:
+        options["num_thread"] = int(num_thread)
     body = {
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "options": {"num_ctx": num_ctx, "num_predict": num_predict},
+        "options": options,
         # PERF-A3 repeatability: drop the model from RAM the moment the
         # reply lands. Ollama's default ~5 min keep_alive meant a
         # back-to-back run started with the previous run's model still
         # resident, skewing its baseline frames (observed: runB baseline
         # p95 208.8 ms vs runA 58.8 ms). keep_alive=0 makes each run's
         # daemon state equal at start.
-        "keep_alive": 0,
+        # A3 default keep_alive=0 (below). PERF-A4: matrix arms may override
+        # to test a resident-model arm; the matrix runner sets this per arm.
+        "keep_alive": keep_alive,
     }
     body = json.dumps(body).encode()
     req = urllib.request.Request(url.rstrip("/") + "/api/generate", data=body,
@@ -238,17 +248,25 @@ class PerfRun:
         self.load_rec_event = threading.Event()
 
     def launch(self, jar, out_dir):
+        # PERF-A4: --frame-prof adds -Dmindpalace.frameProf=true (GlTrace
+        # stage timing + HitchSampler stack histogram land in game_stdout.log
+        # and the CSV stage_ columns) so 800+ ms outliers can be attributed
+        # to a stage. Flag is off by default — e2e/selftest unaffected.
+        prof_flag = []
+        if getattr(self.args, "frame_prof", False):
+            prof_flag = ["-Dmindpalace.frameProf=true"]
         cmd = [f"{JAVA_HOME}/bin/java",
                "-Dprism.order=sw", "-Dprism.vsync=false",
                "-XX:+UseG1GC", "-XX:MaxGCPauseMillis=200",
-               "-Xms256m", "-Xmx768m",
+               "-Xms256m", "-Xmx768m"] + prof_flag + [
                f"-Dmindpalace.frameLock={self.args.framelock}",
                f"-Dmindpalace.perf.frames={self.args.frames}",
                f"-Dmindpalace.perf.suspendAgent={str(self.args.suspend_agent).lower()}"]
         if self.args.track:
             cmd.append(f"-Dmindpalace.inputTrack={self.args.track}")
         cmd += ["-jar", str(jar), "--perf", str(out_dir), "--time", "12"]
-        log("LAUNCH: java -Dmindpalace.frameLock=" + self.args.framelock +
+        log("LAUNCH: java " + (" ".join(prof_flag) + " " if prof_flag else "") +
+            "-Dmindpalace.frameLock=" + self.args.framelock +
             f" -Dmindpalace.perf.frames={self.args.frames} "
             f"-Dmindpalace.perf.suspendAgent={str(self.args.suspend_agent).lower()} "
             f"{Path(jar).name} --perf {out_dir} --time 12")
@@ -303,7 +321,9 @@ class PerfRun:
         try:
             rec = fire_ollama(self.args.ollama_url, self.args.model,
                               self.args._prompt, self.args.num_predict,
-                              self.args.num_ctx)
+                              self.args.num_ctx,
+                              num_thread=getattr(self.args, "num_thread", None),
+                              keep_alive=getattr(self.args, "keep_alive", 0))
         finally:
             self.load_rec_event.set()
         self.load_rec = rec
@@ -314,6 +334,15 @@ def main():
     ap.add_argument("--model", default=env_flag("PERF_MODEL", "llama3.2:1b"))
     ap.add_argument("--num-predict", type=int, default=int(env_flag("PERF_NUM_PREDICT", "64")))
     ap.add_argument("--num-ctx", type=int, default=int(env_flag("PERF_NUM_CTX", "8192")))
+    # PERF-A4 knob (doc's A3 acceptance listed it; A3 shipped without it).
+    ap.add_argument("--num-thread", type=int, default=int(env_flag("PERF_NUM_THREAD", "0"))
+                    or None, help="Ollama decoder threads; 0/absent = daemon default")
+    ap.add_argument("--keep-alive", default=env_flag("PERF_KEEP_ALIVE", "0"),
+                    help="Ollama keep_alive for the fire request (A3 default 0; "
+                         "set e.g. 5m for a resident-model arm)")
+    # PERF-A4 knob: enable -Dmindpalace.frameProf for stage/stack attribution.
+    ap.add_argument("--frame-prof", action="store_true",
+                    default=str(env_flag("PERF_FRAME_PROF", "0")) == "1")
     ap.add_argument("--frames", type=int, default=int(env_flag("PERF_FRAMES", "1200")))
     ap.add_argument("--framelock", default=env_flag("PERF_FRAMELOCK", "8.3"))
     ap.add_argument("--load-frame", type=int, default=int(env_flag("PERF_LOAD_FRAME", "180")))
@@ -404,7 +433,9 @@ def main():
         "jar": Path(jar).name,
         "run_dir": str(out_dir),
         "knobs": {"model": args.model, "num_predict": args.num_predict,
-                  "num_ctx": args.num_ctx, "frames": args.frames,
+                  "num_ctx": args.num_ctx, "num_thread": args.num_thread,
+                  "keep_alive": args.keep_alive, "frame_prof": args.frame_prof,
+                  "frames": args.frames,
                   "framelock_ms": args.framelock, "load_frame": args.load_frame,
                   "suspend_agent": args.suspend_agent,
                   "track": args.track or "classpath:tracks/perf_track_09_agents.json"},
