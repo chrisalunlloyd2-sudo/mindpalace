@@ -53,22 +53,42 @@ def parse_model_config_java(repo_dir):
     return values, None
 
 
+class OllamaUnavailable(Exception):
+    """ollama isn't installed here at all — not every machine has it, so this is skip-worthy, not a failure."""
+
+
+class OllamaCheckFailed(Exception):
+    """ollama IS present but the listing call itself failed — that's a real problem, not something to wave through."""
+
+
 def ollama_list():
+    """Returns (names, warning). Raises OllamaUnavailable/OllamaCheckFailed on the two different failure modes."""
     try:
         result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=15)
     except FileNotFoundError:
-        return None, "ollama binary not on PATH — skipping installed-model check"
+        raise OllamaUnavailable("ollama binary not on PATH — skipping installed-model check")
     except Exception as e:
-        return None, f"could not run `ollama list`: {e}"
+        raise OllamaCheckFailed(f"could not run `ollama list`: {e}")
     if result.returncode != 0:
-        return None, f"`ollama list` exited {result.returncode}: {result.stderr.strip()}"
+        raise OllamaCheckFailed(f"`ollama list` exited {result.returncode}: {result.stderr.strip()}")
     # First column of each non-header line is the model name (tag included).
     names = set()
     for line in result.stdout.splitlines()[1:]:
         parts = line.split()
         if parts:
             names.add(parts[0])
-    return names, None
+    return names
+
+
+def _model_installed(model, installed):
+    """Match a pin against `ollama list` output, tolerating an implicit :latest tag on either side."""
+    if model in installed:
+        return True
+    if ":" not in model and f"{model}:latest" in installed:
+        return True
+    if model.endswith(":latest") and model[: -len(":latest")] in installed:
+        return True
+    return False
 
 
 def main():
@@ -102,15 +122,21 @@ def main():
                 )
 
     # 2. every pinned model actually installed
-    installed, err = ollama_list()
-    if err:
-        print(f"WARN  {err}")
+    try:
+        installed = ollama_list()
+    except OllamaUnavailable as e:
+        print(f"WARN  {e}")
+    except OllamaCheckFailed as e:
+        # ollama IS on this machine but the listing call itself is broken —
+        # that's not "nothing to check", it's "couldn't check", so it must
+        # fail the gate rather than silently PASS-ing (PR #281 review).
+        problems.append(str(e))
     else:
         all_pins = dict(pins.get("in_game", {}))
         for job, spec in pins.get("cron_jobs", {}).items():
             all_pins[f"cron_jobs.{job}"] = spec.get("model")
         for role, model in all_pins.items():
-            if model and model not in installed:
+            if model and not _model_installed(model, installed):
                 problems.append(f"{role} is pinned to '{model}' but it is not in `ollama list` on this machine")
 
     if problems:

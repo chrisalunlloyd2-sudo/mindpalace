@@ -1485,8 +1485,12 @@ public class AgentManager {
      */
     public void initGitHub(String repoOwner, String repoName, String githubToken) {
         try {
+            // Must match card_hygiene.py's default task dir (and AGENTS.md's
+            // documented queue path) exactly, or the one-task-at-a-time guard
+            // in GitHubPollBridge checks an empty parent while the real queue
+            // (todo_files/mindpalace) still has a card in flight (PR #281 review).
             String taskDir = System.getProperty("user.home") != null
-                ? Paths.get(System.getProperty("user.home"), "AIGEN_SYS", "todo_management").toString()
+                ? Paths.get(System.getProperty("user.home"), "AIGEN_SYS", "todo_management", "todo_files", "mindpalace").toString()
                 : "/tmp/tasks";
             String ledgerPath = System.getProperty("user.home") != null
                 ? Paths.get(System.getProperty("user.home"), "AIGEN_SYS", ".hermes", "github_ledger.txt").toString()

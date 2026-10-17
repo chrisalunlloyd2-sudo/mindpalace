@@ -32,6 +32,11 @@ public class GitHubPollBridge {
     // budget, and must create none while an existing task file is still
     // in flight (see #94 — an uncapped poll once wrote ~30+ files at once).
     private static final int MAX_TASKS_PER_POLL = 1;
+    // Bounded walk past the oldest page once it's fully processed — a real
+    // issue (PR #281 review: ordering alone doesn't help once the first 100
+    // are already in the ledger), but unbounded pagination could spin forever
+    // against a huge backlog, so cap it instead of paginating indefinitely.
+    private static final int MAX_PAGES_PER_POLL = 5;
 
     private final String repoOwner;
     private final String repoName;
@@ -93,26 +98,32 @@ public class GitHubPollBridge {
                 return;
             }
 
-            List<GitHubIssue> issues = fetchHermesQueueIssues();
-            // Oldest issue first (FIFO), so the backlog drains in the order
-            // it was filed rather than whatever order the API happens to return.
-            issues.sort(Comparator.comparing(issue -> issue.createdAt));
+            // fetchHermesQueueIssues already asks the API for created-ascending
+            // order, but that alone isn't enough once the oldest page is fully
+            // processed (PR #281 review): walk forward page by page, bounded,
+            // until an unprocessed issue turns up or we run out of pages.
             int newTasks = 0;
-
-            for (GitHubIssue issue : issues) {
-                if (newTasks >= MAX_TASKS_PER_POLL) {
-                    break; // never exceed the single-task budget in one poll
-                }
-                if (processedIssueNumbers.contains(issue.number)) {
-                    continue; // Already converted
+            for (int page = 1; page <= MAX_PAGES_PER_POLL && newTasks < MAX_TASKS_PER_POLL; page++) {
+                List<GitHubIssue> issues = fetchHermesQueueIssues(page);
+                if (issues.isEmpty()) {
+                    break; // no more pages
                 }
 
-                // Create TASK file from issue
-                boolean created = createTaskFile(issue);
-                if (created) {
-                    processedIssueNumbers.add(issue.number);
-                    newTasks++;
-                    log("Converted GitHub issue #" + issue.number + " → TASK file");
+                for (GitHubIssue issue : issues) {
+                    if (newTasks >= MAX_TASKS_PER_POLL) {
+                        break; // never exceed the single-task budget in one poll
+                    }
+                    if (processedIssueNumbers.contains(issue.number)) {
+                        continue; // Already converted
+                    }
+
+                    // Create TASK file from issue
+                    boolean created = createTaskFile(issue);
+                    if (created) {
+                        processedIssueNumbers.add(issue.number);
+                        newTasks++;
+                        log("Converted GitHub issue #" + issue.number + " → TASK file");
+                    }
                 }
             }
 
@@ -141,12 +152,13 @@ public class GitHubPollBridge {
     }
 
     /**
-     * Fetch all open issues with 'hermes-queue' label.
+     * Fetch one page of open issues carrying `label`, oldest-created first.
      */
-    private List<GitHubIssue> fetchHermesQueueIssues() throws Exception {
+    private List<GitHubIssue> fetchHermesQueueIssues(int page) throws Exception {
+        String encodedLabel = java.net.URLEncoder.encode(label, StandardCharsets.UTF_8);
         String url = String.format(
-            "%s/repos/%s/%s/issues?labels=%s&state=open&per_page=100",
-            GITHUB_API, repoOwner, repoName, label
+            "%s/repos/%s/%s/issues?labels=%s&state=open&per_page=100&sort=created&direction=asc&page=%d",
+            GITHUB_API, repoOwner, repoName, encodedLabel, page
         );
 
         var request = HttpRequest.newBuilder()

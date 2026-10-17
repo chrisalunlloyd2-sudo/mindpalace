@@ -49,6 +49,11 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
 # "PASS"/"green"/"OK" with no count is NOT accepted, it's exactly the kind
 # of unverifiable claim this checker exists to catch.
 SELFTEST_ZERO_FAILED_RE = re.compile(r"(\b0\s*failed\b|/\s*0\b)", re.IGNORECASE)
+# A `build`/`e2e` value that says it didn't actually succeed — "FAILED",
+# "error", "skipped", "unknown" and friends — must never be accepted just
+# because the field is non-empty (PR #281 review: a card with
+# evidence.build="FAILED" was passing before this).
+FAILURE_MARKER_RE = re.compile(r"\b(fail(ed)?|error(ed)?|skip(ped)?|unknown|timed[ _-]?out)\b", re.IGNORECASE)
 
 
 def _field(card, *names):
@@ -99,21 +104,39 @@ def validate_evidence(card, repo_dir=None, strict=False):
             reasons.append(f"evidence.commit '{commit}' could not be verified (not a git checkout?)")
 
     selftest = str(evidence.get("selftest", "")).strip()
-    if selftest and not SELFTEST_ZERO_FAILED_RE.search(selftest):
-        reasons.append(f"evidence.selftest '{selftest}' doesn't show zero failures")
+    if selftest:
+        if FAILURE_MARKER_RE.search(selftest):
+            reasons.append(f"evidence.selftest '{selftest}' reports a failure, not zero failures")
+        elif not SELFTEST_ZERO_FAILED_RE.search(selftest):
+            reasons.append(f"evidence.selftest '{selftest}' doesn't show zero failures")
+
+    build = str(evidence.get("build", "")).strip()
+    if build and FAILURE_MARKER_RE.search(build):
+        reasons.append(f"evidence.build '{build}' reports a failure")
 
     e2e = str(evidence.get("e2e", "")).strip()
     if e2e:
-        e2e_path = Path(e2e)
-        if e2e_path.is_absolute() or "/" in e2e or "\\" in e2e:
+        if FAILURE_MARKER_RE.search(e2e):
+            reasons.append(f"evidence.e2e '{e2e}' reports a failure")
+        elif e2e_looks_like_path(e2e):
+            # Resolve relative paths against repo_dir (not cwd) so a card
+            # checked from outside the checkout still finds its own
+            # artifacts (PR #281 review).
+            e2e_path = Path(e2e)
+            if not e2e_path.is_absolute() and repo_dir is not None:
+                e2e_path = Path(repo_dir) / e2e_path
             if not e2e_path.exists():
                 reasons.append(f"evidence.e2e path '{e2e}' does not exist")
             elif e2e_path.is_dir() and not any(e2e_path.iterdir()):
                 reasons.append(f"evidence.e2e dir '{e2e}' is empty")
-        # else: a bare marker string ("green"/"19 waypoints") — accepted,
-        # we can't verify it without the real shots dir, same as `build`.
+        # else: a bare success marker string ("green"/"19 waypoints") —
+        # accepted, we can't verify it without the real shots dir.
 
     return (len(reasons) == 0), reasons
+
+
+def e2e_looks_like_path(value):
+    return "/" in value or "\\" in value or Path(value).is_absolute()
 
 
 def check_card(path, repo_dir=None, strict=False):
@@ -126,9 +149,12 @@ def check_card(path, repo_dir=None, strict=False):
 
 def scan_task_dir(task_dir, repo_dir=None, strict=False):
     task_dir = Path(task_dir)
-    results = []
     if not task_dir.is_dir():
-        return results
+        # A typo'd or unmounted queue path must never read as "zero cards,
+        # all clean" — that would silently bypass the whole gate (PR #281
+        # review). Missing is the caller's problem to report, not ours to hide.
+        raise NotADirectoryError(f"--task-dir '{task_dir}' does not exist or is not a directory")
+    results = []
     for path in sorted(task_dir.glob("TASK_*.json")):
         ok, reasons = check_card(path, repo_dir=repo_dir, strict=strict)
         results.append((path, ok, reasons))
@@ -161,7 +187,11 @@ def main():
                 print(f"      - {r}")
 
     if args.task_dir:
-        results = scan_task_dir(args.task_dir, repo_dir=repo_dir)
+        try:
+            results = scan_task_dir(args.task_dir, repo_dir=repo_dir)
+        except NotADirectoryError as e:
+            print(f"FAIL  {e}")
+            sys.exit(1)
         if args.spot_check:
             completed = [r for r in results if _status(json.loads(Path(r[0]).read_text(encoding="utf-8"))) in COMPLETE_STATUSES]
             if not completed:
