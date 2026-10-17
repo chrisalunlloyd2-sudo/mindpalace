@@ -295,7 +295,7 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
 |------|--------|
 | `--autodrive <dir>` | Scripted walkthrough that captures PNG frames to `<dir>` (lets an agent SEE the world) |
 | `--selftest` | 54 automated checks headlessly, PASS/FAIL, exit 0/1 (CI gate) |
-| `--e2e <dir>` | 13 labeled waypoints captured as PNGs (visual regression proof) |
+| `--e2e <dir>` | labeled waypoints (22 at last count) captured as PNGs (visual regression proof) |
 | `--demo` | Full palace from a bundled JSON snapshot — no GitHub auth, no network (see docs/DEMO_MODE.md; lands as step 112) |
 
 ### Or skip the build — download the installer

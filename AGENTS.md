@@ -61,34 +61,48 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 ## Module map (`src/main/java/com/mindpalace/`)
 - **engine/** — `GameEngine` (main loop, rendering, input dispatch),
   `Input`, `GameState`, `ToolExecutor` (file read/edit/create/delete for the
-  agent loop).
-- **entity/** — `Player`, `AgentNPC`.
+  agent loop), `AstGate` (AST-level gate for agent-written code).
+- **entity/** — `Player`, `AgentNPC`, `ScoutNPC` (roaming scout bot).
 - **world/** — room/hallway generation: `WorldBuilder`, `RoomPopulator`,
   `RepoMapper`, `Room`, `Hallway`, `Book`, `FogOfWar`, `PortalTheme`
-  (teleporter color pairing), `OutsideWorld`. Themed rooms:
-  `TuringTape`, `RotorRoom`, `BanburismusGauge`, `NashFountain`,
-  `LabDevice`, `Constellation`, `TodoCrystal`.
-- **ui/** — `HUD` (door prompts), `InteractionPromptSystem` (nearby-
-  interactable prompts, in progress), `BookViewer`, `BookEditor`,
+  (teleporter color pairing), `OutsideWorld`, `CorridorLayout`, `RoomLayout`,
+  `LegacyRepoClassifier`, `TimeClock`, `TimeMachine`. Themed rooms:
+  `TuringTape`, `RotorRoom`, `EnigmaPlugboard`, `BanburismusGauge`,
+  `NashFountain`, `LabDevice`, `Constellation`, `TodoCrystal`.
+- **blocks/** — placeable/ambient block types: `Block`, `BlockRegistry`,
+  `FireBlock`, `FireflyBlock`, `FrostBlock`, `WeatherBlock`, `SelfTestProbe`.
+- **ui/** — `HUD` (door prompts), `HudLayout`, `InteractionPromptSystem`
+  (nearby-interactable prompts, in progress), `BookViewer`, `BookEditor`,
   `DressingRoom`.
 - **render/** — `Renderer`, `Camera`, `Shader`, `Mesh`, `Texture`,
-  `FontRenderer`, `BloomEffect`, `Screenshot`.
+  `FontRenderer`, `BloomEffect`, `Screenshot`, `FrustumCuller`; particles
+  (opt-in): `ParticleBatch`, `ParticleEmitter`, `ParticlePool`,
+  `ParticleQuadBuffer`, `ParticleQuality`, `ParticleSelfCheck`; diagnostics
+  (opt-in flags): `GlTrace`, `HitchSampler`.
 - **agent/** — `AgentManager` (the autonomous cycle), `OllamaClient`,
   `ModelScheduler`, `ModelConfig`, `ModelLifespan`, `KnowledgeGraph`,
   `LexicalAnalyzer`, `BehaviorTree`, `ContextKit`, `KVTree`, `AgentChat`,
-  `IdleDetector`.
+  `IdleDetector`, `BdiBridge`.
   - **agent/sims/** — SIMS1337 parity: `ModelRouter`, `LoRASwitcher`,
-    `AdapterType`, `FOWGate`, `WeightedQuorumVote` (quorum backend — no
-    in-game room/UI for it yet), `LanguageRegistry`, `HexCoord`,
+    `AdapterType`, `FOWGate`, `WeightedQuorumVote` (quorum backend),
+    `QuorumProposalSource` (real work as proposals), `QuorumTaskSpawner`,
+    `VoteQualityLedger`, `ProposalRotator`, `LanguageRegistry`, `HexCoord`,
     `Complexity`.
+  - **agent/sprites/** — `SpriteProposalService`.
 - **github/** — `GitHubClient`, `RepoScanner`, `GistWall`, `GitHubIssueStream`.
+- **integration/** — `ContextBroadcaster`, `GitHubPollBridge`,
+  `OAuthCallbackServer`, `RedditOAuthClient`, `RedditToQuorumBridge`.
+- **tailscale/** — tailnet layer (owner login = Architect, no tags needed;
+  never Funnel or public ports): `TailscaleCli`, `StatusSnapshot`, `MagicDns`,
+  `WhoIsResolver`, `TailnetIdentity`, `TailnetRoles`, `TailnetTransport`.
 - **avatar/** — `AvatarDescriptor`, `AvatarLibrary`, `CharacterDNA`,
   `AvatarImporter`.
 - **genetics/** — procedural audio GA: `AudioEvolver`, `AudioGenome`,
   `SonicFitness`, `FFT`, `PatchSynth`, `GenomeArchive`, `GeneticTimeline`,
   `DeterministicSeed`, `GenomeControl`.
 - **audio/** — `AudioEngine`, `MusicEngine`, `StepSequencer`.
-- **economy/** — `DePIN`, `Wallet`, `Blackboard`.
+- **economy/** — `DePIN`, `Wallet`, `Blackboard`, `EconomyLedger`, `Escrow`,
+  `Treasury`. **economics/** — `AgentRewardMechanism`.
 - **backup/** — `Telemetry` (event ledger), `MemoryManager`, `BackupManager`.
 - **deploy/** — `LiveUpdateManager`, `PatchManager`, `DeployManager`,
   `AnimationSystem`.
