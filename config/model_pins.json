@@ -1,0 +1,24 @@
+{
+  "_comment": "MP-042 model-pin manifest. Single source of truth for 'which Ollama model drives which job', so a job fails loud on drift instead of silently skipping (the problem MP-042/#187 describes). Validate with scripts/check_model_pins.py.",
+  "_scope": "The in_game block below is READ-ONLY documentation — ModelConfig.java (src/main/java/com/mindpalace/agent/ModelConfig.java) is the actual source of truth for those roles; this file only mirrors it so the validator can catch the two drifting apart. The cron_jobs block is the part this file actually governs, but it's a PROPOSED CONTRACT, not yet wired into any local cron/Task Scheduler entry outside this repo -- Hermes' own scheduler needs to be pointed at it for the pin to take effect. See docs/MODEL_PINS.md.",
+  "in_game": {
+    "tool": "llama3.2:1b",
+    "critic": "qwen2.5:0.5b",
+    "tie_breaker": "deepseek-r1:1.5b",
+    "code_suggest": "qwen2.5:0.5b",
+    "chat": "llama3.2:3b",
+    "embed": "nomic-embed-text"
+  },
+  "cron_jobs": {
+    "hermes_task_executor": {
+      "model": "codellama:7b",
+      "role": "picks up the single in-flight TASK_*.md/.json card and writes the actual code change",
+      "status": "proposed default — Architect/Hermes maintainer to confirm against what Hermes is really invoking today"
+    }
+  },
+  "installed_models_reference": [
+    "llama3.2:3b", "llama3.2:1b", "qwen2.5:0.5b", "deepseek-r1:1.5b",
+    "phi3:mini", "tinyllama:1.1b", "phi:latest", "gemma2:2b",
+    "mistral:7b", "codellama:7b", "nomic-embed-text"
+  ]
+}

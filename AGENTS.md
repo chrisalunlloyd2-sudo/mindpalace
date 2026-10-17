@@ -37,6 +37,16 @@ system — the world is running right now, most hours of most days.
    side-by-side for hours because a launch skipped the sweep. After any
    launch you perform, verify `tasklist` shows exactly ONE java process
    before finishing the turn.
+7. **Batch doc-drift TASK cards.** A one-line "AGENTS.md is missing class X"
+   fix costs the same full cascade (build + selftest + E2E tour + push) as
+   a real feature — that's the single biggest avoidable throughput loss
+   once `hermes-queue` has more than one doc-only issue queued. When a TASK
+   card is a doc-drift fix, check `BACKLOG.md` for other open doc-drift
+   issues before starting the cascade and fold every one you can verify
+   against source into the same commit (see 2026-10-17: 16 separate
+   `AGENTS.md`/`ARCHITECTURE.md` module-map issues closed in one pass).
+   Never bundle a doc fix into the same commit as a code/behavior change —
+   batch doc-with-doc only, so a revert never has to untangle the two.
 
 ## Build & verify
 ```
@@ -61,34 +71,46 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 ## Module map (`src/main/java/com/mindpalace/`)
 - **engine/** — `GameEngine` (main loop, rendering, input dispatch),
   `Input`, `GameState`, `ToolExecutor` (file read/edit/create/delete for the
-  agent loop).
-- **entity/** — `Player`, `AgentNPC`.
+  agent loop), `AstGate`.
+- **entity/** — `Player`, `AgentNPC`, `ScoutNPC`.
 - **world/** — room/hallway generation: `WorldBuilder`, `RoomPopulator`,
-  `RepoMapper`, `Room`, `Hallway`, `Book`, `FogOfWar`, `PortalTheme`
-  (teleporter color pairing), `OutsideWorld`. Themed rooms:
+  `RepoMapper`, `Room`, `RoomLayout`, `Hallway`, `CorridorLayout`, `Book`,
+  `FogOfWar`, `PortalTheme` (teleporter color pairing), `OutsideWorld`,
+  `TimeClock`, `TimeMachine`, `LegacyRepoClassifier`. Themed rooms:
   `TuringTape`, `RotorRoom`, `BanburismusGauge`, `NashFountain`,
-  `LabDevice`, `Constellation`, `TodoCrystal`.
-- **ui/** — `HUD` (door prompts), `InteractionPromptSystem` (nearby-
-  interactable prompts, in progress), `BookViewer`, `BookEditor`,
-  `DressingRoom`.
+  `LabDevice`, `Constellation`, `TodoCrystal`, `EnigmaPlugboard`.
+- **ui/** — `HUD` (door prompts), `HudLayout`, `InteractionPromptSystem`
+  (nearby-interactable prompts), `BookViewer`, `BookEditor`, `DressingRoom`.
 - **render/** — `Renderer`, `Camera`, `Shader`, `Mesh`, `Texture`,
-  `FontRenderer`, `BloomEffect`, `Screenshot`.
+  `FontRenderer`, `BloomEffect`, `Screenshot`, `FrustumCuller`, `GlTrace`,
+  `HitchSampler`. Particle system (MP-028): `ParticleBatch`,
+  `ParticleEmitter`, `ParticlePool`, `ParticleQuadBuffer`, `ParticleQuality`,
+  `ParticleSelfCheck`.
 - **agent/** — `AgentManager` (the autonomous cycle), `OllamaClient`,
   `ModelScheduler`, `ModelConfig`, `ModelLifespan`, `KnowledgeGraph`,
   `LexicalAnalyzer`, `BehaviorTree`, `ContextKit`, `KVTree`, `AgentChat`,
-  `IdleDetector`.
+  `IdleDetector`, `BdiBridge`.
   - **agent/sims/** — SIMS1337 parity: `ModelRouter`, `LoRASwitcher`,
     `AdapterType`, `FOWGate`, `WeightedQuorumVote` (quorum backend — no
     in-game room/UI for it yet), `LanguageRegistry`, `HexCoord`,
-    `Complexity`.
+    `Complexity`, `ProposalRotator`, `QuorumProposalSource`,
+    `QuorumTaskSpawner`, `VoteQualityLedger`.
+  - **agent/sprites/** — `SpriteProposalService`.
 - **github/** — `GitHubClient`, `RepoScanner`, `GistWall`, `GitHubIssueStream`.
+- **integration/** — cloud↔local bridges: `GitHubPollBridge` (hermes-queue
+  issues → local TASK files), `ContextBroadcaster`, `RedditOAuthClient`,
+  `OAuthCallbackServer`, `RedditToQuorumBridge`.
+- **blocks/** — the block-assembly architecture (§20 of
+  `CROSS_CORRELATED_ROADMAP.md`): `Block`, `BlockRegistry`, `FireBlock`,
+  `FireflyBlock`, `FrostBlock`, `WeatherBlock`, `SelfTestProbe`.
 - **avatar/** — `AvatarDescriptor`, `AvatarLibrary`, `CharacterDNA`,
   `AvatarImporter`.
 - **genetics/** — procedural audio GA: `AudioEvolver`, `AudioGenome`,
   `SonicFitness`, `FFT`, `PatchSynth`, `GenomeArchive`, `GeneticTimeline`,
   `DeterministicSeed`, `GenomeControl`.
 - **audio/** — `AudioEngine`, `MusicEngine`, `StepSequencer`.
-- **economy/** — `DePIN`, `Wallet`, `Blackboard`.
+- **economy/** — `DePIN`, `Wallet`, `Blackboard`, `EconomyLedger`, `Escrow`,
+  `Treasury`.
 - **backup/** — `Telemetry` (event ledger), `MemoryManager`, `BackupManager`.
 - **deploy/** — `LiveUpdateManager`, `PatchManager`, `DeployManager`,
   `AnimationSystem`.
@@ -114,7 +136,22 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 llama3.2:3b, llama3.2:1b, qwen2.5:0.5b, deepseek-r1:1.5b, phi3:mini,
 tinyllama:1.1b, phi:latest, gemma2:2b, mistral:7b, codellama:7b,
 nomic-embed-text. Game roles: tool=llama3.2:1b, critic=qwen2.5:0.5b,
-tie-breaker=deepseek-r1:1.5b.
+tie-breaker=deepseek-r1:1.5b. These are pinned declaratively in
+`config/model_pins.json` — run `python scripts/check_model_pins.py`
+before a cron job's Ollama call to fail loud on drift instead of silently
+skipping (MP-042/#187); see `docs/MODEL_PINS.md`.
+
+## Throughput tooling (2026-10-17, MP-045/#94)
+- `scripts/evidence_checker.py` — gate before marking a TASK card
+  `complete`: refuses it without real commit/build/selftest/e2e evidence
+  (MP-045). `--spot-check` picks one random completed card to re-verify.
+- `GitHubPollBridge` (`src/main/java/com/mindpalace/integration/`) now
+  caps itself to one TASK file per poll and refuses to create any while
+  one is already in flight, oldest-queued issue first (fix for #94, which
+  found an uncapped poll could write ~30+ task files in one cycle).
+- Hard rule #7 above: batch doc-drift TASK cards instead of one cascade
+  per one-line doc fix — the single biggest avoidable throughput loss
+  once more than one doc-only issue is queued.
 
 ## Known landmine (fixed, but know about it)
 `AIGEN_SYS/scripts/system_maintenance.py`'s `clear_ollama_cache()` used to
