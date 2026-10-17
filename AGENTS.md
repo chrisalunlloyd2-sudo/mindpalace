@@ -37,6 +37,11 @@ system — the world is running right now, most hours of most days.
    side-by-side for hours because a launch skipped the sweep. After any
    launch you perform, verify `tasklist` shows exactly ONE java process
    before finishing the turn.
+7. **Restarts are requested, never forced.** Do not kill or swap the live game
+   to deploy a build. Run `python tools/request_restart.py --seconds 30 --reason "..."`:
+   the player sees a countdown and can press Esc to cancel (exit code 2 = cancelled,
+   do not ask again for 10 minutes; 3 = game not responding). Batch changes so one
+   restart covers many cards. Only a game that is not running may be launched directly.
 
 ## Build & verify
 ```
