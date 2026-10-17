@@ -38,12 +38,14 @@ pull into the editor.
 7. [The Options Panel](#the-options-panel)
 8. [Gameplay Guide](#gameplay-guide)
 9. [The Agents & Code Mining](#the-agents--code-mining)
-10. [Live Patching](#live-patching)
-11. [Project Structure](#project-structure)
-12. [Tech Stack](#tech-stack)
-13. [FAQ](#faq)
-14. [Roadmap](#roadmap)
-15. [How to help](#how-to-help)
+10. [What the Local LLMs Are For](#what-the-local-llms-are-for)
+11. [Mini-Games, Casino & Multiplayer](#mini-games-casino--multiplayer)
+12. [Live Patching](#live-patching)
+13. [Project Structure](#project-structure)
+14. [Tech Stack](#tech-stack)
+15. [FAQ](#faq)
+16. [Roadmap](#roadmap)
+17. [How to help](#how-to-help)
 
 ---
 
@@ -444,6 +446,47 @@ catalogued by **Squigly** — a worm agent that lives in the wild (see its repo)
 
 ---
 
+## What the Local LLMs Are For
+
+MindPalace keeps hard facts in deterministic code (BDI-FSM bots, rules, quorum
+voting, ledgers) and uses the local LLMs where they are strongest: **subjective
+and linear content**. Everything runs on local Ollama models. No cloud calls, no
+bill, and the game keeps working offline.
+
+| Job | What the model does | Status |
+|---|---|---|
+| **Character story lines** | A 7B model such as `mistral:7b` writes backstories, quirks and running arcs for each NPC and agent, grounded in what that agent actually did (rooms visited, code mined, votes cast). | planned |
+| **Feature suggestions** | Reads the repo's issues, quorum history and roadmap and proposes additions that add depth (a casino floor, new agent roles, mini-games). Proposals go through quorum and the Architect gate before anything is built. | partly live (quorum votes on real proposals) |
+| **Music mods** | Suggests tweaks for the evolving soundtrack (tempo, key, instrument palette, mood per room). The genetic loop already archives every generation to `mindpalace_memory/evolution/`. | partly live |
+| **Quirky chat logs** | Agent conversations are saved as per-day logs. The funniest, strangest and most useful exchanges get surfaced as in-game highlights and a "best of" digest. | logs live, highlights planned |
+| **Content compilation** | Curates the cool stuff the swarm produced (code candidates, stories, tracks, quotes) into a browsable collection. | planned |
+
+Routing between models (which local model handles which job) is moving to a
+trained, local-only dispatcher. See
+[docs/DISPATCHER_HESSIAN_BDI.md](docs/DISPATCHER_HESSIAN_BDI.md).
+
+---
+
+## Mini-Games, Casino & Multiplayer
+
+The next layer of depth is play, not just exploration.
+
+- **Mini-games** inside rooms: short, self-contained games the agents can also
+  play, so a visitor can challenge a bot.
+- **Casino floor** (planned): chance games using the in-game economy, with
+  agents as dealers and players. Play money only.
+- **More agent roles**: shopkeepers, storytellers, referees, rivals, each driven
+  by a small state machine, with an LLM only for the flavor text.
+- **Multiplayer**: shared worlds over your own private network (Tailscale), so
+  your own devices can walk the same palace (in progress), and other players
+  later. The identity layer is in place; shared worlds, voting transport and
+  remote control are in progress.
+
+None of this requires a paid service. Contributions welcome. See
+[How to help](#how-to-help).
+
+---
+
 ## Live Patching
 
 The game watches `patches/patch.json`. Drop a new patch (new `id`) and within
@@ -553,7 +596,7 @@ mindpalace/
 **Q: How do I see the FPS?**
 A: Press `F4` to toggle the DEBUG overlay. It shows FPS, room and hall counts,
 and the frustum-culled count. When comparing results, record the machine
-specification as described in [PERFORMANCE.md](PERFORMANCE.md).
+specification as described in [PERFORMANCE.md](docs/PERFORMANCE.md).
 
 **Q: Can I try it without connecting my GitHub account?**
 A: Yes — `--demo` boots a full 12-room fixture palace with zero auth and
