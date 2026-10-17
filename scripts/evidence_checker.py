@@ -105,9 +105,15 @@ def validate_evidence(card, repo_dir=None, strict=False):
 
     selftest = str(evidence.get("selftest", "")).strip()
     if selftest:
-        if FAILURE_MARKER_RE.search(selftest):
+        # An explicit zero-failures phrase ("54 passed, 0 failed") always
+        # wins first — FAILURE_MARKER_RE matches the word "failed" inside
+        # it too, and must not reject a genuinely passing result (PR #281
+        # review: this exact regression).
+        if SELFTEST_ZERO_FAILED_RE.search(selftest):
+            pass
+        elif FAILURE_MARKER_RE.search(selftest):
             reasons.append(f"evidence.selftest '{selftest}' reports a failure, not zero failures")
-        elif not SELFTEST_ZERO_FAILED_RE.search(selftest):
+        else:
             reasons.append(f"evidence.selftest '{selftest}' doesn't show zero failures")
 
     build = str(evidence.get("build", "")).strip()
