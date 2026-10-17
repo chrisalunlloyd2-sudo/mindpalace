@@ -108,7 +108,12 @@ def main():
     # 1. in_game pins vs ModelConfig.java
     java_values, err = parse_model_config_java(args.repo_dir)
     if err:
-        print(f"WARN  {err} (skipping drift check against ModelConfig.java)")
+        # Unlike ollama (not every machine has it, see below), this repo IS
+        # supposed to be a mindpalace checkout — a missing ModelConfig.java
+        # means --repo-dir is wrong or the checkout is broken, not "nothing
+        # to check here". Silently skipping let the gate PASS without ever
+        # running the one check it's named for (PR #281 review).
+        problems.append(f"{err} — cannot verify in_game pins against ModelConfig.java")
     else:
         for java_field, pin_key in JAVA_FIELD_TO_PIN_KEY.items():
             java_val = java_values.get(java_field)
