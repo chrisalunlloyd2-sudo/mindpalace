@@ -1232,7 +1232,17 @@ public class GameEngine {
             // counts inside a measured frame), and the bounded-run exit.
             // Everything below is opt-in via --perf.
             if (perfMode && perfCsv != null) {
-                long wallNs = System.nanoTime() - perfFrameStartNs;
+                // PERF-A3 (t_993a201f) fix: the frame clock is RESET here every
+                // frame, so frame_ms/wall_ns are the true per-frame delta. The
+                // A2 code only seeded it once at loop entry, which made every
+                // row and the PERF_RESULT verdict CUMULATIVE time since loop
+                // start — the 80 ms gate then flagged all N frames and every
+                // run FAILed no matter what the hardware did (caught live by
+                // the A3 harness smoke run: 400 frames' rows marched 1.28 s →
+                // 11.47 s while the run really took ~11.5 s wall total).
+                long nowNs = System.nanoTime();
+                long wallNs = nowNs - perfFrameStartNs;
+                perfFrameStartNs = nowNs;
                 double frameMs = wallNs / 1e6;
                 boolean snap = perfPendingSnap;      // set pre-render; captured + cleared in render()
                 perfPendingSnap = false;
