@@ -41,6 +41,13 @@ import com.mindpalace.backup.BackupManager;
 import com.mindpalace.backup.MemoryManager;
 import com.mindpalace.agent.IdleDetector;
 import com.mindpalace.integration.ContextBroadcaster;
+import com.mindpalace.tailscale.MagicDns;
+import com.mindpalace.tailscale.StatusSnapshot;
+import com.mindpalace.tailscale.TailnetIdentity;
+import com.mindpalace.tailscale.TailnetRoles;
+import com.mindpalace.tailscale.TailnetTransport;
+import com.mindpalace.tailscale.TailscaleCli;
+import com.mindpalace.tailscale.WhoIsResolver;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
 import org.joml.Matrix4f;
@@ -4061,6 +4068,121 @@ public class GameEngine {
         }
     }
 
+    /**
+     * T1 foundation check: exercises the com.mindpalace.tailscale layer
+     * hermetically — no subprocess, no mesh adapter, no real Tailscale. Starts
+     * a loopback TailnetTransport with an injected stub WhoIsResolver, votes on
+     * capability gating (403 vs 200 vs 404), and validates MagicDNS naming,
+     * identity parsing and role mapping. Opt-in runtime wiring stays out of
+     * the way: T2/T3 build directly on this.
+     */
+    private boolean testTailnetFoundation() {
+        TailnetTransport transport = null;
+        try {
+            // --- Role mapping: tagged peers get role caps, untagged only via allowlist
+            TailnetIdentity architect = new TailnetIdentity("arch@example.test",
+                "arch-box", java.util.Set.of("tag:architect"));
+            TailnetIdentity voter = new TailnetIdentity("voter@example.test",
+                "voter-box", java.util.Set.of("tag:VOTER"));
+            TailnetIdentity untaggedAllowed = new TailnetIdentity(
+                "arch@example.test", "arch-box", java.util.Set.of());
+            TailnetIdentity stranger = new TailnetIdentity("stranger@example.test",
+                "stranger-box", java.util.Set.of());
+            TailnetIdentity nobody = new TailnetIdentity("", "", java.util.Set.of());
+            TailnetRoles.Scope scope = new TailnetRoles.Scope(
+                java.util.Set.of("arch@example.test"),
+                java.util.Set.of("arch@example.test"),
+                java.util.Set.of("tag:architect", "tag:voter"));
+            boolean rolesOk = TailnetRoles.capabilities(architect, scope)
+                    .contains(TailnetRoles.Capability.ADMIN)
+                && TailnetRoles.capabilities(voter, scope)
+                    .contains(TailnetRoles.Capability.VOTE)
+                && !TailnetRoles.capabilities(voter, scope)
+                    .contains(TailnetRoles.Capability.BUILD)
+                && TailnetRoles.capabilities(untaggedAllowed, scope)
+                    .contains(TailnetRoles.Capability.ADMIN)
+                && TailnetRoles.capabilities(stranger, scope).isEmpty()
+                && TailnetRoles.capabilities(nobody, scope).isEmpty()
+                && !TailnetRoles.isAuthorized(nobody);
+
+            // --- MagicDNS naming + identity parsing
+            boolean magicOk = MagicDns.isValidLabel("muse")
+                && MagicDns.isValidHostname("muse.tail703209.ts.net")
+                && !MagicDns.isValidHostname("-bad-.host")
+                && !MagicDns.isValidHostname(null)
+                && MagicDns.fqdn("Muse", "tail703209.ts.net")
+                    .equals("muse.tail703209.ts.net")
+                && MagicDns.hostPart("Muse.Tail703209.ts.net.").equals("muse");
+            TailnetIdentity parsed = WhoIsResolver.parseWhoIs(
+                "{\"UserProfile\":{\"LoginName\":\"arch@example.test\"},"
+                    + "\"Node\":{\"Name\":\"arch-box.tail703209.ts.net.\","
+                    + "\"Tags\":[\"tag:architect\"]}}");
+            boolean whoIsOk = parsed.login().equals("arch@example.test")
+                && parsed.deviceName().equals("arch-box")
+                && parsed.hasTag("tag:architect");
+
+            // --- Transport: loopback server, stub resolver, capability gates
+            java.util.concurrent.atomic.AtomicReference<TailnetIdentity> peer =
+                new java.util.concurrent.atomic.AtomicReference<>(architect);
+            TailnetTransport.Router router = new TailnetTransport.Router()
+                .get("/v1/tailscale/status", (ex, identity, caps) -> {
+                    byte[] body = ("{\"ok\":true,\"peer\":\"" + identity.displayName()
+                        + "\"}").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    ex.getResponseHeaders().set("Content-Type", "application/json");
+                    ex.sendResponseHeaders(200, body.length);
+                    try (var out = ex.getResponseBody()) { out.write(body); }
+                })
+                .getPrivate("/v1/private", (ex, identity, caps) -> respondJson(ex, 200, "{}"))
+                .vote("/v1/vote", (ex, identity, caps) -> respondJson(ex, 200, "{}"));
+            transport = TailnetTransport.forLoopbackTest(0,
+                (address, port) -> peer.get(), scope, router);
+            transport.start();
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(2)).build();
+            String base = "http://127.0.0.1:" + transport.port();
+            var resp = (java.net.http.HttpResponse<String>) client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                    base + "/v1/tailscale/status")).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean served = resp.statusCode() == 200
+                && resp.body().contains("arch@example.test");
+            peer.set(voter);
+            var privateResp = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                    base + "/v1/private")).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            peer.set(stranger);
+            var deniedResp = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                    base + "/v1/tailscale/status")).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean gated = privateResp.statusCode() == 403
+                && deniedResp.statusCode() == 403;
+            peer.set(new TailnetIdentity("", "", java.util.Set.of()));
+            var missingResp = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                    base + "/v1/not-a-route")).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean missingIsNotFound = missingResp.statusCode() == 404;
+
+            return rolesOk && magicOk && whoIsOk && served && gated && missingIsNotFound;
+        } catch (Exception e) {
+            System.out.println("[Tailscale] self-test error: " + e);
+            return false;
+        } finally {
+            if (transport != null) transport.close();
+        }
+    }
+
+    /** Shared tiny JSON responder for hermetic route handlers. */
+    private static void respondJson(com.sun.net.httpserver.HttpExchange ex,
+                                    int status, String body) throws java.io.IOException {
+        byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(status, bytes.length);
+        try (var out = ex.getResponseBody()) { out.write(bytes); }
+    }
+
     private void runSelfTest() {
         int pass = 0, fail = 0;
         System.out.println("\n===== MIND PALACE SELF-TEST =====");
@@ -4069,6 +4191,10 @@ public class GameEngine {
         System.out.println((contextOk ? "PASS" : "FAIL")
             + " context broadcaster (file routes, WhoIs user/tag allowlist, denial)");
         if (contextOk) pass++; else fail++;
+        boolean tailnetOk = testTailnetFoundation();
+        System.out.println((tailnetOk ? "PASS" : "FAIL")
+            + " tailscale foundation (roles, MagicDNS, WhoIs, transport gates)");
+        if (tailnetOk) pass++; else fail++;
         boolean blocksOk = blocks.selfTestAll();
         System.out.println((blocksOk ? "PASS" : "FAIL")
             + " render blocks (mp-20 registry, mp-032 fire flicker, bool-false gating)");
