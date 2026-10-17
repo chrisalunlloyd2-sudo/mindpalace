@@ -260,6 +260,7 @@ public class GameEngine {
     };
 
     public void run() {
+        parseFrameLockOnce();              // PERF-A2 D1: honor frameLock in every mode
         init();
         if (selfTest) { runSelfTest(); cleanup(); System.exit(0); }
         if (stressRounds > 0) {
@@ -290,6 +291,26 @@ public class GameEngine {
     // all floors, door open/close, crystal pickup attempts, NPC ticks — the
     // maximum-mutation path, run headless for N rounds. Any CME-class bug or
     // escaped exception prints and fails the run (exit 1 via stressFailed).
+    // ── PERF-A2 (t_5155f104): frame-locked autonomous perf run ─────────────
+    // (docs/AUTONOMOUS_PERF_TEST.md D1-D4): opt-in via `--perf <dir>` plus the
+    // -Dmindpalace.frameLock / inputTrack / perf.* properties. Every field
+    // below stays inert when the flags are absent, so the default game is
+    // byte-identical to the pre-PERF-A2 build.
+    private boolean perfMode;
+    private String perfOutputDir;
+    private Double frameLockedDt;      // D1: null = wall-locked sim (default)
+    private boolean frameLockParsed;
+    private long perfFramesTarget;     // D4: bounded run — 0 = unbounded
+    private InputTrack inputTrack;     // D2: scripted controller (same package)
+    private double perfSimTime;        // SIM seconds (frame-locked advance)
+    private long perfFrameNo;          // 0-based rendered-frame counter
+    private com.mindpalace.render.PerfCsvLogger perfCsv;  // D4
+    private double perfUpdateMs;       // this frame's update() wall cost
+    private long perfFrameStartNs;     // loop-top nanoTime for frame_ms
+    private boolean perfSuspendAgent;  // D5: hermetic — no agent cycle/brains
+    private boolean perfPendingSnap;   // D3: set pre-render, captured pre-swap in render()
+    private int perfLastTrackLoop;     // D2: loop-counter watermark (CSV note)
+
     private int stressRounds = 0;
     public void setStress(int rounds) {
         this.stressRounds = Math.max(1, Math.min(rounds, 10));
@@ -346,6 +367,99 @@ public class GameEngine {
             return;
         }
         System.out.println("STRESS_RESULT: CLEAN " + stressRounds + " rounds");
+    }
+
+    /**
+     * PERF-A2 (t_5155f104): enable the frame-locked autonomous perf run
+     * (docs/AUTONOMOUS_PERF_TEST.md). Called from Main for `--perf <dir>`.
+     * Properties (all optional):
+     *   -Dmindpalace.frameLock=<ms>          fixed sim-dt per frame (D1)
+     *   -Dmindpalace.perf.frames=<n>         stop + verdict after n frames (D4)
+     *   -Dmindpalace.inputTrack=<file>       scripted controller (D2; absent =
+     *                                        classpath tracks/perf_track_09_agents.json)
+     *   -Dmindpalace.perf.suspendAgent=true  no agent cycle / NPC brains (D5)
+     *   -Dmindpalace.perf.maxFrameMs=<ms>    verdict gate (default 80)
+     *   -Dmindpalace.perf.maxOverFrames=<n>  verdict gate (default 3)
+     */
+    public void setPerf(String dir) {
+        this.perfMode = true;
+        this.autodrive = true;             // D6: reuse the autodrive dispatch shell
+        this.perfOutputDir = dir;
+        parseFrameLockOnce();
+        Long target = Long.getLong("mindpalace.perf.frames");
+        this.perfFramesTarget = target == null ? 0L : Math.max(0L, target);
+        this.perfSuspendAgent = Boolean.getBoolean("mindpalace.perf.suspendAgent");
+        String trackPath = System.getProperty("mindpalace.inputTrack");
+        try {
+            if (trackPath != null) {
+                inputTrack = InputTrack.load(trackPath);
+            } else {
+                inputTrack = InputTrack.loadResource("tracks/perf_track_09_agents.json");
+                trackPath = "classpath:tracks/perf_track_09_agents.json";
+            }
+        } catch (Exception e) {
+            System.err.println("[PERF] input track setup FAILED: " + trackPath + " — " + e);
+            cleanup();
+            System.exit(1);                // setup failure (D4 exit codes: 1)
+        }
+        try {
+            perfCsv = new com.mindpalace.render.PerfCsvLogger(dir + "/perf_frames.csv");
+        } catch (Exception e) {
+            System.err.println("[PERF] CSV logger setup FAILED: " + e);
+            System.exit(1);
+        }
+        System.out.println("[PERF] enabled — output " + dir
+            + ", frames=" + (perfFramesTarget > 0 ? perfFramesTarget : "unbounded")
+            + (frameLockedDt != null
+                ? ", frameLock=" + String.format("%.2f", frameLockedDt * 1000.0) + " ms/frame"
+                : ", frameLock=OFF (wall-locked sim — camera determinism NOT asserted)")
+            + ", track=" + trackPath + " (" + inputTrack.segmentCount() + " segments, "
+            + inputTrack.snapshotFrameCount() + " snapshot frames, "
+            + String.format("%.1f", inputTrack.totalDuration()) + " s/loop)"
+            + (perfSuspendAgent ? ", suspendAgent=hermetic" : ", suspendAgent=false (agent cycle WILL tick)"));
+    }
+
+    /** D1 (PERF-A2): read -Dmindpalace.frameLock=<ms> once per JVM, whatever mode runs. */
+    private void parseFrameLockOnce() {
+        if (frameLockParsed) return;
+        frameLockParsed = true;
+        String v = System.getProperty("mindpalace.frameLock");
+        if (v == null || v.isBlank()) return;
+        try {
+            frameLockedDt = Double.parseDouble(v) / 1000.0;
+            System.out.println("[PERF] frameLock=" + String.format("%.2f", frameLockedDt * 1000.0)
+                + " ms — sim time decoupled from wall time (accumulator += fixedDt, no MAX_FRAME_TIME clamp)");
+        } catch (NumberFormatException e) {
+            System.err.println("[PERF] bad frameLock value: " + v + " (expected ms) — ignored");
+        }
+    }
+
+    /**
+     * PERF-A2 (t_5155f104, docs/AUTONOMOUS_PERF_TEST.md D4): bounded-run exit —
+     * flush the CSV, print the machine-readable verdict, clean up, exit.
+     * Verdict shape copies the e2e perf gate (maxFrameMs / maxOverFrames /
+     * software-rasterizer WARN); exit codes: 0 pass/WARN, 2 perf FAIL.
+     */
+    private void finishPerfRun() {
+        int rows = perfCsv.close();
+        double limitMs = Double.parseDouble(System.getProperty("mindpalace.perf.maxFrameMs", "80"));
+        int needOver = Integer.getInteger("mindpalace.perf.maxOverFrames", 3);
+        int over = perfCsv.framesOver(limitMs);
+        String gpu = String.valueOf(GL11.glGetString(GL11.GL_RENDERER));
+        boolean software = gpu.toLowerCase().matches(".*(llvmpipe|softpipe|swrast|software|microsoft basic render).*");
+        boolean overLimit = over >= needOver;
+        String verdict = overLimit ? (software ? "WARN" : "FAIL") : "OK";
+        System.out.println("PERF_RESULT: " + verdict
+            + " hitches=" + perfCsv.hitchCount()
+            + " worstMs=" + String.format("%.1f", perfCsv.worstMs())
+            + " p50/p95/p99=" + String.format("%.1f", perfCsv.percentile(50))
+            + "/" + String.format("%.1f", perfCsv.percentile(95))
+            + "/" + String.format("%.1f", perfCsv.percentile(99))
+            + " frames=" + rows
+            + " over=" + over + "/" + needOver + "@" + String.format("%.0f", limitMs) + "ms"
+            + " gpu=" + gpu);
+        cleanup();
+        System.exit(overLimit && !software ? 2 : 0);
     }
 
     /** Enable auto-drive walkthrough (called from Main before run()). */
@@ -653,6 +767,13 @@ public class GameEngine {
         // (observed: 39/1 with model-gate contention). Parity wiring still
         // runs inside agentManager.start(); only the cycle is suppressed.
         agentManager.setSelfTest(selfTest);
+        if (perfSuspendAgent) {
+            // PERF-A2 D5 hermeticity — same gate the selftest uses: the
+            // autonomous cycle stays off for the whole run, so the perf
+            // instance contributes ZERO Ollama traffic of its own.
+            agentManager.setSelfTest(true);
+            System.out.println("[PERF] suspendAgent=true — autonomous cycle suppressed (hermetic run)");
+        }
         agentManager.start();
         // #145: Reddit/GitHub bridges start only on explicit env opt-in; never in --demo or selftest (hermetic).
         if (!demoMode && !selfTest) {
@@ -860,11 +981,15 @@ public class GameEngine {
         // Attach real SLM brains, gated by the SHARED scheduler (one call at a time)
         com.mindpalace.agent.OllamaClient ollama = new com.mindpalace.agent.OllamaClient();
         com.mindpalace.agent.ModelScheduler sched = agentManager != null ? agentManager.getScheduler() : null;
-        if (ollama.isAvailable()) {
+        if (ollama.isAvailable() && !perfSuspendAgent) {
             explorer.attachBrain(ollama, sched);
             critic.attachBrain(ollama, sched);
             System.out.println("[NPC] SLM brains attached (" + com.mindpalace.agent.ModelConfig.TOOL_MODEL
                 + " + " + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + ") — serialized via scheduler");
+        } else if (ollama.isAvailable() && perfSuspendAgent) {
+            // PERF-A2 D5: keep the perf instance off the wire even when a local
+            // daemon is up (the harness A/B runs need it as a pure client).
+            System.out.println("[PERF] suspendAgent=true — NPC brains NOT attached; agents run on KV/KG fallback");
         } else {
             System.out.println("[NPC] Ollama unavailable — agents run on KV/KG fallback");
         }
@@ -1026,6 +1151,7 @@ public class GameEngine {
 
     private void loop() {
         com.mindpalace.render.HitchSampler.start(Thread.currentThread());
+        if (perfMode) perfFrameStartNs = System.nanoTime();   // PERF-A2: frame_ms starts here
         while (running && !GLFW.glfwWindowShouldClose(window)) {
             double currentTime = GLFW.glfwGetTime();
             double frameTime = currentTime - lastFrameTime;
@@ -1038,16 +1164,26 @@ public class GameEngine {
                 frameTimes.addLast(Math.max(frameTime, 1e-6));
                 if (frameTimes.size() > 120) frameTimes.removeFirst();
             }
-            if (e2eMode && startupFrames < 61) {          // MP-004: startup latency reported apart from steady-state hitching
+            if ((e2eMode || perfMode) && startupFrames < 61) { // MP-004: startup latency reported apart from steady-state hitching (PERF-A2 reuses the accounting)
+                String startupTag = perfMode ? "[PERF-STARTUP]" : "[E2E-STARTUP]";
                 startupFrames++;
                 if (startupFrames == 1) startupFirstMs = frameTime * 1000.0;
                 else startupWorstMs = Math.max(startupWorstMs, frameTime * 1000.0);
-                if (startupFrames == 61) System.out.println("[E2E-STARTUP] first frame " + String.format("%.0f", startupFirstMs)
+                if (startupFrames == 61) System.out.println(startupTag + " first frame " + String.format("%.0f", startupFirstMs)
                     + " ms; worst of the next 60 frames " + String.format("%.0f", startupWorstMs) + " ms");
             }
 
-            if (frameTime > MAX_FRAME_TIME) frameTime = MAX_FRAME_TIME;
-            accumulator += frameTime;
+            if (frameLockedDt != null) {
+                // PERF-A2 D1: frame-locked sim — every frame advances the SAME
+                // sim dt regardless of wall cost, so the camera path becomes a
+                // pure function of the frame number (two runs walk identically)
+                // and frame wall time is purely the metric. No MAX_FRAME_TIME
+                // clamp: a hitched frame must NOT inject extra sim time.
+                accumulator += frameLockedDt;
+            } else {
+                if (frameTime > MAX_FRAME_TIME) frameTime = MAX_FRAME_TIME;
+                accumulator += frameTime;
+            }
 
             long updateStart = com.mindpalace.render.GlTrace.PROF ? System.nanoTime() : 0L;
             while (accumulator >= PHYSICS_DT) {
@@ -1056,7 +1192,11 @@ public class GameEngine {
                 accumulator -= PHYSICS_DT;
             }
             if (com.mindpalace.render.GlTrace.PROF) com.mindpalace.render.GlTrace.noteUpdate(System.nanoTime() - updateStart);
+            if (perfMode) perfUpdateMs = com.mindpalace.render.GlTrace.PROF
+                ? (System.nanoTime() - updateStart) / 1e6 : 0.0;   // PERF-A2 D4: update_ms column
 
+            if (perfMode) perfPendingSnap = perfCsv != null && inputTrack != null
+                && inputTrack.isSnapshotFrame((int) perfFrameNo);  // PERF-A2 D3: render() captures pre-swap
             render(accumulator / PHYSICS_DT);
 
             fpsTimer += frameTime;
@@ -1083,6 +1223,51 @@ public class GameEngine {
                 }
             } else {
                 GLFW.glfwPollEvents();
+            }
+
+            // PERF-A2 (t_5155f104, docs/AUTONOMOUS_PERF_TEST.md D3+D4+D5):
+            // per-frame wall accounting, stdout frame markers for the harness,
+            // CSV row (snapshot pixels were already read pre-swap inside
+            // render(); PNG encode runs on the writer thread so it never
+            // counts inside a measured frame), and the bounded-run exit.
+            // Everything below is opt-in via --perf.
+            if (perfMode && perfCsv != null) {
+                // PERF-A3 (t_993a201f) fix: the frame clock is RESET here every
+                // frame, so frame_ms/wall_ns are the true per-frame delta. The
+                // A2 code only seeded it once at loop entry, which made every
+                // row and the PERF_RESULT verdict CUMULATIVE time since loop
+                // start — the 80 ms gate then flagged all N frames and every
+                // run FAILed no matter what the hardware did (caught live by
+                // the A3 harness smoke run: 400 frames' rows marched 1.28 s →
+                // 11.47 s while the run really took ~11.5 s wall total).
+                long nowNs = System.nanoTime();
+                long wallNs = nowNs - perfFrameStartNs;
+                perfFrameStartNs = nowNs;
+                double frameMs = wallNs / 1e6;
+                boolean snap = perfPendingSnap;      // set pre-render; captured + cleared in render()
+                perfPendingSnap = false;
+                String noteOverride = snap ? "snapshot" : null;
+                if (inputTrack != null && inputTrack.loopCount() != perfLastTrackLoop) {
+                    perfLastTrackLoop = inputTrack.loopCount();
+                    if (noteOverride == null) noteOverride = "track-loop-" + perfLastTrackLoop;
+                }
+                perfCsv.row(perfFrameNo, wallNs, frameMs, perfUpdateMs,
+                    com.mindpalace.render.GlTrace.profSlowestMs(), com.mindpalace.render.GlTrace.profSlowestName(),
+                    snap, noteOverride);
+                if (perfFrameNo % 16 == 0) {
+                    // D5 frame markers (harness tails stdout; frame 0 included)
+                    System.out.println("[PERF-FRAME] " + perfFrameNo);
+                    // A2 determinism evidence: pose log every 16 frames — two
+                    // frameLock runs must print IDENTICAL lines at frame n.
+                    Vector3f pp = player.getCamera().getPosition();
+                    System.out.println("[PERF-POSE] frame=" + perfFrameNo
+                        + " pos=" + String.format(java.util.Locale.ROOT, "%.3f,%.3f,%.3f", pp.x, pp.y, pp.z)
+                        + " yaw=" + String.format("%.2f", player.getCamera().getYaw())
+                        + " pitch=" + String.format("%.2f", player.getCamera().getPitch()));
+                    if (perfFrameNo == 0) com.mindpalace.render.PerfSnapshotWriter.start(width, height, perfOutputDir);
+                }
+                perfFrameNo++;
+                if (perfFramesTarget > 0 && perfFrameNo >= perfFramesTarget) finishPerfRun();
             }
         }
     }
@@ -2138,6 +2323,13 @@ public class GameEngine {
 
         com.mindpalace.render.GlTrace.mark("help+map");
         bloom.end();
+        if (perfPendingSnap) {   // PERF-A2 D3: raw GL read BEFORE the swap — the back buffer is only valid pre-present
+            java.nio.ByteBuffer px = com.mindpalace.render.Screenshot.captureRaw(width, height);
+            if (px != null) com.mindpalace.render.PerfSnapshotWriter.submit(px, width, height,
+                perfOutputDir + "/perf_frame_" + String.format("%06d", perfFrameNo) + ".png",
+                "frame " + perfFrameNo);
+            perfPendingSnap = false;
+        }
         GLFW.glfwSwapBuffers(window);
     }
 
@@ -5639,6 +5831,55 @@ public class GameEngine {
             + " mansion spawn regression (teleport outside collider + interior walkable)");
         if (mansionOk) pass++; else fail++;
 
+        // PERF-A2 (t_5155f104) — determinism acceptance (docs/AUTONOMOUS_PERF_TEST.md):
+        // replay the SAME frame-locked input track twice through the REAL player
+        // physics; camera pose strings must be byte-identical at every sample.
+        boolean detOk = true;
+        try {
+            String detJson = "{\"segments\":["
+                + "{\"t0\":0.0,\"t1\":4.0,\"keys\":[\"W\"],\"mouseDx\":0.0,\"mouseDy\":0.0},"
+                + "{\"t0\":4.0,\"t1\":6.0,\"keys\":[\"W\",\"A\"],\"mouseDx\":30.0,\"mouseDy\":0.0},"
+                + "{\"t0\":6.0,\"t1\":9.0,\"keys\":[],\"mouseDx\":0.0,\"mouseDy\":0.0}],"
+                + "\"snapshots\":[720],\"loop\":true}";
+            java.nio.file.Path detPath = java.nio.file.Files.createTempFile("mp-perf-track", ".json");
+            java.nio.file.Files.writeString(detPath, detJson);
+            final double stepDt = 1.0 / 120.0;             // one PHYSICS_DT step per 8.33 ms frame-lock step
+            final int detFrames = 720;                     // 6 s of sim per pass
+            java.util.List<String> poses = new java.util.ArrayList<>();
+            for (int detPass = 0; detPass < 2; detPass++) {
+                // reset to an in-hall start pose (hallway centerline x=0)
+                player.getCamera().setPosition(new Vector3f(0f, 2.7f, 6f));
+                player.getCamera().setYaw(0f);
+                player.getCamera().setPitch(0f);
+                player.resetForDeterminism();   // PERF-A2: zero velocity/cooldowns — pass 1 must not leak motion into pass 2
+                InputTrack tp = InputTrack.load(detPath.toString());
+                double sim = 0.0;
+                for (int f = 0; f < detFrames; f++) {
+                    input.update(stepDt);                  // GLFW poll first (same order as the perf loop)
+                    tp.apply(sim, stepDt, input, player.getCamera().getSensitivity());
+                    player.update(stepDt, input, world);
+                    sim += stepDt;
+                    if (f % 240 == 0) {
+                        Vector3f dp = player.getPosition();
+                        poses.add(String.format(java.util.Locale.ROOT, "%.3f,%.3f,%.3f|%.2f|%.2f",
+                            dp.x, dp.y, dp.z, player.getCamera().getYaw(), player.getCamera().getPitch()));
+                    }
+                }
+            }
+            java.nio.file.Files.deleteIfExists(detPath);
+            detOk = poses.get(0).equals(poses.get(3)) && poses.get(1).equals(poses.get(4))
+                && poses.get(2).equals(poses.get(5))
+                && !poses.get(1).equals(poses.get(0));     // sanity: the track actually moved
+            System.out.println((detOk ? "PASS" : "FAIL")
+                + " PERF-A2 frame-locked determinism (2 track replays -> identical camera path)"
+                + (detOk ? "" : ": p0=" + poses.get(0) + " p3=" + poses.get(3)
+                    + " p1=" + poses.get(1) + " p4=" + poses.get(4)));
+        } catch (Exception e) {
+            detOk = false;
+            System.out.println("FAIL PERF-A2 determinism check (setup: " + e + ")");
+        }
+        if (detOk) pass++; else fail++;
+
         // 26c. t_b2e9bc3f: spawn position is not inside collision geometry —
         //     across all fixture rooms + outside. Checks: (a) every teleporter
         //     pad destination; (b) every fixture room's interior teleport
@@ -6371,6 +6612,20 @@ public class GameEngine {
         // Step 80: the scout patrol + NPC behaviors run in the tour too, so
         // the E2E log carries live [Scout] VISIT + [Quorum] evidence.
         updateNPCs(dt);
+
+        // PERF-A2 (t_5155f104, docs/AUTONOMOUS_PERF_TEST.md D2): scripted-track
+        // branch next to the e2e/orbit branches — poll input, inject the track
+        // at SIM time (frame-locked under D1, so the camera path is identical
+        // every run), then run the REAL player physics. Before the e2e branch:
+        // --perf wins if someone passes both.
+        if (perfMode) {
+            input.update(dt);
+            perfSimTime += dt;
+            if (inputTrack != null)
+                inputTrack.apply(perfSimTime, dt, input, player.getCamera().getSensitivity());
+            player.update(dt, input, world);
+            return;
+        }
 
         // ── E2E waypoint tour: named stops, labeled shots, clean exit ──
         if (e2eMode) {
