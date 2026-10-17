@@ -325,6 +325,8 @@ install; the JRE is bundled.
 | Tab | Toggle full-map overlay |
 | M | Toggle minimap overlay |
 | ESC | Toggle menu / close editor |
+| ESC x2 (quickly) | Exit the game |
+| ESC during a restart countdown | Cancel the restart (no new request for 10 minutes) |
 | F1 | Help overlay |
 | F3 | Toggle noclip (free-fly: Space/Shift up/down, no collision) |
 | F4 | Toggle 2D readable text mode (VR 3D text <-> screen-pinned text) |
