@@ -99,6 +99,30 @@ public class Input {
     /** Script a single-frame left-click (behavioral tester / agent driver). */
     public void injectLeftClick() { leftClickJust = true; }
 
+    /**
+     * PERF-A2 (t_5155f104, docs/AUTONOMOUS_PERF_TEST.md D2): script a HELD key
+     * (W/A/S/D/Shift/Space). The engine loop calls this each perf frame AFTER
+     * input.update()'s GLFW poll overwrote keys[] and BEFORE player.update()
+     * consumes it, so injected holds ride the same isKeyDown() path the real
+     * keyboard feeds. Re-injected every frame, so GLFW's per-frame overwrite
+     * cannot clear it mid-segment.
+     */
+    public void injectKeyHold(int key, boolean down) { keys[key] = down; }
+
+    /**
+     * PERF-A2: synthetic look deltas — accumulates into the SAME accumDX/DY
+     * the mouse callback feeds, drained by Player via getMouseDX/DY. Units:
+     * camera-rotate pixels — the exact currency of the real mouse callback
+     * (Camera.rotate applies its own sensitivity). InputTrack converts its
+     * deg/s look rates to pixels using the camera sensitivity, so an injected
+     * turn renders identically to a real mouse move.
+     */
+    public void injectMouseDelta(double dx, double dy) {
+        accumDX += dx;
+        accumDY += dy;
+        activityFlag = true;
+    }
+
     public void setCursorCaptured(boolean cap) {
         captured = cap;
         if (cap) {
