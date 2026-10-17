@@ -220,6 +220,23 @@ public class WeightedQuorumVote {
     }
 
     /**
+     * Bulk-vote helper: finishCycle() clears the proposal map on another thread, so a proposal can
+     * vanish between listing it and voting on it. That is normal, not an error, and must never kill
+     * the game loop (2026-10-17: IllegalArgumentException "unknown proposal" crashed the live game).
+     */
+    private Vote castOrSkip(String proposalId, String modelName, Vote intent, String outcome, long latencyMs) {
+        if (!proposals.containsKey(proposalId)) return null;
+        try {
+            return castVote(proposalId, modelName, intent, outcome, latencyMs);
+        } catch (IllegalArgumentException gone) {
+            return null;   // removed between the check and the cast
+        }
+    }
+    private Vote castOrSkip(String proposalId, String modelName, Vote intent, String outcome) {
+        return castOrSkip(proposalId, modelName, intent, outcome, 0L);
+    }
+
+    /**
      * Auto-vote all models on all proposals — DETERMINISTIC (t_deed6566):
      * seeded from proposal text + model name, never Math.random(). Scripted,
      * FOW-gated, and every vote is recorded with outcome=sim so the quality
@@ -231,10 +248,10 @@ public class WeightedQuorumVote {
                 if (isVisible(p.hex, mp.name)) {
                     boolean approve = Math.floorMod(
                         (p.id + "|" + mp.name).hashCode(), 10) < 7; // 70% approve, seeded
-                    castVote(p.id, mp.name, approve ? Vote.APPROVE : Vote.REJECT,
+                    castOrSkip(p.id, mp.name, approve ? Vote.APPROVE : Vote.REJECT,
                         VoteQualityLedger.SIM);
                 } else {
-                    castVote(p.id, mp.name, Vote.BLIND, VoteQualityLedger.BLIND);
+                    castOrSkip(p.id, mp.name, Vote.BLIND, VoteQualityLedger.BLIND);
                 }
     }
 
@@ -253,7 +270,7 @@ public class WeightedQuorumVote {
         for (Proposal p : proposals.values()) {
             for (ModelPosition mp : models.values()) {
                 if (!isVisible(p.hex, mp.name)) {
-                    castVote(p.id, mp.name, Vote.BLIND, VoteQualityLedger.BLIND);
+                    castOrSkip(p.id, mp.name, Vote.BLIND, VoteQualityLedger.BLIND);
                     continue;
                 }
                 long t0 = System.currentTimeMillis();
@@ -262,16 +279,16 @@ public class WeightedQuorumVote {
                     var future = scheduler.submitVote(mp.name, buildVotingPrompt(p, mp.name), null);
                     resp = future.get(VOTE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
                 } catch (java.util.concurrent.TimeoutException e) {
-                    castVote(p.id, mp.name, Vote.ABSTAIN, VoteQualityLedger.ABSTAIN_TIMEOUT, VOTE_TIMEOUT_MS);
+                    castOrSkip(p.id, mp.name, Vote.ABSTAIN, VoteQualityLedger.ABSTAIN_TIMEOUT, VOTE_TIMEOUT_MS);
                     continue;
                 } catch (Exception e) {
                     long ms = System.currentTimeMillis() - t0;
-                    castVote(p.id, mp.name, Vote.ABSTAIN, VoteQualityLedger.ABSTAIN_ERROR, ms);
+                    castOrSkip(p.id, mp.name, Vote.ABSTAIN, VoteQualityLedger.ABSTAIN_ERROR, ms);
                     continue;
                 }
                 long ms = System.currentTimeMillis() - t0;
                 VoteDecision d = decideVote(resp);
-                castVote(p.id, mp.name, d.vote(), d.outcome(), ms);
+                castOrSkip(p.id, mp.name, d.vote(), d.outcome(), ms);
             }
         }
     }

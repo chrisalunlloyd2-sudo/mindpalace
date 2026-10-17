@@ -4144,6 +4144,34 @@ public class GameEngine {
      * identity parsing and role mapping. Opt-in runtime wiring stays out of
      * the way: T2/T3 build directly on this.
      */
+    /**
+     * Regression for the 2026-10-17 live crash: the agent thread's finishCycle() clears the proposal
+     * map while the game thread is inside autoVoteAll(), which used to throw "unknown proposal".
+     */
+    private boolean testQuorumVoteRace() {
+        com.mindpalace.agent.sims.WeightedQuorumVote q = new com.mindpalace.agent.sims.WeightedQuorumVote();
+        q.setModelPosition("m1", 0, 0);
+        q.setModelPosition("m2", 1, 0);
+        java.util.concurrent.atomic.AtomicBoolean stop = new java.util.concurrent.atomic.AtomicBoolean(false);
+        Thread clearer = new Thread(() -> {
+            while (!stop.get()) { q.finishCycle(); Thread.onSpinWait(); }
+        }, "quorum-race-clearer");
+        clearer.setDaemon(true);
+        clearer.start();
+        try {
+            for (int round = 0; round < 300; round++) {
+                for (int i = 0; i < 25; i++) q.registerProposal("race-" + round + "-" + i, "x", 0, 0);
+                q.autoVoteAll();
+            }
+            return true;
+        } catch (RuntimeException e) {
+            System.out.println("quorum race test failed: " + e);
+            return false;
+        } finally {
+            stop.set(true);
+        }
+    }
+
     /** Hermetic: fake clock + temp dir, no window. Esc x2, countdown, Esc cancel, snooze, due. */
     private boolean testExitControl() {
         java.nio.file.Path dir = null;
@@ -4314,6 +4342,10 @@ public class GameEngine {
         System.out.println((tailnetOk ? "PASS" : "FAIL")
             + " tailscale foundation (roles, MagicDNS, WhoIs, transport gates)");
         if (tailnetOk) pass++; else fail++;
+        boolean raceOk = testQuorumVoteRace();
+        System.out.println((raceOk ? "PASS" : "FAIL")
+            + " quorum bulk vote survives finishCycle() racing it (no 'unknown proposal' crash)");
+        if (raceOk) pass++; else fail++;
         boolean exitOk = testExitControl();
         System.out.println((exitOk ? "PASS" : "FAIL")
             + " exit control (Esc x2, restart countdown, Esc cancel, snooze)");
