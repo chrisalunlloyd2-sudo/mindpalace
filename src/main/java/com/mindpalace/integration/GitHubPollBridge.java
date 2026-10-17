@@ -27,6 +27,11 @@ import com.google.gson.*;
 public class GitHubPollBridge {
     private static final String GITHUB_API = "https://api.github.com";
     private static final String HERMES_QUEUE_LABEL = "hermes-queue";
+    // AGENTS.md hard rule #4: only one TASK_####_*.md/.json pair lives in
+    // taskDir at once. A poll must never create more than fit under that
+    // budget, and must create none while an existing task file is still
+    // in flight (see #94 — an uncapped poll once wrote ~30+ files at once).
+    private static final int MAX_TASKS_PER_POLL = 1;
 
     private final String repoOwner;
     private final String repoName;
@@ -34,6 +39,7 @@ public class GitHubPollBridge {
     private final Path taskDir;
     private final Path ledgerFile;
     private final long pollIntervalMs;
+    private final String label;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(java.time.Duration.ofSeconds(10))
@@ -43,12 +49,27 @@ public class GitHubPollBridge {
 
     public GitHubPollBridge(String repoOwner, String repoName, String githubToken,
                             String taskDirPath, String ledgerPath, long pollIntervalMs) {
+        this(repoOwner, repoName, githubToken, taskDirPath, ledgerPath, pollIntervalMs, HERMES_QUEUE_LABEL);
+    }
+
+    /**
+     * Lane-scoped constructor: polls a different label into its own taskDir/
+     * ledger. This is what turns one global hermes-queue drain into several
+     * independent lanes (e.g. one bridge filtering "area/docs", another
+     * filtering "area/world") each still respecting the one-task-at-a-time
+     * rule *within its own taskDir* — see the swarm-scaling proposal on
+     * issues #193/#194.
+     */
+    public GitHubPollBridge(String repoOwner, String repoName, String githubToken,
+                            String taskDirPath, String ledgerPath, long pollIntervalMs,
+                            String label) {
         this.repoOwner = repoOwner;
         this.repoName = repoName;
         this.githubToken = githubToken;
         this.taskDir = Paths.get(taskDirPath);
         this.ledgerFile = Paths.get(ledgerPath);
         this.pollIntervalMs = pollIntervalMs;
+        this.label = label;
         loadLedger();
     }
 
@@ -57,7 +78,8 @@ public class GitHubPollBridge {
      */
     public void startPolling() {
         scheduler.scheduleAtFixedRate(this::pollAndCreateTasks, 0, pollIntervalMs, TimeUnit.MILLISECONDS);
-        log("GitHub poll bridge started: polling every " + pollIntervalMs + "ms");
+        log("GitHub poll bridge started: label='" + label + "' taskDir=" + taskDir
+            + " polling every " + pollIntervalMs + "ms");
     }
 
     /**
@@ -65,10 +87,22 @@ public class GitHubPollBridge {
      */
     private void pollAndCreateTasks() {
         try {
+            if (hasInFlightTaskFile()) {
+                log("Skipping poll: a TASK file is already in flight in " + taskDir
+                    + " (one-task-at-a-time rule — AGENTS.md #4)");
+                return;
+            }
+
             List<GitHubIssue> issues = fetchHermesQueueIssues();
+            // Oldest issue first (FIFO), so the backlog drains in the order
+            // it was filed rather than whatever order the API happens to return.
+            issues.sort(Comparator.comparing(issue -> issue.createdAt));
             int newTasks = 0;
 
             for (GitHubIssue issue : issues) {
+                if (newTasks >= MAX_TASKS_PER_POLL) {
+                    break; // never exceed the single-task budget in one poll
+                }
                 if (processedIssueNumbers.contains(issue.number)) {
                     continue; // Already converted
                 }
@@ -93,12 +127,26 @@ public class GitHubPollBridge {
     }
 
     /**
+     * True if a TASK_*.md or TASK_*.json file already exists in taskDir —
+     * i.e. Hermes still has work in flight and must not be handed more.
+     */
+    private boolean hasInFlightTaskFile() {
+        File dir = taskDir.toFile();
+        if (!dir.isDirectory()) {
+            return false;
+        }
+        File[] existing = dir.listFiles((d, name) ->
+            name.startsWith("TASK_") && (name.endsWith(".md") || name.endsWith(".json")));
+        return existing != null && existing.length > 0;
+    }
+
+    /**
      * Fetch all open issues with 'hermes-queue' label.
      */
     private List<GitHubIssue> fetchHermesQueueIssues() throws Exception {
         String url = String.format(
             "%s/repos/%s/%s/issues?labels=%s&state=open&per_page=100",
-            GITHUB_API, repoOwner, repoName, HERMES_QUEUE_LABEL
+            GITHUB_API, repoOwner, repoName, label
         );
 
         var request = HttpRequest.newBuilder()
