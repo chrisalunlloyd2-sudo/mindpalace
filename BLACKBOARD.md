@@ -11,9 +11,9 @@
 
 ## PHASES (proposed order — awaiting Architect OK)
 
-### Phase A — Fix the two broken things (small, high-value)
-- A1. Tab = full-screen map overlay (rooms/hallways/player/agents/crystals, fog-aware)
-- A2. Chat: direct conversational reply path, bypass 5-min gate for user messages (keep gate for autonomous cycle)
+### Phase A — Fix the two broken things (small, high-value) — BOTH DONE
+- ~A1. Tab = full-screen map overlay~ ✅ DONE — GameEngine.java:1024 showMap + 1-9 teleport (step 76, 02df8e0)
+- ~A2. Chat: direct conversational reply path, bypass 5-min gate for user messages~ ✅ DONE — ModelScheduler.submitImmediate (ModelScheduler.java:124)
 
 ### Phase B — Avatars (90s polygon aesthetic)
 - B1. Replace basic player/agent boxes with geometric polygon bodies (low-poly limbs, head, arms)
