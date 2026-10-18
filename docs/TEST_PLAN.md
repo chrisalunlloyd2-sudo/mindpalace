@@ -16,7 +16,7 @@
 | 5 | Time slider | inside a git repo: `[` then `]` ×5 | one `[TimeMachine] <repo> @ <sha> <when> — <subject>` line per press; `]` past the newest prints `PRESENT (live files)`; editor at depth > 0 shows that commit's text | no console lines; editor content unchanged while scrubbed |
 | 6 | Doors heatmap | look across a hallway | frames differ by activity: 30d-active repos read green/amber/red; inert repos stay cyan/pink | all frames identical color |
 | 7 | Search | `/palace` + Enter | camera snaps beside the matching door; `[Search] Jumped to <label>`; unknown query prints `No repo matching '...'` | no jump; wrong door; no console line |
-| 8 | FPS overlay | F4 indoors, then outside | `[DEBUG] <n> FPS (rooms, halls)` billboard in front of camera; steady reading while standing still | no readout; wild swings standing still |
+| 8 | FPS overlay | F8 indoors, then outside | `[DEBUG] <n> FPS (rooms, halls)` billboard in front of camera; steady reading while standing still | no readout; wild swings standing still |
 | 9 | Rotor + audio | stand in courtyard 70s | tick every 1s, chime every 8s, bell every 64s; wind rises walking toward forest | no tick; chime/bell never arrive; wind silent in forest |
 | 10 | Collision | try walking through the mansion wall | you slide along walls; houses enterable only via the front doorway strip | you pass through any wall (pre-H13b class) |
 | 11 | Teleporters | pad → Enter → list → Enter | `[TELEPORT] Destination picker open` → `[TELEPORT] -> Pad N`; arrive on the chosen floor | stuck on pad; wrong floor; picker invisible |

@@ -2,7 +2,11 @@
 # e2e.sh — the amazing test flow: build → selftest → E2E waypoint tour → verify.
 # Usage: bash e2e.sh [shotdir]   (default: target/e2e-shots)
 set -u
-REPO="/c/Users/viper/AIGEN_SYS/repos/mindpalace"
+# REPO resolves from THIS script's location — main checkout for e2e.sh there,
+# the worktree root for .worktrees/<id>/e2e.sh (the hardcoded checkout path
+# made the worktree copy build+verify the wrong tree).
+E2E_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cygpath -m "$E2E_SCRIPT_DIR" 2>/dev/null || echo "$E2E_SCRIPT_DIR")"
 JAVA_HOME="C:/Program Files/Java/jdk-17"
 MVN="C:\\ProgramData\\chocolatey\\lib\\maven\\apache-maven-3.9.16\\bin\\mvn.cmd"
 DIR="${1:-$REPO/target/e2e-shots}"
@@ -26,25 +30,52 @@ BUILD_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE "original-|-shaded
 echo "=== [2/4] SELFTEST ==="
 # 420s cap: the selftest suite grew past 2m (53→54 checks; the sync script
 # got the same raise 2026-09-27 after a cap-110 run silently truncated it).
-timeout 420 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# t_0c1374b0: 110/120s starved this box — world build alone runs ~5min on the
+# Intel HD 510 (73 rooms × Files.isRegularFile). 400s selftest observed green;
+# tour = world build + 17 waypoints × 6s + margin. 700s: tonight's box hit
+# 400s with the selftest STILL in world build (LiveUpdate rooms) — same
+# budget as the tour, since it is the same work.
+# t_ffb1dd32 (2026-10-16): with the 22-waypoint tour budget at 1200, the
+# selftest phase hit timeout 700 mid-suite (27 PASS lines, no RESULT, killed
+# at ~10:47 while the world was still cycling) — same box, same contention.
+# Raised to the same 1200 so both phases cap at identical budgets.
+timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --selftest > /tmp/e2e_selftest.log 2>&1
 grep -a "RESULT" /tmp/e2e_selftest.log | tail -1
 
 echo "=== [3/4] E2E WAYPOINT TOUR ==="
 rm -rf "$DIR"; mkdir -p "$DIR"
-timeout 120 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# STEP 94v7: --time 21 pins the whole world to NIGHT (sky phase 2, lake +
+# fountain purple drift, moon up, stars) so v7's night features are exercised
+# regardless of the real wall clock. Day shot 12_nash_fountain keeps its
+# bright-sky look via the day branch — fnight uses the same TimeClock now.
+# t_0c1374b0: 700s budget — world build alone runs ~5min on the Intel HD 510.
+# t_ffb1dd32 (2026-10-16): waypoint list grew 17→22 (labels at line ~66) while
+# the budget stayed 700 — tour was SIGTERM-killed after waypoint 07 with the
+# world live and no crash in the log. World build ~5-8min + 22 waypoints ×
+# (6s framing + FPS eval at 3-13 fps on this box) needs ~1200s. Same raise
+# precedent as 420→700 above.
+timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
-  -jar "$BUILD_JAR" --e2e "$DIR" > /tmp/e2e_tour.log 2>&1
-grep -aE "\[E2E\]|\[E2E-SHOT\]" /tmp/e2e_tour.log
+  -jar "$BUILD_JAR" --e2e "$DIR" --time 21 > /tmp/e2e_tour.log 2>&1
+grep -aE "\[E2E\]|\[E2E-SHOT\]|\[E2E-HUD-GATE\] SUMMARY" /tmp/e2e_tour.log
+# t_0c1374b0: the HUD-gate verify below reads the tour log via Windows python,
+# which cannot resolve MSYS /tmp — mirror it into target/ (cwd = $REPO).
+cp -a /tmp/e2e_tour.log target/e2e_tour.log 2>/dev/null || true
 
 echo "=== [4/4] VERIFY SHOTS (exist + non-black) ==="
 python - "$DIR" <<'PYEOF'
 import sys, os, struct, zlib
 d = sys.argv[1]
+# Kept in lockstep with GameEngine e2e waypoint labels (captureLabeled calls,
+# ~line 4946): when the tour gains/renames a waypoint, update this list too —
+# a stale list here false-fails the gate on shots that were actually captured.
 labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gauge","05_main_hall",
           "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad",
-          "11_floor2_picker","12_nash_fountain","13_door_prompt","14_plugboard"]
+          "11_floor2_picker","12_nash_fountain","13_door_prompt","14_plugboard",
+          "15_forest_path","16_room_interior","17_hall_windows","18_poster_wall",
+          "19_gist_wall","20_sky","21_water","22_mansion_spawn"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:
@@ -132,6 +163,26 @@ else:
     ok = magenta > 40
     print(f"door prompt magenta text: {magenta} " + ("OK" if ok else "HUE-FAIL"))
     if not ok: fail += 1
+
+# t_0c1374b0 HUD-slots overlap gate — the tour projects every primary slot's
+# gate rect through the REAL camera at each waypoint framing and logs
+# [E2E-HUD-GATE] lines: OVERLAP (two visible primaries intersect on screen)
+# or OFFFRAME (a slot's anchor left the frustum). The same counter drives the
+# tour's own exit code; this grep is the verify-side double-check.
+hud_fail = 0
+try:
+    tour = open("target/e2e_tour.log", "r", errors="replace").read()
+    hud_fail += tour.count("[E2E-HUD-GATE] OVERLAP")
+    hud_fail += tour.count("=OFFFRAME(")
+    hud_fail += tour.count("HUD gate FAILED")
+    if hud_fail:
+        print(f"HUD slot gate: {hud_fail} OVERLAP/OFFFRAME/FAILED line(s) — FAIL")
+    else:
+        print("HUD slot gate: 0 overlaps, all slots in-frame OK")
+except FileNotFoundError:
+    print("HUD slot gate: tour log missing — FAIL")
+    hud_fail += 1
+fail += hud_fail
 print("VERIFY-PASS" if fail == 0 else f"VERIFY-FAIL ({fail})")
 sys.exit(0 if fail == 0 else 1)
 PYEOF

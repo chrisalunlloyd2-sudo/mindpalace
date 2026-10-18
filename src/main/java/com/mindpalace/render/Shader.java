@@ -13,6 +13,12 @@ import java.nio.file.Path;
  */
 public class Shader {
     private final int programId;
+    // glGetUniformLocation is a driver call that hashes the name string. It was made on EVERY uniform set
+    // of EVERY draw (thread samples showed ~half of the render thread inside it on this Intel iGPU).
+    // A linked program's locations never change, so look each name up once. -1 (optimised out) is cached too.
+    private final java.util.HashMap<String, Integer> uniformLocations = new java.util.HashMap<>();
+    // GL calls all run on the render thread, so one scratch buffer is safe (was a new float[16] per matrix set).
+    private final float[] matBuf = new float[16];
 
     public Shader(String vertPath, String fragPath) {
         int vertShader = compileShader(GL20.GL_VERTEX_SHADER, loadSourceStatic(vertPath));
@@ -78,23 +84,46 @@ public class Shader {
         return shader;
     }
 
+    // Every glUseProgram in the game goes through this class, so the current program is tracked here. Uniform
+    // locations belong to ONE program: setting basic-shader uniforms while another program is current raises
+    // GL_INVALID_OPERATION and the draw runs with the wrong shader. Code that must bind a different shader
+    // temporarily (text, particles) saves currentProgram() and restores it with restoreProgram().
+    private static int currentProgram = -1;      // -1 = unknown (before first bind / after deleting the bound program)
+
     public void bind() {
-        GL20.glUseProgram(programId);
+        if (currentProgram != programId) {
+            GL20.glUseProgram(programId);
+            currentProgram = programId;
+        }
     }
 
     public void unbind() {
         GL20.glUseProgram(0);
+        currentProgram = 0;
+    }
+
+    public static int currentProgram() { return currentProgram; }
+
+    /** Put back the program that was current before a temporary bind. -1 (unknown) leaves it alone. */
+    public static void restoreProgram(int id) {
+        if (id >= 0 && currentProgram != id) {
+            GL20.glUseProgram(id);
+            currentProgram = id;
+        }
     }
 
     public int getUniformLocation(String name) {
-        return GL20.glGetUniformLocation(programId, name);
+        Integer cached = uniformLocations.get(name);
+        if (cached != null) return cached;
+        int loc = GL20.glGetUniformLocation(programId, name);
+        uniformLocations.put(name, loc);
+        return loc;
     }
 
     public void setUniform(String name, org.joml.Matrix4f mat) {
         int loc = getUniformLocation(name);
-        float[] buf = new float[16];
-        mat.get(buf);
-        GL20.glUniformMatrix4fv(loc, false, buf);
+        mat.get(matBuf);
+        GL20.glUniformMatrix4fv(loc, false, matBuf);
     }
 
     public void setUniform(String name, org.joml.Vector3f vec) {
@@ -121,6 +150,7 @@ public class Shader {
     }
 
     public void cleanup() {
+        if (currentProgram == programId) currentProgram = -1;
         GL20.glDeleteProgram(programId);
     }
 

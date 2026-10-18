@@ -45,7 +45,7 @@
 
 ## CONSTRAINTS
 - All adds LOW performance cost (Intel HD 510, OpenGL 3.3)
-- No VR. Non-VR mode only.
+- ~~No VR. Non-VR mode only.~~ Superseded: the VR path is kept and a VR/2D toggle is shipped (see CROSS_CORRELATED_ROADMAP.md).
 - "Never delete, only merge"
 - Live edits preferred; don't close game unless rebuild needed
 - Commit + timestamped log BEFORE changes when code works

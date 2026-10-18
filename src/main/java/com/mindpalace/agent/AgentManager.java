@@ -33,6 +33,21 @@ public class AgentManager {
         if (dir == null || dir.isEmpty()) dir = System.getProperty("mindpalace.repos", "C:/Users/viper/AIGEN_SYS/repos");
         return Paths.get(dir);
     }
+
+    /**
+     * ASCII-safe target name for quorum proposals and telemetry details
+     * (t_740fa7c6). When no room is in focus, the old literal "?" leaked into
+     * every proposal ("Act on ?"), every telemetry record, and every spawned
+     * TASK file — 4291 APPROVED + 1215 REJECTED ledger rows, 100% "Act on ?".
+     * Returns the repo name when known, an explicit world-wide fallback when
+     * not. Pure ASCII so it survives cp1252 consoles and telemetry round-trips.
+     */
+    public static String proposalTargetName(Room room) {
+        if (room != null && room.getRepoName() != null && !room.getRepoName().isBlank()) {
+            return room.getRepoName();
+        }
+        return "[no room in focus - world-wide check]";
+    }
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private final Gson gson = new Gson();
     private final ModelScheduler modelScheduler;  // serializes ALL model calls
@@ -121,7 +136,9 @@ public class AgentManager {
     private volatile boolean running;
     private volatile boolean available;
     private volatile long lastAutoCycle;
-    private static final long CYCLE_MS = 5 * 60 * 1000; // 5 minutes
+    // TASK_0128 redo: -Dmindpalace.cycleMs=N speeds the autonomous cycle for
+    // data collection (e.g. 30000 = 5 cycles/min). Live default stays 5 min.
+    private static final long CYCLE_MS = Long.getLong("mindpalace.cycleMs", 5 * 60 * 1000L);
     private SpriteProposalService spriteProposalService;
 
     // Tool definitions for the tool-calling agent
@@ -271,6 +288,16 @@ public class AgentManager {
     /** Inject the unified telemetry ledger (append-only, paced). */
     public void setTelemetry(com.mindpalace.backup.Telemetry t) {
         this.telemetry = t;
+        // TASK_0132: wire quorum vote recording — one telemetry row per cast
+        // vote (real/strip/abstain/blind/sim vocabulary), null-safe so a game
+        // run without telemetry never breaks voting.
+        if (t != null && quorum != null) {
+            quorum.setVoteSink(rec -> t.record(com.mindpalace.backup.Telemetry.QUORUM,
+                "quorum_vote", rec.toDetail()));
+            com.mindpalace.agent.sims.QuorumTaskSpawner.setTelemetrySink(
+                (outcome, detail) -> t.record(com.mindpalace.backup.Telemetry.QUORUM,
+                    outcome, detail));
+        }
     }
 
     // ── Context kits (per-model wrapper: LoRA + KG + KV, never mixed) ──
@@ -374,11 +401,11 @@ public class AgentManager {
             return;
         }
 
-        log("[AgentManager] Auto-cycle — agents discussing " + (currentRoom != null ? currentRoom.getRepoName() : "?"));
+        log("[AgentManager] Auto-cycle — agents discussing " + proposalTargetName(currentRoom));
 
         // Telemetry: record the cycle itself (paced, append-only).
         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.AGENT,
-            "cycle", currentRoom != null ? currentRoom.getRepoName() : "?");
+            "cycle", proposalTargetName(currentRoom));
 
         // Route the tool agent's model by task complexity (SIMS1337 ModelRouter).
         Complexity cx = Complexity.estimate(context);
@@ -409,7 +436,7 @@ public class AgentManager {
             log("[AgentManager] critic skipped — no tool actions to review this cycle");
         } else {
             String criticPrompt = ctx(CRITIC_MODEL)
-                + "\nThe tool agent just did, in room " + (currentRoom != null ? currentRoom.getRepoName() : "?")
+                + "\nThe tool agent just did, in room " + proposalTargetName(currentRoom)
                 + ":\n" + actions
                 + "\nEvaluate these CONCRETE actions. Name the files touched. "
                 + "Is the result correct for the language? Should we proceed, "
@@ -460,19 +487,58 @@ public class AgentManager {
         }
     }
 
+    /** TASK_0128 redo: deterministic 5-type rotation over quorum cycles. */
+    private final com.mindpalace.agent.sims.ProposalRotator proposalRotator =
+        new com.mindpalace.agent.sims.ProposalRotator();
+
     /** Run a FOW-gated quorum vote on the current cycle's proposal. */
     private void runQuorumVote(String context) {
         try {
             String id = "cycle-" + System.currentTimeMillis();
-            String text = "Act on " + (currentRoom != null ? currentRoom.getRepoName() : "?");
-            quorum.registerProposal(id, text, new HexCoord(0, 0), "system_health_check");
+            // t_740fa7c6: null-room fallback must be ASCII-plain. The old "Act on ?"
+            // string was written into ALL 4291 telemetry APPROVED rows — a "?" is
+            // indistinguishable from a mojibake glyph and hides which repo (or none)
+            // the cycle targeted.
+            // TASK_0128 redo: rotate through the 5 proposal types so the ledger
+            // accrues per-type data instead of 100% system_health_check.
+            String text = "Act on " + proposalTargetName(currentRoom);
+            quorum.registerProposal(id, text, new HexCoord(0, 0), proposalRotator.next());
+            // t_948a71be: real-work overlay — register the actual backlog
+            // (kanban ready/triage cards, hermes-queue issues, failing checks)
+            // BEFORE the voting round so the same model pass votes on all of
+            // them and handleRealWorkVerdicts applies each result. Kept in a
+            // finally so the source never survives a failed cycle in a
+            // half-applied state.
+            java.util.List<com.mindpalace.agent.sims.QuorumProposalSource.RealWorkProposal> realWork = null;
+            try {
+                realWork = realWorkSource.gather();
+                for (var rw : realWork) {
+                    quorum.registerProposal(rw.proposalId(), rw.voteText(),
+                        new HexCoord(0, 0), rw.proposalType());
+                }
+            } catch (Exception e) {
+                log("[AgentManager] real-work gather failed (synthetic cycle still ran): " + e.getMessage());
+                realWork = null;
+            }
             quorum.advanceTimePulse(0.1);
             quorum.actualVoteAll(modelScheduler);
             WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
             if (r != null) {
                 log("[AgentManager] quorum: " + r);
+                String voteQuality = com.mindpalace.agent.sims.VoteQualityLedger.summarize(r.voteOutcomes);
                 if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.QUORUM,
-                    r.status, text);
+                    r.status, text + " | " + voteQuality);
+                // TASK_0128 redo: ledger EVERY cycle (any outcome) so the
+                // diversity report can measure per-type approval rates.
+                // APPROVED cycles are logged by QuorumTaskSpawner itself
+                // (with task_spawned_id) — don't double-write those.
+                if (!"APPROVED".equals(r.status)) {
+                    try {
+                        com.mindpalace.agent.sims.QuorumTaskSpawner.ledgerAppendAny(r);
+                    } catch (Exception e) {
+                        log("[AgentManager] ledger append failed: " + e.getMessage());
+                    }
+                }
                 // H21 (step 67): ride the carry-event pattern — publish the
                 // verdict to the game so the world flares (gold for APPROVED,
                 // ice dip for REJECTED). The web-side CSS twins already exist.
@@ -481,15 +547,64 @@ public class AgentManager {
                 if ("APPROVED".equals(r.status)) {
                     try {
                         com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r);
+                        log("[AgentManager] TASK spawn handled: " + r.proposalId);
                     } catch (Exception e) {
-                        log("[AgentManager] TASK spawn failed: " + e.getMessage());
+                        log("[AgentManager] TASK spawn FAILED: " + e);
                     }
                 }
             }
+            // t_948a71be: apply each real-work verdict (promote / comment /
+            // create-triage) — the synthetic cycle's own handling above is
+            // unaffected ("never delete, only merge").
+            if (realWork != null && !realWork.isEmpty()) {
+                try {
+                    handleRealWorkVerdicts(realWork);
+                } catch (Exception e) {
+                    log("[AgentManager] real-work verdict application failed: " + e.getMessage());
+                }
+            }
+            // t_948a71be: unconditional post-verdict sweep — also clears the
+            // synthetic cycle-<ts> proposal when gather() returned empty
+            // (otherwise dead synthetic ids pile up cycle over cycle).
+            quorum.finishCycle();
         } catch (Exception e) {
             log("[AgentManager] quorum error: " + e.getMessage());
         }
     }
+
+    /**
+     * t_948a71be: calculate + apply a verdict per real-work proposal.
+     * Voting happened in the shared actualVoteAll round above; this only
+     * reads the results. The source's applyVerdict promotes approved
+     * kanban cards, comments on rejected ones, and parks approved public
+     * items in triage — never past it (Architect sign-off doctrine).
+     */
+    private void handleRealWorkVerdicts(
+            java.util.List<com.mindpalace.agent.sims.QuorumProposalSource.RealWorkProposal> realWork) {
+        for (var rw : realWork) {
+            WeightedQuorumVote.QuorumResult wr;
+            try {
+                wr = quorum.calculateQuorum(rw.proposalId());
+            } catch (Exception e) {
+                log("[AgentManager] real-work quorum calc failed for " + rw.sourceId + ": " + e.getMessage());
+                continue;
+            }
+            if (wr == null) continue;
+            log("[AgentManager] real-work quorum: " + wr);
+            if (telemetry != null) {
+                telemetry.record(com.mindpalace.backup.Telemetry.QUORUM, wr.status, rw.voteText());
+            }
+            try {
+                realWorkSource.applyVerdict(wr, rw);
+            } catch (Exception e) {
+                log("[AgentManager] real-work verdict failed for " + rw.sourceId + ": " + e.getMessage());
+            }
+        }
+    }
+
+    /** t_948a71be: source of real-work proposals (kanban + issues + checks). */
+    private final com.mindpalace.agent.sims.QuorumProposalSource realWorkSource =
+        new com.mindpalace.agent.sims.QuorumProposalSource();
 
     /** H21: game-side hook for quorum verdicts (set by GameEngine). */
     public void setQuorumVerdictCallback(java.util.function.Consumer<String> cb) {
@@ -835,14 +950,28 @@ public class AgentManager {
         modelScheduler.submitToolRound(() -> executeToolRound(context));
     }
 
+    /** Model for a tool round: the routed model when Ollama reports tool support, else TOOL_MODEL (#144). */
+    private String toolRoundModel() {
+        String m = routedModel;
+        if (ollama.supportsTools(m)) return m;
+        log("[AgentManager] " + m + " has no native tool calling; tool round uses " + TOOL_MODEL + " (#144)");
+        return TOOL_MODEL;
+    }
+
     /** One tool round-trip: model → tool_calls → execute → feed back → final text. */
     private void executeToolRound(String context) {
         try {
+            // #144: the router picks by complexity, but tiers like tinyllama/phi/phi3 have no
+            // native tool calling and would silently no-op. Tool rounds use a model that
+            // Ollama reports as tool-capable (the routed one if it is, else TOOL_MODEL).
+            final String toolModel = toolRoundModel();
             List<Map<String, String>> msgs = new ArrayList<>();
-            msgs.add(Map.of("role", "system", "content", ctx(routedModel) + "\n" + TOOL_SYSTEM_PROMPT));
+            // Static instructions FIRST, the per-turn context line LAST: Ollama reuses work on an unchanged
+            // prompt prefix, and this order measured 13.2 s -> 2.7 s prompt eval per call (llama3.2:1b, 363 tokens).
+            msgs.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT + "\n" + ctx(toolModel)));
             msgs.add(Map.of("role", "user", "content", context + "\n\nTake ONE concrete action using your tools."));
 
-            OllamaClient.ToolResult tr = ollama.chatWithTools(routedModel, msgs, TOOLS);
+            OllamaClient.ToolResult tr = ollama.chatWithTools(toolModel, msgs, TOOLS);
             if (tr == null || tr.toolCalls.isEmpty()) {
                 if (tr != null && tr.content != null && !tr.content.isEmpty()) {
                     emit(onToolMessage, "[Tool] " + tr.content);
@@ -892,7 +1021,7 @@ public class AgentManager {
             feedback.add(Map.of("role", "user", "content",
                 "You just took the actions shown above. In ONE line: what did you "
                 + "learn from the results, and what is the next concrete step?"));
-            OllamaClient.ToolResult sr = ollama.chatWithTools(routedModel, feedback, List.<com.google.gson.JsonObject>of());
+            OllamaClient.ToolResult sr = ollama.chatWithTools(toolModel, feedback, List.<com.google.gson.JsonObject>of());
             if (sr != null && sr.content != null && !sr.content.isEmpty()) {
                 emit(onToolMessage, "[Tool] " + sr.content);
             }
@@ -1370,6 +1499,56 @@ public class AgentManager {
         } catch (Exception e) {
             log("[GitHub] ERROR initializing bridge: " + e.getMessage());
         }
+    }
+
+    /**
+     * #145: the single startup path for the Reddit and GitHub bridges. Both are OFF
+     * unless explicitly enabled AND credentialed through the environment, because
+     * they feed public-sourced input (GitHub issues -> TASK files, Reddit -> quorum)
+     * and the public-feedback gate needs the Architect's sign-off first. Secrets are
+     * only ever read from env and never logged. The caller (GameEngine) invokes it once at startup.
+     *
+     * GitHub: MP_ENABLE_GITHUB_BRIDGE=1, MP_GITHUB_BRIDGE_REPO=owner/name, MP_GITHUB_BRIDGE_TOKEN
+     * Reddit: MP_ENABLE_REDDIT_BRIDGE=1, MP_REDDIT_CLIENT_ID, MP_REDDIT_CLIENT_SECRET, MP_REDDIT_SUBREDDIT
+     *
+     * @param env environment lookup (System::getenv in production, a stub in tests)
+     * @return one-line status, e.g. "github=skipped(disabled) reddit=skipped(disabled)"
+     */
+    public String startBridgesIfConfigured(java.util.function.Function<String, String> env) {
+        StringBuilder status = new StringBuilder();
+
+        String gh;
+        if (!"1".equals(env.apply("MP_ENABLE_GITHUB_BRIDGE"))) {
+            gh = "skipped(disabled)";
+        } else {
+            String repo = env.apply("MP_GITHUB_BRIDGE_REPO");
+            String token = env.apply("MP_GITHUB_BRIDGE_TOKEN");
+            if (repo == null || !repo.matches("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+") || token == null || token.isBlank()) {
+                gh = "skipped(enabled but repo/token missing or malformed)";
+            } else {
+                String[] p = repo.split("/", 2);
+                initGitHub(p[0], p[1], token);
+                gh = "started(" + repo + ")";
+            }
+        }
+        status.append("github=").append(gh);
+
+        String rd;
+        if (!"1".equals(env.apply("MP_ENABLE_REDDIT_BRIDGE"))) {
+            rd = "skipped(disabled)";
+        } else {
+            String id = env.apply("MP_REDDIT_CLIENT_ID");
+            String secret = env.apply("MP_REDDIT_CLIENT_SECRET");
+            String sub = env.apply("MP_REDDIT_SUBREDDIT");
+            if (id == null || id.isBlank() || secret == null || secret.isBlank() || sub == null || !sub.matches("[A-Za-z0-9_]{2,21}")) {
+                rd = "skipped(enabled but credentials/subreddit missing or malformed)";
+            } else {
+                rd = initReddit(id, secret, sub) != null ? "awaiting-authorization" : "failed";
+            }
+        }
+        status.append(" reddit=").append(rd);
+        log("[AgentManager] bridges: " + status);
+        return status.toString();
     }
 
     public GitHubPollBridge getGitHubBridge() { return githubBridge; }

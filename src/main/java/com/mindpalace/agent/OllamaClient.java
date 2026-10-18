@@ -34,26 +34,131 @@ public class OllamaClient {
         return (v == null || v.isBlank()) ? "5m" : v.trim();
     }
 
+    // MULTI-RESIDENT MODE (default ON, t_e29e1f81): stop force-unloading the
+    // previous model on every switch — Ollama's own OLLAMA_MAX_LOADED_MODELS
+    // cap + LRU govern residency. Found 2026-10-16: one-hot evict sent
+    // keep_alive:0 to the previous model on EVERY /chat, so the 3-model vote
+    // roster (llama -> qwen -> deepseek, a switch every round) ping-ponged all
+    // three out and every real ballot timed out at 30s against a 46-146s cold
+    // load. Opt-out (restores one-hot): -Dmindpalace.ollama.multiResident=false
+    // or env MP_OLLAMA_MULTI_RESIDENT=false.
+    private static final boolean MULTI_RESIDENT = resolveMultiResident();
+
+    private static boolean resolveMultiResident() {
+        String v = System.getProperty("mindpalace.ollama.multiResident", System.getenv("MP_OLLAMA_MULTI_RESIDENT"));
+        if (v == null || v.isBlank()) return true;
+        v = v.trim().toLowerCase();
+        return !(v.equals("false") || v.equals("0") || v.equals("off"));
+    }
+
+    // While multi-resident, pin every used model (keep_alive=-1 = never
+    // idle-unloaded) so a vote roster assembled minutes apart stays hot.
+    // Ollama still frees the LRU model when a new load exceeds
+    // MAX_LOADED_MODELS, so RAM stays bounded. One-hot keeps its own
+    // KEEP_ALIVE (default 5m).
+    private static final String EFFECTIVE_KEEP_ALIVE = MULTI_RESIDENT ? "-1" : KEEP_ALIVE;
+
+    // model -> does Ollama report native tool-calling for it (cached; #144)
+    private final java.util.concurrent.ConcurrentHashMap<String, Boolean> toolSupport = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * True when Ollama's /api/show lists "tools" in the model's capabilities
+     * (e.g. llama3.2:1b yes, phi3:mini no). A model without it silently ignores
+     * the tools payload, so tool rounds must not be routed to it. If Ollama is
+     * unreachable or too old to report capabilities, the answer is not cached
+     * and only the configured TOOL_MODEL is assumed capable.
+     */
+    public boolean supportsTools(String model) {
+        Boolean cached = toolSupport.get(model);
+        if (cached != null) return cached;
+        try {
+            JsonObject b = new JsonObject();
+            b.addProperty("model", model);
+            Request r = new Request.Builder().url(BASE + "/show")
+                .post(RequestBody.create(b.toString(), MediaType.parse("application/json"))).build();
+            try (Response resp = http.newCall(r).execute()) {
+                if (resp.isSuccessful() && resp.body() != null) {
+                    JsonObject o = gson.fromJson(resp.body().string(), JsonObject.class);
+                    if (o != null && o.has("capabilities") && o.get("capabilities").isJsonArray()) {
+                        boolean yes = false;
+                        for (JsonElement e : o.getAsJsonArray("capabilities")) {
+                            if ("tools".equals(e.getAsString())) { yes = true; break; }
+                        }
+                        toolSupport.put(model, yes);
+                        return yes;
+                    }
+                }
+            }
+        } catch (IOException | RuntimeException ignored) { /* fall through to the safe default */ }
+        return ModelConfig.TOOL_MODEL.equals(model);
+    }
+
+    // Context window requested per call. Without it Ollama applies ITS default, which on this machine was
+    // 131072 tokens: a 1.2B model loaded at 6.4 GB (KV cache ~5 GB) instead of ~1.5 GB, with multi-second
+    // loads and ~1 GB RAM left free (observed 2026-10-06 via /api/ps context_length). Tool budget is 4000
+    // tokens, so 8192 is ample. Override: -Dmindpalace.ollama.numCtx=... or env MP_OLLAMA_NUM_CTX.
+    private static final int NUM_CTX = resolveNumCtx();
+
+    private static int resolveNumCtx() {
+        String v = System.getProperty("mindpalace.ollama.numCtx", System.getenv("MP_OLLAMA_NUM_CTX"));
+        try {
+            int n = (v == null || v.isBlank()) ? 8192 : Integer.parseInt(v.trim());
+            return Math.max(2048, Math.min(n, 131072));
+        } catch (NumberFormatException e) {
+            return 8192;
+        }
+    }
+
+    private static void applyOptions(JsonObject body) {
+        JsonObject opts = body.has("options") && body.get("options").isJsonObject() ? body.getAsJsonObject("options") : new JsonObject();
+        opts.addProperty("num_ctx", NUM_CTX);
+        body.add("options", opts);
+    }
+
     private static void applyKeepAlive(JsonObject body) {
-        if (KEEP_ALIVE.matches("\\d+")) body.addProperty("keep_alive", Long.parseLong(KEEP_ALIVE));
-        else body.addProperty("keep_alive", KEEP_ALIVE);
+        // t_e29e1f81 layer 3: bare "-1" STRING → Ollama 0.40 400 "time: missing unit
+        // in duration \"-1\"" in MULTI_RESIDENT mode → every ballot's chat() returned
+        // null → abstain_empty. Accept the negative-numeric form too so "keep_alive":
+        // -1 (JSON number, pin-forever) goes out as designed.
+        if (EFFECTIVE_KEEP_ALIVE.matches("-?\\d+")) body.addProperty("keep_alive", Long.parseLong(EFFECTIVE_KEEP_ALIVE));
+        else body.addProperty("keep_alive", EFFECTIVE_KEEP_ALIVE);
+    }
+
+    /**
+     * MULTI-RESIDENT (t_e29e1f81): the one-model gate is bypassed — vote ballots
+     * and agent/user calls may overlap server-side (each model keeps its own
+     * runner up to OLLAMA_MAX_LOADED_MODELS; NumParallel=1 only queues
+     * same-model requests). Serializing the HTTP call through modelGate would
+     * make a ballot wait up to a full agent generation (~120s) and blow its
+     * 30s future — observed pre-patch. One-hot mode keeps the physical
+     * single-runner invariant.
+     */
+    private <T> T withGate(java.util.function.Supplier<T> work) {
+        if (MULTI_RESIDENT) return work.get();
+        synchronized (modelGate) { return work.get(); }
     }
 
     /** Caller must hold modelGate. Unloads the previously hot model when switching. */
     private void evictPreviousModelLocked(String model) {
-        String prev = hotModel;
-        hotModel = model;
-        if (prev == null || prev.equals(model) || "0".equals(KEEP_ALIVE)) return;
-        try {
-            JsonObject b = new JsonObject();
-            b.addProperty("model", prev);
-            b.addProperty("prompt", "");
-            b.addProperty("stream", false);
-            b.addProperty("keep_alive", 0);
-            Request r = new Request.Builder().url(BASE + "/generate")
-                .post(RequestBody.create(b.toString(), MediaType.parse("application/json"))).build();
-            try (Response resp = http.newCall(r).execute()) { /* best effort */ }
-        } catch (IOException ignored) { /* eviction is best effort; the next load still works */ }
+        // MULTI-RESIDENT: never force-unload — LRU + OLLAMA_MAX_LOADED_MODELS
+        // govern residency (see field docs). Still tracks hotModel for parity.
+        if (!MULTI_RESIDENT) {
+            String p = hotModel;
+            hotModel = model;
+            if (p == null || p.equals(model) || "0".equals(KEEP_ALIVE)) return;
+            try {
+                JsonObject b = new JsonObject();
+                b.addProperty("model", p);
+                b.addProperty("prompt", "");
+                b.addProperty("stream", false);
+                b.addProperty("keep_alive", 0);
+                Request r = new Request.Builder().url(BASE + "/generate")
+                    .post(RequestBody.create(b.toString(), MediaType.parse("application/json"))).build();
+                try (Response resp = http.newCall(r).execute()) { /* best effort */ }
+            } catch (IOException ignored) { /* eviction is best effort; the next load still works */ }
+        } else {
+            hotModel = model;
+        }
     }
 
     public OllamaClient() {
@@ -108,6 +213,7 @@ public class OllamaClient {
         // ONE-HOT: the model stays resident for KEEP_ALIVE (default 5m); a different
         // model evicts it (see evictPreviousModelLocked). "0" = old cold-shot policy.
         applyKeepAlive(body);
+        applyOptions(body);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -125,7 +231,7 @@ public class OllamaClient {
         }
 
         try {
-            synchronized (modelGate) {
+            return withGate(() -> {
                 evictPreviousModelLocked(model);
                 Request r = new Request.Builder()
                     .url(BASE + "/chat")
@@ -141,9 +247,13 @@ public class OllamaClient {
                     JsonObject msg = result.getAsJsonObject("message");
                     if (msg.has("content") && !msg.get("content").isJsonNull()) return msg.get("content").getAsString();
                     return "";
+                } catch (IOException e) {
+                    // Supplier lambdas cannot throw checked exceptions — mirror
+                    // the old outer catch here instead.
+                    return null;
                 }
-            }
-        } catch (IOException | RuntimeException e) {
+            });
+        } catch (RuntimeException e) {
             return null;
         }
     }
@@ -169,6 +279,7 @@ public class OllamaClient {
         body.addProperty("stream", false);
         // Same one-hot keep-alive policy as chat().
         applyKeepAlive(body);
+        applyOptions(body);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -195,7 +306,7 @@ public class OllamaClient {
         }
 
         try {
-            synchronized (modelGate) {
+            return withGate(() -> {
                 evictPreviousModelLocked(model);
                 Request r = new Request.Builder()
                     .url(BASE + "/chat")
@@ -222,9 +333,13 @@ public class OllamaClient {
                         }
                     }
                     return new ToolResult(content, calls);
+                } catch (IOException e) {
+                    // Supplier lambdas cannot throw checked exceptions — mirror
+                    // the old outer catch here instead.
+                    return new ToolResult(null, List.of());
                 }
-            }
-        } catch (IOException | RuntimeException e) {
+            });
+        } catch (RuntimeException e) {
             // CARD-Q1 F1: RuntimeException (UnsupportedOperationException,
             // NPE, JsonSyntaxException) must not silently kill the round.
             return new ToolResult(null, List.of());
@@ -256,6 +371,11 @@ public class OllamaClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", "nomic-embed-text");
         body.addProperty("prompt", text);
+        // MULTI-RESIDENT: nomic is a 4th model beyond the 3-slot vote roster.
+        // Server-side OLLAMA_KEEP_ALIVE=-1 would pin it forever and starve a
+        // vote slot, so give it an explicit idle window instead (it reloads in
+        // ~1s when needed). One-hot mode keeps the old no-field behavior.
+        if (MULTI_RESIDENT) body.addProperty("keep_alive", "5m");
         try {
             Request r = new Request.Builder()
                 .url(BASE + "/embeddings")

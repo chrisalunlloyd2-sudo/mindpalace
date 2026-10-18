@@ -38,12 +38,14 @@ pull into the editor.
 7. [The Options Panel](#the-options-panel)
 8. [Gameplay Guide](#gameplay-guide)
 9. [The Agents & Code Mining](#the-agents--code-mining)
-10. [Live Patching](#live-patching)
-11. [Project Structure](#project-structure)
-12. [Tech Stack](#tech-stack)
-13. [FAQ](#faq)
-14. [Roadmap](#roadmap)
-15. [How to help](#how-to-help)
+10. [What the Local LLMs Are For](#what-the-local-llms-are-for)
+11. [Mini-Games, Casino & Multiplayer](#mini-games-casino--multiplayer)
+12. [Live Patching](#live-patching)
+13. [Project Structure](#project-structure)
+14. [Tech Stack](#tech-stack)
+15. [FAQ](#faq)
+16. [Roadmap](#roadmap)
+17. [How to help](#how-to-help)
 
 ---
 
@@ -206,6 +208,7 @@ telemetry leaves the machine.
 | ![Main hall](docs/screenshots/main_hall.png) | ![Agents](docs/screenshots/agents.png) |
 | ![Rotor rings](docs/screenshots/rotor_rings.png) | The courtyard's Enigma rotor — carries tick, chime, and bell every second |
 | ![Interaction prompt with drop-shadow](docs/screenshots/prompt_drop_shadow.png) | The unified interaction prompt — magenta HUD text with a black drop-shadow (`#113`), readable even over the door's bloom |
+| ![Commit ledger engraved in hallway](docs/screenshots/commit_ledger_hall.png) | The hallway's commit ledger — real recent commits from GitHub engraved on the wall above a doorway (`#122`) |
 
 
 
@@ -292,7 +295,7 @@ export M2_HOME="C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16"
 |------|--------|
 | `--autodrive <dir>` | Scripted walkthrough that captures PNG frames to `<dir>` (lets an agent SEE the world) |
 | `--selftest` | 54 automated checks headlessly, PASS/FAIL, exit 0/1 (CI gate) |
-| `--e2e <dir>` | 13 labeled waypoints captured as PNGs (visual regression proof) |
+| `--e2e <dir>` | labeled waypoints (22 at last count) captured as PNGs (visual regression proof) |
 | `--demo` | Full palace from a bundled JSON snapshot — no GitHub auth, no network (see docs/DEMO_MODE.md; lands as step 112) |
 
 ### Or skip the build — download the installer
@@ -311,17 +314,38 @@ install; the JRE is bundled.
 | WASD | Move |
 | Mouse | Look around |
 | Space | Jump |
-| Enter | Open door / exit room / send chat |
+| Enter | Open door / exit room (sends your message while typing in chat) |
+| T | Start/stop typing in chat (Enter sends) |
+| Shift | Sprint |
+| 1-9 | With the map open: teleport to the Nth revealed room on this floor |
+| E | Swap the Enigma plugboard when standing near it |
+| `[` / `]` | Scrub the current room's commit history backwards / forwards (time slider) |
+| F7 | Dressing room (see its own keys below) |
 | Left Click | Click book to open editor / click plant for a fact |
 | Tab | Toggle full-map overlay |
 | M | Toggle minimap overlay |
 | ESC | Toggle menu / close editor |
+| ESC x2 (quickly) | Exit the game |
+| ESC during a restart countdown | Cancel the restart (no new request for 10 minutes) |
 | F1 | Help overlay |
 | F3 | Toggle noclip (free-fly: Space/Shift up/down, no collision) |
-| F4 | Toggle FPS/debug overlay (includes frustum-culled count) |
+| F4 | Toggle 2D readable text mode (VR 3D text <-> screen-pinned text) |
+| F8 | Toggle FPS/debug overlay (includes frustum-culled count) |
 | F11 | Fullscreen toggle |
 | F12 | Screenshot (saves to `screenshots/`) |
 | `/` | Search / jump to any repo |
+
+### Dressing Room Keys
+
+| Key | Action |
+|-----|--------|
+| `[` / `-` , `]` / `=` | Decrease / increase the selected attribute |
+| H | Cycle hair style |
+| X | Toggle sex |
+| F5 / F6 | Save / load `avatar.json` |
+| Tab | Next attribute |
+| Arrow keys / mouse drag | Orbit the camera around the avatar |
+| `,` / `.` | Zoom in / out |
 
 ### Book Editor Commands
 
@@ -421,6 +445,47 @@ The **never-make-code-twice** and **never-make-mistakes-twice** databases are
 tree structures that prevent redundant work. The **Tree of Knowledge** is a
 Google webcrawl (research papers via a Qwen 3B with cross-correlation RNNs),
 catalogued by **Squigly** — a worm agent that lives in the wild (see its repo).
+
+---
+
+## What the Local LLMs Are For
+
+MindPalace keeps hard facts in deterministic code (BDI-FSM bots, rules, quorum
+voting, ledgers) and uses the local LLMs where they are strongest: **subjective
+and linear content**. Everything runs on local Ollama models. No cloud calls, no
+bill, and the game keeps working offline.
+
+| Job | What the model does | Status |
+|---|---|---|
+| **Character story lines** | A 7B model such as `mistral:7b` writes backstories, quirks and running arcs for each NPC and agent, grounded in what that agent actually did (rooms visited, code mined, votes cast). | planned |
+| **Feature suggestions** | Reads the repo's issues, quorum history and roadmap and proposes additions that add depth (a casino floor, new agent roles, mini-games). Proposals go through quorum and the Architect gate before anything is built. | partly live (quorum votes on real proposals) |
+| **Music mods** | Suggests tweaks for the evolving soundtrack (tempo, key, instrument palette, mood per room). The genetic loop already archives every generation to `mindpalace_memory/evolution/`. | partly live |
+| **Quirky chat logs** | Agent conversations are saved as per-day logs. The funniest, strangest and most useful exchanges get surfaced as in-game highlights and a "best of" digest. | logs live, highlights planned |
+| **Content compilation** | Curates the cool stuff the swarm produced (code candidates, stories, tracks, quotes) into a browsable collection. | planned |
+
+Routing between models (which local model handles which job) is moving to a
+trained, local-only dispatcher. See
+[docs/DISPATCHER_HESSIAN_BDI.md](docs/DISPATCHER_HESSIAN_BDI.md).
+
+---
+
+## Mini-Games, Casino & Multiplayer
+
+The next layer of depth is play, not just exploration.
+
+- **Mini-games** inside rooms: short, self-contained games the agents can also
+  play, so a visitor can challenge a bot.
+- **Casino floor** (planned): chance games using the in-game economy, with
+  agents as dealers and players. Play money only.
+- **More agent roles**: shopkeepers, storytellers, referees, rivals, each driven
+  by a small state machine, with an LLM only for the flavor text.
+- **Multiplayer**: shared worlds over your own private network (Tailscale), so
+  your own devices can walk the same palace (in progress), and other players
+  later. The identity layer is in place; shared worlds, voting transport and
+  remote control are in progress.
+
+None of this requires a paid service. Contributions welcome. See
+[How to help](#how-to-help).
 
 ---
 
@@ -533,7 +598,7 @@ mindpalace/
 **Q: How do I see the FPS?**
 A: Press `F4` to toggle the DEBUG overlay. It shows FPS, room and hall counts,
 and the frustum-culled count. When comparing results, record the machine
-specification as described in [PERFORMANCE.md](PERFORMANCE.md).
+specification as described in [PERFORMANCE.md](docs/PERFORMANCE.md).
 
 **Q: Can I try it without connecting my GitHub account?**
 A: Yes — `--demo` boots a full 12-room fixture palace with zero auth and

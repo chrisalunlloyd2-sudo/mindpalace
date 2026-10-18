@@ -42,7 +42,7 @@ Target machine for all numbers: Intel HD 510 (integrated), OpenGL 3.3,
 
 ## Measuring, not guessing
 
-- Frame proof: `--e2e <dir>` writes 13 waypoints; decode them with
+- Frame proof: `--e2e <dir>` writes the waypoint tour (22 waypoints at last count); decode them with
   `python scripts/test_bot.py --verify-shots <dir>` (mean luminance +
   unique colors per frame).
 - The two known dark waypoints (07 crystal timing, 12 door prompt) are
@@ -54,3 +54,13 @@ Target machine for all numbers: Intel HD 510 (integrated), OpenGL 3.3,
 - New instanced geometry: ≤ 40 total draw calls for trees/floor/paths.
 - Bloom stays 2-pass; presets only lerp uniforms, never add passes.
 - No new textures — vertex-color + palette keeps uploads cheap on HD 510.
+
+## E2E frame-time gate (MP-004)
+
+`java -Dmindpalace.e2e.maxFrameMs=120 -jar mindpalace.jar --demo --e2e <dir>` ends the tour with `[PERF_OK]`, `[PERF_WARN]` or
+`[PERF_FAIL]` (exit 2). It fails only when at least `-Dmindpalace.e2e.maxOverWaypoints` (default 3) waypoints have a worst
+steady-state frame over the limit: one slow waypoint is normally the machine, a regression shows at several. Waypoint 1 is
+excluded (startup). On a software rasteriser (llvmpipe, swrast) it only warns. Quiet-machine baseline (Intel HD 510, 2026-10-07):
+39-59 FPS, worst frame 23-54 ms per waypoint, saved under `AIGEN_SYS/baselines/2026-10-07_final_quiet`. Run it with the live
+game and Ollama stopped; a busy machine can show 0.5-1.7 s spikes that are not the game. `-Dmindpalace.frameProf=true` prints a
+stage breakdown and stack histogram for any stall over 100 ms.

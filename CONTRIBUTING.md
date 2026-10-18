@@ -18,7 +18,7 @@ landmines.
    → must print `44 passed, 0 failed`.
 4. **Run**: `java -jar mindpalace-live.jar` (see DEV_SETUP.md for
    the frozen-jar rule if you also run the live game).
-5. **See the world prove itself**: `--e2e <dir>` writes 13 labeled
+5. **See the world prove itself**: `--e2e <dir>` writes a tour of labeled (22 at last count)
    waypoints; `python scripts/test_bot.py --verify-shots <dir>` decodes
    them and asserts non-black frames.
 
