@@ -10,7 +10,11 @@ import java.util.concurrent.atomic.*;
  *
  *   1. Autonomous calls: NEVER two models/nodes at once — one worker, serialized.
  *      User chat is the ONE exception: its own dedicated worker (submitImmediate),
- *      so a reply is never queued behind a slow tool/agent call.
+ *      so a reply is never queued behind a slow tool/agent call. (#108: in
+ *      ONE-HOT mode the user lane also holds a SEPARATE HTTP gate —
+ *      OllamaClient.userGate — so it never blocks on an in-flight
+ *      autonomous/vote HTTP call. Default multi-resident mode bypasses the
+ *      HTTP gates entirely.)
  *   2. ONE chat every 5 minutes MAX — a spacing gate between calls.
  *   3. Slow-paced, low resources — no burst, no concurrency.
  *   4. Telemetry — every call is logged (model, latency, queue depth, drift).
@@ -141,6 +145,11 @@ public class ModelScheduler {
      * (one user reply at a time).
      */
     private void drainImmediateLoop() {
+        // #108 (F14): mark this thread as the USER lane — OllamaClient.withGate
+        // routes every HTTP call made from here to a dedicated userGate so a
+        // user reply never serializes behind an autonomous/vote call (one-hot
+        // mode). JavaDoc claim below is now true at the HTTP layer too.
+        OllamaClient.markUserLane(true);
         while (!Thread.currentThread().isInterrupted()) {
             // CARD-Q1 F13: `job` is hoisted so the catch below can complete its
             // future exceptionally — otherwise an exception in lifespan.chat /

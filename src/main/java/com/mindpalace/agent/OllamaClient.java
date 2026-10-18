@@ -18,7 +18,18 @@ public class OllamaClient {
     // ONE-MODEL GATE: cold-shot policy means exactly one model may be in flight
     // at any moment. The scheduler already serializes, but this lock makes the
     // invariant physical — a second caller blocks until the first model unloads.
+    // #108 (F14): in ONE-HOT mode the user-chat lane serializes on its OWN gate
+    // (userGate) so a user reply can never block behind an in-flight
+    // autonomous/vote call for up to the 120s read timeout. Default
+    // MULTI-RESIDENT bypasses the gates entirely (server-side parallelism).
     private final Object modelGate = new Object();
+    private final Object userGate = new Object();
+    private static final ThreadLocal<Boolean> USER_LANE = ThreadLocal.withInitial(() -> false);
+
+    /** #108 (F14): marks the calling thread as the USER-CHAT lane. Set once by
+     * ModelScheduler.drainImmediateLoop so withGate routes user replies to
+     * userGate instead of modelGate (one-hot mode). */
+    public static void markUserLane(boolean on) { USER_LANE.set(on); }
 
     // Keep-alive window for the one resident model. "0" restores the old cold-shot
     // (unload after every reply). Measured 2026-10-03: unload-per-call costs 3.8-5.6 s
@@ -135,6 +146,10 @@ public class OllamaClient {
      */
     private <T> T withGate(java.util.function.Supplier<T> work) {
         if (MULTI_RESIDENT) return work.get();
+        // #108 (F14): the user-chat lane (marked via ThreadLocal by the
+        // scheduler's drainImmediateLoop) takes its OWN gate so a user reply
+        // is never starved behind an in-flight autonomous/vote HTTP call.
+        if (USER_LANE.get()) { synchronized (userGate) { return work.get(); } }
         synchronized (modelGate) { return work.get(); }
     }
 
