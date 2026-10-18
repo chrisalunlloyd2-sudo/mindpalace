@@ -57,7 +57,7 @@ SELFTEST_ZERO_FAILED_RE = re.compile(r"(\b0\s*failed\b|/\s*0\b(?:\s*failed\b)?)"
 # "error", "skipped", "unknown" and friends — must never be accepted just
 # because the field is non-empty (PR #281 review: a card with
 # evidence.build="FAILED" was passing before this).
-FAILURE_MARKER_RE = re.compile(r"\b(fail(ed)?|error(ed)?|skip(ped)?|unknown|timed[ _-]?out)\b", re.IGNORECASE)
+FAILURE_MARKER_RE = re.compile(r"\b(fail(ed|ure)?|error(ed)?|skip(ped)?|unknown|timed[ _-]?out)\b", re.IGNORECASE)
 
 
 def _field(card, *names):
