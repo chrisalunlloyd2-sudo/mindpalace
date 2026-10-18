@@ -15,7 +15,7 @@ landmines.
    Optional: [Ollama](https://ollama.com) for the SLM agents.
 2. **Build**: `mvn -DskipTests package` → `BUILD SUCCESS` gate.
 3. **Verify before you ship**: `java -jar mindpalace-live.jar --selftest`
-   → must print `73 passed, 0 failed`.
+   → must print `74 passed, 0 failed`.
 4. **Run**: `java -jar mindpalace-live.jar` (see DEV_SETUP.md for
    the frozen-jar rule if you also run the live game).
 5. **See the world prove itself**: `--e2e <dir>` writes a tour of labeled (22 at last count)
@@ -50,7 +50,7 @@ landmines.
 
 ## Testing
 
-- `--selftest` (73 checks) is the gate; add a check for any new system
+- `--selftest` (74 checks) is the gate; add a check for any new system
   (see `GameEngine.runSelfTest` — each check is one boolean).
 - `--e2e` waypoint tour is the visual gate; add a waypoint when you add a
   feature that must be visible (label it `14_your_feature`).

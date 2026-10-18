@@ -76,7 +76,9 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 ## Module map (`src/main/java/com/mindpalace/`)
 - **engine/** — `GameEngine` (main loop, rendering, input dispatch),
   `Input`, `GameState`, `ToolExecutor` (file read/edit/create/delete for the
-  agent loop), `AstGate` (AST-level gate for agent-written code).
+  agent loop), `AstGate` (AST-level gate for agent-written code),
+  `ExitControl` (polite exit/restart: Esc-x2, restart.request countdown,
+  10-min snooze, self-relaunch).
 - **entity/** — `Player`, `AgentNPC`, `ScoutNPC` (roaming scout bot).
 - **world/** — room/hallway generation: `WorldBuilder`, `RoomPopulator`,
   `RepoMapper`, `Room`, `Hallway`, `Book`, `FogOfWar`, `PortalTheme`
@@ -85,8 +87,8 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
   `TuringTape`, `RotorRoom`, `EnigmaPlugboard`, `BanburismusGauge`,
   `NashFountain`, `LabDevice`, `Constellation`, `TodoCrystal`.
 - **ui/** — `HUD` (door prompts), `HudLayout`, `InteractionPromptSystem`
-  (nearby-interactable prompts, in progress), `BookViewer`, `BookEditor`,
-  `DressingRoom`.
+  (unified nearby-interactable prompt, shipped — TASK 0002), `BookViewer`,
+  `BookEditor`, `DressingRoom`.
 - **render/** — `Renderer`, `Camera`, `Shader`, `Mesh`, `Texture`,
   `FontRenderer`, `BloomEffect`, `Screenshot`, `FrustumCuller`; particles
   (opt-in): `ParticleBatch`, `ParticleEmitter`, `ParticlePool`,
@@ -100,7 +102,8 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
     `AdapterType`, `FOWGate`, `WeightedQuorumVote` (quorum backend — no
     in-game room/UI for it yet), `LanguageRegistry`, `HexCoord`,
     `Complexity`, `ProposalRotator`, `QuorumProposalSource`,
-    `QuorumTaskSpawner`, `VoteQualityLedger`.
+    `QuorumTaskSpawner`, `VoteQualityLedger`, `SimsHardening100`
+    (100-case parity gate, runs in selftest as one aggregate check).
   - **agent/sprites/** — `SpriteProposalService`.
 - **github/** — `GitHubClient`, `RepoScanner`, `GistWall`, `GitHubIssueStream`.
 - **integration/** — cloud↔local bridges: `GitHubPollBridge` (hermes-queue

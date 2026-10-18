@@ -87,7 +87,7 @@ body the player actually sees and touches.
 
 ```bash
 mvn -DskipTests package                          # BUILD SUCCESS gate
-java -jar mindpalace-live.jar --selftest         # 73 checks / 0 failed
+java -jar mindpalace-live.jar --selftest         # 74 checks / 0 failed
 java -jar mindpalace-live.jar --e2e <dir>        # labeled waypoint tour (22 at last count)
 python scripts/test_bot.py --verify-shots <dir>  # non-black PNG proof
 bash scripts/cascade_dev.sh Hxx                  # all of it + commit/push/step-log

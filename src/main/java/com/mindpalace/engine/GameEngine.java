@@ -6547,6 +6547,48 @@ public class GameEngine {
             + " hud slot overlap gate (5 primaries pairwise-disjoint + in frame, teleport in frame)");
         if (hudOk) pass++; else fail++;
 
+        // 55. (#71) AdapterRegistry election — deterministic weighted vote for
+        //     LoRA weight-sets: fixed ballots must elect the same winner, ties
+        //     break on insertion order, negative voter weight fenced to 0,
+        //     null/blank candidate ids auto-id, unknown ballots ignored.
+        boolean adrOk = false;
+        try {
+            var reg = new com.mindpalace.agent.sims.AdapterRegistry();
+            reg.registerCandidate(com.mindpalace.agent.sims.AdapterType.CHAT, "latency-lean",
+                java.util.Map.of("latency", 0.9));
+            reg.registerCandidate(com.mindpalace.agent.sims.AdapterType.CHAT, null,
+                java.util.Map.of("quality", 1.1));   // auto-id path
+            reg.registerCandidate(com.mindpalace.agent.sims.AdapterType.CODE, "safe",
+                java.util.Map.of("quality", 1.0));
+            reg.castBallot(new com.mindpalace.agent.sims.AdapterRegistry.Ballot(
+                "m1", com.mindpalace.agent.sims.AdapterType.CHAT, "latency-lean", true, 2.0, "fast"));
+            reg.castBallot(new com.mindpalace.agent.sims.AdapterRegistry.Ballot(
+                "m2", com.mindpalace.agent.sims.AdapterType.CHAT, "latency-lean", true, 1.0, "fast"));
+            reg.castBallot(new com.mindpalace.agent.sims.AdapterRegistry.Ballot(
+                "m3", com.mindpalace.agent.sims.AdapterType.CHAT,
+                reg.registerCandidate(com.mindpalace.agent.sims.AdapterType.CHAT, null,
+                    java.util.Map.of("quality", 1.1)), true, -5.0, "neg fenced")); // idempotent 2nd reg
+            String win1 = reg.electBest(com.mindpalace.agent.sims.AdapterType.CHAT);
+            String win2 = reg.electBest(com.mindpalace.agent.sims.AdapterType.CHAT);
+            boolean det = win1 != null && win1.equals(win2) && win1.equals("latency-lean")
+                && reg.elected(com.mindpalace.agent.sims.AdapterType.CHAT).equals("latency-lean")
+                && reg.electedWeights(com.mindpalace.agent.sims.AdapterType.CHAT)
+                    .equals(java.util.Map.of("latency", 0.9));
+            boolean codeNull = reg.electBest(com.mindpalace.agent.sims.AdapterType.CODE) != null
+                && reg.electBest(com.mindpalace.agent.sims.AdapterType.CAREER) == null;
+            reg.castBallot(new com.mindpalace.agent.sims.AdapterRegistry.Ballot(
+                "m4", com.mindpalace.agent.sims.AdapterType.CHAT, "ghost", true, 9.0, "unknown ignored"));
+            boolean fence = reg.electBest(com.mindpalace.agent.sims.AdapterType.CHAT).equals("latency-lean")
+                && reg.electBest(com.mindpalace.agent.sims.AdapterType.CODE).equals("safe");
+            adrOk = det && codeNull && fence;
+            System.out.println((adrOk ? "PASS" : "FAIL")
+                + " adapter registry election (deterministic winner, auto-id, negative fence, unknown ballot no-op)");
+        } catch (Exception e) {
+            System.out.println("FAIL adapter registry election: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (adrOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
