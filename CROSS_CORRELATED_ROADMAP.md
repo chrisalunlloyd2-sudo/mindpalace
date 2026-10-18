@@ -249,19 +249,19 @@ unload policy).
 
 ## 15. Windows installer  (`[UB]` 9 + `[RM]` Phase H)
 
-**Status:** `PARTIAL` — Inno Setup script (`MindPalace.iss`), `build-installer.sh`,
-`build-warm-installer.sh`, `INSTALLER.md` exist. jpackage `.exe` not yet done.
+**Status:** `DONE` (2026-10-18 sweep, issue #88) — `build-installer.sh` produces the
+jpackage `.exe` (installs to Program Files\MindPalace, Start Menu entry, uninstall via
+jpackage's own uninstaller); `INSTALLER.md` documents the verified install; two tiers
+(native .exe + warm welcome GUI). Old PARTIAL text kept in issue #88 body for history.
 
-**Next action:** finish jpackage native `.exe` + Start Menu registration + uninstall.
 
 ---
 
 ## 16. USB backup  (`[UB]` 11)
 
-**Status:** `NOT-STARTED`.
+**Status:** `DONE` (2026-10-18 sweep) — `backup-to-usb.sh` at repo root (commit b0b61b8,
+"mirror AIGEN_SYS + hermes + databases to USB (merge-only)") covers all four targets.
 
-**Next action:** USB backup of AIGEN_SYS / repos / DBs / chat logs (`backup-to-usb.sh`
-exists in repo — verify it covers all four).
 
 ---
 
@@ -338,7 +338,7 @@ slice (later; Java port where feasible, worker-offload the heavy math).**
 10. §13 editor: syntax highlight + undo/redo + multi-file
 11. ~§11 per-day chat logs → private repo~ ✅ DONE (`mindpalace-sync.sh`, #69)
 12. ~§14 memory/HDD fencing~ ✅ DONE (`ModelScheduler` RAM+disk fences, #68)
-13. §15 jpackage installer
+13. ~§15 jpackage installer~ ✅ DONE (`build-installer.sh` .exe, #88)
 14. ~§16 USB backup~ ✅ DONE (`backup-to-usb.sh`, #72)
 15. §17 sims1337 multiplayer contract + fallback
 16. ~§12 email + morning digest~ ✅ DONE (crond 850b399c206e, morning_digest.py)

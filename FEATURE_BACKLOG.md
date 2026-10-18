@@ -41,7 +41,7 @@
 
 ## Tier 1 — READY (next 3 actions, scored, with the WHY)
 
-### 1. Slider fidelity + layout determinism selftest checks — score 25 — [#10](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/10)
+### 1. ~Slider fidelity + layout determinism selftest checks — score 25 — [#10]~ ✅ SHIPPED 2026-10-18 (checks 40/41 in GameEngine selftest; #10 closed)
 **Why (user value):** Today, when you scrub to an old commit, you're
 trusting that the book you're reading is *actually* that commit's text —
 nothing proves it. And when a contributor experiments with a new layout
@@ -64,7 +64,7 @@ announced. This is the item that makes the "good first issue" funnel real.
 
 
 **Moves metric:** Releases audit-proof (latest exe == HEAD); unlocks `good first issue` funnel; M4 release-automation prerequisite.
-### 3. CME defensive sweep — score 3.3 — [#12](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/12)
+### 3. ~CME defensive sweep — score 3.3 — [#12]~ ✅ SHIPPED 2026-10-18 (#12 closed 2026-09-14; defensive copies verified in selftest)
 **Why (user value):** The one crash class that ever froze the palace for
 hours was a ConcurrentModificationException — agent thread mutating a
 list while the render thread walked it. We fixed the one instance we
