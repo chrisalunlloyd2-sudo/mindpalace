@@ -114,19 +114,19 @@ Fix path: install himalaya → configure account (needs Architect's email creds)
 12. OUTSIDE WORLD / PHASE F-G — deferred
 ═══════════════════════════════════════════════════════════════════════
 [MISSING] Phase F: outside world streaming (small chunks).
-[MISSING] Phase G: teleporter graphics upgrade (particle swirl, glow, animated pad).
+[DONE] Phase G: teleporter graphics upgrade — particle swirl, glow ring, animated pad all shipped (ROADMAP.md Phase G all [x]; ROADMAP.md sweep 2026-10-18).
 
 ═══════════════════════════════════════════════════════════════════════
 PRIORITY ORDER (recommended)
 ═══════════════════════════════════════════════════════════════════════
-1. Email (broken end-to-end — needs Architect's email creds to finish)
-2. Hook in the game engine (TOOLS execution loop — biggest "not hooked in" gap)
-3. Doors: open-on-Enter, no auto-close (quick win)
-4. Per-day chat logs → private GitHub repo (quick win)
+1. ~Email (broken end-to-end)~ ✅ DONE — himalaya CLI wired; morning digest cron 850b399c206e (scripts/feedback_digest.py → ~/AppData/Local/hermes/scripts/morning_digest.py)
+2. ~Hook in the game engine (TOOLS execution loop)~ ✅ DONE — ToolExecutor + AstGate wired in engine/; §8 [DONE]
+3. ~Doors: open-on-Enter, no auto-close~ ✅ DONE — exitRoom no-closeDoor (Player.java; ec0ef46)
+4. ~Per-day chat logs → private GitHub repo~ ✅ DONE — mindpalace-sync.sh push path (#69)
 5. SIMS1337 parity: ModelRouter + LoRA + voting schema + FOW gate
 6. Code editor: 20-language toggle + LoRA + KG nodes
-7. Memory/HDD fencing
-8. Morning email digest
-9. Windows installer (Phase H)
-10. USB backup
+7. ~Memory/HDD fencing~ ✅ DONE — ModelScheduler fences (§8)
+8. ~Morning email digest~ ✅ DONE — crond 850b399c206e
+9. ~Windows installer (Phase H)~ ✅ DONE — java-windows-installer .exe build (#72 batch)
+10. ~USB backup~ ✅ DONE — backup-to-usb.sh (§11)
 11. Multiplayer / outside world (Phase F/G)
