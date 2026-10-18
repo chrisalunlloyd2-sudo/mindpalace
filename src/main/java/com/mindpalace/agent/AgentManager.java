@@ -414,46 +414,18 @@ public class AgentManager {
         log("[AgentManager] routed " + cx + " → " + routedModel + " (" + router.reason(cx) + ")");
 
         // Tool agent now runs a REAL tool-calling loop: it can read/edit/create/
-        // delete files in the current repo, not just emit text. The critic still
-        // reviews the outcome afterward. runToolLoop is async (scheduler worker);
-        // it publishes its concrete actions into lastToolActions when done.
-        lastToolActions = null;  // stale from a previous cycle is worse than none
-        runToolLoop();
+        // delete files in the current repo, not just emit text. #102: the tool
+        // round now runs AFTER a quorum verdict on "may this cycle write?" —
+        // APPROVED runs full tools, otherwise read_file-only (proposal → vote →
+        // act, as the architecture describes). The critic is invoked as a
+        // CONTINUATION of the tool round (executeToolRound → runCritic) instead
+        // of the old 2.5s sleep-and-poll, which nearly always reviewed null
+        // because the round sat behind the scheduler spacing gate (F4/D9).
+        final boolean toolRoundApproved = voteToolRoundPermission();
+        runToolLoop(toolRoundApproved);
 
-        // Critic reviews the tool agent's work (scheduler spaces it 5 min).
-        // H01: the critic sees the ACTUAL actions (tool name → result), not a
-        // bare "the tool agent just acted". With nothing to review, the critic
-        // is skipped entirely — a reviewer without work is what produced the
-        // endless "Would you like to move forward?" hallucination loops.
-        String actions = lastToolActions;
-        if (actions == null || actions.isEmpty()) {
-            // Tool round may still be in flight (async); give it one short
-            // grace window before concluding there is nothing to review.
-            try { Thread.sleep(2500); } catch (InterruptedException ignored) {}
-            actions = lastToolActions;
-        }
-        if (actions == null || actions.isEmpty()) {
-            log("[AgentManager] critic skipped — no tool actions to review this cycle");
-        } else {
-            String criticPrompt = ctx(CRITIC_MODEL)
-                + "\nThe tool agent just did, in room " + proposalTargetName(currentRoom)
-                + ":\n" + actions
-                + "\nEvaluate these CONCRETE actions. Name the files touched. "
-                + "Is the result correct for the language? Should we proceed, "
-                + "and what is the single biggest risk? Be specific, no meta-talk.";
-            final String reviewed = actions;
-            modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
-                .thenAccept(criticResp -> {
-                    // H02 companion: the ANTI-LOOP DIRECTIVE lets the model
-                    // bow out with 'SILENT' — never broadcast an empty bow.
-                    if (criticResp != null && !criticResp.isEmpty()
-                            && !criticResp.trim().equalsIgnoreCase("SILENT")) {
-                        emit(onCriticMessage, "[Critic] " + criticResp);
-                        if (telemetry != null) telemetry.record(
-                            com.mindpalace.backup.Telemetry.AGENT, "critic-reviewed", reviewed.length() + " chars");
-                    }
-                });
-        }
+        // Critic review now rides the tool round itself (see runCritic); there
+        // is nothing left to poll here — the sleeping thread (D9) is gone.
 
         // Quorum vote: register the cycle's proposal and let both models vote
         // (FOW-gated). The result is logged as the "voting schema" heartbeat.
@@ -484,6 +456,35 @@ public class AgentManager {
             }
         } catch (Exception e) {
             log("[AgentManager] lexical bridge error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * #102 (kanban CARD-Q1 F5): register + vote the tool round's permission
+     * proposal BEFORE submitting the tool loop. Selftest auto-approves (same
+     * deterministic gate as runLexicalBridge — no live SLM round-trips).
+     * Returns true only when the quorum APPROVES the write.
+     */
+    private boolean voteToolRoundPermission() {
+        try {
+            String id = "toolperm-" + System.currentTimeMillis();
+            String target = proposalTargetName(currentRoom);
+            quorum.registerProposal(id, "Agent may write files in " + target
+                + " this cycle", new HexCoord(0, 0), "tool_permission");
+            quorum.advanceTimePulse(0.1);
+            if (selfTest) {
+                for (String voter : quorum.allModelsMap().keySet())
+                    quorum.castVote(id, voter, com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+                return true;
+            }
+            WeightedQuorumVote.QuorumResult r = quorum.actualVote(id, modelScheduler);
+            boolean approved = r != null && "APPROVED".equals(r.status);
+            if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.QUORUM,
+                r == null ? "(evicted)" : r.status, "tool-permission " + target);
+            return approved;
+        } catch (Exception e) {
+            log("[AgentManager] tool-permission vote failed (defaults read-only): " + e.getMessage());
+            return false; // fail-safe: no approval → no writes
         }
     }
 
@@ -963,14 +964,19 @@ public class AgentManager {
      * text. Runs on the scheduler's single worker so it never overlaps another
      * model call.
      */
-    public void runToolLoop() {
+    public void runToolLoop(boolean approvedOnly) {
         if (!available || !running || currentRoom == null) return;
         String context = buildContext();
         if (context.isEmpty()) return;
 
         // Run the tool round on the scheduler's single worker thread so it never
         // overlaps another model call. The round does its own chatWithTools call.
-        modelScheduler.submitToolRound(() -> executeToolRound(context));
+        // #102: the round inherits the quorum verdict — APPROVED gets the full
+        // toolset, otherwise it is capped at read_file (cheaper and keeps the
+        // loop alive while still gating writes).
+        final boolean ok = approvedOnly;
+        lastToolActions = null;  // stale from a previous cycle is worse than none
+        modelScheduler.submitToolRound(() -> executeToolRound(context, ok));
     }
 
     /** Model for a tool round: the routed model when Ollama reports tool support, else TOOL_MODEL (#144). */
@@ -981,20 +987,31 @@ public class AgentManager {
         return TOOL_MODEL;
     }
 
-    /** One tool round-trip: model → tool_calls → execute → feed back → final text. */
-    private void executeToolRound(String context) {
+    /**
+     * #102: one tool round-trip; writes (edit/create/delete) only when the
+     * quorum approved the tool-permission proposal — otherwise read_file-only.
+     * On completion it directly invokes the critic (runCritic) as a
+     * continuation, replacing the old autonomousCycle 2.5s sleep-poll (F4/D9).
+     */
+    private void executeToolRound(String context, boolean writesApproved) {
         try {
             // #144: the router picks by complexity, but tiers like tinyllama/phi/phi3 have no
             // native tool calling and would silently no-op. Tool rounds use a model that
             // Ollama reports as tool-capable (the routed one if it is, else TOOL_MODEL).
             final String toolModel = toolRoundModel();
+            final List<JsonObject> roundTools = writesApproved
+                ? TOOLS
+                : TOOLS.stream().filter(t -> {
+                    JsonObject f = t.getAsJsonObject("function");
+                    return f != null && "read_file".equals(f.get("name").getAsString());
+                }).collect(java.util.stream.Collectors.toList());
             List<Map<String, String>> msgs = new ArrayList<>();
             // Static instructions FIRST, the per-turn context line LAST: Ollama reuses work on an unchanged
             // prompt prefix, and this order measured 13.2 s -> 2.7 s prompt eval per call (llama3.2:1b, 363 tokens).
             msgs.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT + "\n" + ctx(toolModel)));
             msgs.add(Map.of("role", "user", "content", context + "\n\nTake ONE concrete action using your tools."));
 
-            OllamaClient.ToolResult tr = ollama.chatWithTools(toolModel, msgs, TOOLS);
+            OllamaClient.ToolResult tr = ollama.chatWithTools(toolModel, msgs, roundTools);
             if (tr == null || tr.toolCalls.isEmpty()) {
                 if (tr != null && tr.content != null && !tr.content.isEmpty()) {
                     emit(onToolMessage, "[Tool] " + tr.content);
@@ -1048,9 +1065,47 @@ public class AgentManager {
             if (sr != null && sr.content != null && !sr.content.isEmpty()) {
                 emit(onToolMessage, "[Tool] " + sr.content);
             }
+
+            // #102 (F4/D9): the critic is invoked HERE, as a continuation of the
+            // completed round — the actions are guaranteed published, no 2.5s
+            // sleep-and-poll on a scheduler thread that almost never won the race.
+            runCritic(lastToolActions);
         } catch (Exception e) {
             log("[AgentManager] tool loop error: " + e.getMessage());
+            // Even a failed round ends with an empty action sheet — pass it on
+            // so the critic decision ("skip, nothing to review") stays honest.
+            runCritic(null);
         }
+    }
+
+    /**
+     * #102: critic review extracted from autonomousCycle. H01: with nothing to
+     * review, the critic is skipped entirely — a reviewer without work is what
+     * produced the endless "Would you like to move forward?" hallucination
+     * loops. H02: the ANTI-LOOP DIRECTIVE lets the model bow out with 'SILENT'
+     * — never broadcast an empty bow.
+     */
+    private void runCritic(String actions) {
+        if (actions == null || actions.isEmpty()) {
+            log("[AgentManager] critic skipped — no tool actions to review this cycle");
+            return;
+        }
+        String criticPrompt = ctx(CRITIC_MODEL)
+            + "\nThe tool agent just did, in room " + proposalTargetName(currentRoom)
+            + ":\n" + actions
+            + "\nEvaluate these CONCRETE actions. Name the files touched. "
+            + "Is the result correct for the language? Should we proceed, "
+            + "and what is the single biggest risk? Be specific, no meta-talk.";
+        final String reviewed = actions;
+        modelScheduler.submit(CRITIC_MODEL, criticPrompt, criticLifespan)
+            .thenAccept(criticResp -> {
+                if (criticResp != null && !criticResp.isEmpty()
+                        && !criticResp.trim().equalsIgnoreCase("SILENT")) {
+                    emit(onCriticMessage, "[Critic] " + criticResp);
+                    if (telemetry != null) telemetry.record(
+                        com.mindpalace.backup.Telemetry.AGENT, "critic-reviewed", reviewed.length() + " chars");
+                }
+            });
     }
 
     /** Minimal JSON string escaping for tool-call replay (H03). */

@@ -7,7 +7,7 @@
 
 ## Where we are (2026-10-18)
 - PHASE B world finishing (59-78): ✅ COMPLETE — walls, wall collision, roofs, heights, forest ×3, paths, bloom, quorum flares, palette, windows, doors, lanterns, weather (e6ba132, 02df8e0, 7d3f52f)
-- Selftest gate: 75/0 exit-0 (latest run; gate grew through hardening + parity work)
+- Selftest gate: 76/0 exit-0 (latest run; gate grew through hardening + parity work)
 - SIMS1337 parity layer: SHIPPED — ModelRouter/LoRASwitcher/FOWGate/WeightedQuorumVote/AdapterRegistry + 100-case gate (SimsHardening100, 621d317)
 - Hardening x100 gate: PASS 100/100 cases (STEP 97, 34ad118)
 - Doc-drift sweep: shipped docs refreshed to real state (#64/#65/#67/#68/#69/#72/#78/#79/#83/#84/#85/#87)
@@ -34,7 +34,7 @@
 - [x] **63** H16 forest fill ×3 — pine/oak/deadwood species, radial density falloff, DeterministicSeed (OutsideWorld: 220 → 600+ trees)
 - [x] **64** H17 forest floor — grass tufts, fallen logs, rocks (instanced, ≤40 draw calls total)
 - [x] **65** H18 paths — cobbled (0b5e257): alternating grey caps, chunk-culled
-- [x] **66** H20 bloom presets — 0.95/0.75/0.55, 1.5s exp lerp (0b5e257)
+- [x] **66** H20 bloom presets — 0.95/0.76/0.55, 1.5s exp lerp (0b5e257)
 - [x] **67** H21 quorum flares — callback → gold/ice flare + audio, selftest #28 (0b5e257)
 - [x] **68** H22 palette sweep + region HUD fade — 2s fade on change (2949117)
 - [x] **69** Window glass — hallway panes, amber at night (3d540b9)

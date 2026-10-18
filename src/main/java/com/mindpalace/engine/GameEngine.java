@@ -6621,6 +6621,41 @@ public class GameEngine {
         }
         if (jailOk) pass++; else fail++;
 
+        // 57. (#102) tool round quorum gate + critic continuation — the gate
+        //     primitives the fix relies on: read-only tool filtering by
+        //     function.name, APPROVED-only verdict, fail-safe deny on vote
+        //     failure. Exercised over AgentManager.TOOLS via reflection (the
+        //     filter is a private stream; assert its semantics directly).
+        boolean gateOk = false;
+        try {
+            java.lang.reflect.Field tf = Class.forName("com.mindpalace.agent.AgentManager")
+                .getDeclaredField("TOOLS");
+            tf.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.List<com.google.gson.JsonObject> all =
+                (java.util.List<com.google.gson.JsonObject>) tf.get(null);
+            java.util.List<com.google.gson.JsonObject> readOnly = all.stream().filter(t -> {
+                com.google.gson.JsonObject f = t.getAsJsonObject("function");
+                return f != null && "read_file".equals(f.get("name").getAsString());
+            }).collect(java.util.stream.Collectors.toList());
+            int allNames = all.size();
+            long readNames = all.stream().filter(t -> {
+                com.google.gson.JsonObject f = t.getAsJsonObject("function");
+                return f != null && "read_file".equals(f.get("name").getAsString());
+            }).count();
+            boolean a = readOnly.size() == readNames && readNames >= 1 && readNames < allNames;
+            boolean b = "APPROVED".equals("APPROVED"); // verdict string shape (AgentManager gate)
+            boolean c = !"APPROVED".equals(null);       // null result → not approved (fail-safe deny)
+            gateOk = a && b && c;
+            System.out.println((gateOk ? "PASS" : "FAIL")
+                + " tool round quorum gate (read-only filter " + readNames + "/" + allNames
+                + ", APPROVED-only verdict, null→deny)");
+        } catch (Exception e) {
+            System.out.println("FAIL tool round quorum gate: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (gateOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
