@@ -116,7 +116,11 @@ public class OllamaClient {
     }
 
     private static void applyKeepAlive(JsonObject body) {
-        if (EFFECTIVE_KEEP_ALIVE.matches("\\d+")) body.addProperty("keep_alive", Long.parseLong(EFFECTIVE_KEEP_ALIVE));
+        // t_e29e1f81 layer 3: bare "-1" STRING → Ollama 0.40 400 "time: missing unit
+        // in duration \"-1\"" in MULTI_RESIDENT mode → every ballot's chat() returned
+        // null → abstain_empty. Accept the negative-numeric form too so "keep_alive":
+        // -1 (JSON number, pin-forever) goes out as designed.
+        if (EFFECTIVE_KEEP_ALIVE.matches("-?\\d+")) body.addProperty("keep_alive", Long.parseLong(EFFECTIVE_KEEP_ALIVE));
         else body.addProperty("keep_alive", EFFECTIVE_KEEP_ALIVE);
     }
 

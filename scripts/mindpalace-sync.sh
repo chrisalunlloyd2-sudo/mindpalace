@@ -146,16 +146,24 @@ sleep 2
 # dark-world branch below never fires — so the guard must not live there.
 enforce_one_game
 GAME_PID=$(real_game_pid)
+# t_e29e1f81: measured 2026-10-17 on this box (i7 CPU, live game saturating):
+# a one-word APPROVE ballot takes 26s warm-llama / 41s warm-qwen / >120s
+# deepseek-r1 (think tokens at CPU speed) — the 30s default vote timeout
+# guarantees abstain_timeout for every real ballot (telemetry: 30/30 at
+# exactly 30000ms post-relaunch). The WeightedQuorumVote knob exists for
+# exactly this; pass it at every relaunch. 180s covers r1 think-blocks
+# warm-queued; total ballot ceiling still bounded by vote lane serialization.
+VOTE_JAVA_FLAGS="-Dmindpalace.vote.timeoutMs=180000"
 if [ -z "$GAME_PID" ] && [ -f "mindpalace-live.jar" ]; then
     # Windows javaw cannot open MSYS paths (/c/Users/...) — pass the jar
     # RELATIVE (cwd is $REPO). 2026-09-27: every relaunch used "$REPO/..."
     # → 'Unable to access jarfile' → 1-thread javaw error dialog that sat
     # there forever AND fooled game_running. The world was never dark
     # because of a crash — it was dark because relaunch always failed.
-    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar mindpalace-live.jar \
+    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" $VOTE_JAVA_FLAGS -jar mindpalace-live.jar \
         >> "$REPO/game_console.log" 2>&1 &
     disown
-    echo "mindpalace-sync: world was dark — relaunched live game (self-heal)"
+    echo "mindpalace-sync: world was dark — relaunched live game (self-heal, vote timeout 180s)"
     sleep 5
 fi
 
@@ -259,8 +267,10 @@ GAME_PID=$(real_game_pid)
 if [ -z "$GAME_PID" ]; then
     cp -f "$BUILD_JAR" mindpalace-live.jar
     # jar path RELATIVE (Windows javaw can't open MSYS /c/... paths — see step 1b)
-    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar mindpalace-live.jar \
+    # $VOTE_JAVA_FLAGS: -Dmindpalace.vote.timeoutMs=180000 (see step 1b comment —
+    # 30s default can't fit this box's measured 26-41s warm ballots)
+    JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" $VOTE_JAVA_FLAGS -jar mindpalace-live.jar \
         > "$REPO/game_console.log" 2>&1 &
     disown
-    echo "mindpalace-sync: relaunched live game (was not running)"
+    echo "mindpalace-sync: relaunched live game (was not running, vote timeout 180s)"
 fi

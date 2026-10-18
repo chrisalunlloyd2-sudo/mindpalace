@@ -41,6 +41,13 @@ import com.mindpalace.backup.BackupManager;
 import com.mindpalace.backup.MemoryManager;
 import com.mindpalace.agent.IdleDetector;
 import com.mindpalace.integration.ContextBroadcaster;
+import com.mindpalace.tailscale.MagicDns;
+import com.mindpalace.tailscale.StatusSnapshot;
+import com.mindpalace.tailscale.TailnetIdentity;
+import com.mindpalace.tailscale.TailnetRoles;
+import com.mindpalace.tailscale.TailnetTransport;
+import com.mindpalace.tailscale.TailscaleCli;
+import com.mindpalace.tailscale.WhoIsResolver;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
 import org.joml.Matrix4f;
@@ -82,6 +89,9 @@ public class GameEngine {
     private Player player;
     private DressingRoom dressingRoom;   // F7: avatar dressing room (360° orbit editor)
     private Input input;
+    /** Esc x2 exit + file-driven restart countdown (Esc cancels). Disabled for scripted runs. */
+    private final ExitControl exitControl = new ExitControl(java.nio.file.Paths.get("").toAbsolutePath());
+    private boolean restartOnExit;
     @SuppressWarnings("deprecation")
     private HUD hud;   // superseded by promptSystem (TASK 0002) — kept for history (never-delete rule)
     private com.mindpalace.ui.InteractionPromptSystem promptSystem;   // unified nearby-interactable prompt (TASK 0002)
@@ -283,6 +293,35 @@ public class GameEngine {
             System.exit(1);
         }
         cleanup();
+        if (restartOnExit) {
+            relaunchSelf();
+            System.exit(0);
+        }
+    }
+
+    /** Start a fresh copy of this same command line (same JVM flags, same jar and args), detached. */
+    private void relaunchSelf() {
+        try {
+            String javaBin = java.nio.file.Paths.get(System.getProperty("java.home"), "bin",
+                System.getProperty("os.name", "").toLowerCase().contains("win") ? "javaw.exe" : "java").toString();
+            java.util.List<String> cmd = new java.util.ArrayList<>();
+            cmd.add(javaBin);
+            cmd.addAll(java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments());
+            String sun = System.getProperty("sun.java.command", "");
+            if (sun.isBlank()) { System.err.println("[Exit] cannot relaunch: unknown command line"); return; }
+            String[] parts = sun.trim().split("\\s+");
+            if (parts[0].endsWith(".jar")) cmd.add("-jar");
+            else { cmd.add("-cp"); cmd.add(System.getProperty("java.class.path")); }
+            cmd.addAll(java.util.Arrays.asList(parts));
+            ProcessBuilder pb = new ProcessBuilder(cmd)
+                .directory(java.nio.file.Paths.get("").toAbsolutePath().toFile())
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.appendTo(new java.io.File("game_console.log")));
+            pb.start();
+            System.out.println("[Exit] relaunched: " + String.join(" ", cmd));
+        } catch (Exception e) {
+            System.err.println("[Exit] relaunch failed: " + e);
+        }
     }
 
     // ── H29 (step 83): stress mode ──────────────────────────────────────────
@@ -1090,6 +1129,28 @@ public class GameEngine {
     private void update(double dt) {
         input.update(dt);
 
+        // Polite restart: a request file starts a visible countdown; Esc cancels it. Scripted runs
+        // (selftest / e2e / autodrive / stress) never take part, they press keys too fast.
+        boolean interactive = !selfTest && !e2eMode && !autodrive && stressRounds == 0;
+        boolean escConsumed = false;
+        long nowMs = System.currentTimeMillis();
+        if (interactive) {
+            exitControl.poll(nowMs);
+            if (exitControl.restartPending()) {
+                if (input.wasKeyPressed(GLFW.GLFW_KEY_ESCAPE)) {
+                    exitControl.cancelRestart(nowMs);
+                    escConsumed = true;
+                    System.out.println("[Exit] restart cancelled by player (snoozed 10 min)");
+                } else if (exitControl.restartDue(nowMs)) {
+                    System.out.println("[Exit] restart countdown finished - closing and relaunching");
+                    exitControl.consumeRequest();
+                    restartOnExit = true;
+                    GLFW.glfwSetWindowShouldClose(window, true);
+                    return;
+                }
+            }
+        }
+
         // F7: toggle the dressing room (always available, so it can open AND close).
         if (input.wasKeyPressed(GLFW.GLFW_KEY_F7)) {
             if (dressingRoom != null) dressingRoom.toggle();
@@ -1243,8 +1304,11 @@ public class GameEngine {
         }
 
         // ESC toggles
-        if (input.wasKeyPressed(GLFW.GLFW_KEY_ESCAPE)) {
-            if (teleportMenu) {
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_ESCAPE) && !escConsumed) {
+            if (interactive && exitControl.onEsc(nowMs)) {
+                System.out.println("[Exit] Esc x2 - closing");
+                GLFW.glfwSetWindowShouldClose(window, true);
+            } else if (teleportMenu) {
                 teleportMenu = false;
                 padDismissed = true;   // stay dismissed until we step off the pad
                 input.setCursorCaptured(true);
@@ -2054,6 +2118,17 @@ public class GameEngine {
 
         // Shop menu — billboard showing what you can buy.
         if (shopMenu && shopIndex >= 0) renderShopMenu();
+
+        // Restart countdown banner (always visible, Esc cancels).
+        if (exitControl.restartPending()) {
+            Camera rcam = player.getCamera();
+            Vector3f rpos = new Vector3f(rcam.getPosition()).add(new Vector3f(rcam.getFront()).mul(1.2f));
+            String why = exitControl.reason().isEmpty() ? "" : " - " + exitControl.reason();
+            fontRenderer.renderBillboard("Restarting in " + exitControl.secondsLeft(System.currentTimeMillis())
+                    + " s" + why + "   (Esc to cancel)", rpos, 0.06f,
+                new Vector3f(1.0f, 0.7f, 0.2f),
+                rcam.getProjectionMatrix((float) width / height), rcam.getViewMatrix(), rcam.getPosition());
+        }
 
         // Shop toast — purchase/denial confirmation.
         if (shopToastTimer > 0 && !shopToast.isEmpty()) {
@@ -4061,6 +4136,200 @@ public class GameEngine {
         }
     }
 
+    /**
+     * T1 foundation check: exercises the com.mindpalace.tailscale layer
+     * hermetically — no subprocess, no mesh adapter, no real Tailscale. Starts
+     * a loopback TailnetTransport with an injected stub WhoIsResolver, votes on
+     * capability gating (403 vs 200 vs 404), and validates MagicDNS naming,
+     * identity parsing and role mapping. Opt-in runtime wiring stays out of
+     * the way: T2/T3 build directly on this.
+     */
+    /**
+     * Regression for the 2026-10-17 live crash: the agent thread's finishCycle() clears the proposal
+     * map while the game thread is inside autoVoteAll(), which used to throw "unknown proposal".
+     */
+    private boolean testQuorumVoteRace() {
+        com.mindpalace.agent.sims.WeightedQuorumVote q = new com.mindpalace.agent.sims.WeightedQuorumVote();
+        q.setModelPosition("m1", 0, 0);
+        q.setModelPosition("m2", 1, 0);
+        java.util.concurrent.atomic.AtomicBoolean stop = new java.util.concurrent.atomic.AtomicBoolean(false);
+        Thread clearer = new Thread(() -> {
+            while (!stop.get()) { q.finishCycle(); Thread.onSpinWait(); }
+        }, "quorum-race-clearer");
+        clearer.setDaemon(true);
+        clearer.start();
+        try {
+            for (int round = 0; round < 300; round++) {
+                for (int i = 0; i < 25; i++) q.registerProposal("race-" + round + "-" + i, "x", 0, 0);
+                q.autoVoteAll();
+            }
+            return true;
+        } catch (RuntimeException e) {
+            System.out.println("quorum race test failed: " + e);
+            return false;
+        } finally {
+            stop.set(true);
+        }
+    }
+
+    /** Hermetic: fake clock + temp dir, no window. Esc x2, countdown, Esc cancel, snooze, due. */
+    private boolean testExitControl() {
+        java.nio.file.Path dir = null;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("exitctl");
+            ExitControl ec = new ExitControl(dir);
+            long t = 1_000_000L;
+            // Esc x2: one press is not enough, two inside the window are, a slow second is not.
+            boolean escOk = !ec.onEsc(t) && ec.onEsc(t + 300)
+                && !ec.onEsc(t + 5_000) && !ec.onEsc(t + 9_000) && ec.onEsc(t + 9_200);
+            // No request file: nothing pending.
+            ec.poll(t);
+            boolean idleOk = !ec.restartPending();
+            // A request file starts a countdown with the given seconds and reason.
+            java.nio.file.Files.write(dir.resolve("restart.request"), "20\nnew build ready".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            ec.poll(t + 10_000);
+            boolean startOk = ec.restartPending() && ec.secondsLeft(t + 10_000) == 20
+                && ec.reason().equals("new build ready") && !ec.restartDue(t + 15_000)
+                && ec.secondsLeft(t + 15_000) == 15;
+            // Esc cancels, removes the request, leaves a marker and snoozes new requests.
+            boolean cancelOk = ec.cancelRestart(t + 16_000) && !ec.restartPending()
+                && !java.nio.file.Files.exists(dir.resolve("restart.request"))
+                && java.nio.file.Files.exists(dir.resolve("restart.cancelled"));
+            java.nio.file.Files.write(dir.resolve("restart.request"), "5".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            ec.poll(t + 20_000);
+            boolean snoozeOk = !ec.restartPending();
+            ec.poll(t + 16_000 + ExitControl.SNOOZE_MS + 3_000);
+            // After the snooze a new request counts down and comes due.
+            boolean dueOk = ec.restartPending() && !ec.restartDue(t + 16_000 + ExitControl.SNOOZE_MS + 4_000)
+                && ec.restartDue(t + 16_000 + ExitControl.SNOOZE_MS + 9_000);
+            ec.consumeRequest();
+            boolean consumedOk = !ec.restartPending() && !java.nio.file.Files.exists(dir.resolve("restart.request"));
+            // Out-of-range seconds are clamped.
+            ExitControl clamp = new ExitControl(dir);
+            java.nio.file.Files.write(dir.resolve("restart.request"), "1".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            clamp.poll(t);
+            boolean clampOk = clamp.secondsLeft(t) == ExitControl.MIN_COUNTDOWN_S;
+            return escOk && idleOk && startOk && cancelOk && snoozeOk && dueOk && consumedOk && clampOk;
+        } catch (Exception e) {
+            System.out.println("exit control test error: " + e);
+            return false;
+        } finally {
+            if (dir != null) {
+                try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(dir)) {
+                    s.forEach(p -> { try { java.nio.file.Files.deleteIfExists(p); } catch (Exception ignored) { } });
+                    java.nio.file.Files.deleteIfExists(dir);
+                } catch (Exception ignored) { /* temp dir cleanup */ }
+            }
+        }
+    }
+
+    private boolean testTailnetFoundation() {
+        TailnetTransport transport = null;
+        try {
+            // --- Role mapping: tagged peers get role caps, untagged only via allowlist
+            TailnetIdentity architect = new TailnetIdentity("arch@example.test",
+                "arch-box", java.util.Set.of("tag:architect"));
+            TailnetIdentity voter = new TailnetIdentity("voter@example.test",
+                "voter-box", java.util.Set.of("tag:VOTER"));
+            TailnetIdentity untaggedAllowed = new TailnetIdentity(
+                "arch@example.test", "arch-box", java.util.Set.of());
+            TailnetIdentity stranger = new TailnetIdentity("stranger@example.test",
+                "stranger-box", java.util.Set.of());
+            TailnetIdentity nobody = new TailnetIdentity("", "", java.util.Set.of());
+            TailnetRoles.Scope scope = new TailnetRoles.Scope(
+                java.util.Set.of("arch@example.test"),
+                java.util.Set.of("arch@example.test"),
+                java.util.Set.of("tag:architect", "tag:voter"));
+            boolean rolesOk = TailnetRoles.capabilities(architect, scope)
+                    .contains(TailnetRoles.Capability.ADMIN)
+                && TailnetRoles.capabilities(voter, scope)
+                    .contains(TailnetRoles.Capability.VOTE)
+                && !TailnetRoles.capabilities(voter, scope)
+                    .contains(TailnetRoles.Capability.BUILD)
+                && TailnetRoles.capabilities(untaggedAllowed, scope)
+                    .contains(TailnetRoles.Capability.ADMIN)
+                && TailnetRoles.capabilities(stranger, scope).isEmpty()
+                && TailnetRoles.capabilities(nobody, scope).isEmpty()
+                && !TailnetRoles.isAuthorized(nobody);
+
+            // --- MagicDNS naming + identity parsing
+            boolean magicOk = MagicDns.isValidLabel("muse")
+                && MagicDns.isValidHostname("muse.tail703209.ts.net")
+                && !MagicDns.isValidHostname("-bad-.host")
+                && !MagicDns.isValidHostname(null)
+                && MagicDns.fqdn("Muse", "tail703209.ts.net")
+                    .equals("muse.tail703209.ts.net")
+                && MagicDns.hostPart("Muse.Tail703209.ts.net.").equals("muse");
+            TailnetIdentity parsed = WhoIsResolver.parseWhoIs(
+                "{\"UserProfile\":{\"LoginName\":\"arch@example.test\"},"
+                    + "\"Node\":{\"Name\":\"arch-box.tail703209.ts.net.\","
+                    + "\"Tags\":[\"tag:architect\"]}}");
+            boolean whoIsOk = parsed.login().equals("arch@example.test")
+                && parsed.deviceName().equals("arch-box")
+                && parsed.hasTag("tag:architect");
+
+            // --- Transport: loopback server, stub resolver, capability gates
+            java.util.concurrent.atomic.AtomicReference<TailnetIdentity> peer =
+                new java.util.concurrent.atomic.AtomicReference<>(architect);
+            TailnetTransport.Router router = new TailnetTransport.Router()
+                .get("/v1/tailscale/status", (ex, identity, caps) -> {
+                    byte[] body = ("{\"ok\":true,\"peer\":\"" + identity.displayName()
+                        + "\"}").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    ex.getResponseHeaders().set("Content-Type", "application/json");
+                    ex.sendResponseHeaders(200, body.length);
+                    try (var out = ex.getResponseBody()) { out.write(body); }
+                })
+                .getPrivate("/v1/private", (ex, identity, caps) -> respondJson(ex, 200, "{}"))
+                .vote("/v1/vote", (ex, identity, caps) -> respondJson(ex, 200, "{}"));
+            transport = TailnetTransport.forLoopbackTest(0,
+                (address, port) -> peer.get(), scope, router);
+            transport.start();
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(2)).build();
+            String base = "http://127.0.0.1:" + transport.port();
+            var resp = (java.net.http.HttpResponse<String>) client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                    base + "/v1/tailscale/status")).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean served = resp.statusCode() == 200
+                && resp.body().contains("arch@example.test");
+            peer.set(voter);
+            var privateResp = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                    base + "/v1/private")).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            peer.set(stranger);
+            var deniedResp = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                    base + "/v1/tailscale/status")).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean gated = privateResp.statusCode() == 403
+                && deniedResp.statusCode() == 403;
+            peer.set(new TailnetIdentity("", "", java.util.Set.of()));
+            var missingResp = client.send(
+                java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                    base + "/v1/not-a-route")).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+            boolean missingIsNotFound = missingResp.statusCode() == 404;
+
+            return rolesOk && magicOk && whoIsOk && served && gated && missingIsNotFound;
+        } catch (Exception e) {
+            System.out.println("[Tailscale] self-test error: " + e);
+            return false;
+        } finally {
+            if (transport != null) transport.close();
+        }
+    }
+
+    /** Shared tiny JSON responder for hermetic route handlers. */
+    private static void respondJson(com.sun.net.httpserver.HttpExchange ex,
+                                    int status, String body) throws java.io.IOException {
+        byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(status, bytes.length);
+        try (var out = ex.getResponseBody()) { out.write(bytes); }
+    }
+
     private void runSelfTest() {
         int pass = 0, fail = 0;
         System.out.println("\n===== MIND PALACE SELF-TEST =====");
@@ -4069,6 +4338,18 @@ public class GameEngine {
         System.out.println((contextOk ? "PASS" : "FAIL")
             + " context broadcaster (file routes, WhoIs user/tag allowlist, denial)");
         if (contextOk) pass++; else fail++;
+        boolean tailnetOk = testTailnetFoundation();
+        System.out.println((tailnetOk ? "PASS" : "FAIL")
+            + " tailscale foundation (roles, MagicDNS, WhoIs, transport gates)");
+        if (tailnetOk) pass++; else fail++;
+        boolean raceOk = testQuorumVoteRace();
+        System.out.println((raceOk ? "PASS" : "FAIL")
+            + " quorum bulk vote survives finishCycle() racing it (no 'unknown proposal' crash)");
+        if (raceOk) pass++; else fail++;
+        boolean exitOk = testExitControl();
+        System.out.println((exitOk ? "PASS" : "FAIL")
+            + " exit control (Esc x2, restart countdown, Esc cancel, snooze)");
+        if (exitOk) pass++; else fail++;
         boolean blocksOk = blocks.selfTestAll();
         System.out.println((blocksOk ? "PASS" : "FAIL")
             + " render blocks (mp-20 registry, mp-032 fire flicker, bool-false gating)");

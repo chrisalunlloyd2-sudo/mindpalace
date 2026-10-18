@@ -47,6 +47,11 @@ system — the world is running right now, most hours of most days.
    `AGENTS.md`/`ARCHITECTURE.md` module-map issues closed in one pass).
    Never bundle a doc fix into the same commit as a code/behavior change —
    batch doc-with-doc only, so a revert never has to untangle the two.
+8. **Restarts are requested, never forced.** Do not kill or swap the live game
+   to deploy a build. Run `python tools/request_restart.py --seconds 30 --reason "..."`:
+   the player sees a countdown and can press Esc to cancel (exit code 2 = cancelled,
+   do not ask again for 10 minutes; 3 = game not responding). Batch changes so one
+   restart covers many cards. Only a game that is not running may be launched directly.
 
 ## Build & verify
 ```
@@ -71,21 +76,22 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 ## Module map (`src/main/java/com/mindpalace/`)
 - **engine/** — `GameEngine` (main loop, rendering, input dispatch),
   `Input`, `GameState`, `ToolExecutor` (file read/edit/create/delete for the
-  agent loop), `AstGate`.
-- **entity/** — `Player`, `AgentNPC`, `ScoutNPC`.
+  agent loop), `AstGate` (AST-level gate for agent-written code).
+- **entity/** — `Player`, `AgentNPC`, `ScoutNPC` (roaming scout bot).
 - **world/** — room/hallway generation: `WorldBuilder`, `RoomPopulator`,
-  `RepoMapper`, `Room`, `RoomLayout`, `Hallway`, `CorridorLayout`, `Book`,
-  `FogOfWar`, `PortalTheme` (teleporter color pairing), `OutsideWorld`,
-  `TimeClock`, `TimeMachine`, `LegacyRepoClassifier`. Themed rooms:
-  `TuringTape`, `RotorRoom`, `BanburismusGauge`, `NashFountain`,
-  `LabDevice`, `Constellation`, `TodoCrystal`, `EnigmaPlugboard`.
+  `RepoMapper`, `Room`, `Hallway`, `Book`, `FogOfWar`, `PortalTheme`
+  (teleporter color pairing), `OutsideWorld`, `CorridorLayout`, `RoomLayout`,
+  `LegacyRepoClassifier`, `TimeClock`, `TimeMachine`. Themed rooms:
+  `TuringTape`, `RotorRoom`, `EnigmaPlugboard`, `BanburismusGauge`,
+  `NashFountain`, `LabDevice`, `Constellation`, `TodoCrystal`.
 - **ui/** — `HUD` (door prompts), `HudLayout`, `InteractionPromptSystem`
-  (nearby-interactable prompts), `BookViewer`, `BookEditor`, `DressingRoom`.
+  (nearby-interactable prompts, in progress), `BookViewer`, `BookEditor`,
+  `DressingRoom`.
 - **render/** — `Renderer`, `Camera`, `Shader`, `Mesh`, `Texture`,
-  `FontRenderer`, `BloomEffect`, `Screenshot`, `FrustumCuller`, `GlTrace`,
-  `HitchSampler`. Particle system (MP-028): `ParticleBatch`,
-  `ParticleEmitter`, `ParticlePool`, `ParticleQuadBuffer`, `ParticleQuality`,
-  `ParticleSelfCheck`.
+  `FontRenderer`, `BloomEffect`, `Screenshot`, `FrustumCuller`; particles
+  (opt-in): `ParticleBatch`, `ParticleEmitter`, `ParticlePool`,
+  `ParticleQuadBuffer`, `ParticleQuality`, `ParticleSelfCheck`; diagnostics
+  (opt-in flags): `GlTrace`, `HitchSampler`.
 - **agent/** — `AgentManager` (the autonomous cycle), `OllamaClient`,
   `ModelScheduler`, `ModelConfig`, `ModelLifespan`, `KnowledgeGraph`,
   `LexicalAnalyzer`, `BehaviorTree`, `ContextKit`, `KVTree`, `AgentChat`,
@@ -103,6 +109,9 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 - **blocks/** — the block-assembly architecture (§20 of
   `CROSS_CORRELATED_ROADMAP.md`): `Block`, `BlockRegistry`, `FireBlock`,
   `FireflyBlock`, `FrostBlock`, `WeatherBlock`, `SelfTestProbe`.
+- **tailscale/** — tailnet layer (owner login = Architect, no tags needed;
+  never Funnel or public ports): `TailscaleCli`, `StatusSnapshot`, `MagicDns`,
+  `WhoIsResolver`, `TailnetIdentity`, `TailnetRoles`, `TailnetTransport`.
 - **avatar/** — `AvatarDescriptor`, `AvatarLibrary`, `CharacterDNA`,
   `AvatarImporter`.
 - **genetics/** — procedural audio GA: `AudioEvolver`, `AudioGenome`,
@@ -110,7 +119,7 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
   `DeterministicSeed`, `GenomeControl`.
 - **audio/** — `AudioEngine`, `MusicEngine`, `StepSequencer`.
 - **economy/** — `DePIN`, `Wallet`, `Blackboard`, `EconomyLedger`, `Escrow`,
-  `Treasury`.
+  `Treasury`. **economics/** — `AgentRewardMechanism`.
 - **backup/** — `Telemetry` (event ledger), `MemoryManager`, `BackupManager`.
 - **deploy/** — `LiveUpdateManager`, `PatchManager`, `DeployManager`,
   `AnimationSystem`.
