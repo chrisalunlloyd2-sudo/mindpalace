@@ -596,7 +596,7 @@ mindpalace/
 ## FAQ
 
 **Q: How do I see the FPS?**
-A: Press `F4` to toggle the DEBUG overlay. It shows FPS, room and hall counts,
+A: Press `F8` to toggle the DEBUG overlay. It shows FPS, room and hall counts,
 and the frustum-culled count. When comparing results, record the machine
 specification as described in [PERFORMANCE.md](docs/PERFORMANCE.md).
 
