@@ -91,7 +91,7 @@ Windows cmd uses the equivalent commands:
 
 Verified end-to-end:
 `dev.sh selftest` -> build -> frozen-jar copy -> `Demo fixtures loaded: 12 rooms`
--> `RESULT: 40 passed, 0 failed`, EXIT 0.
+-> `RESULT: 73 passed, 0 failed`, EXIT 0.
 
 ## Verify your change (the cascade)
 

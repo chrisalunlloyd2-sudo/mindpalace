@@ -16,7 +16,7 @@ that's what makes trust portable: strangers can audit anything.
 ### 2. The cascade is for everyone
 
 Your change goes: `mvn package` (BUILD SUCCESS) → `--selftest`
-(40 passed, 0 failed) → visible changes get an E2E waypoint → commit →
+(73 passed, 0 failed) → visible changes get an E2E waypoint → commit →
 push → step-log entry. No exceptions for size ("it's just a docs change"
 still needs the build line) and no exceptions for rank (the Architect's
 commits follow the same path; so do the agents').
