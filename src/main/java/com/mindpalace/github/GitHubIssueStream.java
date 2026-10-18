@@ -47,6 +47,12 @@ public final class GitHubIssueStream {
     // deleted; closed issues simply leave their crystal standing).
     private final java.util.Set<String> emittedKeys = new java.util.HashSet<>();
     private final Object emittedLock = new Object();
+    // #103 (F7): per-repo rolling cap on agent-raised issues — the class
+    // javadoc always claimed a cap existed; now it does. Oldest repo keys
+    // don't need eviction tracking: counts are per (repo) and bounded by
+    // knownRepos, so this map stays tiny.
+    private static final int MAX_RAISED_PER_REPO = 10;
+    private final java.util.Map<String, Integer> raisedCountPerRepo = new java.util.HashMap<>();
 
     public GitHubIssueStream(String token, String username, long minIntervalMs) {
         this.token = token;
@@ -71,6 +77,12 @@ public final class GitHubIssueStream {
         long now = System.currentTimeMillis();
         if (now - lastRaiseMs < minIntervalMs) {
             return -2; // paced — too soon
+        }
+        // #103: per-repo cap — refuse (distinct code -3) once the repo has
+        // absorbed its share of agent-raised issues.
+        int already = raisedCountPerRepo.getOrDefault(repo, 0);
+        if (already >= MAX_RAISED_PER_REPO) {
+            return -3; // capped
         }
         lastRaiseMs = now; // pace every attempt, success or failure (no flooding)
 
@@ -99,6 +111,8 @@ public final class GitHubIssueStream {
             String bodyStr = resp.body().string();
             JsonObject obj = JsonParser.parseString(bodyStr).getAsJsonObject();
             int number = obj.get("number").getAsInt();
+            // #103: success → the repo absorbs one more agent-raised issue.
+            raisedCountPerRepo.merge(repo, 1, Integer::sum);
             System.out.println("[IssueStream] raised #" + number + " on " + repo + ": " + title);
             return number;
         } catch (IOException e) {

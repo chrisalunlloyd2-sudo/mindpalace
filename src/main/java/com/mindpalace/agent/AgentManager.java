@@ -122,6 +122,12 @@ public class AgentManager {
     //     → spawn/activate TODO crystals → tool agent solves (quorum-gated)
     /** Copy-on-write: agent thread writes, game thread reads via getApprovedTopics (#106). */
     private final List<String> approvedTopics = new CopyOnWriteArrayList<>();  // topics the quorum approved
+    // #103 (F7): approvedTopics re-accumulated every 60s re-cluster of the FULL
+    // chat history → one duplicate GitHub issue per cycle, unbounded. Cap the
+    // live list (oldest approved first, order preserved by addIfAbsent) and
+    // keep a raised-once ledger so each topic is filed AT MOST ONCE, ever.
+    private static final int APPROVED_TOPICS_CAP = 24;
+    private final java.util.Set<String> raisedTopics = ConcurrentHashMap.newKeySet();
     private volatile long lastLexicalScan = 0;                                // throttle chat-log reads
     private static final long LEXICAL_SCAN_MS = 60_000;              // re-scan chat logs every 60s
     private static final Path CHAT_LOG_DIR = Paths.get("chat_logs");
@@ -351,6 +357,10 @@ public class AgentManager {
         String repo = room.getRepoName();
         int raised = 0;
         for (String topic : approvedTopics) {
+            // #103 (F7): each topic is raised AT MOST ONCE, ever (raised-once
+            // ledger, checked before the API hit — pacing failures don't burn
+            // the topic).
+            if (!raisedTopics.add(topic)) continue;
             int n = issueStream.raise(repo,
                 "Agent proposal: " + topic,
                 "Autonomously raised by the SLM agent swarm (quorum-approved topic).\n\n"
@@ -361,6 +371,10 @@ public class AgentManager {
             if (n > 0) {
                 raised++;
                 log("[AgentManager] raised issue #" + n + " on " + repo + ": " + topic);
+            } else if (n <= 0) {
+                // #103: the raise did NOT happen (paced -2, API fail -1) →
+                // release the ledger claim so a later cycle can retry it.
+                raisedTopics.remove(topic);
             }
         }
         return raised;
@@ -700,13 +714,23 @@ public class AgentManager {
             if (selfTest) {
                 for (String voter : quorum.allModelsMap().keySet())
                     quorum.castVote(id, voter, com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
-                approvedTopics.add(topic);
+                // #103: same dedupe + cap as the live path.
+                if (!approvedTopics.contains(topic)) {
+                    approvedTopics.add(topic);
+                    while (approvedTopics.size() > APPROVED_TOPICS_CAP)
+                        approvedTopics.remove(0);
+                }
                 log("[AgentManager] lexical topic AUTO-APPROVED (selftest): \"" + topic + "\"");
             } else {
                 // #101: per-proposal vote (was actualVoteAll over the whole registry).
                 WeightedQuorumVote.QuorumResult r = quorum.actualVote(id, modelScheduler);
                 if (r != null && "APPROVED".equals(r.status)) {
-                    approvedTopics.add(topic);
+                    // #103: dedupe (addIfAbsent) + bounded registry (oldest drops).
+                    if (!approvedTopics.contains(topic)) {
+                        approvedTopics.add(topic);
+                        while (approvedTopics.size() > APPROVED_TOPICS_CAP)
+                            approvedTopics.remove(0);
+                    }
                     log("[AgentManager] lexical topic APPROVED: \"" + topic + "\"");
                 }
             }
