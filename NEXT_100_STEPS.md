@@ -5,16 +5,16 @@
 > Nothing lives forever, nothing runs for free, always advancing.
 > Status markers: [x] shipped · [~] in flight · [ ] queued.
 
-## Where we are (2026-09-13)
-- PHASE A CONT. (51-58): ✅ COMPLETE — all SLM cognition steps shipped (51-54 earlier, 55-58 today: f0cd7cc/f4476d4)
-- Selftest gate: 45/0 exit-0 (spawn validation #26, H04 truncation #27)
-- SLM work-lane: tools/slm_api_gate.py — local 3B extracts + Python validates (5b3a78a)
+## Where we are (2026-10-18)
+- PHASE B world finishing (59-78): ✅ COMPLETE — walls, wall collision, roofs, heights, forest ×3, paths, bloom, quorum flares, palette, windows, doors, lanterns, weather (e6ba132, 02df8e0, 7d3f52f)
+- Selftest gate: 74/0 exit-0 (latest run; gate grew through hardening + parity work)
+- SIMS1337 parity layer: SHIPPED — ModelRouter/LoRASwitcher/FOWGate/WeightedQuorumVote/AdapterRegistry + 100-case gate (SimsHardening100, 621d317)
+- Hardening x100 gate: PASS 100/100 cases (STEP 97, 34ad118)
+- Doc-drift sweep: shipped docs refreshed to real state (#64/#65/#67/#68/#69/#72/#78/#79/#83/#84/#85/#87)
 - HYPOTHESES_50 infrastructure: DONE (bots, cascade, step-log issue #9)
 - H01 critic-context: SHIPPED (commit 108d06b) — critic sees real tool actions
-- Rotor/audio advancement: SHIPPED (commit 1eee1e7) — carry events, wind, rotor-clock music
-- CSS personality + README program section: SHIPPED (77a47cd, b21b447)
 - DAGs: docs/dag_{dataflow,architecture,deployer}.png
-- Phase B world finishing: STARTED NEXT (walls/roofs — the "unfinished houses")
+- Next: Phase C+ per consolidated priority order in CROSS_CORRELATED_ROADMAP.md
 
 ## PHASE A CONT. — SLM Cognition (51–58) ✅ COMPLETE (2026-09-13)
 - [x] **51** H01 critic-context — critic reviews concrete tool actions

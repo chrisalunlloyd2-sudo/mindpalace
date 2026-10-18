@@ -58,7 +58,7 @@ phase (v1.1.0-beta1 is live).
 ## Phase F — Outside World Streaming (PARTIAL)
 
 - [x] Day/night cycle — sun (day), sunset (dusk), moon + stars (night), driven by the real clock hour
-- [ ] Render the outside world in small chunks at once (streaming, not all-at-once)
+- [x] Render the outside world in small chunks at once (streaming, not all-at-once) — WorldBuilder.chunkVisibleAt (WorldBuilder.java:75) + OutsideWorld chunked draw
 - [ ] Diablo/Zelda-style top-down view (low overhead)
 - [ ] Trees (Fibonacci), water, lake, sun, sunset, moon, day/night cycle
 - [ ] Local weather sync (real weather → in-game weather) — reconciled 2026-10-06: only a deterministic day-of-year pseudo-weather ships (`OutsideWorld.weather()`, no network); a real weather source is still open

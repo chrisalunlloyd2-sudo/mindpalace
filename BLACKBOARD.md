@@ -6,7 +6,7 @@
 - Book hover: highlight wraps book (was 0.12 cube hidden inside), tooltip enlarged
 
 ## CONFIRMED BUGS (root causes found)
-1. **Tab map overlay missing** — renderMinimap() exists (top-right, always-on) but NO GLFW_KEY_TAB handler. Need full-screen map toggle.
+1. ~**Tab map overlay missing**~ FIXED — GLFW_KEY_TAB toggle shipped (GameEngine.java:1024, showMap + 1-9 teleport; also F8 DEBUG overlay toggle), BLACKBOARD refresh for issue #84.
 2. **Chats "not working"** — ModelScheduler enforces 5-min spacing between EVERY Ollama call. User chat queued up to 5 min → looks dead. Also routed to tool+critic, not direct reply. Ollama IS running, all models installed.
 
 ## PHASES (proposed order — awaiting Architect OK)

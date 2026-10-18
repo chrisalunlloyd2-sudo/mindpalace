@@ -2,10 +2,11 @@
 
 Companion to HYPOTHESES_50.md Phase B (H13–H22). Ground rules first:
 
-## Current state (verified 2026-09-06)
-- `world/WorldBuilder.java` — builds 143 rooms / 9 hallways; rooms are
-  floor slabs + crystal/book props, **no walls, no roofs** (the "houses are
-  not finished" problem). Mansion + courtyard + outside world exist.
+## Current state (updated 2026-10-18)
+- `world/WorldBuilder.java` — builds 143 rooms / 9 hallways; **walls (H13),
+  wall collision (H13b), roofs (H14) and heights (H15) all SHIPPED** in
+  Phase B (NEXT_100_STEPS steps 59-62: e6ba132, 02df8e0, 7d3f52f). This
+  file's original motivation is resolved; kept for history. Mansion + courtyard + outside world exist.
 - `world/OutsideWorld.java` — the forest; sparse tree scattering, no
   floor detail, no paths, no audio.
 - `render/BloomEffect.java` — exists, wired (GameEngine.java:290,1327),

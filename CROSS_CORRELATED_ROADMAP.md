@@ -161,7 +161,7 @@ FOWGate + LanguageRegistry PORTED from SIMS1337 into `agent/sims/`.
 **Still open (`[BP]` problems + `[UB]` items):**
 - `[BP]` P1: ✅ FIXED (`340dd2e`) — dedicated user-chat worker (`userWorker` +
   `drainImmediateLoop()`) so a reply never serializes behind a tool/agent call.
-- `[BP]` P2: `lastUserMessage` dead field → use it to seed next autonomous cycle.
+- `~[BP] P2: lastUserMessage dead field~` ✅ FIXED — buildContext() seeds from it (AgentManager.java:992)
 - `[BP]` P3: guide reply routed via `onToolMessage` → add dedicated `onChatMessage`.
 - `[BP]` P5: book-content bloat (2000 chars every prompt) → truncate to ~500.
 - `[UB]` 2: finish SIMS1337 parity — 4-tier ModelPool warm, LoRA switching wired to

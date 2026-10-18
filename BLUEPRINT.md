@@ -126,8 +126,11 @@ priority queue that preempts). The "never two models at once" rule was meant
 to protect the *autonomous* cycle from thrash — user chat is a different
 latency class and should not queue behind it.
 
-### Problem 2: `lastUserMessage` is dead state
-**Evidence:** `AgentManager.lastUserMessage` is set in `onUserChat()` but never
+### Problem 2: `lastUserMessage` dead state — FIXED
+**Update (2026-10-18):** no longer dead — `buildContext()` reads it
+(AgentManager.java:992) to seed the autonomous cycle with the player's last
+ask. Original finding below kept for history.
+**Evidence (original):** `AgentManager.lastUserMessage` is set in `onUserChat()` but never
 read anywhere. Dead field.
 
 **Fix (proposed):** Either remove it, or use it to seed the next autonomous
@@ -265,7 +268,7 @@ AgentNPC.pickDestination() ──▶ KG.neighbors() / randomRoomInDistrict()
 | qwen2.5:0.5b | Critic agent + code suggest | ModelScheduler.submit / BookEditor |
 | llama3.2:3b | User chat (guide) | ModelScheduler.submitImmediate |
 | nomic-embed-text | Drift detection + RAG | ModelLifespan.embed |
+| deepseek-r1:1.5b | Quorum tie-breaker (TIE_MODEL) | AgentManager quorum wiring |
 
 Also installed but unused: mistral:7b, codellama:7b, gemma2:2b, phi3:mini,
-tinyllama:1.1b, phi:latest. deepseek-r1:1.5b is used as TIE_MODEL, the
-quorum tie-breaker (see ModelConfig.TIE_MODEL and AGENTS.md).
+tinyllama:1.1b, phi:latest (SIMS-parity router pool; see AGENTS.md).
