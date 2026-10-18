@@ -45,10 +45,14 @@ from pathlib import Path
 COMPLETE_STATUSES = {"complete", "completed", "done", "shipped"}
 EVIDENCE_KEYS = ("commit", "build", "selftest", "e2e")
 COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
-# "0 failed", "54/0", "0/0 failed" — all read as zero failures; a bare
-# "PASS"/"green"/"OK" with no count is NOT accepted, it's exactly the kind
-# of unverifiable claim this checker exists to catch.
-SELFTEST_ZERO_FAILED_RE = re.compile(r"(\b0\s*failed\b|/\s*0\b)", re.IGNORECASE)
+# "0 failed", "54/0", "0/0 failed", "54/0 failed" — all read as zero
+# failures; a bare "PASS"/"green"/"OK" with no count is NOT accepted, it's
+# exactly the kind of unverifiable claim this checker exists to catch.
+# The "/0" alternative must also consume an optional trailing "failed" —
+# otherwise "54/0 failed" matches only "/0", leaving "failed" behind for
+# the remainder scan below to (wrongly) treat as a real failure marker
+# (PR #281 review).
+SELFTEST_ZERO_FAILED_RE = re.compile(r"(\b0\s*failed\b|/\s*0\b(?:\s*failed\b)?)", re.IGNORECASE)
 # A `build`/`e2e` value that says it didn't actually succeed — "FAILED",
 # "error", "skipped", "unknown" and friends — must never be accepted just
 # because the field is non-empty (PR #281 review: a card with

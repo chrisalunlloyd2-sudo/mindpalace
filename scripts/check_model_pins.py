@@ -127,6 +127,17 @@ def main():
                 )
 
     # 2. every pinned model actually installed
+    all_pins = dict(pins.get("in_game", {}))
+    for job, spec in pins.get("cron_jobs", {}).items():
+        all_pins[f"cron_jobs.{job}"] = spec.get("model")
+
+    # A job with no model configured at all is not "nothing to check against
+    # ollama" — it's an incomplete pin, and must fail regardless of whether
+    # ollama itself is even reachable here (PR #281 review).
+    unconfigured = [role for role, model in all_pins.items() if not model or not str(model).strip()]
+    for role in unconfigured:
+        problems.append(f"{role} has no model configured in {pins_path.name}")
+
     try:
         installed = ollama_list()
     except OllamaUnavailable as e:
@@ -137,11 +148,10 @@ def main():
         # fail the gate rather than silently PASS-ing (PR #281 review).
         problems.append(str(e))
     else:
-        all_pins = dict(pins.get("in_game", {}))
-        for job, spec in pins.get("cron_jobs", {}).items():
-            all_pins[f"cron_jobs.{job}"] = spec.get("model")
         for role, model in all_pins.items():
-            if model and not _model_installed(model, installed):
+            if role in unconfigured:
+                continue  # already reported above
+            if not _model_installed(model, installed):
                 problems.append(f"{role} is pinned to '{model}' but it is not in `ollama list` on this machine")
 
     if problems:
