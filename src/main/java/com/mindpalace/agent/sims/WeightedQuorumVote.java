@@ -6,6 +6,9 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+// #101: registryOrder — java.util.ArrayDeque added below
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import com.mindpalace.agent.ModelScheduler;
@@ -106,6 +109,10 @@ public class WeightedQuorumVote {
 
     private final Map<String, ModelPosition> models = new ConcurrentHashMap<>();
     private final Map<String, Proposal> proposals = new ConcurrentHashMap<>();
+    // #101: insertion order of live proposals, for cap eviction (oldest out).
+    // Registration happens on the agent thread; the game thread only reads via
+    // allProposals()/finishCycle. Deque ops are confined to register/finish.
+    private final java.util.Deque<String> registryOrder = new java.util.ArrayDeque<>();
     private final int fowHop;
     private final int quorumMin;
     private final int approveMin;
@@ -136,7 +143,32 @@ public class WeightedQuorumVote {
     public Proposal registerProposal(String id, String text, HexCoord hex, String proposalType) {
         Proposal p = new Proposal(id, text, hex, 0.5, proposalType);
         proposals.put(id, p);
+        registryOrder.addLast(id); // #101: track insertion order for eviction
+        evictOverCap();            // #101: keep the registry bounded (~64 newest)
         return p;
+    }
+
+    // #101 (kanban CARD-Q1 F2/F3): the proposal registry must not grow
+    // unboundedly — one registerProposal per backlog item per cycle made the
+    // actualVoteAll cost O(proposals × models × 30s) and never shrank. Keep
+    // the ~NEWEST proposals (never delete, only gate): older decided ballots
+    // are evicted from the registry so future voting rounds ignore them. The
+    // ledger keeps the full history; only the live map is bounded.
+    private static final int PROPOSAL_CAP =
+        Integer.getInteger("mindpalace.quorum.proposalCap", 64);
+
+    private void evictOverCap() {
+        int over = proposals.size() - PROPOSAL_CAP;
+        for (int i = 0; i < over; i++) {
+            String oldest = registryOrder.pollFirst();
+            if (oldest == null) break;
+            proposals.remove(oldest);
+        }
+        // Defensive: drop order entries whose proposal no longer exists
+        if (registryOrder.size() > proposals.size() * 2
+                && registryOrder.size() > PROPOSAL_CAP * 2) {
+            registryOrder.removeIf(pid -> !proposals.containsKey(pid));
+        }
     }
     public Proposal registerProposal(String id, String text, int q, int r) {
         return registerProposal(id, text, new HexCoord(q, r));
@@ -171,7 +203,10 @@ public class WeightedQuorumVote {
      * already-applied, already-ledgered items and the voter round grows
      * unboundedly (one registerProposal per backlog item per cycle).
      */
-    public void finishCycle() { proposals.clear(); }
+    public void finishCycle() {
+        proposals.clear();
+        registryOrder.clear(); // #101: eviction order deque tracks the live map
+    }
 
     public boolean isVisible(HexCoord target, String model) {
         if (!fowEnabled) return true;
@@ -246,12 +281,52 @@ public class WeightedQuorumVote {
      * the game loop (2026-10-17: IllegalArgumentException "unknown proposal" crashed the live game).
      */
     private Vote castOrSkip(String proposalId, String modelName, Vote intent, String outcome, long latencyMs) {
-        if (!proposals.containsKey(proposalId)) return null;
+        Proposal existing = proposals.get(proposalId);
+        if (existing == null) return null;
+        // #101: re-vote cap — a model's ballot on a proposal is FINAL. The old
+        // path let actualVoteAll re-cast the same (proposal, model) vote every
+        // cycle, overwriting (last-write-wins) and piling duplicate ledger rows.
+        if (existing.votes.containsKey(modelName)) return existing.votes.get(modelName);
         try {
             return castVote(proposalId, modelName, intent, outcome, latencyMs);
         } catch (IllegalArgumentException gone) {
             return null;   // removed between the check and the cast
         }
+    }
+
+    /**
+     * #101 (kanban CARD-Q1): vote ONE proposal instead of the whole registry.
+     * actualVoteAll iterated proposals × models with a 30s wait per ballot;
+     * as the registry grew, each call's cost grew with it and never shrank.
+     * Call sites register a proposal and vote just that one — total cost is
+     * O(models) per decision, independent of registry size.
+     */
+    public WeightedQuorumVote.QuorumResult actualVote(String proposalId, ModelScheduler scheduler) {
+        Proposal p = proposals.get(proposalId);
+        if (p == null) return null; // evicted between register and vote
+        for (ModelPosition mp : models.values()) {
+            if (!isVisible(p.hex, mp.name)) {
+                castOrSkip(proposalId, mp.name, Vote.BLIND, VoteQualityLedger.BLIND);
+                continue;
+            }
+            long t0 = System.currentTimeMillis();
+            String resp;
+            try {
+                var future = scheduler.submitVote(mp.name, buildVotingPrompt(p, mp.name), null);
+                resp = future.get(VOTE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                castOrSkip(proposalId, mp.name, Vote.ABSTAIN, VoteQualityLedger.ABSTAIN_TIMEOUT, VOTE_TIMEOUT_MS);
+                continue;
+            } catch (Exception e) {
+                long ms = System.currentTimeMillis() - t0;
+                castOrSkip(proposalId, mp.name, Vote.ABSTAIN, VoteQualityLedger.ABSTAIN_ERROR, ms);
+                continue;
+            }
+            long ms = System.currentTimeMillis() - t0;
+            VoteDecision d = decideVote(resp);
+            castOrSkip(proposalId, mp.name, d.vote(), d.outcome(), ms);
+        }
+        return calculateQuorum(proposalId);
     }
     private Vote castOrSkip(String proposalId, String modelName, Vote intent, String outcome) {
         return castOrSkip(proposalId, modelName, intent, outcome, 0L);

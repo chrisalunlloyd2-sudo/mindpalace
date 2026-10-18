@@ -521,8 +521,9 @@ public class AgentManager {
                 realWork = null;
             }
             quorum.advanceTimePulse(0.1);
-            quorum.actualVoteAll(modelScheduler);
-            WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
+            // #101: vote ONLY this cycle's proposal (was actualVoteAll —
+            // O(registry × models × 30s) and never shrank).
+            WeightedQuorumVote.QuorumResult r = quorum.actualVote(id, modelScheduler);
             if (r != null) {
                 log("[AgentManager] quorum: " + r);
                 String voteQuality = com.mindpalace.agent.sims.VoteQualityLedger.summarize(r.voteOutcomes);
@@ -701,8 +702,8 @@ public class AgentManager {
                 approvedTopics.add(topic);
                 log("[AgentManager] lexical topic AUTO-APPROVED (selftest): \"" + topic + "\"");
             } else {
-                quorum.actualVoteAll(modelScheduler);
-                WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
+                // #101: per-proposal vote (was actualVoteAll over the whole registry).
+                WeightedQuorumVote.QuorumResult r = quorum.actualVote(id, modelScheduler);
                 if (r != null && "APPROVED".equals(r.status)) {
                     approvedTopics.add(topic);
                     log("[AgentManager] lexical topic APPROVED: \"" + topic + "\"");
@@ -873,8 +874,8 @@ public class AgentManager {
             String id = "solve-" + System.currentTimeMillis() + "-" + issue.repo.hashCode();
             quorum.registerProposal(id, "Solve: " + issue.text, new HexCoord(0, 0), "code_quality");
             quorum.advanceTimePulse(0.05);
-            quorum.actualVoteAll(modelScheduler);
-            WeightedQuorumVote.QuorumResult r = quorum.calculateQuorum(id);
+            // #101: per-proposal vote (was actualVoteAll over the whole registry).
+            WeightedQuorumVote.QuorumResult r = quorum.actualVote(id, modelScheduler);
             if (r == null || !"APPROVED".equals(r.status)) {
                 log("[AgentManager] solve REJECTED: " + issue);
                 continue;
