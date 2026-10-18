@@ -61,21 +61,19 @@ scene FBO (with depth renderbuffer) → bright pass → gaussian blur H+V ping-p
 
 ## Release binary upload
 
-The jar is NOT committed to git (`.gitignore` has `target/`). It ships as a
-GitHub release asset on `v1.0.0` (release id 372054705). To refresh:
+Use the release automation script for phase cuts:
 
 ```bash
-TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | \
-  "C:/Users/viper/AppData/Local/hermes/git/mingw64/bin/git-credential-manager.exe" get | \
-  grep -E "^password=" | cut -d= -f2-)
-# delete the existing asset, then:
-curl -s -X POST -H "Authorization: token $TOKEN" \
-  -H "Content-Type: application/java-archive" \
-  --data-binary "@$BUILD_JAR" \
-  "https://uploads.github.com/repos/chrisalunlloyd2-sudo/mindpalace/releases/$RELEASE_ID/assets?name=$(basename "$BUILD_JAR")"
+bash scripts/release_phase.sh --rehearse 1.2.0-beta1  # full local gate, no remote writes
+bash scripts/release_phase.sh --cut 1.2.0-beta1       # tags + release on green
 ```
 
-GitHub rejects duplicate asset names (HTTP 422) — delete the old asset first.
+`--cut` performs the version-file bump, build/selftest/e2e/jpackage gates, then
+creates the GitHub Release with both assets attached:
+- `target/mindpalace-<version>.jar`
+- `installer/MindPalace-<version>.exe`
+
+Release notes are generated from commits since the previous version tag.
 
 ## Commit discipline
 
