@@ -143,6 +143,22 @@ public class GameEngine {
     // the render thread iterates — a plain ArrayList threw
     // ConcurrentModificationException and froze the game (2026-08-30).
     private final List<TodoCrystal> crystals = java.util.Collections.synchronizedList(new ArrayList<>());
+
+    /**
+     * #107 (F12): ATOMIC capped add. The check-then-add pairs scattered across
+     * the four add sites (issue-stream daemon, agent cycle thread, load thread,
+     * render/scout thread) race on size — the collections-bake synchronizedList
+     * makes single calls atomic, not the pair. Locking on the list itself (the
+     * same monitor synchronizedList reads use) makes size-check + add one
+     * atomic step, so the 60-item cap is hard, not soft.
+     */
+    private boolean addCrystalCapped(TodoCrystal c, int cap) {
+        synchronized (crystals) {
+            if (crystals.size() >= cap) return false;
+            crystals.add(c);
+            return true;
+        }
+    }
     private BackupManager backupManager;
     private MemoryManager memoryManager;
     private IdleDetector idleDetector;
@@ -671,7 +687,7 @@ public class GameEngine {
         // Lexical bridge → spawn a TODO crystal per issue found in non-legacy repos
         agentManager.setIssuesCallback(issues -> {
             for (AgentManager.Issue issue : issues) {
-                if (crystals.size() >= 60) break; // hard cap
+                // #107: check+add is atomic now (cap 60, helper below)
                 TodoCrystal c = new TodoCrystal(issue.text, issue.repo, issue.file);
                 // Place near the room for that repo if it exists, else at origin
                 Room r = world.getRooms().stream()
@@ -682,7 +698,7 @@ public class GameEngine {
                 } else {
                     c.setPosition(new Vector3f(0, 1.0f, 0));
                 }
-                crystals.add(c);
+                addCrystalCapped(c, 60);
                 System.out.println("[Lexical] TODO crystal: " + issue);
             }
         });
@@ -940,7 +956,9 @@ public class GameEngine {
      * crystals, duplicates pre-filtered by the stream's add-only dedup keys.
      */
     private void spawnIssueCrystal(com.mindpalace.world.TodoCrystal c) {
-        if (crystals.size() >= 60) return; // hard cap, one world
+        // #107: check+add is atomic (cap 60) — the daemon thread races the
+        // render/agent threads here; the old non-atomic pair could overshoot.
+        if (!addCrystalCapped(c, 60)) return;
         Room r = world.getRooms().stream()
             .filter(rm -> rm.getRepoName() != null
                 && rm.getRepoName().equalsIgnoreCase(c.getRepoName()))
@@ -950,8 +968,8 @@ public class GameEngine {
         } else {
             c.setPosition(new Vector3f(0, 1.0f, 0));
         }
-        crystals.add(c);
-        System.out.println("[IssueFeed] crystal: " + c.getLabel() + " @ " + c.getRepoName());
+        if (addCrystalCapped(c, 60)) // cap already checked atomically above
+            System.out.println("[IssueFeed] crystal: " + c.getLabel() + " @ " + c.getRepoName());
     }
 
     private void spawnCrystals() {
@@ -979,7 +997,7 @@ public class GameEngine {
                 } else if (room.getRoomCenter() != null) {
                     c.setPosition(new Vector3f(room.getRoomCenter()).add(0, 0.3f, 0));
                 }
-                crystals.add(c);
+                addCrystalCapped(c, cap); // #107: atomic check+add (cap 40)
             }
         }
         // Morning briefing crystals at the mansion — the player starts the day
@@ -995,7 +1013,7 @@ public class GameEngine {
         for (int i = 0; i < briefing.length; i++) {
             TodoCrystal c = new TodoCrystal(briefing[i], "mansion", "briefing");
             c.setPosition(new Vector3f(mansion.x - 3f + i * 2f, mansion.y + 0.4f, mansion.z - 6f));
-            crystals.add(c);
+            addCrystalCapped(c, 60); // #107: atomic check+add
         }
     }
 
@@ -6132,14 +6150,21 @@ public class GameEngine {
                 WeightedQuorumVote.QuorumResult r80 = agentManager.getQuorum().calculateQuorum(pid);
                 boolean approved = r80 != null && "APPROVED".equals(r80.status);
                 int crystalsBefore = crystals.size();
+                boolean added80;
                 if (approved) {
                     TodoCrystal c80 = new TodoCrystal("[Scout] work in " + target.getRepoName(),
                         target.getRepoName(), "scout-patrol");
                     if (target.getRoomCenter() != null)
                         c80.setPosition(new Vector3f(target.getRoomCenter()).add(0, 0.3f, 0));
-                    crystals.add(c80);
+                    // #107 under a selftest load the list is quiet, but route the
+                    // check through the SAME atomic helper the game uses so the
+                    // assert measures production behavior.
+                    added80 = addCrystalCapped(c80, 60);
+                } else {
+                    added80 = false;
                 }
-                boolean spawned = crystals.size() == crystalsBefore + 1
+                boolean spawned = added80
+                    && crystals.size() == crystalsBefore + 1
                     && crystals.get(crystals.size() - 1).getRepoName().equalsIgnoreCase(target.getRepoName());
                 scoutQuorumOk = approved && spawned;
                 System.out.println((scoutQuorumOk ? "PASS" : "FAIL")
@@ -6743,7 +6768,10 @@ public class GameEngine {
                                 target.getRepoName(), "scout-patrol");
                             if (target.getRoomCenter() != null)
                                 c.setPosition(new Vector3f(target.getRoomCenter()).add(0, 0.3f, 0));
-                            crystals.add(c);
+                            // #107: atomic check+add — the outer crystals.size() < 60
+                            // pre-check races other adders (daemon/agent threads);
+                            // the helper re-checks under the list monitor.
+                            addCrystalCapped(c, 60);
                             agentChat.addBotEvent("Quorum", "APPROVED", "scout proposal — TODO crystal at " + repo);
                             System.out.println("[Scout] quorum APPROVED -> crystal at " + repo);
                         } else {
