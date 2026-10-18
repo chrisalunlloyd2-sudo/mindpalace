@@ -129,19 +129,26 @@ def validate_evidence(card, repo_dir=None, strict=False):
     if e2e:
         if FAILURE_MARKER_RE.search(e2e):
             reasons.append(f"evidence.e2e '{e2e}' reports a failure")
-        elif e2e_looks_like_path(e2e):
+        else:
             # Resolve relative paths against repo_dir (not cwd) so a card
             # checked from outside the checkout still finds its own
-            # artifacts (PR #281 review).
+            # artifacts (PR #281 review). Check real existence FIRST,
+            # even for a bare name with no slash ("shots") — a name that
+            # happens to BE a real (possibly empty) directory must not
+            # get a free pass just because it doesn't look path-like
+            # (PR #281 review, round 2): only fall back to "unverifiable
+            # marker" once nothing on disk actually matches it.
             e2e_path = Path(e2e)
             if not e2e_path.is_absolute() and repo_dir is not None:
                 e2e_path = Path(repo_dir) / e2e_path
-            if not e2e_path.exists():
+            if e2e_path.exists():
+                if e2e_path.is_dir() and not any(e2e_path.iterdir()):
+                    reasons.append(f"evidence.e2e dir '{e2e}' is empty")
+            elif e2e_looks_like_path(e2e):
                 reasons.append(f"evidence.e2e path '{e2e}' does not exist")
-            elif e2e_path.is_dir() and not any(e2e_path.iterdir()):
-                reasons.append(f"evidence.e2e dir '{e2e}' is empty")
-        # else: a bare success marker string ("green"/"19 waypoints") —
-        # accepted, we can't verify it without the real shots dir.
+            # else: a bare success marker string ("green"/"19 waypoints")
+            # that doesn't resolve to anything on disk — accepted, we
+            # can't verify it without the real shots dir.
 
     return (len(reasons) == 0), reasons
 
@@ -155,6 +162,12 @@ def check_card(path, repo_dir=None, strict=False):
         card = json.loads(Path(path).read_text(encoding="utf-8"))
     except Exception as e:
         return False, [f"could not parse card: {e}"]
+    if not isinstance(card, dict):
+        # `"status" in card` on a list checks list MEMBERSHIP, not key
+        # presence, so `[]` or `[{"status": "complete"}]` silently read as
+        # "no status field" and sail through as not-complete (PR #281
+        # review, round 2). A card has to be an object to mean anything.
+        return False, [f"card JSON root must be an object, got {type(card).__name__}"]
     return validate_evidence(card, repo_dir=repo_dir, strict=strict)
 
 
