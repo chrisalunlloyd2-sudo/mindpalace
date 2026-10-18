@@ -18,6 +18,7 @@ JAVA = ROOT / "src" / "main" / "java"
 
 # README / help spellings -> the GLFW key names they stand for
 ALIASES = {
+    "ESC X2 (QUICKLY)": ["ESCAPE"], "ESC DURING A RESTART COUNTDOWN": ["ESCAPE"],   # README rows from the polite-restart commit
     "WASD": ["W", "A", "S", "D"], "ESC": ["ESCAPE"], "SHIFT": ["LEFT_SHIFT"], "/": ["SLASH"], "`/`": ["SLASH"],
     "ENTER": ["ENTER"], "SPACE": ["SPACE"], "TAB": ["TAB"], "F1": ["F1"], "F3": ["F3"], "F4": ["F4"], "F8": ["F8"],
     "F11": ["F11"], "F12": ["F12"], "M": ["M"], "1-9": list("123456789"), "F5": ["F5"], "F6": ["F6"],
