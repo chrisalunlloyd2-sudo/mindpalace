@@ -10,8 +10,22 @@ public class HexCoord {
     public HexCoord(int q, int r) { this.q = q; this.r = r; }
 
     public static HexCoord fromString(String s) {
-        String[] parts = s.split(",");
-        return new HexCoord(Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim()));
+        // HARDEN-x100: public API parse must reject garbage without an uncaught
+        // NumberFormatException/IndexOutOfBounds (FOWGate.isVisible calls this).
+        if (s != null) {
+            String t = s.trim();
+            int comma = t.indexOf(',');
+            if (comma >= 0) {
+                try {
+                    return new HexCoord(
+                        Integer.parseInt(t.substring(0, comma).trim()),
+                        Integer.parseInt(t.substring(comma + 1).trim()));
+                } catch (RuntimeException ignored) {
+                    // fall through to the zero-hex fallback below
+                }
+            }
+        }
+        return new HexCoord(0, 0);
     }
 
     /** Axial hex distance: max(|dq|, |dr|, |dq+dr|). */

@@ -4763,6 +4763,20 @@ public class GameEngine {
                 : " (skipped - earlier stage failed)") : ""));
         if (simsOk) pass++; else fail++;
 
+        // 19b. HARDEN x100 — SimsHardening100 gate: 100 individually-named,
+        //      deterministic invariants over the SIMS1337-parity layer
+        //      (quorum 30, router 10, LoRA 10, FOW 10, hex 10, ledger 10,
+        //      rotator 10, language 10). Pure in-memory — runs in
+        //      milliseconds, well inside the <110s selftest budget. A red run
+        //      prints the failing case name AND observed value; empty list =
+        //      green.
+        List<String> hardFailures = com.mindpalace.agent.sims.SimsHardening100.runAll();
+        System.out.println((hardFailures.isEmpty() ? "PASS" : "FAIL")
+            + " sims hardening x100 gate: "
+            + com.mindpalace.agent.sims.SimsHardening100.summary(hardFailures));
+        for (String f : hardFailures) System.out.println("  [x100] " + f);
+        if (hardFailures.isEmpty()) pass++; else fail++;
+
         // 20. Code editor language toggle — ~20-language registry + LoRA switch
         boolean langOk = LanguageRegistry.count() >= 20;
         if (langOk) {

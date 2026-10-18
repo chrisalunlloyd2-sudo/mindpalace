@@ -123,7 +123,13 @@ public class WeightedQuorumVote {
     }
 
     public Proposal registerProposal(String id, String text, HexCoord hex) {
-        Proposal p = new Proposal(id, text, hex);
+        // HARDEN-x100: defensive defaults — a null id loses the ballot, a null
+        // hex would NPE QuorumResult (p.hex.key()). Degrade, don't crash.
+        if (id == null || id.trim().isEmpty()) {
+            id = "proposal-auto-" + System.nanoTime();
+        }
+        if (hex == null) hex = new HexCoord(0, 0);
+        Proposal p = new Proposal(id, text == null ? "" : text, hex);
         proposals.put(id, p);
         return p;
     }
@@ -142,14 +148,21 @@ public class WeightedQuorumVote {
     /** Advance the time pulse: oscillate every model's phase by delta. */
     public void advanceTimePulse(double delta) {
         for (ModelPosition mp : models.values()) {
-            mp.pulsePhase = (mp.pulsePhase + delta) % 1.0;
-            if (mp.pulsePhase < 0) mp.pulsePhase += 1.0;
+            mp.pulsePhase = clampPhase(mp.pulsePhase + delta);
         }
     }
 
     public void setPulsePhase(String model, double phase) {
         ModelPosition mp = models.get(model);
-        if (mp != null) mp.pulsePhase = ((phase % 1.0) + 1.0) % 1.0;
+        if (mp != null) mp.pulsePhase = clampPhase(phase);
+    }
+
+    /** HARDEN-x100: sanitize a phase/advance — non-finite or outside 0..1 wraps/clamps into 0..1. */
+    static double clampPhase(double phase) {
+        if (Double.isNaN(phase)) return 0.0;                      // NaN would poison weighted quorum forever
+        if (Double.isInfinite(phase)) return phase > 0 ? 0.0 : 0.999_999; // ±Inf → wrapped to an extreme
+        double wrapped = ((phase % 1.0) + 1.0) % 1.0;             // normal wrap for any finite value
+        return wrapped;
     }
 
     /**
@@ -194,6 +207,14 @@ public class WeightedQuorumVote {
     public Vote castVote(String proposalId, String modelName, Vote intent, String outcome, long latencyMs) {
         Proposal p = proposals.get(proposalId);
         if (p == null) throw new IllegalArgumentException("unknown proposal: " + proposalId);
+        // HARDEN-x100: null/blank model name must not NPE the agent thread
+        // (ConcurrentHashMap rejects null keys). Vote is recordable-but-fenced.
+        if (modelName == null || modelName.trim().isEmpty()) {
+            VoteQualityLedger.get().record(new VoteQualityLedger.VoteRecord(
+                System.currentTimeMillis(), proposalId, "(null-model)", intent,
+                VoteQualityLedger.ABSTAIN_ERROR, latencyMs));
+            return Vote.ABSTAIN;
+        }
         Vote actual = isVisible(p.hex, modelName) ? intent : Vote.BLIND;
         String effectiveOutcome = actual == Vote.BLIND && !VoteQualityLedger.BLIND.equals(outcome)
             ? VoteQualityLedger.BLIND : outcome;
