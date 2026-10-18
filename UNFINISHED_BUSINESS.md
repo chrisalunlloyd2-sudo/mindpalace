@@ -21,33 +21,29 @@ Fix path: install himalaya → configure account (needs Architect's email creds)
 → wire a real morning-digest job that emails suggestions + code-mind log.
 
 ═══════════════════════════════════════════════════════════════════════
-2. LOCAL MODELS — only 2 wired; SIMS1337 has the full setup
+2. LOCAL MODELS — SHIPPED (was "only 2 wired"; SIMS1337 parity layer landed)
 ═══════════════════════════════════════════════════════════════════════
-[MISSING] ModelRouter (complexity-based routing). SIMS1337 routes LOW→qwen2.5:0.5b,
-          MEDIUM→tinyllama:1.1b, HIGH→phi:latest, CRITICAL→phi3:mini.
-          MindPalace hardcodes 2 models (llama3.2:1b tool, qwen2.5:0.5b critic).
-[MISSING] 4-tier ModelPool. MindPalace has 11 Ollama models installed but only
-          uses 2. SIMS1337 keeps 4 tiers warm.
-[MISSING] LoRA adapters + LoRASwitcher. SIMS1337 has 6 AdapterTypes (CHAT, CODE,
-          PATHFIND, MOTIVES, CAREER, ANALYSIS) with <100ms weight switching.
-          MindPalace has ZERO LoRA support.
-[MISSING] AdapterRegistry voting/election (LoRA weights voted on, best wins).
-[MISSING] WeightedQuorumVote — FOW-gated quorum voting with 4D time pulse.
-          This is the "voting schema" Architect referenced. Not in MindPalace.
-[MISSING] FOWGate — the organized fog-of-war pattern (agent→hex, model→agent,
-          hop-limit visibility). MindPalace's "fog of war" is only a visual
-          FogOfWar.java + a discoveredRepos Set — NOT the SIMS1337 pattern.
+[DONE] ModelRouter (complexity-based routing) — wired, AgentManager routes by
+       task complexity (see src/main/java/com/mindpalace/agent/sims/ModelRouter.java).
+[DONE] 4-tier ModelPool — replaced by SIMS-parity ModelRouter tiers in AgentManager.
+[DONE] LoRA adapters + LoRASwitcher — src/main/java/com/mindpalace/agent/sims/LoRASwitcher.java.
+[DONE] AdapterRegistry voting/election — src/main/java/com/mindpalace/agent/sims/AdapterRegistry.java
+       (shipped for issue #71; runtime ballot wiring from AgentManager is follow-up).
+[DONE] WeightedQuorumVote — FOW-gated quorum voting with 4D time pulse, exercised
+       at AgentManager quorum call sites; 100-case parity gate in SimsHardening100
+       (selftest aggregate check).
+[DONE] FOWGate — src/main/java/com/mindpalace/agent/sims/FOWGate.java (agent→hex,
+       model→agent, hop-limit visibility).
 
 ═══════════════════════════════════════════════════════════════════════
-3. CODE EDITOR — supposed to be a full suite, is a basic terminal
+3. CODE EDITOR — language toggle SHIPPED; remaining extras stay open
 ═══════════════════════════════════════════════════════════════════════
-[STUB]  BookEditor = VIEW/EDIT/CREATE/DELETE/SUGGEST only.
-[MISSING] ~20 programming-language toggle. Book.detectLanguage() exists but the
-          editor never uses it to switch modes/syntax.
-[MISSING] LoRA weight toggling per language (SIMS1337 AdapterType per task).
-[MISSING] KG node integration (editor should read/write KnowledgeGraph nodes).
-[MISSING] Syntax highlighting, line numbers beyond a 40-line dump, undo/redo.
-[MISSING] Multi-file project view (editor is single-book only).
+[DONE]  ~20 programming-language toggle — LanguageRegistry + editor wiring
+        shipped (Book.detectLanguage() now feeds BookEditor mode switching).
+[DONE]  LoRA weight toggling per language — AdapterType-per-task path in
+        agent/sims (LanguageRegistry + LoRASwitcher), parity with SIMS1337.
+[OPEN]  KG node integration, syntax highlighting beyond the 40-line dump,
+        undo/redo, multi-file project view — genuine future work, keep here.
 
 ═══════════════════════════════════════════════════════════════════════
 4. GAME ENGINE — features defined but NOT hooked in
@@ -60,31 +56,35 @@ Fix path: install himalaya → configure account (needs Architect's email creds)
         critic→tool→execute loop (executeToolRound).
 
 ═══════════════════════════════════════════════════════════════════════
-5. DOORS — cycling vs. open-on-Enter
+5. DOORS — SHIPPED: open on Enter, no auto-close cycle
 ═══════════════════════════════════════════════════════════════════════
-[STUB]  Doors currently open on Enter (enterRoom→openDoor) AND close on exit
-        (exitRoom→closeDoor). Architect wants: open on Enter, NO auto-close
-        cycle. Fix = remove closeDoor() from exitRoom (or make close optional).
+[DONE]  Doors open on Enter and STAY open — exitRoom() deliberately does not
+        call closeDoor() (entity/Player.java exitRoom comment; ec0ef46).
+        Matches CROSS_CORRELATED_ROADMAP.md §9 DONE.
 
 ═══════════════════════════════════════════════════════════════════════
-6. CHAT LOGS — single file, not per-day
+6. CHAT LOGS — SHIPPED: per-day file pushed to private repo
 ═══════════════════════════════════════════════════════════════════════
-[STUB]  AgentChat persists to ONE chat_logs/chat.jsonl. Architect wants a NEW
-        text file per day, uploaded to GitHub (private repo).
+[DONE]  AgentChat writes per-day chat_logs/chat-YYYY-MM-DD.jsonl
+        (AgentChat.java) and scripts/mindpalace-sync.sh pushes them to the
+        PRIVATE mindpalace-chat-logs repo. AGENTS.md "Where data lives"
+        already blesses this layout — do not "fix" it.
 
 ═══════════════════════════════════════════════════════════════════════
-7. MORNING EMAIL — suggestions + code-mind log
+7. MORNING EMAIL — SHIPPED: 7am digest cron (morning_digest.py)
 ═══════════════════════════════════════════════════════════════════════
-[MISSING] No job emails a daily digest of (a) all suggestions and (b) the
-          code-mind log. dream_job.py is a placeholder that only bumps a KG node.
+[DONE]    Hermes cron job 850b399c206e runs morning_digest.py daily at 07:00,
+          emailing the digest of suggestions + code-mind log
+          (scripts/feedback_digest.py is the weekly variant).
 
 ═══════════════════════════════════════════════════════════════════════
 8. MEMORY / HDD FENCING — so local models don't weigh down the system
 ═══════════════════════════════════════════════════════════════════════
-[MISSING] No explicit memory/HDD fencing. ModelScheduler enforces 5-min spacing
-          (good) but there's no RAM cap, no disk-usage guard, no model unload
-          policy. SIMS1337's LoRASwitcher unloads weights; MindPalace keeps
-          nothing bounded except token budgets.
+[DONE]    Memory/HDD fencing shipped — ModelScheduler enforces MIN_FREE_HEAP_BYTES
+          64MB RAM cap + MIN_FREE_DISK_BYTES 256MB disk guard in
+          resourcesAvailable(); both drain loops re-queue + back off 30s when
+          the fence trips; agent/sims/LoRASwitcher.unload() covers model unload
+          (see UNFINISHED_BUSINESS evidence in issue #68).
 
 ═══════════════════════════════════════════════════════════════════════
 9. WINDOWS INSTALLER — Phase H, not started
@@ -102,9 +102,13 @@ Fix path: install himalaya → configure account (needs Architect's email creds)
 [MISSING] No networking, no second player, no lobby.
 
 ═══════════════════════════════════════════════════════════════════════
-11. USB BACKUP — not done
+11. USB BACKUP — SHIPPED: backup-to-usb.sh covers all four categories
 ═══════════════════════════════════════════════════════════════════════
-[MISSING] No USB backup of AIGEN_SYS / repos / databases / chat logs.
+[DONE]    backup-to-usb.sh (repo root) backs up AIGEN_SYS (repos/KG/dashboards),
+          databases (keyword/kg/code), hermes config/scripts/skills + cron_logs,
+          Desktop task lists; idempotent cp -ru, bails cleanly if D: absent,
+          stamps LAST_BACKUP.txt. Chat logs covered by AIGEN_SYS copy + the
+          separate private chat-logs repo push (section 6).
 
 ═══════════════════════════════════════════════════════════════════════
 12. OUTSIDE WORLD / PHASE F-G — deferred
