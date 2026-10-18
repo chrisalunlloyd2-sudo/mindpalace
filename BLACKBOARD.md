@@ -7,7 +7,7 @@
 
 ## CONFIRMED BUGS (root causes found)
 1. ~**Tab map overlay missing**~ FIXED — GLFW_KEY_TAB toggle shipped (GameEngine.java:1024, showMap + 1-9 teleport; also F8 DEBUG overlay toggle), BLACKBOARD refresh for issue #84.
-2. **Chats "not working"** — ModelScheduler enforces 5-min spacing between EVERY Ollama call. User chat queued up to 5 min → looks dead. Also routed to tool+critic, not direct reply. Ollama IS running, all models installed.
+2. ~**Chats "not working"**~ FIXED — user chat has a dedicated immediate lane: `submitImmediate()` (ModelScheduler.java:124) bypasses the 5-min autonomous spacing; autonomous cycle still gated. (BLACKBOARD refresh for issue #84.)
 
 ## PHASES (proposed order — awaiting Architect OK)
 
