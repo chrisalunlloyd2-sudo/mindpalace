@@ -103,7 +103,8 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
     in-game room/UI for it yet), `LanguageRegistry`, `HexCoord`,
     `Complexity`, `ProposalRotator`, `QuorumProposalSource`,
     `QuorumTaskSpawner`, `VoteQualityLedger`, `SimsHardening100`
-    (100-case parity gate, runs in selftest as one aggregate check).
+    (100-case parity gate, runs in selftest as one aggregate check),
+    `AdapterRegistry` (#71 — voted LoRA weight-set election).
   - **agent/sprites/** — `SpriteProposalService`.
 - **github/** — `GitHubClient`, `RepoScanner`, `GistWall`, `GitHubIssueStream`.
 - **integration/** — cloud↔local bridges: `GitHubPollBridge` (hermes-queue
