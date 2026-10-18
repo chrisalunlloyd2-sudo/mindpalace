@@ -1,0 +1,360 @@
+{
+ "t_0c1374b0": {
+  "status": "done",
+  "summary": "Fixed the HUD text-pile root cause (FontRenderer yaw-collapse) with HudLayout slot table, modal teleport, e2e HUD gate + clock pin; full e2e chain green from frozen jar (selftest 54 passed/0 failed, 17/17 waypoints, HUD gate failures=0, VERIFY-PASS). Replaced the corrupted public docs/screenshots/bot_roster.png with a clean e2e tour shot (05_main_hall_04) and committed the corrupt original as before/bot_roster_corrupt.png for comparison. Commits on branch mindpalace/t_0c1374b0-hud-de-overlap-replace-corrupted-public: 0c78dd9, ce7de7d, 99f4a2b.",
+  "metadata": {
+   "branch": "mindpalace/t_0c1374b0-hud-de-overlap-replace-corrupted-public",
+   "changed_files": [
+    "src/main/java/com/mindpalace/render/FontRenderer.java",
+    "src/main/java/com/mindpalace/ui/HudLayout.java (new)",
+    "src/main/java/com/mindpalace/engine/GameEngine.java",
+    "src/main/java/com/mindpalace/world/WorldBuilder.java",
+    "src/main/java/com/mindpalace/agent/AgentChat.java",
+    "e2e.sh",
+    "docs/screenshots/bot_roster.png",
+    "docs/screenshots/before/bot_roster_corrupt.png (new, force-added)"
+   ],
+   "commits": [
+    "0c78dd9 (fix root cause)",
+    "ce7de7d (e2e selftest timeout 400->700s)",
+    "99f4a2b (deliverable + evidence)"
+   ],
+   "decisions": [
+    "Roster replacement uses 05_main_hall_04.png: only shot where the BOT ROSTER panel reads non-mirrored/uncropped",
+    "Selftest and tour both budgeted 700s — same work, same budget on the slow box",
+    "Follow-up (not in scope): BOT ROSTER wall quad is double-sided — text mirrors when viewed from behind (seen in 09_agents_08.png)"
+   ],
+   "findings": [
+    "Old public bot_roster.png (Sep 24) was the yaw-collapse corruption: giant glyphs + scanline smear across full frame — confirmed visually as the 'before' evidence",
+    "Frozen-jar full chain green: selftest 54 passed / 0 failed incl. 'hud slot overlap gate', tour 17/17 waypoints, [E2E-HUD-GATE] failures=0, all 17 shots non-black, VERIFY-PASS, e2e exit 0",
+    "Clock pin (--time N) held brightness deterministic: no evening-lighting fail this run"
+   ],
+   "tests_run": 55,
+   "artifacts": [
+    "/c/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_0c1374b0/docs/screenshots/bot_roster.png",
+    "/c/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_0c1374b0/docs/screenshots/before/bot_roster_corrupt.png"
+   ],
+   "worker_session_id": "20261013_031502_df476e"
+  }
+ },
+ "t_58c95f59": {
+  "status": "done",
+  "summary": "Fixed the AIGEN_SYS email pipeline end-to-end on task branch mindpalace/t_58c95f59-email-pipeline-end-to-end (commit 818aa50). Proved credentials valid via live SMTP smtplib probe (SENT-OK, confirmed in INBOX) and IMAP himalaya round-trips, so no human block needed per task spec; root cause was smtp_send.py's forever-loop never being scheduled. Shipped ~/.hermes/scripts/mail_queue_drain.py (himalaya-based block parser/deliverer with consolidation, safety cap, archive, silent-empty), drained the 195-line backlog into verified INBOX email #94756, registered no-agent hourly cron 64ada83fc62c to keep it drained, and documented the audit in docs/t_58c95f59-mail-queue-drain.md.",
+  "metadata": {
+   "artifacts": {
+    "archive": "C:\\Users\\viper\\AIGEN_SYS\\mail_queue.archive.txt",
+    "drain_log": "C:\\Users\\viper\\AIGEN_SYS\\logs\\mail_queue_drain.log",
+    "drain_script": "C:\\Users\\viper\\AppData\\Local\\hermes\\scripts\\mail_queue_drain.py",
+    "repo_doc": "docs/t_58c95f59-mail-queue-drain.md"
+   },
+   "changed_files": [
+    "docs/t_58c95f59-mail-queue-drain.md",
+    "~/.hermes/scripts/mail_queue_drain.py"
+   ],
+   "commit": "818aa50",
+   "credentials_status": "valid (proven live: smtp 220/235/SENT-OK, imap envelope+read round-trip)",
+   "cron_job_id": "64ada83fc62c",
+   "cron_job_name": "mail-queue-drain",
+   "decisions": [
+    "no human block: creds proven valid",
+    "himalaya chosen as sender (direct smtplib probe worked but himalaya is the configured daily driver)",
+    "smtp_send.py kept (never-delete), superseded"
+   ],
+   "root_cause": "smtp_send.py forever-loop had no scheduler; queue accumulated since 2026-08-04",
+   "tests_run": [
+    "smtplib STARTTLS probe -> SENT-OK, verified in INBOX",
+    "drain run 1: 5+2 blocks -> email 94756 in INBOX (5.60KiB) body verified",
+    "drain run 2: 1 block -> delivered, queue removed"
+   ],
+   "verification_emails": [
+    94756
+   ],
+   "worker_session_id": "20261011_010217_1a7acb"
+  }
+ },
+ "t_740fa7c6": {
+  "status": "done",
+  "summary": "Fixed unreadable quorum proposals in MindPalace: 'Act on ?' null-room fallback, cp1252-mangled vote tallies, and hash-based non-monotonic TASK numbering — all root-caused and fixed with UTF-8 durable writes, ASCII tallies (ok:/no:/blind:), and sequential max+1 numbering; new selftest regression 37a guards the contract. Verified: mvn package BUILD SUCCESS, frozen-jar selftest 59/0 green (37a passed in both runs; a second run's only FAIL was an unrelated context-broadcaster network timeout), e2e tour 17/17 waypoints at 120 fps with VERIFY-PASS, ONE-game rule intact. Commit 4033556 pushed to origin/mindpalace/t_740fa7c6-quorum-readable-proposals-utf-8-sane-num; full spawn-rate explanation and evidence in Temp\\t740_evidence\\.",
+  "metadata": {
+   "commit": "4033556",
+   "created_cards": [],
+   "decisions": [
+    "ASCII ok:/no:/blind: tallies instead of Unicode glyphs",
+    "sequential TASK numbering max+1 starting above 2000 (was 1000+hash%1000)",
+    "proposalTargetName made public for GameEngine selftest access",
+    "test isolation via useTestSpawnTarget(Path)+suppressDurableLogs so live inbox/watch/ledger untouched",
+    "selftest section 37a asserts APPROVED->one UTF-8 TASK file with monotonic numbers and no '?' fallback"
+   ],
+   "e2e": "VERIFY-PASS exit 0; 17/17 waypoints at 120 fps (floor 30); portal pair amber=1535 cerulean=458 OK; door prompt magenta=132 OK; worktree-adapted e2e.sh because e2e.sh hardcodes main repo REPO",
+   "files_changed": [
+    "src/main/java/com/mindpalace/agent/AgentManager.java",
+    "src/main/java/com/mindpalace/agent/sims/QuorumTaskSpawner.java",
+    "src/main/java/com/mindpalace/agent/sims/WeightedQuorumVote.java",
+    "src/main/java/com/mindpalace/engine/GameEngine.java"
+   ],
+   "insertions": 208,
+   "one_game_rule": "sweeps after each launch showed only standing shim+game tree (javaw 18336 -> 17816); test javas exited before checks; foreign 16:11 pair = sims-java-neo-fx maven compile, untouched",
+   "pushed_branch": "origin/mindpalace/t_740fa7c6-quorum-readable-proposals-utf-8-sane-num",
+   "root_causes": [
+    "'Act on ?' = AgentManager null-room fallback literal in all 4291 telemetry APPROVED rows",
+    "tally mojibake = Unicode glyphs through cp1252 platform default writes",
+    "TASK numbering non-monotonic = 1000+hash(proposalId)%1000 scheme, collision-prone with TRUNCATE_EXISTING"
+   ],
+   "selftest": "frozen-jar run 1: 59 passed 0 failed; run 2 (durable log): 58/1 where the single FAIL = 'context broadcaster HTTP connect timed out' (unrelated network flake, passed in run 1); section 37a quorum readability regression PASSED in both runs",
+   "spawn_rate_findings": "no spawner/ledger before commit b6645d3 (2026-09-19); ledger born 09-24; 42 ledger rows == every APPROVED since; ~4200 pre-ledger APPROVEDs 08-30..09-23 at ~300+/day cadence; post-09-24 ledger==telemetry 1:1, now ~1-2/day (fewer cycles + real model votes reject more)",
+   "tests_run": 2,
+   "artifacts": [
+    "C:\\Users\\viper\\AppData\\Local\\Temp\\t740_evidence\\t740_spawn_rate_report.md",
+    "C:\\Users\\viper\\AppData\\Local\\Temp\\t740_evidence\\selftest_frozen_jar.log",
+    "C:\\Users\\viper\\AppData\\Local\\Temp\\t740_evidence\\selftest_result.txt",
+    "C:\\Users\\viper\\AppData\\Local\\Temp\\t740_evidence\\e2e_tour.log",
+    "C:\\Users\\viper\\AppData\\Local\\Temp\\t740_evidence\\01_spawn_view_00.png",
+    "C:\\Users\\viper\\AppData\\Local\\Temp\\t740_evidence\\10_portal_pad_09.png",
+    "C:\\Users\\viper\\AppData\\Local\\Temp\\t740_evidence\\13_door_prompt_12.png"
+   ],
+   "worker_session_id": "20261010_132324_c47e69"
+  }
+ },
+ "t_948a71be": {
+  "status": "done",
+  "summary": "Quorum now votes on real work: QuorumProposalSource gathers ready+triage kanban cards, open hermes-queue issues and failing checks as proposals, AgentManager overlays them onto the shared vote round, and verdicts route APPROVED→promote, REJECTED→comment with tally, public-sourced→triage-only (Architect gate respected). Selftest 37b (new, public-API, capture mode, durable ledger untouched) plus three source fixes landed; full suite 66 passed/0 failed from a frozen jar copy, e2e equivalent 16/16 shots VERIFY-PASS, branch pushed to origin (4ee8f38bd1f1).",
+  "metadata": {
+   "build": "BUILD SUCCESS (mvn.cmd -q clean compile + clean package, PIPESTATUS=0)",
+   "changed_files": [
+    "src/main/java/com/mindpalace/agent/sims/QuorumProposalSource.java",
+    "src/main/java/com/mindpalace/agent/AgentManager.java",
+    "src/main/java/com/mindpalace/agent/sims/WeightedQuorumVote.java",
+    "src/main/java/com/mindpalace/engine/GameEngine.java"
+   ],
+   "commit": "4ee8f38bd1f1",
+   "commits": {
+    "cherry_pick": "2da860d",
+    "finish_cycle_unconditional": "1b341ec",
+    "quorum_proposal_source": "1d5b645",
+    "selftest_37b": "4ee8f38",
+    "three_source_fixes": "35d6acc",
+    "wiring": "43bbdfd"
+   },
+   "decisions": [
+    "single actualVoteAll round covers synthetic + real-work proposals (buildVotingPrompt reads p.text + p.proposalType)",
+    "quorum.finishCycle() sweep made unconditional in runQuorumVote — prevents unbounded cycle-<ts> accumulation when gather() is empty",
+    "kanban gather merges ready+triage lists (triage reachable when ready has no answers)",
+    "runVerdict skips durable ledger writes in capture mode; useTestLedgerPath re-seeds scratch ledger for clean-slate tests",
+    "selftest implemented as new test 37b (after 37a, before 38) exercising the full public API: gather from injected feeds + 3 verdict routes in capture mode + ledger-clean + dedupe + sweep",
+    "voteText() em dash scrubbed (t_740fa7c6 doctrine) — caught by 37b's ASCII gate, real mojibake bug fixed",
+    "branch pushed to origin, merge decision left to Architect (t_66a35d3f pattern: evidence-first card completion, branch-side landing); live game runs main and is untouched"
+   ],
+   "e2e_shots": [
+    "target/e2e-shots-frozen/*.png 16 unique (frozen jar) + target/e2e-shots/*.png 16 (target/ pre-check)"
+   ],
+   "frozen_jar": "selftest + e2e tour both re-run from mindpalace-selftest-frozen.jar copy per DEV_SETUP frozen-jar rule; frozen tour exercised the real agent loop (Ollama quorum APPROVED rounds) with 0 exceptions; live game PID 8580 (main build) untouched throughout",
+   "selftest": "===== RESULT: 66 passed, 0 failed =====",
+   "tests_run": 66,
+   "artifacts": [
+    "C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\.worktrees\\t_948a71be\\target\\e2e-shots-frozen\\01_spawn_view_00.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\.worktrees\\t_948a71be\\target\\e2e-shots-frozen\\10_portal_pad_09.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\.worktrees\\t_948a71be\\target\\e2e-shots-frozen\\16_room_interior_15.png"
+   ],
+   "worker_session_id": "20261012_125221_e130f7"
+  }
+ },
+ "t_a5823c92": {
+  "status": "done",
+  "summary": "Verified the jar-swap/NoClassDefFoundError crash fix end to end: e2e green (BUILD SUCCESS, selftest 54/0, 15-shot VERIFY-PASS), and ONE REAL sync cycle plus a second forced cycle proved the full chain live — self-heal relaunch, working kill-before-rebuild, push+release, relaunch from frozen mindpalace-live.jar. During verification I found and fixed a second real bug (73f888a): taskkill //F flags are a silent no-op in this Git Bash, so the kill loops had never actually killed anything — all 4 sites now use /F /PID and the 12:12 cycle shows SUCCESS-terminated kills. All fixes pushed to origin/main (ba5ff93); live game pid 13756 from the frozen jar with zero NoClassDefFoundError and a live log.",
+  "metadata": {
+   "agents_md": "taskkill landmine section added (ba5ff93)",
+   "chat_log_push_failed": "pre-existing separate channel, not fixed in this task",
+   "commits_landed_to_main": [
+    "b145a18",
+    "244313e",
+    "73f888a",
+    "ba5ff93"
+   ],
+   "e2e": {
+    "build": "BUILD SUCCESS",
+    "fps": "120 per waypoint",
+    "selftest": "54 passed, 0 failed",
+    "tour": "15 waypoints VERIFY-PASS (portal hue pair + door prompt magenta OK)"
+   },
+   "evidence_json": "C:/Users/viper/AIGEN_SYS/verification/t_a5823c92_evidence.json",
+   "hardcode_grep_1_0_0_jar": 0,
+   "live_game": {
+    "frozen_jar_ts": "2026-09-30 12:12",
+    "launched": "2026-09-30 12:12",
+    "ncdfe_count": 0,
+    "pid": 13756,
+    "source": "mindpalace-live.jar relative path"
+   },
+   "main_tip": "ba5ff93",
+   "new_root_cause_found": "taskkill //F silent no-op in this Git Bash (no MSYS conversion) — kill loops never worked; fixed 73f888a, proven by sync cycle 2 kill of pid 7880",
+   "push": "origin/main synced 12:12 (push + release binary refresh)",
+   "shim_script": "~/AppData/Local/hermes/scripts/mindpalace-sync.sh redeployed byte-identical after fix",
+   "sync_cycles_run": 2,
+   "tests_run": {
+    "e2e_shots": 15,
+    "selftest_line": "RESULT: 54 passed, 0 failed",
+    "sync_cycles": 2
+   },
+   "watchdog": {
+    "cadence": "4x30m (12:43/13:13/13:43/14:13 local)",
+    "id": "4b24192e5dad",
+    "note": "2h zero-NCDFE confirmation window in progress; watchdog alerts if NCDFE>0 or game dark; crash mechanism structurally eliminated (kill-before-rebuild + frozen-jar relaunch both proven live)",
+    "verification_window_ends": "14:12 local 2026-09-30"
+   },
+   "worktree_tip": "244313e branch ahead note: branch merged to main via ff; branch itself unchanged after 73f888a (committed on main worktree where sync cron runs)",
+   "artifacts": [
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92_evidence.json",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\01_spawn_view_00.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\02_rotor_rings_01.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\03_turing_tape_02.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\04_banburismus_gauge_03.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\05_main_hall_04.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\06_room_doorway_05.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\07_todo_crystals_06.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\08_hall_lookback_07.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\09_agents_08.png",
+    "C:\\Users\\viper\\AIGEN_SYS\\verification\\t_a5823c92-shots\\10_portal_pad_09.png"
+   ],
+   "worker_session_id": "20260930_113921_ae5c6f"
+  }
+ },
+ "t_b2e9bc3f": {
+  "status": "done",
+  "summary": "Verified the spawn-in-wall fix end-to-end from a frozen jar copy: fresh selftest 52 passed / 0 failed with the 26b spawn-geometry check passing (mansion spawn BFS-nudged free), and the e2e tour's 18 waypoints all captured with 18_mansion_spawn proof shot bright. Added commit 2a8269c fixing e2e.sh's stale verify-label list (was false-failing good tours). Branch mindpalace/t_b2e9bc3f-fix-player-spawns-inside-a-wall-wasd-dea pushed to origin; task_watch.log DONE line appended; known pre-existing 13_door_prompt black-frame flag left for a separate card.",
+  "metadata": {
+   "build": "BUILD SUCCESS",
+   "changed_files": [
+    "src/main/java/com/mindpalace/entity/Player.java",
+    "src/main/java/com/mindpalace/engine/GameEngine.java",
+    "src/main/java/com/mindpalace/world/OutsideWorld.java",
+    "e2e.sh"
+   ],
+   "commit": "2a8269c",
+   "commits_on_branch": [
+    "8b10127",
+    "c7c5b01",
+    "6689177",
+    "2a8269c"
+   ],
+   "decisions": [
+    "verified prior-run commits instead of rebuilding — never-twice rule",
+    "fixed e2e.sh verify-list drift (false VERIFY-FAIL) as the one real remaining gap",
+    "left door-prompt black-frame flag for a separate card (pre-existing, out of scope)",
+    "left merge-to-main for Architect review per conversation-card protocol"
+   ],
+   "e2e_shots": [
+    "target/e2e-shots-tb2e3/18_mansion_spawn_17.png",
+    "target/e2e-shots-tb2e3/01_spawn_view_00.png"
+   ],
+   "notes": "Fix verified from frozen jar (mindpalace-tb2e-frozen.jar, sha1 446d33d). Selftest: 52 passed, 0 failed, RC=0, incl. 26b spawn-geometry PASS (mansion spawn + 9 pads + 161 rooms + legacy hall). E2E tour Oct 5: 18/18 waypoints, RC=0, [SPAWN-FIX] nudge visible, 18_mansion_spawn proof shot bright. New commit 2a8269c fixes stale e2e.sh verify list (13 stale labels -> false VERIFY-FAIL). Branch pushed: mindpalace/t_b2e9bc3f-fix-player-spawns-inside-a-wall-wasd-dea. Known pre-existing flag, unrelated: 13_door_prompt black frame (since 1eee1e7 Sep 6).",
+   "selftest": "52 passed, 0 failed",
+   "worker_session_id": "20261010_123801_e05835"
+  }
+ },
+ "t_c9eabb9e": {
+  "status": "done",
+  "summary": "Morning digest now delivers to INBOX with a board-status section: kanban counts (todo/ready/done/blocked/active) plus cards completed in the last 24h with commit shas extracted from run metadata (list/dict/bare-commit forms, summary-grep fallback). Also filtered VISIT spam from the chat-log section and added a post-send INBOX verification gate (exit 2 on missing delivery). End-to-end verified 2026-10-13 05:34: sent + inbox verification PASS, message 95131 in INBOX showing the board section. Cron 850b399c206e (daily 07:00, script-only) unchanged.",
+  "metadata": {
+   "changed_files": [
+    "C:\\Users\\viper\\AppData\\Local\\hermes\\scripts\\morning_digest.py"
+   ],
+   "cron": "850b399c206e unchanged (0 7 * * *, script-only)",
+   "decisions": [
+    "Direct SQLite ro read over hermes CLI — CLI list strips run metadata (shas unavailable there)",
+    "Shas from run metadata (commits list/dict, commit field) with summary-text grep fallback; only 7-char prefixes shown",
+    "VISIT entries dropped as noise; chat section now last-20 meaningful bot lines",
+    "INBOX verification gates exit code (0=delivered, 2=sent-but-not-in-INBOX)"
+   ],
+   "verify": "Live run 2026-10-13 05:34 sent, inbox verification PASS, INBOX msg 95131 shows board section with 6 done cards + shas",
+   "worker_session_id": "20261013_044829_fd968f"
+  }
+ },
+ "t_cf0c461b": {
+  "status": "done",
+  "summary": "Doors-open-on-Enter task completed with full evidence: selftest #54 (hermetic reset + 10s-open persistence + exitKeptOpen) committed and amended to 00a2fd8; e2e waypoint-10 per-tick teleport flood root-caused and fixed via e2ePadLatch one-shot (5b7729d); verified 65/65 selftest PASS and e2e 14/14 shots VERIFY-PASS from a frozen jar copy; branch pushed to origin (mindpalace/t_cf0c461b-doors-open-on-enter-never-auto-close @ 5b7729d) with DONE line in task_watch.log. Live game (javaw PID 8580) untouched throughout.",
+  "metadata": {
+   "amended": [
+    "00a2fd8 (was 40812b8, #54 amend: hermetic reset + doorAnimTarget>=1 invariant + fullyOpen10s + exitKeptOpen)"
+   ],
+   "changed_files": [
+    "src/main/java/com/mindpalace/engine/GameEngine.java"
+   ],
+   "commits": [
+    "00a2fd8 test: door selftest #54",
+    "5b7729d fix: waypoint-10 per-tick teleport flood -> e2ePadLatch one-shot"
+   ],
+   "decisions": [
+    "case 10 was the spammer (per-tick teleportToFloor during 3s settle) — earlier pre-shot-10 hypothesis retired; e2e.sh + autodrive + WorldBuilder exonerated",
+    "one-shot latch e2ePadLatch + idempotent per-tick pad-pose hold, reset on advance; case 17 teleport already if(shoot)-scoped",
+    "selftest stayed 65/65 after fix; no engine API changes beyond private tour latch"
+   ],
+   "e2e_runs": "3 (VERIFY-PASS: run1 pre-branch-push same-code, run3 committed HEAD; run2 13/14 wall-clock flake at software-render 120s budget)",
+   "final_selftest": "65 passed, 0 failed (committed-HEAD jar, EXIT=0)",
+   "final_state_verb": "branch pushed to origin",
+   "fix_root_cause": "case-10 settle body re-fired teleportToFloor(2)+rebuildTeleportDestinations+teleportMenu every physics tick (dt=1/120); 108 TELEPORT lines then timeout killed java before shot 11; fixed via e2ePadLatch (GameEngine.java field ~190 + case-10 body ~6029)",
+   "head_at_push": "5b7729d",
+   "pushed_branch": "origin/mindpalace/t_cf0c461b-doors-open-on-enter-never-auto-close",
+   "selftest_pass_line": "PASS door open-on-Enter never-auto-close (opened=true stillOpen10s=true exitKeptOpen=true)",
+   "shots_dir": "target/e2e-shots-branch (14 labels 01_spawn_view..14_plugboard, VERIFY-PASS with portal amber/cerulean + door-prompt magenta hue checks)",
+   "task_watch_done": "appended (DONE [mindpalace] t_cf0c461b ...)",
+   "worker_session_id": "20261012_143846_16e944"
+  }
+ },
+ "t_dc1a6f1e": {
+  "status": "done",
+  "summary": "Re-audited archived TASK_0127-0131 against git history and filesystem: 0127-0130 FAIL (scripts never ran / no artifact), 0131 PASS-WITH-CAVEATS (ledger write-path live in QuorumTaskSpawner since b6645d3, which actually pre-dates the archive by ~14h — corrected the prior addendum's misread commit date). Redo cards t_45ee698c, t_e29e1f81, t_e4ae3cba created as children.",
+  "metadata": {
+   "build": "target/selftest_result.json @ 2026-09-25 17:17:20 on frozen jar mindpalace-live.jar (built 17:32 from HEAD cbb33ad): ok=true, 51 passed, 0 failed, returncode 0; worktree recompile check of the ledger code: QuorumTaskSpawner present in tree at HEAD",
+   "commit": "cbb33ad",
+   "e2e_shots": [],
+   "notes": "AUDIT CARD, not a build card. Final: 0127 FAIL, 0128 FAIL, 0129 FAIL, 0130 FAIL (script-only/never ran or no artifact; no commits exist for them, untracked AIGEN_SYS scripts), 0131 PASS-WITH-CAVEATS. Run-70 corrections: (1) impl commit for 0131 (b6645d3, 2026-09-19 17:27) pre-dates the 09-20 07:24 archive by ~14h — prior addendum's '13h after' claim misread the commit date, so 0131 is stronger than previously stated; (2) fresh selftest attempt from the frozen jar NPEs at GameEngine.init:360 (headless session, no interactive desktop) even with no java running — pipeline's 17:17 51/0 on the same jar remains the evidence line, flagged as such. Verified first-hand: QuorumTaskSpawner.java:73-74 ledgerAppend (comment 'TASK_0131: persistence') in tree; quorum_ledger.jsonl 1 live cycle (2026-09-24 APPROVED, TASK_1821); 0128 dataset absent; 0 SCHEDULER/LOOP_HEALTH/AGENT_HEALTH output logs. Redo cards created: t_45ee698c (repair+operationalize 0127/0129/0130 scripts, MSYS-path bug root cause), t_e29e1f81 (0128 Java-side rotation + diversity dataset), t_e4ae3cba (0131 closeout: manager path fix + recovery drill + backup cron).",
+   "selftest": "51 passed, 0 failed",
+   "worker_session_id": "20260926_014025_cd8081"
+  }
+ },
+ "t_deed6566": {
+  "status": "done",
+  "summary": "TASK_0132 quorum vote-quality pipeline complete: ABSTAIN ballot + RAW-FIRST decideVote + stripThink paired-block fix in WeightedQuorumVote, no-swallow QuorumTaskSpawner (boolean handleApprovedProposal, rotating stderr, telemetry sink), AgentManager dual-sink wiring with vote-quality QUORUM rows, GameEngine check-37 selftest rewrite + HUD vote-quality billboard. Gate green: mvn clean package BUILD SUCCESS, --selftest RESULT: 51 passed, 0 failed. Three commits landed (8b29522, 0bf438f, bddced1); spacing answer (global by design, single drain queue) in kanban comment 146.",
+  "metadata": {
+   "changed_files": [
+    "src/main/java/com/mindpalace/agent/sims/WeightedQuorumVote.java",
+    "src/main/java/com/mindpalace/agent/sims/QuorumTaskSpawner.java",
+    "src/main/java/com/mindpalace/agent/sims/VoteQualityLedger.java",
+    "src/main/java/com/mindpalace/agent/AgentManager.java",
+    "src/main/java/com/mindpalace/engine/GameEngine.java"
+   ],
+   "commits": [
+    "8b29522",
+    "0bf438f",
+    "bddced1"
+   ],
+   "decisions": [
+    "spacing is global (single queue + shared lastCallAt), per-model cooldown would be additive admission control",
+    "stripThink: paired DOTALL removal -> unclosed-opener tail -> lone closer, space-joined",
+    "selftest test strings built via char arrays — tag literals get mangled by tool transport",
+    "d2 strip-path construction: token on early line + token-free think tail (old end-tagged construction leaked the whole final line to raw-first parse)"
+   ],
+   "selftest": "51 passed, 0 failed",
+   "spacing_answer_location": "kanban comment 146 + task_watch.log DONE line",
+   "worker_session_id": "20261010_230111_0ff17e"
+  }
+ },
+ "t_e616a674": {
+  "status": "done",
+  "summary": "Chat-log-to-GitHub sync was silently dead for a month: sync.sh's nothing-to-ship early exit skipped step 6b, so the private repo froze at 2026-08-24 while chat_logs accumulated through 2026-09-25. Extracted 6b into sync_chat_logs() called on both exit paths, backfilled and pushed the missing month (remote tip c937a0d, API-confirmed private:true), merged fix to main (bcc52bd) and pushed. Also relaunched the game the failed sync's taskkill had left dark, via one-shot interactive scheduled task (javaw PID 13980 alive).",
+  "metadata": {
+   "build": "not-applicable: task touches only scripts/mindpalace-sync.sh (no game code); main repo has other agent's uncommitted WIP (AstGate.java, ToolExecutor.java) so a clean build isn't producible this run",
+   "changed_files": [
+    "scripts/mindpalace-sync.sh"
+   ],
+   "commit": "bcc52bd (merge on origin/main; fix commits e322aac, 74365af)",
+   "e2e_shots": "none: no visual/game change; verification was via GitHub API + process/chat-log liveness",
+   "notes": "chat-logs repo: private:true, pushed_at 2026-09-25T23:37:24Z, tip c937a0d. Root cause: nothing-to-ship exit 0 preceded step 6b. Game relaunch: direct javaw from agent session NPEs (no GLFW video mode in non-interactive session) — use one-shot scheduled task in interactive session for relaunches.",
+   "selftest": "not-applicable: no jar change; game relaunched from existing frozen mindpalace-live.jar (javaw PID 13980, Console session, writing chat-2026-09-25.jsonl)",
+   "artifacts": [
+    "C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\scripts\\mindpalace-sync.sh"
+   ],
+   "worker_session_id": "20260925_161901_1fa739"
+  }
+ }
+}
