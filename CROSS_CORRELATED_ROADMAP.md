@@ -14,7 +14,8 @@
 >
 > Status legend: `DONE` · `PARTIAL` · `NOT-STARTED` · `BROKEN` (root cause found)
 >
-> Last updated: 2026-08-23
+> Last updated: 2026-10-18 (status sweep; see issue #65 close)
+> ACTIVE LEDGER: NEXT_100_STEPS.md (+ HYPOTHESES_50.md) is the phase-by-phase execution ledger from Phase B onward; this file is the older cross-reference (ADD-only).
 
 ---
 
@@ -328,19 +329,19 @@ slice (later; Java port where feasible, worker-offload the heavy math).**
 1. ~~§1 backwards text~~ ✅ DONE (`0a96fa3`)
 2. ~~§2 VR ↔ 2D toggle~~ ✅ DONE (`160b4b9`)
 3. §18 gist wall + new entries — **explicit ask**
-4. §4 avatars (Phase B1→B2→B3)
-5. §8 engine TOOLS execution loop — **biggest "not hooked in" gap**
+4. ~§4 avatars (Phase B1→B2→B3)~ ✅ DONE per §4 status block (`f93243e`)
+5. ~§8 engine TOOLS execution loop~ ✅ DONE per §8 status block
 6. §7 chat priority queue (user chat never waits behind autonomous)
 7. ~~§3 portal polish: paired colors~~ ✅ DONE (TASK_0001, `PortalTheme.java`) — conduits + Alcubierre jump still open (→ §3)
 8. §6 spring-damper camera + astral walk
 9. §5 sky/outside streaming + local weather
 10. §13 editor: syntax highlight + undo/redo + multi-file
-11. §11 per-day chat logs → private repo
-12. §14 memory/HDD fencing
+11. ~§11 per-day chat logs → private repo~ ✅ DONE (`mindpalace-sync.sh`, #69)
+12. ~§14 memory/HDD fencing~ ✅ DONE (`ModelScheduler` RAM+disk fences, #68)
 13. §15 jpackage installer
-14. §16 USB backup
+14. ~§16 USB backup~ ✅ DONE (`backup-to-usb.sh`, #72)
 15. §17 sims1337 multiplayer contract + fallback
-16. §12 email + morning digest (blocked on Chris's email creds)
+16. ~§12 email + morning digest~ ✅ DONE (crond 850b399c206e, morning_digest.py)
 17. §19 spatial-memory + performance slices (embedding-backed, later)
 
 ---
