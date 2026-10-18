@@ -1485,11 +1485,22 @@ public class AgentManager {
      */
     public void initGitHub(String repoOwner, String repoName, String githubToken) {
         try {
-            String taskDir = System.getProperty("user.home") != null
-                ? Paths.get(System.getProperty("user.home"), "AIGEN_SYS", "todo_management").toString()
+            // Must match card_hygiene.py's _default_home() exactly (AIGEN_HOME
+            // env var overrides user.home/AIGEN_SYS, same as card_hygiene.py's
+            // os.environ.get("AIGEN_HOME", Path.home()/"AIGEN_SYS")), or the
+            // one-task-at-a-time guard in GitHubPollBridge checks a different
+            // directory than the real queue when AIGEN_HOME is set (PR #281 review).
+            String aigenHome = System.getenv("AIGEN_HOME");
+            if (aigenHome == null || aigenHome.isBlank()) {
+                aigenHome = System.getProperty("user.home") != null
+                    ? Paths.get(System.getProperty("user.home"), "AIGEN_SYS").toString()
+                    : null;
+            }
+            String taskDir = aigenHome != null
+                ? Paths.get(aigenHome, "todo_management", "todo_files", "mindpalace").toString()
                 : "/tmp/tasks";
-            String ledgerPath = System.getProperty("user.home") != null
-                ? Paths.get(System.getProperty("user.home"), "AIGEN_SYS", ".hermes", "github_ledger.txt").toString()
+            String ledgerPath = aigenHome != null
+                ? Paths.get(aigenHome, ".hermes", "github_ledger.txt").toString()
                 : "/tmp/github_ledger.txt";
 
             githubBridge = new GitHubPollBridge(repoOwner, repoName, githubToken, taskDir, ledgerPath, 30 * 60 * 1000);
