@@ -52,3 +52,8 @@ selftest_alice.log
 __pycache__/
 *.pyc
 
+
+# 2026-10-18: runtime crash logs are not source. A tracked stale log made every
+# heartbeat re-read a fossil crash that had already been fixed (88bbf63).
+game_console.err.log
+*.err.log
