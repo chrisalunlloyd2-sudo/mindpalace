@@ -887,7 +887,13 @@ public class AgentManager {
     /** Read → propose-fix → apply for a single issue (local checkout only). */
     private boolean solveOne(Issue issue) {
         Path repoDir = resolveReposRoot().resolve(issue.repo);
-        Path file = repoDir.resolve(issue.file);
+        // #99 path jail: normalize and require the resolved path to stay inside
+        // the repo (same guard ToolExecutor.executeTool uses for agent writes).
+        Path file = repoDir.resolve(issue.file).normalize();
+        if (!file.startsWith(repoDir.normalize())) {
+            log("[AgentManager] solveOne path-jailed: " + issue.file);
+            return false;
+        }
         if (!Files.isRegularFile(file)) return false;
 
         try {
@@ -907,6 +913,22 @@ public class AgentManager {
             // Strip any markdown fence the model may have wrapped the output in.
             fixed = stripFence(fixed);
             if (fixed.equals(content)) return false;
+            // #99 shrink guard: a reply much shorter than the original is a
+            // truncated/hallucinated rewrite, not a targeted fix.
+            if (fixed.length() < content.length() / 2) {
+                log("[AgentManager] solveOne shrink-guard: fix " + fixed.length()
+                    + " < half of " + content.length() + " chars — dropped");
+                return false;
+            }
+            // #99 AST gate: agent-rewritten Python must clear the same gate
+            // ToolExecutor enforces for created/edited .py files.
+            if (issue.file.endsWith(".py")) {
+                String gate = com.mindpalace.engine.AstGate.scan(fixed);
+                if (gate != null) {
+                    log("[AgentManager] solveOne ast-gate blocked: " + gate);
+                    return false;
+                }
+            }
 
             // Apply the fix to the local working tree (no push — human/CI commits).
             Files.writeString(file, fixed);

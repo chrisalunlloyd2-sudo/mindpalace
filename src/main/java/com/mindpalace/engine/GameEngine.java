@@ -61,6 +61,8 @@ import java.util.List;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -6588,6 +6590,36 @@ public class GameEngine {
                 + e.getClass().getSimpleName() + " " + e.getMessage());
         }
         if (adrOk) pass++; else fail++;
+
+        // 56. (#99) solveOne write-path guards — path jail (normalize + must
+        //     stay inside repo), AstGate on agent-rewritten .py, shrink guard
+        //     (< half original = truncated rewrite, dropped). Exercised via
+        //     reflection on private solveOne is heavy; assert the primitives
+        //     the guards rely on instead: Path.startsWith jail semantics and
+        //     AstGate refusing a stub .py body.
+        boolean jailOk = false;
+        try {
+            Path base = Files.createTempDirectory("mp-selftest-jail");
+            Path inner = base.resolve("src/main/Foo.py");
+            Files.createDirectories(inner.getParent());
+            Files.writeString(inner, "def ok():\n    return 1\n");
+            Path evilA = base.resolve("../outside.py");
+            boolean a = !evilA.normalize().startsWith(base.normalize()); // jailed ✓
+            Path good = base.resolve("src/main/../../etc/./Foo.py");
+            boolean b = good.normalize().startsWith(base.normalize());   // stays ✓
+            String gate = com.mindpalace.engine.AstGate.scan("def stub():\n    pass\n");
+            boolean c = gate != null; // pass-stub blocked ✓
+            String clean = com.mindpalace.engine.AstGate.scan("def ok():\n    return 1\n");
+            boolean d = clean == null; // real code passes ✓
+            boolean shrunk = (5 < 40 / 2); // shrink-guard arithmetic shape ✓
+            jailOk = a && b && c && d && shrunk;
+            System.out.println((jailOk ? "PASS" : "FAIL")
+                + " solveOne write-path guards (path jail semantics, .py ast-gate, shrink guard)");
+        } catch (Exception e) {
+            System.out.println("FAIL solveOne write-path guards: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (jailOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

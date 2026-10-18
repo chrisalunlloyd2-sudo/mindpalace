@@ -7,7 +7,7 @@
 
 ## Where we are (2026-10-18)
 - PHASE B world finishing (59-78): ✅ COMPLETE — walls, wall collision, roofs, heights, forest ×3, paths, bloom, quorum flares, palette, windows, doors, lanterns, weather (e6ba132, 02df8e0, 7d3f52f)
-- Selftest gate: 74/0 exit-0 (latest run; gate grew through hardening + parity work)
+- Selftest gate: 75/0 exit-0 (latest run; gate grew through hardening + parity work)
 - SIMS1337 parity layer: SHIPPED — ModelRouter/LoRASwitcher/FOWGate/WeightedQuorumVote/AdapterRegistry + 100-case gate (SimsHardening100, 621d317)
 - Hardening x100 gate: PASS 100/100 cases (STEP 97, 34ad118)
 - Doc-drift sweep: shipped docs refreshed to real state (#64/#65/#67/#68/#69/#72/#78/#79/#83/#84/#85/#87)

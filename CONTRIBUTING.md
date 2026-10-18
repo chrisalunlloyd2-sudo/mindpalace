@@ -50,7 +50,7 @@ landmines.
 
 ## Testing
 
-- `--selftest` (74 checks) is the gate; add a check for any new system
+- `--selftest` (75 checks) is the gate; add a check for any new system
   (see `GameEngine.runSelfTest` — each check is one boolean).
 - `--e2e` waypoint tour is the visual gate; add a waypoint when you add a
   feature that must be visible (label it `14_your_feature`).
