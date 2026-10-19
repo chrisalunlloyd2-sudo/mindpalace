@@ -121,6 +121,24 @@ public class DePIN {
         return p != null && p.wallet.spend(amount, reason);
     }
 
+    // ── Reward categories (folded from the dead economics/AgentRewardMechanism, #97) ──
+    // Reward reason codes carry what the agent did to earn: a plain job
+    // completion stays "depin:<jobId>" via complete(); these categories cover
+    // the event sites outside the job board.
+    public static final String REASON_TOOL_ROUND = "tool_round";
+    public static final String REASON_BUG_FIX = "bug_fix";
+    public static final String REASON_GLITCH_FOUND = "glitch_found";
+    public static final String REASON_PERF_IMPROVEMENT = "perf_improvement";
+    public static final String REASON_FEATURE = "feature";
+
+    /** Credit an agent directly for a reward-category event (no job board).
+     *  Refuses unregistered participants so awards can't conjure accounts. */
+    public synchronized boolean award(String agent, double amount, String reason) {
+        Participant p = participants.get(agent);
+        if (p == null || amount <= 0 || reason == null || reason.isBlank()) return false;
+        return p.wallet.earn(amount, reason);
+    }
+
     /** Seed the initial job board from a topic list (deterministic bounties). */
     public synchronized void seedJobs(List<String> topics) {
         int i = 0;
