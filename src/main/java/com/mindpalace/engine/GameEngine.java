@@ -1965,9 +1965,21 @@ public class GameEngine {
     // volatile: written from the agent drain thread (verdict callback),
     // read every frame on the render thread (#106).
     private volatile float quorumFlare = 0f;
+    // H41 (step 101, #132): daily energy budget — degrades bloom/trees/scouts
+    // when the day's allowance is spent; resets on energy-day rollover.
+    private com.mindpalace.economy.EnergyBudget energyBudget = new com.mindpalace.economy.EnergyBudget();
 
     private void updateRegionBloom(double dt) {
         if (bloom == null) return;
+        // H41 (#132): the day's drip — full-fat rendering burns the budget;
+        // once dry, the region target clamps to the lowest tier until the
+        // next energy-day rollover restores it.
+        energyBudget.tick(System.currentTimeMillis());
+        energyBudget.drip(3.0, System.currentTimeMillis()); // 3600/3.0 = 20 min full-fat
+        if (energyBudget.degradeEdge())
+            System.out.println("[Energy] budget exhausted — bloom clamped to lowest tier, "
+                + "forest thinned x0.5, scout respawns paused (restores on day rollover)");
+        world.getOutsideWorld().setTreeThinning(energyBudget.degraded());
         String region;
         if (inMansion) region = "courtyard";
         else if (world.isInOpenWorld(player.getPosition().x, player.getPosition().z)
@@ -1976,6 +1988,8 @@ public class GameEngine {
         else region = "hall";
         float target = region.equals("forest") ? BLOOM_FOREST
                      : region.equals("courtyard") ? BLOOM_COURTYARD : BLOOM_HALL;
+        // H41 (#132): degraded days clamp the preset to the lowest tier.
+        if (energyBudget.degraded()) target = Math.min(target, BLOOM_HALL);
         if (!region.equals(bloomRegion)) {
             bloomRegion = region;
             bloomRegionFade = 1f; // step 68: HUD region-name fade (~2s)
@@ -7076,6 +7090,43 @@ public class GameEngine {
         }
         if (decayOk) pass++; else fail++;
 
+        // 66. (#132) H41 daily energy budget — drip-burn-rollover lifecycle,
+        //     degrade refuses spends (scout), day rollover restores.
+        boolean energyOk;
+        try {
+            com.mindpalace.economy.EnergyBudget eb66 =
+                new com.mindpalace.economy.EnergyBudget();
+            long day66 = 1_700_000_000_000L;
+            long dayMs66 = com.mindpalace.economy.EnergyBudget.DAY_MS;
+            // fresh day: drain almost fully with discrete spends, then one
+            // 250ms drip (3 u/s → 0.75u) crosses the zero line → degraded
+            eb66.tick(day66);
+            boolean burnOk = eb66.spend(
+                com.mindpalace.economy.EnergyBudget.ALLOWANCE_PER_DAY - 0.4, "burn");
+            eb66.drip(3.0, day66 + 250L);
+            burnOk = burnOk && eb66.degraded();
+            // degraded: scout respawns refused; tiny drip overdrawn is clamped
+            boolean scoutRefused = !eb66.tryRespawnScout();
+            // day rollover: fresh allowance, degrade lifts, respawn charged
+            eb66.tick(day66 + dayMs66 + 1); // next energy-day
+            boolean restored = !eb66.degraded();
+            boolean respawnCharged = eb66.tryRespawnScout();
+            boolean restoredBalance =
+                Math.abs(eb66.remaining()
+                    - (com.mindpalace.economy.EnergyBudget.ALLOWANCE_PER_DAY
+                        - com.mindpalace.economy.EnergyBudget.SCOUT_RESPAWN_COST)) < 0.5;
+            energyOk = burnOk && scoutRefused && restored
+                && respawnCharged && restoredBalance;
+            System.out.println((energyOk ? "PASS" : "FAIL")
+                + " energy budget (drip burns day; degraded refuses spawns;"
+                + " rollover restores)");
+        } catch (Throwable e) {
+            System.out.println("FAIL energy budget: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+            energyOk = false;
+        }
+        if (energyOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -7123,7 +7174,18 @@ public class GameEngine {
                     System.out.println("[Scout] generation " + scout.getGeneration()
                         + " retired (TTL " + String.format("%.0f", scout.getTtlSeconds())
                         + "s, unique rooms credited=" + scout.uniqueRoomsCredited() + ")");
-                    scout.respawn();
+                    // H41 (#132): respawn draws the day's energy budget —
+                    // refused while degraded, so the scout stays retired
+                    // (patrol loop idles) until the day rollover.
+                    if (energyBudget.tryRespawnScout()) {
+                        System.out.println("[Scout] respawn charged "
+                            + com.mindpalace.economy.EnergyBudget.SCOUT_RESPAWN_COST
+                            + " units (day budget " + energyBudget.remaining() + " left)");
+                        scout.respawn();
+                    } else if (scout.getGeneration() == 1) {
+                        System.out.println("[Scout] respawn refused — energy budget "
+                            + energyBudget.remaining() + " units left today");
+                    }
                 }
                 if (agentChat != null && !scout.isRetired()) {
                 String visit = scout.patrolTick((float) dt);

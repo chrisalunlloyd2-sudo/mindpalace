@@ -182,6 +182,13 @@ public class OutsideWorld {
         return WorldBuilder.chunkVisibleAt(x, z, camX, camZ);
     }
 
+    /** H41 (#132): energy-budget degradation — when the day's budget is dry
+     *  the engine thins the forest (renders every 2nd tree). */
+    private volatile boolean treeThinning = false;
+
+    /** Called by GameEngine each frame with the energy budget's degrade state. */
+    public void setTreeThinning(boolean thin) { this.treeThinning = thin; }
+
     /** Render the whole outside world. floorY = ground Y, camX/camZ = camera. */
     public void render(Renderer r, float floorY, float camX, float camZ, float time) {
         this.camX = camX;
@@ -552,10 +559,13 @@ public class OutsideWorld {
             float dist2 = dx * dx + dz * dz;
             int lod = dist2 < 12f * 12f ? 0 : dist2 < 28f * 28f ? 1 : 2;
 
-            // H16 (step 63 completion): three species — every 7th tree is
+            // H16 (step 63): three species — every 7th tree is
             // deadwood (bare gnarled trunk, catches the eye), every 4th (of
             // the rest) is evergreen conifer, the majority deciduous. Same
             // seed order → same world every boot (deterministic E2E).
+            // H41 (#132): degraded day → thin to every 2nd tree (draw-call
+            // halving keeps the frame budget while the world stays populated).
+            if (treeThinning && (ti % 2 == 1)) continue;
             if (ti % 7 == 0) renderDeadwood(r, tx, floorY, tz, ti, lod);
             else if (ti % 4 == 0) renderEvergreen(r, tx, floorY, tz, ti, lod);
             else renderDeciduous(r, tx, floorY, tz, ti, s, lod);
