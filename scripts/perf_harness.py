@@ -335,7 +335,12 @@ def main():
     ap.add_argument("--num-predict", type=int, default=int(env_flag("PERF_NUM_PREDICT", "64")))
     ap.add_argument("--num-ctx", type=int, default=int(env_flag("PERF_NUM_CTX", "8192")))
     # PERF-A4 knob (doc's A3 acceptance listed it; A3 shipped without it).
-    ap.add_argument("--num-thread", type=int, default=int(env_flag("PERF_NUM_THREAD", "0"))
+    # t_7c3d3102: solo default now follows the live agent-loop default
+    # (ModelConfig.OLLAMA_NUM_THREAD=2, applied in OllamaClient.applyOptions)
+    # so solo runs measure live config — keep the two in sync. 0/absent =
+    # daemon default (pre-PERF-A4 baseline). The matrix runner passes
+    # num_thread explicitly per arm and never consults this default.
+    ap.add_argument("--num-thread", type=int, default=int(env_flag("PERF_NUM_THREAD", "2"))
                     or None, help="Ollama decoder threads; 0/absent = daemon default")
     ap.add_argument("--keep-alive", default=env_flag("PERF_KEEP_ALIVE", "0"),
                     help="Ollama keep_alive for the fire request (A3 default 0; "

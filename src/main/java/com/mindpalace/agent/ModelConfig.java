@@ -33,6 +33,19 @@ public final class ModelConfig {
     /** Embedding model for drift detection + RAG memory. */
     public static final String EMBED_MODEL = "nomic-embed-text";
 
+    /**
+     * Agent-loop Ollama decoder threads default (PERF-A4, card t_7c3d3102;
+     * Architect OK 2026-10-19). 9-arm × 10-run matrix on this box: tok/s scales
+     * with num_thread only — 1→7.9, 2→12.5 (+55%), 3→14.0 (+75%); t2→t3 buys
+     * +13% for +50% threads, and frame stats (p50/p95) are flat across the
+     * whole predict/thread grid, so 2 is the sweet spot. num_predict measured
+     * no effect (32..128 identical pacing) and is NOT shipped here. Applied in
+     * OllamaClient.applyOptions() to every chat/tool call; override with
+     * -Dmindpalace.ollama.numThread or env MP_OLLAMA_NUM_THREAD (0 = omit the
+     * option entirely, restoring the daemon default).
+     */
+    public static final int OLLAMA_NUM_THREAD = 2;
+
     /** Token budgets (below each model's context ceiling). */
     public static final int TOOL_BUDGET = 4000;
     public static final int CRITIC_BUDGET = 1000;

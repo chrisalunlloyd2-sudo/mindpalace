@@ -109,9 +109,28 @@ public class OllamaClient {
         }
     }
 
+    // PERF-A4 (t_7c3d3102): agent-loop decoder threads. The 9-arm x 10-run
+    // matrix showed tok/s scaling with num_thread only (1->7.9, 2->12.5,
+    // 3->14.0) with frame pacing flat across the grid — 2 is the measured
+    // sweet spot (ModelConfig.OLLAMA_NUM_THREAD). 0 disables the option
+    // entirely (daemon default), preserving the pre-PERF-A4 behavior and
+    // the matrix runner's baseline semantics.
+    private static final int NUM_THREAD = resolveNumThread();
+
+    private static int resolveNumThread() {
+        String v = System.getProperty("mindpalace.ollama.numThread", System.getenv("MP_OLLAMA_NUM_THREAD"));
+        try {
+            int n = (v == null || v.isBlank()) ? ModelConfig.OLLAMA_NUM_THREAD : Integer.parseInt(v.trim());
+            return Math.max(0, Math.min(n, 64));
+        } catch (NumberFormatException e) {
+            return ModelConfig.OLLAMA_NUM_THREAD;
+        }
+    }
+
     private static void applyOptions(JsonObject body) {
         JsonObject opts = body.has("options") && body.get("options").isJsonObject() ? body.getAsJsonObject("options") : new JsonObject();
         opts.addProperty("num_ctx", NUM_CTX);
+        if (NUM_THREAD > 0) opts.addProperty("num_thread", NUM_THREAD);
         body.add("options", opts);
     }
 
