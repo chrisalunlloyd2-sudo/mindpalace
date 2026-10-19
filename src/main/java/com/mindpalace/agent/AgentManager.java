@@ -1080,6 +1080,18 @@ public class AgentManager {
             }
             lastToolActions = sb.toString();
 
+            // #97: a completed tool round earns a reward-category credit in the
+            // wired DePIN economy (folded from the dead AgentRewardMechanism).
+            // The tool agent plays the "Explorer" participant (same identity
+            // runDePINWork credits for job completions).
+            if (depin != null && tr.toolCalls.size() > 0) {
+                for (OllamaClient.ToolCall call : tr.toolCalls) {
+                    if (depin.award("Explorer", 1.0, com.mindpalace.economy.DePIN.REASON_TOOL_ROUND)) {
+                        emit(onToolMessage, "[DePIN] tool action award +1.0 (" + call.name + ")");
+                    }
+                }
+            }
+
             // Synthesis round: model reacts to its own actions seen as real
             // history (assistant tool_calls + tool results), per H03.
             feedback.add(Map.of("role", "user", "content",

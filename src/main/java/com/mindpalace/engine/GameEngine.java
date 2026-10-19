@@ -6744,6 +6744,34 @@ public class GameEngine {
         }
         if (laneOk) pass++; else fail++;
 
+        // 59. (#97) AgentRewardMechanism folded into the wired DePIN economy —
+        //     the dead parallel-wallet class was removed; DePIN.award() now
+        //     carries the reward-category concept (tool_round, bug_fix,
+        //     glitch_found, perf_improvement, feature). Check: DePIN.award
+        //     exists, credits only registered participants, reason reaches
+        //     the ledger, and AgentRewardMechanism is gone from the source
+        //     tree (single economy system).
+        boolean awardOk = false;
+        try {
+            Class<?> dp = com.mindpalace.economy.DePIN.class;
+            java.lang.reflect.Method award = dp.getMethod("award", String.class, double.class, String.class);
+            com.mindpalace.economy.DePIN d97 = new com.mindpalace.economy.DePIN(1000.0);
+            d97.register("agent-a", 10.0);
+            double balBefore = d97.participant("agent-a").wallet.getBalance();
+            boolean credited = (Boolean) award.invoke(d97, "agent-a", 25.0, "feature");
+            double balAfter = d97.participant("agent-a").wallet.getBalance();
+            boolean unregisteredRefused = !(Boolean) award.invoke(d97, "ghost-agent", 25.0, "feature");
+            String ledgerLine = d97.ledger().entriesFor("wallet:agent-a").stream()
+                .map(e -> e.reason).reduce("", (a, b) -> a + " " + b);
+            awardOk = credited && balAfter == balBefore + 25.0 && unregisteredRefused
+                && ledgerLine.contains("feature");
+            System.out.println((awardOk ? "PASS" : "FAIL")
+                + " DePIN award (reward-category credits registered wallet, unregistered refused, reason in ledger)");
+        } catch (Exception e) {
+            System.out.println("FAIL DePIN award: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (awardOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains

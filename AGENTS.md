@@ -123,7 +123,9 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
   `DeterministicSeed`, `GenomeControl`.
 - **audio/** — `AudioEngine`, `MusicEngine`, `StepSequencer`.
 - **economy/** — `DePIN`, `Wallet`, `Blackboard`, `EconomyLedger`, `Escrow`,
-  `Treasury`. **economics/** — `AgentRewardMechanism`.
+  `Treasury`. Reward categories (`tool_round`, `bug_fix`, `glitch_found`,
+  `perf_improvement`, `feature`) live on `DePIN.award` — the unwired
+  `economics/AgentRewardMechanism` was removed (#97).
 - **backup/** — `Telemetry` (event ledger), `MemoryManager`, `BackupManager`.
 - **deploy/** — `LiveUpdateManager`, `PatchManager`, `DeployManager`,
   `AnimationSystem`.
