@@ -81,7 +81,10 @@ Data legs:
   from the pot (user-visible "floating plant"). Not a wall/floor hole.
 - Fix (proposed): lower foliage to `floorY + 0.38f` / `floorY + 0.33f` (or
   compute from pot top = floorY+0.4). Material-move only, zero perf cost.
-- Severity: LOW cosmetic. ~204 of the 367 floater findings are this shape.
+- Severity: LOW cosmetic. 210 of the 386 floater findings are this shape
+  (foliage-class breakdown: renderOrnaments 210, renderCrystals hover 104
+  by design, renderCourtyard plinth 36, renderTeleporter beam 36; totals
+  cross-checked fresh = geo_print.log = geo_findings.md).
 
 ## D3 — Teleporter beam ring bar pulses from y=padY+0.85 with no base contact  [INTENTIONAL — no card]
 
@@ -137,7 +140,7 @@ its findings on the live tour are all this supported class.
 - `scripts/geo_audit.py` selftest 10/10 (wiped `$TEMP/geo_audit_selftest`
   first), 450 lines, stdlib+PIL only.
 - Three over-flagging layers fixed during this sweep: C_floater
-  ground-plane rewrite (105,799 → 367), check_wall_runs lintel-aware rewrite
+  ground-plane rewrite (105,799 → 386), check_wall_runs lintel-aware rewrite
   (211k → 12,321), WALL_THICKNESS thin-trim filter (12,321 → 1,491 geo leg).
 - `scripts/shot_diff.py` selftest PASS (same=0.00 diff=190.00), 141 lines.
 
