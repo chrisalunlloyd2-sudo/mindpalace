@@ -6772,6 +6772,56 @@ public class GameEngine {
         }
         if (awardOk) pass++; else fail++;
 
+        // 60. (#126) file-write quorum gate — a REJECTED diff never reaches
+        //     disk. End-to-end over the real executeTool path: selftest
+        //     AgentManager, temp-room workspace, veto seam ON → edit_file
+        //     returns the veto string AND the file content is unchanged;
+        //     veto OFF → the write lands. (Selftest seam = deterministic
+        //     verdicts; the live vote path is the same call site.)
+        boolean vetoOk = false;
+        try {
+            Class<?> amc = Class.forName("com.mindpalace.agent.AgentManager");
+            Object am = amc.getDeclaredConstructor().newInstance();
+            amc.getMethod("setSelfTest", boolean.class).invoke(am, true);
+            java.nio.file.Path wbase = Files.createTempDirectory("mp-selftest-veto");
+            java.nio.file.Path target = wbase.resolve("note.txt");
+            Files.writeString(target, "original\n");
+            Class<?> rm = Class.forName("com.mindpalace.world.Room");
+            Object roomObj = rm.getDeclaredConstructor(String.class).newInstance("selftest-veto-repo");
+            rm.getMethod("setLocalPath", String.class).invoke(roomObj, wbase.toString());
+            Class<?> bm = Class.forName("com.mindpalace.world.Book");
+            Object bookObj = bm.getDeclaredConstructor(String.class, String.class)
+                .newInstance("selftest-veto", wbase.resolve("book.md").toString());
+            amc.getMethod("setContext", rm, bm).invoke(am, roomObj, bookObj);
+            java.lang.reflect.Method execT = amc.getDeclaredMethod("executeTool",
+                Class.forName("com.mindpalace.agent.OllamaClient$ToolCall"));
+            execT.setAccessible(true);
+            Object eCall = Class.forName("com.mindpalace.agent.OllamaClient$ToolCall")
+                .getDeclaredConstructor(String.class, String.class)
+                .newInstance("edit_file", "{\"filename\":\"note.txt\",\"content\":\"hacked\\n\"}");
+
+            // Veto ON → refused, file unchanged.
+            amc.getMethod("setWriteGateVeto", boolean.class).invoke(am, true);
+            String vetoRes = (String) execT.invoke(am, eCall);
+            boolean denied = vetoRes != null && vetoRes.contains("vetoed by quorum")
+                && "original\n".equals(Files.readString(target));
+
+            // Veto OFF (selftest auto-approve) → the write lands.
+            amc.getMethod("setWriteGateVeto", boolean.class).invoke(am, false);
+            String okRes = (String) execT.invoke(am, eCall);
+            boolean landed = okRes != null && okRes.contains("edited")
+                && "hacked\n".equals(Files.readString(target));
+
+            vetoOk = denied && landed;
+            System.out.println((vetoOk ? "PASS" : "FAIL")
+                + " file-write quorum gate (vetoed edit never reached disk; approved edit landed)");
+            if (!vetoOk) System.out.println("  vetoRes=" + vetoRes + " okRes=" + okRes);
+        } catch (Exception e) {
+            System.out.println("FAIL file-write quorum gate: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (vetoOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains

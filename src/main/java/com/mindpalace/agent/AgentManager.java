@@ -502,6 +502,38 @@ public class AgentManager {
         }
     }
 
+    /** #126 test seam: force-REJECT the file-write quorum gate so the selftest
+     *  can assert a vetoed diff never reaches disk (H38 check). */
+    private volatile boolean writeGateVeto = false;
+    public void setWriteGateVeto(boolean v) { this.writeGateVeto = v; }
+
+    /**
+     * #126 (H38): per-write quorum gate. An edit/create/delete lands on the
+     * repo ONLY if the quorum APPROVEs the exact change description. Ballots
+     * ride the dedicated vote-lane worker (ModelScheduler.submitVote), so a
+     * call from inside a tool round on the main worker cannot deadlock.
+     * Fail-safe: vote failure/eviction → deny.
+     */
+    public boolean voteFileWrite(String verb, String filename, String detail) {
+        if (selfTest) return !writeGateVeto; // selftest: seam veto / auto-approve
+        try {
+            String id = "filewrite-" + System.currentTimeMillis();
+            String target = proposalTargetName(currentRoom);
+            String text = "Write " + verb + " " + target + "/" + filename
+                + (detail == null || detail.isEmpty() ? "" : " — " + detail);
+            quorum.registerProposal(id, text, new HexCoord(0, 0), "code_quality");
+            quorum.advanceTimePulse(0.05);
+            WeightedQuorumVote.QuorumResult r = quorum.actualVote(id, modelScheduler);
+            boolean approved = r != null && "APPROVED".equals(r.status);
+            if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.QUORUM,
+                r == null ? "(evicted)" : r.status, "file-write " + verb + " " + filename);
+            return approved;
+        } catch (Exception e) {
+            log("[AgentManager] file-write vote failed (gate deny): " + e.getMessage());
+            return false;
+        }
+    }
+
     /** TASK_0128 redo: deterministic 5-type rotation over quorum cycles. */
     private final com.mindpalace.agent.sims.ProposalRotator proposalRotator =
         new com.mindpalace.agent.sims.ProposalRotator();
@@ -1221,6 +1253,17 @@ public class AgentManager {
                         finalContent = current.substring(0, first) + newStr
                             + current.substring(first + oldStr.length());
                     }
+                    // #126 (H38): quorum gate ON THE EXACT DIFF — a write lands
+                    // only if the vote APPROVEs this change; a rejected diff
+                    // never reaches disk. Telemetry records the veto.
+                    if (!voteFileWrite("edit", filename,
+                            oldStr != null && !oldStr.isEmpty() ? "patch: " + oldStr.length() + "→"
+                                + (args.has("new_string") ? args.get("new_string").getAsString() : "").length()
+                                + " chars" : "rewrite " + finalContent.length() + " chars")) {
+                        if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE,
+                            "write-vetoed", filename);
+                        return "edit vetoed by quorum (#126): " + filename;
+                    }
                     // Never-twice: refuse to write identical code twice (local path).
                     if (memory != null && !memory.recordCode(finalContent, langOf(filename))) {
                         return "never-twice: identical code already written";
@@ -1241,6 +1284,12 @@ public class AgentManager {
                 }
                 case "create_file": {
                     String content = args.has("content") ? args.get("content").getAsString() : "";
+                    // #126 (H38): quorum gate before the create lands.
+                    if (!voteFileWrite("create", filename, content.length() + " chars")) {
+                        if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE,
+                            "write-vetoed", filename);
+                        return "create vetoed by quorum (#126): " + filename;
+                    }
                     if (memory != null && !memory.recordCode(content, langOf(filename))) {
                         return "never-twice: identical code already written";
                     }
@@ -1259,6 +1308,12 @@ public class AgentManager {
                     return "create failed (no auth/local path)";
                 }
                 case "delete_file": {
+                    // #126 (H38): quorum gate before the delete lands.
+                    if (!voteFileWrite("delete", filename, "")) {
+                        if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE,
+                            "write-vetoed", filename);
+                        return "delete vetoed by quorum (#126): " + filename;
+                    }
                     if (github != null && github.isAuthenticated()) {
                         boolean ok = github.deleteFile(repo, filename, null, "MindPalace agent delete: " + filename);
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
