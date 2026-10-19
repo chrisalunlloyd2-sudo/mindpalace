@@ -8153,6 +8153,14 @@ public class GameEngine {
                 if (shoot) { captureLabeled("22_mansion_spawn"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             default -> { // done — clean exit for CI
+                // Deferred-shot race: during a slow-accumulator frame several
+                // update() steps run between case 21's captureLabeled("22_…")
+                // and the next render() — System.exit here would race the
+                // render-tail capture (GameEngine:2369) and silently drop the
+                // final shot from the e2e set (2026-10-18 T3 e2e fail). Wait
+                // one frame: this branch re-enters via the same switch until
+                // the pending shot is flushed, then exits for real.
+                if (pendingShotLabel != null) return;
                 System.out.println("[E2E] tour complete — 22 waypoints captured. Exiting.");
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
