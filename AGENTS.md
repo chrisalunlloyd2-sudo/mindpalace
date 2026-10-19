@@ -115,7 +115,12 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
   `FireflyBlock`, `FrostBlock`, `WeatherBlock`, `SelfTestProbe`.
 - **tailscale/** — tailnet layer (owner login = Architect, no tags needed;
   never Funnel or public ports): `TailscaleCli`, `StatusSnapshot`, `MagicDns`,
-  `WhoIsResolver`, `TailnetIdentity`, `TailnetRoles`, `TailnetTransport`.
+  `WhoIsResolver`, `TailnetIdentity`, `TailnetRoles`, `TailnetTransport`;
+  mesh quorum (T2): `MeshCrypto`, `MeshServer`, `MeshPeerClient`; remote
+  control + HUD + assets (T3): `AdminApi` (/v1/admin/*, fail-closed ADMIN
+  caps, enqueue→game-thread teleport), `SpectatorPage` (/v1/spectator HUD
+  + /data JSON), `TaildropFiles` (staging/ship, path fence), `LogCollector`
+  (/v1/log/ship, knowledge feed), `TailnetServices` (mount-all).
 - **avatar/** — `AvatarDescriptor`, `AvatarLibrary`, `CharacterDNA`,
   `AvatarImporter`.
 - **genetics/** — procedural audio GA: `AudioEvolver`, `AudioGenome`,
