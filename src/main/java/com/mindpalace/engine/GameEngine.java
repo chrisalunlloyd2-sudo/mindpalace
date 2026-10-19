@@ -767,6 +767,10 @@ public class GameEngine {
         spawnNPCs();
         spawnCrystals();
         refreshHealthRollup(); // H36 (#125): issue/TODO/activity → Room.healthScore + KG 'health'
+        // H36a (#128): ingest the nightly repo sweep (scripts/repo_sweep.py's
+        // quota-free JSON) so agents see swept_issues / swept_push_days too.
+        com.mindpalace.github.RepoSweepData.ingest(knowledgeGraph,
+            java.nio.file.Path.of(dataRoot, "mindpalace_memory", "repo_sweep"));
         System.out.println("[NPC] " + npcs.size() + " agents spawned, "
             + crystals.size() + " TODO crystals, KG: "
             + knowledgeGraph.nodeCount() + " nodes / " + knowledgeGraph.edgeCount() + " edges");
@@ -6956,6 +6960,49 @@ public class GameEngine {
                 + e.getClass().getSimpleName() + " " + e.getMessage());
         }
         if (verdictOk) pass++; else fail++;
+
+        // 63. (#128) repo-sweep ingest — parse repo_sweep.py's latest.json and
+        //     ingest into a fresh KG (hermetic: temp dir, no network). Verifies
+        //     swept_issues / swept_push_days land as KG attributes that survive
+        //     a build() rebuild (attributes live OUTSIDE the build() swap).
+        boolean sweepOk = false;
+        try {
+            // RepoSweepData is static-only (private ctor); construct a fresh KG and feed it.
+            com.mindpalace.agent.KnowledgeGraph sweepKg =
+                new com.mindpalace.agent.KnowledgeGraph();
+            java.nio.file.Path sweepDir = java.nio.file.Files.createTempDirectory(
+                "mp-selftest-sweep");
+            java.nio.file.Files.writeString(sweepDir.resolve("latest.json"),
+                "{\"generated\":\"2026-10-18\",\"repos\":2,\"items\":["
+                    + "{\"repo\":\"sweep-test-a\",\"open_issues\":7,\"push_days\":3},"
+                    + "{\"repo\":\"sweep-test-b\",\"open_issues\":0,\"push_days\":-1}]}");
+            int n = com.mindpalace.github.RepoSweepData.ingest(sweepKg, sweepDir);
+            sweepOk = n == 2
+                && sweepKg.getIntAttribute("sweep-test-a", "swept_issues", -9) == 7
+                && sweepKg.getIntAttribute("sweep-test-a", "swept_push_days", -9) == 3
+                && sweepKg.getIntAttribute("sweep-test-b", "swept_issues", -9) == 0
+                && sweepKg.getIntAttribute("sweep-test-b", "swept_push_days", -9) == -1
+                && sweepKg.getIntAttribute("no-such-repo", "swept_issues", -9) == -9;
+            // Attributes must survive the snapshot-swap build() rebuild.
+            sweepKg.build(java.util.List.of());
+            sweepOk = sweepOk
+                && sweepKg.getIntAttribute("sweep-test-a", "swept_issues", -9) == 7;
+            java.util.List<com.mindpalace.github.RepoSweepData.SweptRepo> parsed =
+                com.mindpalace.github.RepoSweepData.parse("{\"items\":["
+                    + "{\"repo\":\"x\",\"open_issues\":2,\"push_days\":5}]}");
+            sweepOk = sweepOk && parsed.size() == 1
+                && parsed.get(0).repo.equals("x") && parsed.get(0).openIssues == 2
+                && parsed.get(0).pushDays == 5
+                && com.mindpalace.github.RepoSweepData.parse("not json").isEmpty()
+                && com.mindpalace.github.RepoSweepData.parse(null).isEmpty();
+            System.out.println((sweepOk ? "PASS" : "FAIL")
+                + " repo-sweep ingest (latest.json → KG swept_issues/swept_push_days, survives build() swap)");
+            if (!sweepOk) System.out.println("  ingested=" + n);
+        } catch (Throwable e) {
+            System.out.println("FAIL repo-sweep ingest: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (sweepOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

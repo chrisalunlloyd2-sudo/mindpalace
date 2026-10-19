@@ -7,7 +7,7 @@
 
 ## Where we are (2026-10-18)
 - PHASE B world finishing (59-78): ✅ COMPLETE — walls, wall collision, roofs, heights, forest ×3, paths, bloom, quorum flares, palette, windows, doors, lanterns, weather (e6ba132, 02df8e0, 7d3f52f)
-- Selftest gate: 81/0 exit-0 (latest run; gate grew through hardening + parity work)
+- Selftest gate: 82/0 exit-0 (latest run; gate grew through hardening + parity work)
 - SIMS1337 parity layer: SHIPPED — ModelRouter/LoRASwitcher/FOWGate/WeightedQuorumVote/AdapterRegistry + 100-case gate (SimsHardening100, 621d317)
 - Hardening x100 gate: PASS 100/100 cases (STEP 97, 34ad118)
 - Doc-drift sweep: shipped docs refreshed to real state (#64/#65/#67/#68/#69/#72/#78/#79/#83/#84/#85/#87)
@@ -66,7 +66,7 @@
 - [x] **91** (reconciled 2026-10-15: SHIPPED — the 2026-10-06 "not done" note was a false negative: it grepped the literal symbol `listIssues`, but the shipped read API is `GitHubClient.listOpenIssues` (GitHubClient.java:248) feeding `GitHubIssueStream.refreshCrystals` → GameEngine `spawnIssueCrystal` (feat(#118), commit 38964fa, 2026-10-03; selftest check "issue read feed" green 69/0 at 931d37b)). H34 open-issue crystals — GitHubClient.listIssues → TODO crystals; agents see repo issues in-world
 - [ ] **92** H35 issue verdicts — quorum votes on issues; verdict posted as comment (add-only, never close)
 - [ ] **93** H36 repo health rollup — issues/TODO-density/last-push age → KG attribute + room glow intensity
-- [ ] **94** H36a nightly 143-repo sweep — quota-free bot job
+- [x] **94** H36a nightly 143-repo sweep — quota-free bot job (scripts/repo_sweep.py + RepoSweepData.ingest; cfaa673 lineage)
 - [x] **95** H37 commit engravings — last 10 commits per repo rendered at the room door (0e83613: `renderCommitEngravings`; local rooms via `git log -10` in RepoMapper, remote-only rooms via `GitHubClient` /commits with a 10-min cache)
 - [ ] **96** H38 push gate — autonomous upsertFile requires quorum APPROVED on the exact diff + critic pass
 - [ ] **97** PR preview branch — agent edits land on `agent/<step>` branches; human merges (safety before trust)
