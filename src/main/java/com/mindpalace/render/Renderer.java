@@ -64,7 +64,24 @@ public class Renderer {
     public static final int TEX_WOOD = 25;
     public static final int TEX_BARK = 26;
     public static final int TEX_CRYSTAL = 28;  // CARD-Q2 F3: TODO crystals' own emissive slot
-    private static final int TEX_COUNT = 29;
+    public static final int TEX_DOOR_SOLID = 29; // QUAL-2: every real door's own solid slot
+    private static final int TEX_COUNT = 30;
+
+    /**
+     * QUAL-2 quality flag: every real door draws ONE dedicated solid colour
+     * instead of sharing TEX_DOOR with non-door wood trim (poster frames,
+     * baseboards, roofs...). Off = TEX_DOOR everywhere = pixel-identical to
+     * the pre-QUAL-2 world and the same draw-call count, so frame time is
+     * untouched. Enable with -Dmindpalace.quality.doors=true.
+     */
+    public static final boolean DOORS_SOLID_QUALITY =
+        Boolean.parseBoolean(System.getProperty("mindpalace.quality.doors", "false"));
+
+    /** Door draw calls go through this: TEX_DOOR_SOLID when QUAL-2 is on,
+     *  otherwise the legacy shared TEX_DOOR (identical pixels). */
+    public static int doorTex() {
+        return DOORS_SOLID_QUALITY ? TEX_DOOR_SOLID : TEX_DOOR;
+    }
 
     private Texture[] textures = new Texture[TEX_COUNT];
 
@@ -103,6 +120,10 @@ public class Renderer {
         textures[TEX_CRYSTAL] = new Texture(0.55f, 1.0f, 1.0f); // white-cyan, crystals only
         textures[TEX_NEON_AMBER] = new Texture(1.0f, 0.7f, 0.1f);
         textures[TEX_NEON_RED] = new Texture(1.0f, 0.2f, 0.15f);
+        // QUAL-2: dedicated door colour — deep forest-green, deliberately
+        // unlike TEX_DOOR's medium wood so old vs new states can't be confused
+        // in capture verification. (texTable selftest check also asserts this.)
+        textures[TEX_DOOR_SOLID] = new Texture(0.16f, 0.42f, 0.20f);
         textures[TEX_HARDWOOD] = new Texture(0.35f, 0.20f, 0.10f);
         textures[TEX_WALLPAPER] = new Texture(0.28f, 0.24f, 0.30f);
         textures[TEX_METAL] = new Texture(0.45f, 0.45f, 0.48f);
@@ -209,6 +230,13 @@ public class Renderer {
         lightColor.set(homeLightColor);
     }
 
+    /** QUAL-2: selftest-only accessor — GL-free door-colour check reads the
+     *  texture table to prove TEX_DOOR and TEX_DOOR_SOLID are distinct GL
+     *  textures (no accidental constant reuse). */
+    public Texture getTexture(int texId) {
+        return texId >= 0 && texId < TEX_COUNT ? textures[texId] : null;
+    }
+
     public void drawMesh(Mesh mesh, Matrix4f model, int texId) {
         basicShader.setUniform("model", model);
         Texture tex = textures[texId];
@@ -226,6 +254,21 @@ public class Renderer {
     public void drawCube(Vector3f position, Vector3f size, int texId) {
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         drawMesh(getCubeMesh(), model, texId);
+        // t_32afa50e probe (TEMPORARY, remove with the task): count every
+        // solid-quality door panel actually drawn into a frame.
+        if (texId == TEX_DOOR_SOLID) lastBatchDoorSolidCount++;
+    }
+
+    /** t_32afa50e probe counter (TEMPORARY): solid door cubes drawn since
+     *  the value was last read & zeroed via {@link #readAndClearDoorSolidCount}. */
+    private int lastBatchDoorSolidCount = 0;
+
+    /** t_32afa50e probe (TEMPORARY): true door-panel draw count of the frame
+     *  just captured, resetting to 0 after the read. */
+    public int readAndClearDoorSolidCount() {
+        int v = lastBatchDoorSolidCount;
+        lastBatchDoorSolidCount = 0;
+        return v;
     }
 
     /** Draw a cube rotated around the Y axis (yaw in radians) — for oriented limbs. */

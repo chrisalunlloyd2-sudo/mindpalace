@@ -789,7 +789,7 @@ public class OutsideWorld {
         // Chimney
         r.drawCube(new Vector3f(mx + 6f, floorY + h + 2.2f, mz + 3f), new Vector3f(0.8f, 2f, 0.8f), Renderer.TEX_WOOD);
         // Grand entrance door
-        r.drawCube(new Vector3f(mx, floorY + 1.6f, mz - d / 2f - 0.05f), new Vector3f(2.2f, 3.2f, 0.1f), Renderer.TEX_DOOR);
+        r.drawCube(new Vector3f(mx, floorY + 1.6f, mz - d / 2f - 0.05f), new Vector3f(2.2f, 3.2f, 0.1f), Renderer.doorTex());
         // Windows (warm at night, cool by day) — two rows
         int winTex = night ? Renderer.TEX_NEON_AMBER : Renderer.TEX_NEON_CYAN;
         for (int i = 0; i < 4; i++) {
@@ -959,7 +959,7 @@ public class OutsideWorld {
         float ajar = 0.08f * ((h % 3) - 1); // -1, 0, +1 lean
         // Panel — offset sideways by the ajar amount (hinged left)
         r.drawCube(new Vector3f(hx - doorW / 2f + doorW / 2f * 0.15f + ajar * 0.3f, floorY + 1.1f, hz - d / 2f - 0.06f - ajar * 0.15f),
-            new Vector3f(doorW * 0.85f, doorH, 0.1f), Renderer.TEX_DOOR);
+            new Vector3f(doorW * 0.85f, doorH, 0.1f), Renderer.doorTex());
         // Jamb posts + lintel
         r.drawCube(new Vector3f(hx - doorW / 2f - 0.06f, floorY + doorH / 2f, hz - d / 2f - 0.06f),
             new Vector3f(0.12f, doorH + 0.1f, 0.12f), Renderer.TEX_BARK);
