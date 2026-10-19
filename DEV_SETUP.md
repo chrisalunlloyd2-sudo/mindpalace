@@ -71,7 +71,9 @@ guard + frozen copy).
 5. **Console log `?` characters** — the game writes UTF-8 arrows through a
    non-UTF8 codepage; parsers must match literal `?` (scout_bot handles it).
 6. **Two dark E2E waypoints are KNOWN** — `07_todo_crystals` (crystal
-   visibility timing) and `12_door_prompt` (HUD door-prompt bug). They are
+   visibility timing) and `13_door_prompt` (HUD door-prompt bug; the tour
+   label was renumbered `12`→`13` when the floor-2 picker pick joined the
+   tour — GameEngine case 12/13). They are
    baseline artifacts, not your regression — the A/B proof lives in the
    step-log.
 

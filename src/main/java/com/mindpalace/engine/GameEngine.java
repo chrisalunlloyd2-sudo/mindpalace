@@ -219,6 +219,13 @@ public class GameEngine {
     private float orbitTimer;           // dwell clock inside one bearing
     private int e2eWaypoint = 0;
     private double e2ePhaseTimer = 0;
+    // #112: Screenshot.capture reads GL_BACK, but captureLabeled used to run
+    // during update() — before the scene was drawn — so the read hit the
+    // PREVIOUS frame (or driver-defined leftovers after a swap). The actual
+    // glRead is deferred to the render() tail, just before glfwSwapBuffers,
+    // the one point where the back buffer is guaranteed to hold THIS frame.
+    private String pendingShotLabel;
+    private String pendingShotPath;
     private boolean e2eMansionDone; // final mansion waypoint: one-shot teleport so logs print once
     // Waypoint-10 one-shot latch: the floor-2/picker side effects (teleport +
     // destination rebuild + menu open) used to re-fire on EVERY physics tick of
@@ -2233,6 +2240,17 @@ public class GameEngine {
 
         com.mindpalace.render.GlTrace.mark("help+map");
         bloom.end();
+        // #112: consume the deferred E2E capture here — bloom.end just
+        // composited the scene into the default framebuffer and the swap
+        // comes next, so GL_BACK now holds exactly the frame being presented.
+        if (pendingShotLabel != null) {
+            String written = Screenshot.capture(width, height, pendingShotPath);
+            System.out.println(written != null
+                ? "[E2E-SHOT] " + pendingShotLabel + " -> " + written
+                : "[E2E-SHOT-FAIL] " + pendingShotLabel + " -> capture failed");
+            pendingShotLabel = null;
+            pendingShotPath = null;
+        }
         GLFW.glfwSwapBuffers(window);
     }
 
@@ -3825,12 +3843,15 @@ public class GameEngine {
         java.io.File dir = new java.io.File(screenshotDir);
         if (!dir.exists()) dir.mkdirs();
         String path = screenshotDir + "/" + label + "_" + String.format("%02d", shotCounter++) + ".png";
-        // Report the frame times of the waypoint itself, BEFORE the PNG write: encoding it on the render thread costs
-        // 0.3-1.2 s and used to be counted as a hitch in the next waypoint's window.
+        // #112: the GL_BACK read + PNG write are DEFERRED to this frame's
+        // render() tail (pendingShotLabel/pendingShotPath) — during update()
+        // the back buffer still held the previous frame. Frame accounting
+        // below still reports the waypoint's OWN frames (frameTimes cleared
+        // here; skipFrameSamples=2 covers the now render-phase capture cost).
         double sum = 0, worst = 0; int n = 0;
         for (Double ft : frameTimes) { sum += ft; n++; if (ft > worst) worst = ft; }
-        String written = Screenshot.capture(width, height, path);
-        if (written != null) System.out.println("[E2E-SHOT] " + label + " -> " + written);
+        pendingShotLabel = label;
+        pendingShotPath = path;
         if (e2eWaypoint > 0 && worst * 1000.0 > e2eWorstMs) { e2eWorstMs = worst * 1000.0; e2eWorstLabel = label; }
         double gateLimit = Double.parseDouble(System.getProperty("mindpalace.e2e.maxFrameMs", "0"));
         if (e2eWaypoint > 0 && gateLimit > 0 && worst * 1000.0 > gateLimit) { e2eOverCount++; e2eOverLabels += " " + label; }
@@ -7000,7 +7021,11 @@ public class GameEngine {
             }
             case 2 -> { // turing tape — look down at the glowing strip
                 p.set(0f, hallY + 1.7f, hallZ0 + 6f);
-                cam.setYaw(0); cam.setPitch(50f);
+                // #111 F9: the tape is a FLOOR strip, so the camera must look
+                // DOWN. Flat-world Camera basis: front.y = sin(pitch) —
+                // positive pitch looks UP (same sign rule the case-6 F1 fix
+                // recorded). The old +50 aimed the shot at the ceiling.
+                cam.setYaw(0); cam.setPitch(-50f);
                 if (shoot) { captureLabeled("03_turing_tape"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             case 3 -> { // banburismus gauge — the deciban meter on the left wall
