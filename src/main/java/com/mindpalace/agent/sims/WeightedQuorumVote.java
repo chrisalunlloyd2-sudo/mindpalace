@@ -218,6 +218,25 @@ public class WeightedQuorumVote {
     /** Wire the telemetry sink: each cast vote becomes a VoteQualityLedger row. */
     public void setVoteSink(Consumer<VoteQualityLedger.VoteRecord> sink) { this.voteSink = sink; }
 
+    // ── #130 (H39): compute-tax hook for the vote lane ──
+    /** Optional: charges the caller for each REAL vote call (prompt, response
+     *  → credits). Set by AgentManager so tax logic stays out of quorum code;
+     *  like the #127 voteSink, unset = exempt (selftests, sim votes). A null/
+     *  empty response is passed as-is — DePIN.chargeCompute treats it free. */
+    private volatile java.util.function.BiFunction<String, String, Double> computeTaxFn;
+
+    public void setComputeTaxFn(java.util.function.BiFunction<String, String, Double> fn) {
+        this.computeTaxFn = fn;
+    }
+
+    /** Apply the compute-tax hook if wired; never throws into the vote loop. */
+    private void chargeVoteTax(String modelName, String prompt, String resp) {
+        java.util.function.BiFunction<String, String, Double> fn = this.computeTaxFn;
+        if (fn == null) return;
+        try { fn.apply(modelName + ":" + prompt, resp); }
+        catch (Exception ignored) { /* tax must never break voting */ }
+    }
+
     /** One-line vote-quality aggregate (HUD + readouts, t_deed6566). */
     public String qualitySummary() { return VoteQualityLedger.get().summaryLine(); }
 
@@ -325,6 +344,8 @@ public class WeightedQuorumVote {
             long ms = System.currentTimeMillis() - t0;
             VoteDecision d = decideVote(resp);
             castOrSkip(proposalId, mp.name, d.vote(), d.outcome(), ms);
+            // #130: this ballot just burned real GPU time — tax it.
+            chargeVoteTax(mp.name, buildVotingPrompt(p, mp.name), resp);
         }
         return calculateQuorum(proposalId);
     }
@@ -385,6 +406,8 @@ public class WeightedQuorumVote {
                 long ms = System.currentTimeMillis() - t0;
                 VoteDecision d = decideVote(resp);
                 castOrSkip(p.id, mp.name, d.vote(), d.outcome(), ms);
+                // #130: this ballot just burned real GPU time — tax it.
+                chargeVoteTax(mp.name, buildVotingPrompt(p, mp.name), resp);
             }
         }
     }

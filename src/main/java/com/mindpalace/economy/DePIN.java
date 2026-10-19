@@ -139,6 +139,37 @@ public class DePIN {
         return p.wallet.earn(amount, reason);
     }
 
+    // ── #130 (H39): the compute tax — the spend side of the closed loop ──
+    // DePIN pays OUT on job completion / tool rounds, but nothing paid IN for
+    // the LLM calls that burn real wall-clock/GPU time. Every Ollama call now
+    // debits the calling agent's wallet by chars/4 (rough token estimate).
+    public static final String REASON_COMPUTE = "compute_tax";
+    /** Cost multiplier: one credit per 4 chars of prompt+response (H39 step 99). */
+    public static final double COMPUTE_CREDITS_PER_CHAR = 0.25;
+
+    /** Compute-tax cost of a call: (promptChars + responseChars) × credits/char.
+     *  Pure and null-safe so callers can compute BEFORE deciding to charge. */
+    public static double computeTaxCost(String promptChars, String responseChars) {
+        int len = (promptChars == null ? 0 : promptChars.length())
+                + (responseChars == null ? 0 : responseChars.length());
+        return len * COMPUTE_CREDITS_PER_CHAR;
+    }
+
+    /** Charge the calling agent for one Ollama call. No response (null/empty)
+     *  → no charge (the "no refund needed since nothing was charged" rule).
+     *  Unregistered agents are silently exempt (awards can't conjure accounts,
+     *  taxes can't either). Returns the amount actually charged. */
+    public synchronized double chargeCompute(String agent, String promptChars, String responseChars) {
+        if (responseChars == null || responseChars.isEmpty()) return 0.0;
+        Participant p = participants.get(agent);
+        if (p == null) return 0.0;
+        double cost = computeTaxCost(promptChars, responseChars);
+        if (cost <= 0) return 0.0;
+        // spend() fails silently when funds run dry — a broke agent keeps
+        // working (compute is not a permission gate, it's an economy signal).
+        return p.wallet.spend(cost, REASON_COMPUTE) ? cost : 0.0;
+    }
+
     /** Seed the initial job board from a topic list (deterministic bounties). */
     public synchronized void seedJobs(List<String> topics) {
         int i = 0;

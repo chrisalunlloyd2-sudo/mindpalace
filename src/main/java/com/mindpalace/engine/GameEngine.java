@@ -7004,6 +7004,35 @@ public class GameEngine {
         }
         if (sweepOk) pass++; else fail++;
 
+        // 64. (#130) compute tax — DePIN wallets are DEBITED by chars/4 for
+        //     real Ollama output; empty/failed responses are never charged.
+        boolean taxOk = true;
+        try {
+            com.mindpalace.economy.DePIN taxDepin = new com.mindpalace.economy.DePIN();
+            taxDepin.register("Explorer", 100.0);
+            double taxBefore = taxDepin.participant("Explorer").wallet.getBalance();
+            // 80 chars prompt + 120 chars response = 200×0.25 = 50 credits.
+            double taxCost = com.mindpalace.economy.DePIN.computeTaxCost("p".repeat(80), "r".repeat(120));
+            taxOk = taxOk && Math.abs(taxCost - 50.0) < 1e-9;
+            double taxCharged = taxDepin.chargeCompute("Explorer", "p".repeat(80), "r".repeat(120));
+            double taxAfter = taxDepin.participant("Explorer").wallet.getBalance();
+            taxOk = taxOk && Math.abs(taxCharged - 50.0) < 1e-9
+                && Math.abs(taxAfter - (taxBefore - 50.0)) < 1e-9;
+            // Empty/failed response: never charged (no-refund-needed rule).
+            taxOk = taxOk
+                && taxDepin.chargeCompute("Explorer", "p".repeat(80), null) == 0.0
+                && taxDepin.chargeCompute("Explorer", "p".repeat(80), "") == 0.0
+                && Math.abs(taxDepin.participant("Explorer").wallet.getBalance() - taxAfter) < 1e-9;
+            // Unregistered agents are exempt; unknown reason strings never mint.
+            taxOk = taxOk && taxDepin.chargeCompute("Nobody", "p", "r") == 0.0;
+            System.out.println((taxOk ? "PASS" : "FAIL")
+                + " compute tax (chars/4 debit; empty response free; unregistered exempt)");
+            if (!taxOk) System.out.println("  taxCost=" + taxCost + " taxCharged=" + taxCharged);
+        } catch (Throwable e) {
+            System.out.println("FAIL compute tax: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (taxOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains

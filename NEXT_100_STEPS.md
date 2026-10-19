@@ -7,7 +7,7 @@
 
 ## Where we are (2026-10-18)
 - PHASE B world finishing (59-78): ✅ COMPLETE — walls, wall collision, roofs, heights, forest ×3, paths, bloom, quorum flares, palette, windows, doors, lanterns, weather (e6ba132, 02df8e0, 7d3f52f)
-- Selftest gate: 82/0 exit-0 (latest run; gate grew through hardening + parity work)
+- Selftest gate: 83/0 exit-0 (latest run; gate grew through hardening + parity work)
 - SIMS1337 parity layer: SHIPPED — ModelRouter/LoRASwitcher/FOWGate/WeightedQuorumVote/AdapterRegistry + 100-case gate (SimsHardening100, 621d317)
 - Hardening x100 gate: PASS 100/100 cases (STEP 97, 34ad118)
 - Doc-drift sweep: shipped docs refreshed to real state (#64/#65/#67/#68/#69/#72/#78/#79/#83/#84/#85/#87)
@@ -73,7 +73,7 @@
 - [x] **98** Weekly self-report (H50) — metrics + phases + next steps as issue comment + reports/ (scout_bot --weeklyreport: telemetry 7d pulse + NEXT_100_STEPS phase table + queue head -> reports/2026-Www.md + step-log #9, 7d guard, quota-free; wired into cascade_dev.sh step 9)
 
 ## PHASE E/F/G — Economy, Flash, Modules (99–150)
-- [ ] **99** H39 compute tax — Ollama calls cost DePIN credits by chars/4; empty = no refund
+- [x] **99** H39 compute tax — Ollama calls cost DePIN credits by chars/4; empty = no refund
 - [ ] **100** H40 idle decay — skill/tier decay without completed jobs
 - [ ] **101** H41 energy budget — daily ledger caps bloom/trees/scouts; graceful degradation
 - [ ] **102** H42 cost telemetry — every autonomous write logs cost+outcome; Sunday review gets a bill

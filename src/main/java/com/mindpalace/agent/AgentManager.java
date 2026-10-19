@@ -304,6 +304,16 @@ public class AgentManager {
                 (outcome, detail) -> t.record(com.mindpalace.backup.Telemetry.QUORUM,
                     outcome, detail));
         }
+        // #130 (H39): every REAL quorum vote is an Ollama call — charge the
+        // house participant ("Explorer", the same wallet #97/#130 tool rounds
+        // bill) by chars/4. key arrives as model + ":" + prompt from the
+        // WeightedQuorumVote hook; response drives the charge.
+        if (quorum != null) {
+            quorum.setComputeTaxFn((key, resp) -> {
+                if (depin == null) return 0.0;
+                return depin.chargeCompute("Explorer", key, resp);
+            });
+        }
     }
 
     // ── Context kits (per-model wrapper: LoRA + KG + KV, never mixed) ──
@@ -837,6 +847,22 @@ public class AgentManager {
 
     private static String fmt(double v) { return String.format("%.2f", v); }
 
+    /** #130 (H39): charge `agent`'s DePIN wallet for one Ollama call
+     *  (chars/4 ≈ tokens, prompt+response). Null/empty response (failed or
+     *  empty call) is NEVER charged — spend only happens on real output. */
+    private void chargeComputeTax(String agent, String prompt, String response) {
+        if (depin == null || response == null || response.isEmpty()) return;
+        try {
+            double charged = depin.chargeCompute(agent, prompt, response);
+            if (charged > 0 && telemetry != null) {
+                telemetry.record(com.mindpalace.backup.Telemetry.DEPIN, agent,
+                    "compute tax -" + fmt(charged));
+            }
+        } catch (Exception e) {
+            log("[AgentManager] compute tax error: " + e.getMessage());
+        }
+    }
+
     private static String langOf(String filename) {
         int i = filename.lastIndexOf('.');
         return i < 0 ? "txt" : filename.substring(i + 1);
@@ -1109,6 +1135,8 @@ public class AgentManager {
                 + "Return ONLY the corrected full file content. Do not add commentary.\n\n"
                 + "```\n" + content + "\n```";
             String fixed = ollama.chat(routedModel, ctx(routedModel) + "\n" + prompt, "");
+            // #130: the fix attempt just burned real GPU time — tax it.
+            chargeComputeTax("Explorer", prompt, fixed);
             if (fixed == null || fixed.isEmpty() || fixed.equals(content)) return false;
 
             // Strip any markdown fence the model may have wrapped the output in.
@@ -1211,6 +1239,11 @@ public class AgentManager {
             msgs.add(Map.of("role", "user", "content", context + "\n\nTake ONE concrete action using your tools."));
 
             OllamaClient.ToolResult tr = ollama.chatWithTools(toolModel, msgs, roundTools);
+            // #130: the round just burned real GPU time — tax it (Explorer's
+            // wallet, the same participant #97 awards tool rounds to).
+            if (tr != null) {
+                chargeComputeTax("Explorer", msgs.toString(), tr.content);
+            }
             if (tr == null || tr.toolCalls.isEmpty()) {
                 if (tr != null && tr.content != null && !tr.content.isEmpty()) {
                     emit(onToolMessage, "[Tool] " + tr.content);
@@ -1273,6 +1306,10 @@ public class AgentManager {
                 "You just took the actions shown above. In ONE line: what did you "
                 + "learn from the results, and what is the next concrete step?"));
             OllamaClient.ToolResult sr = ollama.chatWithTools(toolModel, feedback, List.<com.google.gson.JsonObject>of());
+            // #130: the synthesis call is taxed like every other Ollama call.
+            if (sr != null) {
+                chargeComputeTax("Explorer", feedback.toString(), sr.content);
+            }
             if (sr != null && sr.content != null && !sr.content.isEmpty()) {
                 emit(onToolMessage, "[Tool] " + sr.content);
             }
