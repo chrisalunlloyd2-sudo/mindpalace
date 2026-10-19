@@ -37,6 +37,7 @@ ROTATION_ORDER = [
 
 
 def default_aigen_home() -> Path:
+    """Default aigen home (function)."""
     home = os.environ.get("AIGEN_HOME")
     if home:
         return Path(home)
@@ -44,6 +45,10 @@ def default_aigen_home() -> Path:
 
 
 def load_ledger(path: Path) -> list[dict]:
+    """Load ledger.
+
+    Args: path.
+    """
     records: list[dict] = []
     with path.open("r", encoding="utf-8", errors="replace") as fh:
         for lineno, line in enumerate(fh, 1):
@@ -103,6 +108,10 @@ def per_agent_votes(cycles: list[dict]) -> dict[str, dict[str, int]]:
 
 
 def fmt_row(t: str, cycles: list[dict]) -> str:
+    """Fmt row.
+
+    Args: t, cycles.
+    """
     n = len(cycles)
     approved = sum(1 for c in cycles if c.get("outcome") == "APPROVED")
     rejected = sum(1 for c in cycles if c.get("outcome") == "REJECTED")
@@ -122,6 +131,7 @@ def fmt_row(t: str, cycles: list[dict]) -> str:
 
 
 def main() -> int:
+    """Main (function)."""
     ap = argparse.ArgumentParser(description="Voting-diversity report (TASK_0128 redo)")
     ap.add_argument("--ledger", type=Path,
                     default=default_aigen_home() / "quorum_ledger.jsonl")
