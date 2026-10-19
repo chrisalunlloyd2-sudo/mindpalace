@@ -48,6 +48,7 @@ rm -rf "$DIR"; mkdir -p "$DIR"
 # bright-sky look via the day branch — fnight uses the same TimeClock now.
 # t_0c1374b0: 700s budget — world build alone runs ~5min on the Intel HD 510.
 timeout 700 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+  -Dmindpalace.quality.doors=true \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --e2e "$DIR" --time 21 > /tmp/e2e_tour.log 2>&1
 grep -aE "\[E2E\]|\[E2E-SHOT\]|\[E2E-HUD-GATE\] SUMMARY" /tmp/e2e_tour.log
@@ -66,7 +67,10 @@ labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gaug
           "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad",
           "11_floor2_picker","12_nash_fountain","13_door_prompt","14_plugboard",
           "15_forest_path","16_room_interior","17_hall_windows","18_poster_wall",
-          "19_gist_wall","20_sky","21_water","22_mansion_spawn"]
+          "19_gist_wall","20_sky","21_water","22_mansion_spawn",
+          "23_door_panel_closed","24_door_panel_open","25_hall_door",
+          "26_mansion_entrance","27_town_house_door","28_mansion_door_face",
+          "29_wallpaper_amber_door"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:

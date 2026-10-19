@@ -999,7 +999,7 @@ public class WorldBuilder {
         float doorPanelH = dw * (1f - room.getDoorOpenAmount());
         if (doorPanelH > 0.01f) {
             r.drawCube(new Vector3f(c.x, doorPanelY, fz),
-                new Vector3f(Room.DOOR_WIDTH - 0.04f, doorPanelH, t + 0.02f), Renderer.TEX_DOOR);
+                new Vector3f(Room.DOOR_WIDTH - 0.04f, doorPanelH, t + 0.02f), Renderer.doorTex());
         }
 
         // Door frame

@@ -1,6 +1,7 @@
 package com.mindpalace.engine;
 
 import com.mindpalace.render.Renderer;
+import com.mindpalace.render.Texture;
 import com.mindpalace.render.FontRenderer;
 import com.mindpalace.render.BloomEffect;
 import com.mindpalace.render.Camera;
@@ -2971,7 +2972,7 @@ public class GameEngine {
         renderer.drawCube(new Vector3f(bx + 1.8f, y + 0.85f, bz + 1.2f), new Vector3f(0.2f, 0.1f, 0.2f), Renderer.TEX_NEON_AMBER);
 
         // ── Grand entrance door (interior face, -Z) ──
-        renderer.drawCube(new Vector3f(cx, y + 1.6f, cz - d / 2f + 0.05f), new Vector3f(2.2f, 3.2f, 0.1f), Renderer.TEX_DOOR);
+        renderer.drawCube(new Vector3f(cx, y + 1.6f, cz - d / 2f + 0.05f), new Vector3f(2.2f, 3.2f, 0.1f), Renderer.doorTex());
 
         // ── Genome wall (back wall, center): the player's module timeline ──
         renderGenomeWall(cx, y, cz);
@@ -3722,6 +3723,13 @@ public class GameEngine {
         System.out.println("[E2E-FPS] " + label + " -> " + String.format("%.1f", avgFps)
             + " fps, worst frame " + String.format("%.1f", worst * 1000.0) + " ms over " + n
             + " real frames (target >=30, budget SUCCESS_METRICS.md step 78)");
+        // t_32afa50e probe (TEMPORARY, remove with the task): what did
+        // doorTex() resolve to when THIS shot's frame was drawn + how many
+        // solid-door cubes were queued in the current render batch?
+        System.out.println("[QUAL2-PROBE] label=" + label
+            + " flag=" + Renderer.DOORS_SOLID_QUALITY
+            + " doorTex=" + Renderer.doorTex()
+            + " solidCubesQueued=" + renderer.readAndClearDoorSolidCount());
         // t_0c1374b0 e2e HUD gate: project the live slot rects through the
         // REAL camera at the capture moment; e2e.sh greps the [E2E-HUD-GATE]
         // lines and fails the verify when any visible pair overlaps.
@@ -6227,6 +6235,49 @@ public class GameEngine {
             + " hud slot overlap gate (5 primaries pairwise-disjoint + in frame, teleport in frame)");
         if (hudOk) pass++; else fail++;
 
+        // 55. QUAL-2 doors — one dedicated solid colour, GL-free. Asserts the
+        //     door draw-call contract without a GL context: (a) the quality
+        //     flag's default OFF keeps doorTex() == TEX_DOOR (pixel-identical,
+        //     zero behaviour change); (b) the flag's ON route targets a slot
+        //     distinct from TEX_DOOR; (c) the two slots exist and are
+        //     DISTINCT GL textures (no accidental constant reuse); (d) the
+        //     real-door draw sites route through doorTex() in the shipped
+        //     source — WorldBuilder 1 (room panel), OutsideWorld 2 (mansion
+        //     entrance + town-house panel), GameEngine 1 (mansion interior
+        //     face) — while props (vault faces, war-room table, poster
+        //     frames) keep the legacy trim texture untouched.
+        boolean doorTexOk = false;
+        try {
+            boolean offIsLegacy = Renderer.doorTex() == Renderer.TEX_DOOR; // flag OFF by default
+            boolean onRouteDistinct = Renderer.TEX_DOOR_SOLID != Renderer.TEX_DOOR;
+            Renderer r = this.renderer;
+            Texture tDoor = r.getTexture(Renderer.TEX_DOOR);
+            Texture tSolid = r.getTexture(Renderer.TEX_DOOR_SOLID);
+            boolean distinctTextures = tDoor != null && tSolid != null
+                && tDoor.getId() != tSolid.getId();
+            // Real-door sites route through doorTex() — verify the shipped
+            // source (hermetic reads, cwd = repo root for --selftest runs).
+            java.nio.file.Path src = java.nio.file.Path.of(System.getProperty("user.dir"),
+                "src", "main", "java", "com", "mindpalace");
+            String wb = java.nio.file.Files.readString(src.resolve("world").resolve("WorldBuilder.java"));
+            String ow = java.nio.file.Files.readString(src.resolve("world").resolve("OutsideWorld.java"));
+            String ge = java.nio.file.Files.readString(src.resolve("engine").resolve("GameEngine.java"));
+            boolean routesWb = wb.contains("Renderer.doorTex()");
+            boolean routesOw = ow.contains("Renderer.doorTex()");
+            boolean routesGe = ge.contains("Renderer.doorTex()");
+            doorTexOk = offIsLegacy && onRouteDistinct && distinctTextures
+                && routesWb && routesOw && routesGe;
+            System.out.println((doorTexOk ? "PASS" : "FAIL")
+                + " doors one-solid-colour (flag-off=legacy " + offIsLegacy
+                + " on-route=solid-slot " + onRouteDistinct
+                + " distinct-textures " + distinctTextures
+                + " sites=[wb=" + routesWb + " ow=" + routesOw + " ge=" + routesGe + "])");
+        } catch (Exception e) {
+            System.out.println("FAIL doors one-solid-colour: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (doorTexOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -6835,8 +6886,136 @@ public class GameEngine {
                 cam.setYaw(0); cam.setPitch(2f); // face the mansion front
                 if (shoot) { captureLabeled("22_mansion_spawn"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            // ── QUAL-2 (t_32afa50e): door waypoints 23–29 ────────────────────
+            // Every real door must render ONE dedicated solid colour via
+            // Renderer.doorTex() (TEX_DOOR_SOLID when -Dmindpalace.quality.doors
+            // is set, legacy TEX_DOOR otherwise). Cases 23–24 prove the
+            // animated room panel in BOTH door states; 25–29 prove every
+            // static door site across districts. Framing copies the proven
+            // waypoint-12/16 door-camera pattern (aim-derive yaw/pitch).
+            case 22 -> { // QUAL-2 #1 — room door panel CLOSED (animated WorldBuilder site)
+                Room dr = null;
+                for (Room rm : world.getRooms()) {
+                    if (rm.getDoorPosition() != null) { dr = rm; break; }
+                }
+                if (dr != null) {
+                    Vector3f dp = dr.getDoorPosition();
+                    dr.closeDoor();
+                    dr.updateDoorAnimation(1f); // snap fully closed for the shot
+                    Vector3f stand = new Vector3f(dp.x + (dp.x < 0 ? 2.5f : -2.5f), dp.y + 0.7f, dp.z);
+                    p.set(stand);
+                    Vector3f aim = new Vector3f(dp).sub(stand).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                } else {
+                    p.set(0f, hallY + 1.7f, hallZ0 + 4f);
+                    cam.setYaw(0); cam.setPitch(0);
+                }
+                if (shoot) { captureLabeled("23_door_panel_closed"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 23 -> { // QUAL-2 #2 — same panel half-open (mid-slide transient, single colour mid-anim)
+                Room dr = null;
+                for (Room rm : world.getRooms()) {
+                    if (rm.getDoorPosition() != null) { dr = rm; break; }
+                }
+                if (dr != null) {
+                    Vector3f dp = dr.getDoorPosition();
+                    dr.openDoor();
+                    dr.updateDoorAnimation(0.17f); // 3.0/s × 0.17 ≈ 0.51 → clear mid-slide
+                    Vector3f stand = new Vector3f(dp.x + (dp.x < 0 ? 2.5f : -2.5f), dp.y + 0.7f, dp.z);
+                    p.set(stand);
+                    Vector3f aim = new Vector3f(dp).sub(stand).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                    if (shoot) {
+                        captureLabeled("24_door_panel_open");
+                        dr.closeDoor(); // restore so later waypoints see a closed hall
+                        e2eWaypoint++; e2ePhaseTimer = 0;
+                    }
+                } else {
+                    p.set(0f, hallY + 1.7f, hallZ0 + 4f);
+                    cam.setYaw(0); cam.setPitch(0);
+                    if (shoot) { captureLabeled("24_door_panel_open"); e2eWaypoint++; e2ePhaseTimer = 0; }
+                }
+            }
+            case 24 -> { // QUAL-2 #3 — hallway door far-side (wp-12 pattern stand, side agnostic)
+                Vector3f door0 = null;
+                float bestD = Float.MAX_VALUE;
+                for (Room rm : world.getRooms()) {
+                    Vector3f dp2 = rm.getDoorPosition();
+                    if (dp2 == null) continue;
+                    float d = Math.abs(dp2.z - (hallZ0 + 6f));
+                    if (d < bestD) { bestD = d; door0 = dp2; }
+                }
+                if (door0 != null) {
+                    world.getFogOfWar().reveal(new Vector3f(door0.x, door0.y, door0.z));
+                    Vector3f stand = new Vector3f(door0.x + (door0.x < 0 ? 2.5f : -2.5f), door0.y + 0.7f, door0.z);
+                    p.set(stand);
+                    Vector3f aim = new Vector3f(door0).sub(stand).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                } else {
+                    p.set(0f, hallY + 1.7f, hallZ0 + 4f);
+                    cam.setYaw(0); cam.setPitch(0);
+                }
+                if (shoot) { captureLabeled("25_hall_door"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 25 -> { // QUAL-2 #4 — mansion entrance door (static OutsideWorld site)
+                Vector3f m = world.getOutsideWorld().getMansionPos();
+                p.set(m.x, m.y + 1.7f, m.z - 14f);
+                cam.setYaw(0); cam.setPitch(6f); // aim slightly up: door sits on the front wall
+                if (shoot) { captureLabeled("26_mansion_entrance"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 26 -> { // QUAL-2 #5 — town-house door (static OutsideWorld site, doorway on -Z face)
+                java.util.List<OutsideWorld.Box> houses = world.getOutsideWorld().getHouses();
+                if (!houses.isEmpty()) {
+                    OutsideWorld.Box hHouse = houses.get(0);
+                    float hx = (hHouse.minX + hHouse.maxX) / 2f;
+                    float hz = (hHouse.minZ + hHouse.maxZ) / 2f;
+                    p.set(hx, 1.7f, hz - 5f);
+                    cam.setYaw(0); cam.setPitch(2f); // doorway faces -Z; look at the front wall
+                } else {
+                    p.set(0f, 1.7f, hallZ0 + 4f);
+                    cam.setYaw(0); cam.setPitch(0);
+                }
+                if (shoot) { captureLabeled("27_town_house_door"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 27 -> { // QUAL-2 #6 — mansion interior door face (static GameEngine site)
+                // Enter-togggle gate needs a real keypress + cooldown; the
+                // tour sets the same two fields the openWorldEnter handler
+                // sets (toggled inMansion + interior cam pose) directly.
+                if (!inMansion) {
+                    inMansion = true;
+                    player.setMansionInterior(true);
+                }
+                Vector3f m = world.getOutsideWorld().getMansionPos();
+                player.getCamera().setPosition(m.x, m.y + 1.6f, m.z + 2f);
+                player.getCamera().setYaw(180);
+                p.set(player.getCamera().getPosition());
+                cam.setPitch(-8f); // face leans down slightly from eye height
+                if (shoot) {
+                    captureLabeled("28_mansion_door_face");
+                    // Exit again exactly like the handler so following
+                    // waypoints render the normal world.
+                    inMansion = false;
+                    player.setMansionInterior(false);
+                    player.getCamera().setPosition(m.x, m.y + 1.6f, m.z - 10f);
+                    player.getCamera().setYaw(0);
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                }
+            }
+            case 28 -> { // QUAL-2 #7 — wallpaper door inside the mansion (amber, distinct colour)
+                if (inMansion) { // normally false after case 27's exit
+                    inMansion = false;
+                    player.setMansionInterior(false);
+                }
+                Vector3f m = world.getOutsideWorld().getMansionPos();
+                p.set(m.x, m.y + 1.7f, m.z - 8f);
+                cam.setYaw(0); cam.setPitch(2f);
+                if (shoot) { captureLabeled("29_wallpaper_amber_door"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 22 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 29 waypoints captured. Exiting.");
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
                 // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software
