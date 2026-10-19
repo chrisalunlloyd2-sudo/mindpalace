@@ -365,6 +365,9 @@ public class GameEngine {
         // an evening tour renders night scenes (07_todo_crystals measured 1.0
         // vs the 1.5 daytime baseline) and fails the verify spuriously.
         this.timeOfDayPin = 12;
+        // QUAL-1: land the geometry dump next to the labeled shots.
+        com.mindpalace.render.GeoAudit.setOutDir(
+            java.nio.file.Paths.get(dir, "geo_audit_out"));
         System.out.println("[E2E] enabled, waypoints + labeled shots -> " + dir
             + " (clock pinned to 12:00 for deterministic brightness)");
     }
@@ -2119,6 +2122,7 @@ public class GameEngine {
         if (showMap) renderMapOverlay();
 
         com.mindpalace.render.GlTrace.mark("help+map");
+        com.mindpalace.render.GeoAudit.frameEnd();
         bloom.end();
         GLFW.glfwSwapBuffers(window);
     }
@@ -3711,6 +3715,7 @@ public class GameEngine {
         for (Double ft : frameTimes) { sum += ft; n++; if (ft > worst) worst = ft; }
         String written = Screenshot.capture(width, height, path);
         if (written != null) System.out.println("[E2E-SHOT] " + label + " -> " + written);
+        com.mindpalace.render.GeoAudit.armWaypoint(label);
         if (e2eWaypoint > 0 && worst * 1000.0 > e2eWorstMs) { e2eWorstMs = worst * 1000.0; e2eWorstLabel = label; }
         double gateLimit = Double.parseDouble(System.getProperty("mindpalace.e2e.maxFrameMs", "0"));
         if (e2eWaypoint > 0 && gateLimit > 0 && worst * 1000.0 > gateLimit) { e2eOverCount++; e2eOverLabels += " " + label; }
@@ -4038,6 +4043,9 @@ public class GameEngine {
 
     private void runSelfTest() {
         int pass = 0, fail = 0;
+        boolean geoAuditProbeOk = com.mindpalace.render.GeoAudit.selfTestProbe();
+        pass += geoAuditProbeOk ? 1 : 0;
+        fail += geoAuditProbeOk ? 0 : 1;
         System.out.println("\n===== MIND PALACE SELF-TEST =====");
 
         boolean contextOk = testContextBroadcaster();
@@ -6350,6 +6358,11 @@ public class GameEngine {
         // ── E2E waypoint tour: named stops, labeled shots, clean exit ──
         if (e2eMode) {
             updateE2ETour(dt);
+            // QUAL-1: after the waypoint's own frame, arm ONE widened-cull
+            // sweep so offscreen walls/hallways also land in the dump.
+            if (com.mindpalace.render.GeoAudit.consumeSweepPending()) {
+                com.mindpalace.render.GeoAudit.armSweep();
+            }
             return;
         }
 
@@ -6837,6 +6850,8 @@ public class GameEngine {
             }
             default -> { // done — clean exit for CI
                 System.out.println("[E2E] tour complete — 22 waypoints captured. Exiting.");
+                // QUAL-1: flush any armed sweep + write meta.json before exit.
+                com.mindpalace.render.GeoAudit.dump();
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
                 // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software
