@@ -16,6 +16,14 @@ import java.util.List;
  * Row shape (header included, analyzer-friendly, e2e perf-gate shaped):
  *   frame,wall_ns,frame_ms,update_ms,stage_slowest_ms,stage_name,snap,hitch,note
  *
+ * PERF-A4 (t_229c43d6): additive attribution columns appended AFTER note:
+ *   ,stage_update_ms,stage_render_ms,stage_ollama_ms
+ * stage_update_ms/stage_render_ms are always measured in perfMode (no
+ * frameProf flag needed); stage_ollama_ms is the render thread's synchronous
+ * Ollama wait inside the frame (BookEditor :s suggest — the only direct
+ * ollama.chat on the game thread), 0 in unattended runs. Old columns keep
+ * their exact meaning; perf_matrix.py tolerates both header shapes.
+ *
  * HITCH_MS is 80 — the same threshold as HitchSampler's stall accounting.
  */
 public final class PerfCsvLogger {
@@ -23,7 +31,8 @@ public final class PerfCsvLogger {
     public static final double HITCH_MS = 80.0;
 
     private static final String HEADER =
-        "frame,wall_ns,frame_ms,update_ms,stage_slowest_ms,stage_name,snap,hitch,note";
+        "frame,wall_ns,frame_ms,update_ms,stage_slowest_ms,stage_name,snap,hitch,note"
+            + ",stage_update_ms,stage_render_ms,stage_ollama_ms";
 
     private final Path path;
     private final List<String> buffer = new ArrayList<>(512);
@@ -59,10 +68,14 @@ public final class PerfCsvLogger {
         this.flusher.start();
     }
 
-    /** Render thread: append one row. Non-blocking (in-memory append). */
+    /** Render thread: append one row. Non-blocking (in-memory append).
+     *  stageUpdateMs/stageRenderMs = this frame's update()/render() wall cost
+     *  (always measured in perfMode); stageOllamaMs = GlTrace-tracked render-
+     *  thread Ollama wait drained for this frame (auto zeroed per frame). */
     public void row(long frame, long wallNs, double frameMs, double updateMs,
                     double stageSlowMs, String stageName, boolean snap,
-                    String noteOverride) {
+                    String noteOverride, double stageUpdateMs,
+                    double stageRenderMs, double stageOllamaMs) {
         boolean hitch = frameMs > HITCH_MS;
         String note = noteOverride == null ? "" : noteOverride;
         if (hitch && note.isEmpty()) note = "hitch";
@@ -70,7 +83,10 @@ public final class PerfCsvLogger {
             + "," + String.format(java.util.Locale.ROOT, "%.2f", updateMs)
             + "," + String.format(java.util.Locale.ROOT, "%.2f", stageSlowMs)
             + "," + (stageName == null ? "none" : stageName)
-            + "," + (snap ? 1 : 0) + "," + (hitch ? 1 : 0) + "," + note;
+            + "," + (snap ? 1 : 0) + "," + (hitch ? 1 : 0) + "," + note
+            + "," + String.format(java.util.Locale.ROOT, "%.2f", stageUpdateMs)
+            + "," + String.format(java.util.Locale.ROOT, "%.2f", stageRenderMs)
+            + "," + String.format(java.util.Locale.ROOT, "%.2f", stageOllamaMs);
         synchronized (this) {
             buffer.add(line);
             frames++;

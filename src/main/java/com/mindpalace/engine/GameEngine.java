@@ -306,6 +306,8 @@ public class GameEngine {
     private long perfFrameNo;          // 0-based rendered-frame counter
     private com.mindpalace.render.PerfCsvLogger perfCsv;  // D4
     private double perfUpdateMs;       // this frame's update() wall cost
+    private double perfStageUpdateMs;  // PERF-A4: always-on update() cost for stage_update_ms
+    private double perfRenderMs;       // PERF-A4: this frame's render() wall cost
     private long perfFrameStartNs;     // loop-top nanoTime for frame_ms
     private boolean perfSuspendAgent;  // D5: hermetic — no agent cycle/brains
     private boolean perfPendingSnap;   // D3: set pre-render, captured pre-swap in render()
@@ -1186,6 +1188,7 @@ public class GameEngine {
             }
 
             long updateStart = com.mindpalace.render.GlTrace.PROF ? System.nanoTime() : 0L;
+            long stageUpdateStart = perfMode ? System.nanoTime() : 0L;   // PERF-A4: always-on
             while (accumulator >= PHYSICS_DT) {
                 if (autodrive) updateAutodrive(PHYSICS_DT);
                 else update(PHYSICS_DT);
@@ -1193,11 +1196,14 @@ public class GameEngine {
             }
             if (com.mindpalace.render.GlTrace.PROF) com.mindpalace.render.GlTrace.noteUpdate(System.nanoTime() - updateStart);
             if (perfMode) perfUpdateMs = com.mindpalace.render.GlTrace.PROF
-                ? (System.nanoTime() - updateStart) / 1e6 : 0.0;   // PERF-A2 D4: update_ms column
+                ? (System.nanoTime() - updateStart) / 1e6 : 0.0;   // PERF-A2 D4: update_ms column (unchanged)
+            if (perfMode) perfStageUpdateMs = (System.nanoTime() - stageUpdateStart) / 1e6; // PERF-A4: stage_update_ms always measured
 
             if (perfMode) perfPendingSnap = perfCsv != null && inputTrack != null
                 && inputTrack.isSnapshotFrame((int) perfFrameNo);  // PERF-A2 D3: render() captures pre-swap
+            long renderStart = perfMode ? System.nanoTime() : 0L;  // PERF-A4: render_ms
             render(accumulator / PHYSICS_DT);
+            if (perfMode) perfRenderMs = (System.nanoTime() - renderStart) / 1e6;
 
             fpsTimer += frameTime;
             fps++;
@@ -1253,7 +1259,8 @@ public class GameEngine {
                 }
                 perfCsv.row(perfFrameNo, wallNs, frameMs, perfUpdateMs,
                     com.mindpalace.render.GlTrace.profSlowestMs(), com.mindpalace.render.GlTrace.profSlowestName(),
-                    snap, noteOverride);
+                    snap, noteOverride, perfStageUpdateMs, perfRenderMs,
+                    com.mindpalace.render.GlTrace.drainOllamaBlockNs() / 1e6);
                 if (perfFrameNo % 16 == 0) {
                     // D5 frame markers (harness tails stdout; frame 0 included)
                     System.out.println("[PERF-FRAME] " + perfFrameNo);

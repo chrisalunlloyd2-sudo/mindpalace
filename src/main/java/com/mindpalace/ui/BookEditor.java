@@ -176,7 +176,13 @@ public class BookEditor {
                 "content", "File: " + currentBook.getFilePath()
                     + "\nLanguage: " + currentBook.getLanguage()
                     + "\n\n```\n" + snippet + "\n```\n\nList concrete suggestions."));
-            String reply = ollama.chat(ModelConfig.CODE_MODEL, messages, null);
+            long ollamaStart = System.nanoTime(); // PERF-A4: render-thread Ollama wait -> stage_ollama_ms
+            String reply;
+            try {
+                reply = ollama.chat(ModelConfig.CODE_MODEL, messages, null);
+            } finally {
+                com.mindpalace.render.GlTrace.noteOllamaBlockNs(System.nanoTime() - ollamaStart);
+            }
             if (reply == null || reply.isBlank()) {
                 println("| [ERR] Empty response - is Ollama   |");
                 println("| running? (run: ollama serve)       |");

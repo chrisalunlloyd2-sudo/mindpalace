@@ -33,7 +33,23 @@ public final class GlTrace {
     private static double lastSlowestMs;
     private static String lastSlowestName = "none";
 
+    // PERF-A4 (t_229c43d6): render-thread synchronous Ollama wait, accumulated
+    // by noteOllamaBlockNs() at the only blocking call site (BookEditor :s) and
+    // drained per frame by GameEngine's perf row. LongAdder-free: the only
+    // writer is the render thread itself (drain is single-consumer).
+    private static long ollamaBlockNs;
+
     public static long frameCount() { return profFrames; }
+
+    /** PERF-A4: time a game-thread blocking Ollama call (call inside try/finally). */
+    public static void noteOllamaBlockNs(long ns) { if (ns > 0) ollamaBlockNs += ns; }
+
+    /** PERF-A4: drain + reset the accumulated Ollama wait (render-thread only). */
+    public static long drainOllamaBlockNs() {
+        long v = ollamaBlockNs;
+        ollamaBlockNs = 0L;
+        return v;
+    }
 
     /** PERF-A2: slowest measured stage (ms) of the frame just completed (0 when PROF off). */
     public static double profSlowestMs() { return PROF ? lastSlowestMs : 0.0; }

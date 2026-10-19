@@ -72,6 +72,14 @@ def read_csv_full(csv_path):
                     "stage_slowest_ms": (float(row["stage_slowest_ms"])
                                          if row.get("stage_slowest_ms") else None),
                     "stage_name": row.get("stage_name", ""),
+                    # PERF-A4 (t_229c43d6): always-on attribution columns
+                    # (absent from pre-A4 CSVs -> None; loader tolerates both).
+                    "stage_update_ms": (float(row["stage_update_ms"])
+                                        if row.get("stage_update_ms") else None),
+                    "stage_render_ms": (float(row["stage_render_ms"])
+                                        if row.get("stage_render_ms") else None),
+                    "stage_ollama_ms": (float(row["stage_ollama_ms"])
+                                        if row.get("stage_ollama_ms") else None),
                     "snap": row.get("snap") == "1",
                     "hitch": row.get("hitch") == "1",
                 })
@@ -114,8 +122,38 @@ def outlier_rows(frame_lists, load_frame):
                 out.append({"frame": r["frame"], "frame_ms": r["frame_ms"],
                             "update_ms": r["update_ms"],
                             "stage_slowest_ms": r["stage_slowest_ms"],
-                            "stage_name": r["stage_name"]})
+                            "stage_name": r["stage_name"],
+                            "stage_update_ms": r.get("stage_update_ms"),
+                            "stage_render_ms": r.get("stage_render_ms"),
+                            "stage_ollama_ms": r.get("stage_ollama_ms")})
     return sorted(out, key=lambda x: -x["frame_ms"])
+
+
+def stage_attr(frame_lists, load_frame):
+    """PERF-A4 (t_229c43d6): per-arm stage attribution rollup from the always-on
+    stage_update_ms/stage_render_ms/stage_ollama_ms columns. Pre-A4 CSVs (no
+    columns) -> {"available": False} so old summaries stay comparable. Frames
+    below WARMUP_FRAMES are excluded (startup pollution), snapshots too."""
+    vals = {"stage_update_ms": [], "stage_render_ms": [], "stage_ollama_ms": []}
+    for rows in frame_lists:
+        for r in rows:
+            if r["frame"] < WARMUP_FRAMES or r.get("snap"):
+                continue
+            for k in vals:
+                v = r.get(k)
+                if v is not None:
+                    vals[k].append(v)
+    if not any(vals.values()):
+        return {"available": False}
+    def rollup(vs):
+        if not vs:
+            return None
+        s = sorted(vs)
+        return {"mean_ms": round(sum(s) / len(s), 2), "p95_ms": round(s[int(0.95 * (len(s) - 1))], 2),
+                "max_ms": round(s[-1], 2), "n": len(s)}
+    out = {"available": True}
+    out.update({k: rollup(v) for k, v in vals.items()})
+    return out
 
 
 def leaf_histogram(log_paths):
@@ -404,7 +442,8 @@ def main():
                  "outliers_over_800ms": outliers[:8],
                  "outlier_count": len(outliers),
                  "hitch_leaf_top": [{"leaf": k, "samples": v} for k, v in top_leafs],
-                 "token_s_mean": (round(sum(oll) / len(oll), 1) if oll else None)}
+                 "token_s_mean": (round(sum(oll) / len(oll), 1) if oll else None),
+                 "stage_attr": stage_attr(frame_lists, args.load_frame)}
         arm_blocks.append(block)
 
     git_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ph.REPO),
