@@ -817,6 +817,10 @@ public class AgentManager {
     private void runDePINWork() {
         if (depin == null) return;
         try {
+            // #131 (H40): decay idle skill BEFORE claim eligibility is read, so
+            // agents that stopped completing jobs lose their hard-job rights
+            // instead of sitting on a monotonic high-water-mark forever.
+            depin.applyIdleDecay(System.currentTimeMillis());
             List<com.mindpalace.economy.Blackboard.Job> open = depin.board().openJobs();
             if (open.isEmpty()) return;
             // Pick a random open job for each agent, biased toward the current room's topic.

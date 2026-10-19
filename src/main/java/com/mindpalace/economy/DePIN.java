@@ -23,6 +23,10 @@ public class DePIN {
         public final Wallet wallet;
         public final AtomicInteger skill = new AtomicInteger(0);
         public int completed = 0;
+        /** Epoch-ms of this participant's last completed job (0 = never completed). */
+        public volatile long lastCompletedAt = 0;
+        /** Epoch-ms decay was last applied (idempotence anchor for #131). */
+        public volatile long lastDecayAt = 0;
 
         Participant(String name, double initial, EconomyLedger ledger) {
             this.name = name;
@@ -33,6 +37,52 @@ public class DePIN {
         public int tier() {
             int s = skill.get();
             return s >= 20 ? 5 : s >= 12 ? 4 : s >= 6 ? 3 : s >= 2 ? 2 : 1;
+        }
+
+        /** #131 (H40): drop skill by the idle-derived amount (never below 0).
+         *  IDEMPOTENT: skill follows the envelope f(t)=idleSkillDecay(t-
+         *  lastCompletedAt); we remove only the DELTA since lastDecayAt, so
+         *  repeated ticks at the same instant are no-ops. A fresh completion
+         *  resets the clock (skill regrows via job completion as designed). */
+        void applyIdleDecay(long nowMs) {
+            if (lastCompletedAt == 0) return;   // never completed: skill is 0 already
+            long anchor = Math.max(lastCompletedAt, lastDecayAt);
+            int drop = idleSkillDecay(nowMs - lastCompletedAt)
+                     - idleSkillDecay(anchor - lastCompletedAt);
+            if (drop > 0 && nowMs >= anchor) {
+                int cur = skill.get();
+                int next = Math.max(0, cur - drop);
+                if (next < cur) skill.compareAndSet(cur, next);
+            }
+            if (nowMs > lastDecayAt) lastDecayAt = nowMs;
+        }
+    }
+
+    // ── #131 (H40): idle skill decay — skill is CURRENT capability, not a
+    // high-water mark ──
+    // Without this, an agent that stops completing jobs keeps claim-rights to
+    // high-difficulty jobs forever (claim()'s skill gate stays wedged open).
+    /** Epoch-ms of the participant's last completed job (0 = never). Kept on
+     *  the owning Participant itself; DePIN walks its map on each tick. */
+    public static final long IDLE_DECAY_AFTER_MS = 24L * 60 * 60 * 1000;
+    /** skill points removed per full idle period past the threshold. */
+    public static final int IDLE_DECAY_PER_PERIOD = 1;
+
+    /** skill points to remove after `idleMs` of no completed jobs. Pure —
+     *  kept beside tier() so the decay constants and tier bands stay in sync. */
+    public static int idleSkillDecay(long idleMs) {
+        if (idleMs <= IDLE_DECAY_AFTER_MS) return 0;
+        long periods = (idleMs - IDLE_DECAY_AFTER_MS) / IDLE_DECAY_AFTER_MS;
+        return (int) Math.min(periods * IDLE_DECAY_PER_PERIOD, Integer.MAX_VALUE);
+    }
+
+    /** Re-apply idle decay to every participant. Idempotent (decay is derived
+     *  from lastCompletedAt, so double-ticks never over-decay) and cheap: no
+     *  work when nothing crosses the threshold. Called from the agent cycle. */
+    public synchronized void applyIdleDecay(long nowMs) {
+        for (Participant p : participants.values()) {
+            if (p.lastCompletedAt == 0) continue;   // never completed: skill is 0 already
+            p.applyIdleDecay(nowMs);
         }
     }
 
@@ -101,6 +151,7 @@ public class DePIN {
             if (board.complete(jobId) == null) return 0.0;
             p.skill.incrementAndGet();
             p.completed++;
+            p.lastCompletedAt = System.currentTimeMillis();  // #131 (H40) idle clock
             claims.remove(jobId);
             return j.bounty;
         }

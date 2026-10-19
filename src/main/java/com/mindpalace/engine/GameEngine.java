@@ -7033,6 +7033,49 @@ public class GameEngine {
         }
         if (taxOk) pass++; else fail++;
 
+        // 65. (#131) H40 idle skill decay — tier drops after simulated elapsed
+        //     idle, active (recently-completed) participants keep their tier,
+        //     and decay is idempotent (double-ticks don't over-decay).
+        boolean decayOk = true;
+        try {
+            com.mindpalace.economy.DePIN dDepin = new com.mindpalace.economy.DePIN();
+            dDepin.register("DecayTest", 10.0);
+            // Two completions → skill 2 → tier 2 (tier bands: s>=2 → 2).
+            for (int i = 0; i < 2; i++) {
+                com.mindpalace.economy.Blackboard.Job dj = dDepin.post("decay job " + i, "test", 5.0, 1);
+                decayOk = decayOk && dDepin.claim(dj.id, "DecayTest");
+                dDepin.complete(dj.id);
+            }
+            com.mindpalace.economy.DePIN.Participant dPart = dDepin.participant("DecayTest");
+            int skillAfterJob = dPart.skill.get();
+            decayOk = decayOk && skillAfterJob == 2 && dPart.tier() == 2;
+            long base = dPart.lastCompletedAt;
+            decayOk = decayOk && base > 0;
+            // Fresh completion within the window: tier unchanged.
+            dDepin.applyIdleDecay(base + com.mindpalace.economy.DePIN.IDLE_DECAY_AFTER_MS / 2);
+            decayOk = decayOk && dPart.skill.get() == skillAfterJob;
+            // One full idle period past the threshold: exactly 1 point gone.
+            dDepin.applyIdleDecay(base + com.mindpalace.economy.DePIN.IDLE_DECAY_AFTER_MS * 2);
+            decayOk = decayOk && dPart.skill.get() == Math.max(0, skillAfterJob - 1);
+            // Idempotent: a second tick at the same instant changes nothing.
+            dDepin.applyIdleDecay(base + com.mindpalace.economy.DePIN.IDLE_DECAY_AFTER_MS * 2);
+            decayOk = decayOk && dPart.skill.get() == Math.max(0, skillAfterJob - 1);
+            // Never-completed participants (lastCompletedAt==0) are untouched.
+            dDepin.register("FreshAgent", 10.0);
+            dDepin.applyIdleDecay(base + com.mindpalace.economy.DePIN.IDLE_DECAY_AFTER_MS * 10);
+            decayOk = decayOk && dDepin.participant("FreshAgent").skill.get() == 0
+                && dPart.skill.get() == Math.max(0, skillAfterJob - 3);
+            // Pure math check: under-threshold = 0, over = linear periods.
+            decayOk = decayOk
+                && com.mindpalace.economy.DePIN.idleSkillDecay(com.mindpalace.economy.DePIN.IDLE_DECAY_AFTER_MS) == 0
+                && com.mindpalace.economy.DePIN.idleSkillDecay(com.mindpalace.economy.DePIN.IDLE_DECAY_AFTER_MS * 3 + 1) == 2;
+            System.out.println((decayOk ? "PASS" : "FAIL")
+                + " idle skill decay (tier drops after idle; recent workers keep tier; idempotent)");
+        } catch (Throwable e) {
+            System.out.println("FAIL idle skill decay: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (decayOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
