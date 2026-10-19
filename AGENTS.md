@@ -127,6 +127,12 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 - **backup/** — `Telemetry` (event ledger), `MemoryManager`, `BackupManager`.
 - **deploy/** — `LiveUpdateManager`, `PatchManager`, `DeployManager`,
   `AnimationSystem`.
+- **integration/** — external feed adapters: `GitHubPollBridge` (polls
+  `hermes-queue`-labeled GitHub issues → local `TASK_####_*.md` task files
+  for Hermes), `RedditOAuthClient` + `OAuthCallbackServer` (Reddit OAuth2
+  flow), `RedditToQuorumBridge` (top subreddit posts → `community_suggestion`
+  quorum proposals), `ContextBroadcaster`. Wired in from `AgentManager`
+  (`initGitHub`, `initReddit`).
 
 ## Where data lives
 - `AIGEN_SYS/mindpalace_memory/telemetry.db` (i.e. `C:\Users\viper\AIGEN_SYS\mindpalace_memory\telemetry.db`,
