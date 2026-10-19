@@ -380,6 +380,137 @@ public class AgentManager {
         return raised;
     }
 
+    // ── #127 (H35): issue-verdict pipeline (quorum → ADD-ONLY comment) ──
+
+    /** #127: min ms between issue-verdict scans (paced like other GitHub work). */
+    private static final long ISSUE_VERDICT_COOLDOWN_MS = 30 * 60 * 1000L;
+    /** #127: max issue-verdict comments per scan (newest first). */
+    static final int ISSUE_VERDICT_CAP = 3;
+    private long lastIssueVerdictMs = 0L;
+    /** #127 never-twice: "issueNum#STATUS" keys already posted this JVM run. */
+    private final java.util.Set<String> postedVerdictKeys = new java.util.HashSet<>();
+    /** #127 selftest seam: force the verdict status (skip the live vote round). */
+    private volatile String issueVerdictOverride = null;
+    public void setIssueVerdictOverride(String status) { this.issueVerdictOverride = status; }
+    /** #127 selftest seam: recording poster (null → live GitHubClient POST). */
+    private java.util.function.BiPredicate<Integer, String> verdictCommentPoster;
+    public void setVerdictCommentPoster(java.util.function.BiPredicate<Integer, String> poster) {
+        this.verdictCommentPoster = poster;
+    }
+    /** #127 selftest seam: replace the issue read (null → live listOpenIssues). */
+    private java.util.function.Supplier<java.util.List<com.mindpalace.github.GitHubClient.OpenIssue>> openIssueSource;
+    public void setOpenIssueSource(
+            java.util.function.Supplier<java.util.List<com.mindpalace.github.GitHubClient.OpenIssue>> source) {
+        this.openIssueSource = source;
+    }
+
+    /**
+     * #127 (H35): quorum-vote the current room's open GitHub issues and post
+     * each verdict as an ADD-ONLY issue comment. The comment endpoint can
+     * never close or edit an issue, so add-only is structural, not a promise.
+     * Paced (ISSUE_VERDICT_COOLDOWN_MS between scans) and never-twice per
+     * (issue, verdict): the same status is never re-posted on the same issue
+     * this JVM run; a CHANGED verdict posts once (an update, not a repeat).
+     * Returns the number of verdict comments posted.
+     */
+    public int voteIssueVerdicts() {
+        // The forced verdict exists ONLY in selftest, and selftest must also
+        // inject its own issue source — a seamed-but-live combo can never
+        // reach GitHub. Live mode (selfTest=false) ignores the override.
+        String seamVerdict = selfTest ? issueVerdictOverride : null;
+        if (selfTest && (openIssueSource == null || seamVerdict == null)) return 0;
+        if (github == null && openIssueSource == null) return 0;
+        Room room = currentRoom; // #106: snapshot once per call
+        String repo = room == null ? null : room.getRepoName();
+        if (repo == null && openIssueSource == null) return 0;
+        long now = System.currentTimeMillis();
+        // Cooldown is live-path pacing only; selftest seams bypass it.
+        if (openIssueSource == null && now - lastIssueVerdictMs < ISSUE_VERDICT_COOLDOWN_MS) return 0;
+        lastIssueVerdictMs = now;
+
+        java.util.List<com.mindpalace.github.GitHubClient.OpenIssue> open;
+        try {
+            open = openIssueSource != null ? openIssueSource.get() : github.listOpenIssues(repo);
+        } catch (Exception e) {
+            log("[AgentManager] issue-verdict scan failed: " + e.getMessage());
+            return 0;
+        }
+        if (open == null || open.isEmpty()) return 0;
+
+        int posted = 0;
+        for (com.mindpalace.github.GitHubClient.OpenIssue issue : open) {
+            if (posted >= ISSUE_VERDICT_CAP) break;
+            String id = "issv-" + issue.number() + "-" + now;
+            String title = issue.title() == null ? "" : issue.title();
+            String body = issue.body() == null ? "" : issue.body();
+            String detail = body.length() > 200 ? body.substring(0, 200) : body;
+            quorum.registerProposal(id,
+                "[issue] #" + issue.number() + " " + asciiPlain(title + " - " + detail),
+                new HexCoord(0, 0), "issue_verdict");
+            quorum.advanceTimePulse(0.05);
+            // NOTE: no finishCycle() here — it CLEARS the proposal registry
+            // (WeightedQuorumVote:finishCycle → proposals.clear()), which
+            // would kill the votes below with "unknown proposal". The #101
+            // cap evicts the registry's oldest entries, and each normal
+            // quorum cycle's own finishCycle sweeps stragglers.
+
+            WeightedQuorumVote.QuorumResult r = null;
+            if (seamVerdict == null && !selfTest) {
+                r = quorum.actualVote(id, modelScheduler);
+            } else if (selfTest && seamVerdict == null) {
+                for (String voter : quorum.allModelsMap().keySet())
+                    quorum.castVote(id, voter, WeightedQuorumVote.Vote.APPROVE);
+                r = quorum.calculateQuorum(id);
+            }
+            String status = seamVerdict != null ? seamVerdict
+                : (r == null ? null : r.status);
+            if (!"APPROVED".equals(status) && !"REJECTED".equals(status)) {
+                continue; // NO_QUORUM / BLINDED: no comment
+            }
+
+            String comment = "**Quorum " + status + "** on issue #" + issue.number() + " ("
+                + (r == null ? "(seam verdict)" : String.format("ok:%d no:%d blind:%d abstain:%d",
+                    r.approve, r.reject, r.blind, r.abstain))
+                + ", weight " + (r == null ? "n/a" : String.format("%.2f", r.weightedApprove))
+                + ", cycle " + id + ")\n\n"
+                + "Proposed: " + asciiPlain(title) + "\n\n"
+                + "The verdict is advisory and ADD-ONLY: the agents vote and comment,"
+                + " but never close, edit or delete issues.";
+
+            String key = issue.number() + "#" + status;
+            if (!postedVerdictKeys.add(key)) continue; // never-twice
+            boolean ok = false;
+            try {
+                ok = verdictCommentPoster != null
+                    ? verdictCommentPoster.test(issue.number(), comment)
+                    : github.addIssueComment(repo, issue.number(), comment);
+            } catch (Exception e) {
+                log("[AgentManager] issue-verdict post failed for #" + issue.number() + ": " + e.getMessage());
+            }
+            if (ok) {
+                posted++;
+                log("[AgentManager] issue verdict " + status + " posted as comment on #"
+                    + issue.number() + " (" + repo + ")");
+                if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.ISSUE,
+                    "issue-verdict-" + status, "#" + issue.number());
+            } else {
+                postedVerdictKeys.remove(key); // #103 doctrine: failed post retries next cycle
+            }
+        }
+        return posted;
+    }
+
+    /** #127: ASCII-plain rendering for voter/comment surfaces (cp1252 doctrine). */
+    private static String asciiPlain(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= 0x7F) { sb.append('?'); continue; }
+            sb.append(Character.isWhitespace(c) ? ' ' : c); // #127: newline/CR/tab → space
+        }
+        return sb.toString();
+    }
+
     // ── User chat ──
 
     /** User sends a message — the guide replies directly (immediate, no 5-min wait). */
@@ -470,6 +601,18 @@ public class AgentManager {
             }
         } catch (Exception e) {
             log("[AgentManager] lexical bridge error: " + e.getMessage());
+        }
+
+        // #127 (H35): quorum-vote the room's open GitHub issues and post each
+        // verdict as an ADD-ONLY issue comment (cooldown + never-twice gate
+        // the method's own; empty room/failures are no-ops by design).
+        try {
+            int verdicts = voteIssueVerdicts();
+            if (verdicts > 0 && telemetry != null) telemetry.record(
+                com.mindpalace.backup.Telemetry.ISSUE,
+                "issue-verdicts", String.valueOf(verdicts));
+        } catch (Exception e) {
+            log("[AgentManager] issue-verdict cycle failed: " + e.getMessage());
         }
     }
 

@@ -371,4 +371,24 @@ public class GitHubClient {
             return resp.isSuccessful();
         }
     }
+
+    /**
+     * #127 (H35): post a comment on an issue — ADD-ONLY. Never closes or edits
+     * the issue (the roadmap's own note); this endpoint (POST /issues/{n}/comments)
+     * is incapable of either. Used by the step-92 verdict pipeline: each open
+     * issue is quorum-voted and the verdict lands as a plain comment.
+     */
+    public boolean addIssueComment(String repoName, int issueNumber, String body) throws IOException {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("body", body);
+        RequestBody reqBody = RequestBody.create(payload.toString(), MediaType.parse("application/json"));
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/issues/" + issueNumber + "/comments")
+            .header("Authorization", "token " + token)
+            .post(reqBody)
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            return resp.isSuccessful();
+        }
+    }
 }

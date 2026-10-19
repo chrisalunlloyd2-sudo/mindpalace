@@ -6891,6 +6891,72 @@ public class GameEngine {
         }
         if (healthOk) pass++; else fail++;
 
+        // 62. (#127) issue-verdict pipeline — quorum-vote an open issue and
+        //     post the verdict as an ADD-ONLY comment. All three seams are
+        //     exercised: injected issue source (no live GitHub read), forced
+        //     verdict (no live vote round), recording poster (no live POST).
+        //     Claims: (a) forced-APPROVED posts once and the poster got the
+        //     comment body with the issue number; (b) the never-twice gate
+        //     suppresses the repeat on re-scan; (c) a NO_QUORUM status posts
+        //     nothing; (d) a POST marked failed is retried on the next scan
+        //     (#103 doctrine: failure is not recorded as done).
+        boolean verdictOk = false;
+        try {
+            Class<?> amc = Class.forName("com.mindpalace.agent.AgentManager");
+            Object am = amc.getDeclaredConstructor().newInstance();
+            amc.getMethod("setSelfTest", boolean.class).invoke(am, true);
+            Class<?> rmC = Class.forName("com.mindpalace.world.Room");
+            Object roomObj = rmC.getDeclaredConstructor(String.class)
+                .newInstance("selftest-verdict-repo");
+            Class<?> bmC = Class.forName("com.mindpalace.world.Book");
+            java.nio.file.Path vbase = Files.createTempDirectory("mp-selftest-verdict");
+            Object bookObj = bmC.getDeclaredConstructor(String.class, String.class)
+                .newInstance("selftest-verdict", vbase.resolve("v.md").toString());
+            amc.getMethod("setContext", rmC, bmC).invoke(am, roomObj, bookObj);
+
+            java.util.List<Object> issues = new java.util.ArrayList<Object>();
+            Class<?> oiC = Class.forName("com.mindpalace.github.GitHubClient$OpenIssue");
+            issues.add(oiC.getDeclaredConstructor(int.class, String.class, String.class)
+                .newInstance(4242, "Verdict check issue", "body text"));
+            amc.getMethod("setOpenIssueSource", java.util.function.Supplier.class)
+                .invoke(am, (java.util.function.Supplier<java.util.List<?>>) () -> issues);
+            final java.util.List<String> posted = new java.util.ArrayList<>();
+            java.util.function.BiPredicate<Integer, String> poster = (num, body) -> {
+                posted.add(num + ":" + (body.contains("Quorum APPROVED") ? "A" : "S"));
+                return true;
+            };
+            amc.getMethod("setVerdictCommentPoster", java.util.function.BiPredicate.class)
+                .invoke(am, poster);
+            amc.getMethod("setIssueVerdictOverride", String.class).invoke(am, "APPROVED");
+
+            int first = (Integer) amc.getMethod("voteIssueVerdicts").invoke(am);
+            int again = (Integer) amc.getMethod("voteIssueVerdicts").invoke(am);
+            amc.getMethod("setIssueVerdictOverride", String.class).invoke(am, "NO_QUORUM");
+            int none = (Integer) amc.getMethod("voteIssueVerdicts").invoke(am);
+            // Failed post → retry next scan (failure is not recorded as done).
+            amc.getMethod("setVerdictCommentPoster", java.util.function.BiPredicate.class)
+                .invoke(am, (java.util.function.BiPredicate<Integer, String>) (n, b) -> false);
+            amc.getMethod("setIssueVerdictOverride", String.class).invoke(am, "REJECTED");
+            int failPost = (Integer) amc.getMethod("voteIssueVerdicts").invoke(am);
+            amc.getMethod("setVerdictCommentPoster", java.util.function.BiPredicate.class)
+                .invoke(am, poster);
+            int retried = (Integer) amc.getMethod("voteIssueVerdicts").invoke(am);
+
+            verdictOk = first == 1 && again == 0 && none == 0
+                && posted.size() == 2 && posted.get(0).equals("4242:A")
+                && posted.get(1).equals("4242:S") // REJECTED retry = CHANGED verdict, posts once
+                && failPost == 0 && retried == 1;
+            System.out.println((verdictOk ? "PASS" : "FAIL")
+                + " issue-verdict pipeline (seamed quorum votes an injected issue, posts ADD-ONLY comment: once, gated, retry-on-post-fail)");
+            if (!verdictOk) System.out.println("  first=" + first + " again=" + again
+                + " none=" + none + " posted=" + posted + " failPost=" + failPost
+                + " retried=" + retried);
+        } catch (Throwable e) {
+            System.out.println("FAIL issue-verdict pipeline: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (verdictOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
