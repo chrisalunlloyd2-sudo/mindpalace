@@ -13,13 +13,26 @@ import java.util.*;
  * 2. A SQLite DB records every code snippet ever written (content-hashed),
  *    so identical code is never generated twice.
  * 3. A "never make mistakes twice" DB records error signatures + fixes.
+ *
+ * PERF-A4 (t_2fb1bde4 outcome task): recordCode() used to run its
+ * INSERT OR IGNORE synchronously on the calling (agent/edit) thread — one
+ * more NativeDB.step in the frame path family. Now:
+ *   - The never-twice verdict is answered from an in-memory hash set seeded
+ *     from code_seen at start() — O(hash) per call, zero driver I/O.
+ *   - New snippets are INSERTed via the shared single-writer thread
+ *     (SqliteWriter, WAL + batched transactions).
  */
 public class MemoryManager {
     private final Path dataDir;
-    private Connection db;
+    private Connection db;            // legacy reader connection (read-only use)
 
     // Theta curve: soft cap. Growth slows as size approaches this.
     private static final long THETA_BYTES = 50_000_000; // 50MB soft cap for logs
+
+    // PERF-A4: async writer + in-memory never-twice mirror ------------
+    private SqliteWriter writer;
+    /** Content hashes of every snippet (memory set + durable ledger). */
+    private final Set<String> seenHashes = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public MemoryManager(String dataDir) {
         this.dataDir = Path.of(dataDir);
@@ -28,12 +41,21 @@ public class MemoryManager {
     public void start() {
         try {
             Files.createDirectories(dataDir);
-            db = DriverManager.getConnection("jdbc:sqlite:" + dataDir.resolve("memory.db"));
+            Path file = dataDir.resolve("memory.db");
+            db = DriverManager.getConnection("jdbc:sqlite:" + file);
             initSchema();
+            // PERF-A4: single background writer owns every write; WAL keeps
+            // this reader connection usable while rows land asynchronously.
+            try (Statement st = db.createStatement()) {
+                st.execute("PRAGMA busy_timeout=5000");
+            }
+            seedHashes();
+            writer = new SqliteWriter("memory", file, null);
             System.out.println("[Memory] Self-managing memory DB ready at " + dataDir);
         } catch (Exception e) {
             System.err.println("[Memory] DB init failed: " + e.getMessage());
             db = null;
+            writer = null;
         }
     }
 
@@ -48,37 +70,45 @@ public class MemoryManager {
         }
     }
 
-    /** Record a code snippet. Returns true if it's NEW (never seen before). */
-    public boolean recordCode(String snippet, String lang) {
-        if (db == null) return true;
-        String hash = sha1(snippet);
-        try (PreparedStatement ps = db.prepareStatement(
-                "INSERT OR IGNORE INTO code_seen(hash, snippet, lang, created_at) VALUES(?,?,?,?)")) {
-            ps.setString(1, hash);
-            ps.setString(2, snippet.length() > 2000 ? snippet.substring(0, 2000) : snippet);
-            ps.setString(3, lang);
-            ps.setLong(4, System.currentTimeMillis());
-            int changed = ps.executeUpdate();
-            return changed > 0; // true = new, false = already seen
-        } catch (SQLException e) {
-            return true;
-        }
+    /** Load existing content-hashes once (never-twice survives restarts). */
+    private void seedHashes() {
+        if (db == null) return;
+        try (Statement st = db.createStatement();
+             ResultSet rs = st.executeQuery("SELECT hash FROM code_seen")) {
+            while (rs.next()) seenHashes.add(rs.getString(1));
+        } catch (SQLException ignored) {}
     }
 
-    /** Record an error + its fix. Returns true if this error is NEW. */
+    /**
+     * Record a code snippet. Returns true if it's NEW (never seen before).
+     *
+     * PERF-A4: verdict from the in-memory set (synchronous, O(1)); the INSERT
+     * rides the async single-writer thread.
+     */
+    public boolean recordCode(String snippet, String lang) {
+        String hash = sha1(snippet);
+        if (!seenHashes.add(hash)) return false; // already seen (memory verdict)
+        if (writer == null) return true;         // degraded mode = always new
+        boolean ok = writer.submit(
+            "INSERT OR IGNORE INTO code_seen(hash, snippet, lang, created_at) VALUES(?,?,?,?)",
+            new Object[]{hash,
+                snippet.length() > 2000 ? snippet.substring(0, 2000) : snippet,
+                lang, System.currentTimeMillis()});
+        if (!ok) seenHashes.remove(hash); // shed: allow retry later
+        return true;
+    }
+
+    /**
+     * Record an error + its fix. Returns true if this error is NEW. Asynchronous
+     * via the single-writer thread; the synchronous boolean is legacy semantics
+     * (callers never branch on it in-tree).
+     */
     public boolean recordMistake(String signature, String fix) {
-        if (db == null) return true;
-        try (PreparedStatement ps = db.prepareStatement(
-                "INSERT INTO mistakes(signature, fix, count, last_seen) VALUES(?,?,1,?) "
-                + "ON CONFLICT(signature) DO UPDATE SET count=count+1, last_seen=excluded.last_seen")) {
-            ps.setString(1, signature);
-            ps.setString(2, fix);
-            ps.setLong(3, System.currentTimeMillis());
-            ps.executeUpdate();
-            return true;
-        } catch (SQLException e) {
-            return true;
-        }
+        if (writer == null) return true;
+        return writer.submit(
+            "INSERT INTO mistakes(signature, fix, count, last_seen) VALUES(?,?,1,?) "
+            + "ON CONFLICT(signature) DO UPDATE SET count=count+1, last_seen=excluded.last_seen",
+            new Object[]{signature, fix, System.currentTimeMillis()});
     }
 
     /** Look up a known fix for an error signature (never make mistakes twice). */
@@ -134,7 +164,9 @@ public class MemoryManager {
         } catch (Exception e) { return Integer.toHexString(s.hashCode()); }
     }
 
+    /** Stop the async writer (drains queued rows, bounded), close readers. */
     public void stop() {
+        if (writer != null) writer.close();
         if (db != null) { try { db.close(); } catch (SQLException ignored) {} }
     }
 }
