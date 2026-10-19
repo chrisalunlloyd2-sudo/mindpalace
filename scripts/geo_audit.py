@@ -82,15 +82,19 @@ def _vec(v, n=3):
 
 
 def parse_dump(dirpath):
-    """-> {wp_label: {kind: [records...]}}  (+ 'kinds' per file)."""
+    """-> {wp_label: {kind: [records...]}}.
+
+    Java writes ONE file (geo_records.jsonl) with a {"wp":...} header line
+    starting each waypoint block; legacy one-file-per-wp dirs also parse.
+    """
     dumps = {}
     for fn in sorted(os.listdir(dirpath)):
         if not fn.endswith(".jsonl"):
             continue
-        wp = fn[:-6]
+        file_wp = fn[:-6]
         buckets = defaultdict(list)
+        block_wp = file_wp
         with open(os.path.join(dirpath, fn), encoding="utf-8", errors="replace") as fh:
-            block_wp = None
             for raw in fh:
                 raw = raw.strip()
                 if not raw:
@@ -99,21 +103,21 @@ def parse_dump(dirpath):
                     rec = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(rec, dict):
+                    continue
                 if "wp" in rec:
                     block_wp = rec["wp"]
-                    continue
-                if block_wp and block_wp != wp and not wp.endswith("#sweep"):
-                    # defensive: mislabeled file — keep file label
-                    pass
-                if not isinstance(rec, dict):
+                    buckets = buckets if block_wp in dumps else defaultdict(list)
+                    dumps[block_wp] = buckets
                     continue
                 k = rec.get("k")
                 if k == "cs":
-                    continue          # collapse trailer — counts derived live
+                    continue          # trailer embedded in record itself
                 if k in WORLD_KINDS:
                     buckets[k].append(rec)
-        dumps[wp] = dict(buckets)
-    return dumps
+        if buckets and file_wp not in dumps:
+            dumps[file_wp] = dict(buckets)
+    return {wp: dict(b) for wp, b in dumps.items()}
 
 
 def check_degenerate(recs, wp, out):
@@ -153,24 +157,35 @@ def check_underground(recs, wp, out):
 
 
 def check_floaters(recs, wp, out):
-    """C: cube resting strictly above walkable floor without support evidence.
-
-    Only flags non-wall kinds (walls legitimately float in hallways); a cube
-    whose bottom sits > FLOATER_MARGIN above y=0 AND isn't a wall segment.
-    """
+    """C: free-standing props hovering with no support, on the palace ground
+    plane only (y 0..HALLWAY_HEIGHT; above that = 2nd storey / ceiling)."""
     for rec in recs:
         k = rec.get("k", "?")
         if k not in ("cube", "cubeColor", "hologram", "hexPrismColor", "hexPrism"):
             continue
+        cs = rec.get("cs", "")
+        if cs.startswith("OutsideWorld"):
+            continue              # terrain sits on its own ground plane; no
+                                  # shared y=0 reference in the dump
         c = _vec(rec.get("c"), 3)
         s = _vec(rec.get("s"), 3)
         if not c or not s:
             continue
         bottom = c[1] - abs(s[1]) / 2.0
-        if bottom > FLOATER_MARGIN and k != "hologram":
-            out.append(Finding("C_floater", wp, k,
-                               "bottom %.2f above floor (size %s)"
-                               % (bottom, [round(v, 2) for v in s]), c))
+        if not (FLOATER_MARGIN < bottom <= HALLWAY_HEIGHT + 0.05):
+            continue              # floor-standing, or above hallway top
+        adims = sorted(abs(v) for v in s)
+        if adims[0] <= WALL_THICKNESS * 1.5:
+            continue              # thin slab: wall segment / poster / sign
+        # flat plate (y-dim smallest): shelf top / roof / tabletop; rests on
+        # other geometry by design, not a hovering prop
+        if abs(s[1]) < min(abs(s[0]), abs(s[2])):
+            continue
+        if k == "hologram":
+            continue              # holo draws hover intentionally
+        out.append(Finding("C_floater", wp, k,
+                           "bottom %.2f above floor (size %s) call %s"
+                           % (bottom, [round(v, 2) for v in s], cs), c))
 
 
 def _key(rec, fields, eps):
@@ -214,7 +229,12 @@ def check_walls(recs, wp, out):
 
 
 def check_wall_runs(recs, wp, out):
-    """E real: cluster thin vertical slabs by wall line, then find gaps."""
+    """E real: cluster thin vertical slabs by wall line, then find gaps.
+
+    A gap is a defect only if no slab spans over it (lintel / header above
+    the opening) AND the gap is inside [WALL_GAP_MIN, WALL_GAP_MAX] —
+    anything wider is an intentional doorway/crossing by construction.
+    """
     slabs = []
     for rec in recs:
         k = rec.get("k", "?")
@@ -228,10 +248,23 @@ def check_wall_runs(recs, wp, out):
         if abs(s[dims[0]]) > WALL_THICKNESS * 1.5:
             continue                      # not a thin slab
         slabs.append((c, s, dims))
-    # group by orientation+line: axis of the thin dim and its position
+    # group by orientation+line: axis of the thin dim and its position.
+    # Wall-run audit wants actual WALL slabs (~0.25 thick), not the thin
+    # trim that shares the wall plane (posters 0.04-0.06, signs 0.02-0.04,
+    # door-frame 0.1). Segments formed from mixed trim produce fake gaps
+    # (a poster-to-poster spacing is not a hole in a wall), so require the
+    # run axis extent AND the thin dim to look like wall masonry.
     groups = defaultdict(list)
     for c, s, dims in slabs:
         thin, mid, long_ = dims
+        st, sm, sl = abs(s[thin]), abs(s[mid]), abs(s[long_])
+        if st < WALL_THICKNESS * 0.5:
+            continue                      # trim/poster/sign thin < 0.1
+        if sm * sl < 1.2:
+            continue                      # small props, not wall panels
+        # wall panel: runs tall (h≈3-4) and stretches along the run axis
+        if not (sm >= 1.0 or sl >= 3.0):
+            continue                      # (0.25,1.2,1.6) door-frame heads kept
         axis_pos = round(c[thin], 2)
         groups[(thin, axis_pos)].append((c, s, long_))
     for (thin, axp), lst in groups.items():
@@ -241,18 +274,31 @@ def check_wall_runs(recs, wp, out):
         if not horiz:
             continue
         axis_h = horiz[0]
-        positions = sorted(c[axis_h] for c, s, l_ in lst)
-        for i in range(1, len(positions)):
-            gap = positions[i] - positions[i - 1]
-            if WALL_GAP_MIN <= gap <= WALL_GAP_MAX:
-                out.append(Finding(
-                    "E_walls", wp, "wall_run",
-                    "gap %.2f m on axis-%d line %.2f between %.2f..%.2f "
-                    "(no door-hole evidence in dump)" % (gap, axis_h, axp,
-                                                         positions[i - 1], positions[i]),
-                    c := [axp if axis_h == 0 else positions[i - 1],
-                          0.0,
-                          positions[i - 1] if axis_h == 2 else 0.0]))
+        spans = sorted((c[axis_h] - abs(s[axis_h]) / 2.0,
+                        c[axis_h] + abs(s[axis_h]) / 2.0)
+                       for c, s, l_ in lst)
+        for i in range(1, len(spans)):
+            lo_prev, hi_prev = spans[i - 1]
+            lo_cur, hi_cur = spans[i]
+            gap = lo_cur - hi_prev
+            if not (WALL_GAP_MIN <= gap <= WALL_GAP_MAX):
+                continue
+            # lintel evidence: another slab on this line spans across the gap
+            bridged = any(not (b <= hi_prev or a >= hi_cur)
+                          and (b - a) >= gap * 0.6
+                          and a <= hi_prev + 0.01 and b >= lo_cur - 0.01
+                          for a, b in spans if (a, b) not in
+                          ((lo_prev, hi_prev), (lo_cur, hi_cur)))
+            if bridged:
+                continue              # header/lintel over the opening
+            out.append(Finding(
+                "E_walls", wp, "wall_run",
+                "gap %.2f m on axis-%d line %.2f between %.2f..%.2f "
+                "(no door-hole evidence in dump)" % (gap, axis_h, axp,
+                                                     hi_prev, lo_cur),
+                [axp if axis_h == 0 else (hi_prev + lo_cur) / 2.0,
+                 0.0,
+                 (hi_prev + lo_cur) / 2.0 if axis_h == 2 else 0.0]))
 
 
 def check_spheres(recs, wp, out):
@@ -347,7 +393,7 @@ def selftest():
     # -- fixture 2: clean
     _mk(tmp, "w2", [{"k": "cube", "c": [0, 1, 0], "s": [1, 2, 1], "tex": 1}])
     dumps = parse_dump(tmp)
-    expect(len(dumps) == 2, "parse_dump found 2 files")
+    expect(len(dumps) == 2, "parse_dump found 2 files (w3 from earlier run stays)")
     expect(len(dumps.get("w1", {}).get("cube", [])) == 5, "w1 cube count")
     f = analyze(dumps)
     buckets = Counter(x.bucket for x in f)
@@ -362,16 +408,19 @@ def selftest():
         {"k": "cubeYaw", "c": [-3, 2, -4], "s": [0.2, 4, 2], "tex": 1},
         {"k": "cubeYaw", "c": [-3, 2, -7.5], "s": [0.2, 4, 2], "tex": 1},
     ])  # 3.5m gap -> intentional (within max), just below 4m — flagged? no: 3.5<=4.0
-    # use 4.5m gap -> intentional
+    # edge-to-edge gap: slabs at -4 / -7.5 => 1.5m gap, inside [0.3, 4.0] ->
+    # flagged (w3 is also the fixture1 leftover? no: fixture3 rewrites w3).
+    # Then slabs at -4 / -10.5 => 4.5m edge gap > WALL_GAP_MAX = intentional
+    # opening, must NOT be flagged.
     with open(os.path.join(tmp, "w3.jsonl"), "w", encoding="utf-8") as fh:
         fh.write(json.dumps({"wp": "w3"}) + "\n")
         fh.write(json.dumps({"k": "cubeYaw", "c": [-3, 2, -4],
                              "s": [0.2, 4, 2], "tex": 1}) + "\n")
-        fh.write(json.dumps({"k": "cubeYaw", "c": [-3, 2, -9.5],
+        fh.write(json.dumps({"k": "cubeYaw", "c": [-3, 2, -10.5],
                              "s": [0.2, 4, 2], "tex": 1}) + "\n")
     f3 = analyze(parse_dump(tmp))
     expect(not any(x.wp == "w3" and x.bucket == "E_walls" for x in f3),
-           "w3 5.5m gap = intentional, not flagged")
+           "w3 4.5m edge gap = intentional, not flagged")
 
     return 0 if ok else 1
 
