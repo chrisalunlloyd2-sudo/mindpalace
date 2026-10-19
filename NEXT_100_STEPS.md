@@ -69,7 +69,7 @@
 - [x] **94** H36a nightly 143-repo sweep — quota-free bot job (scripts/repo_sweep.py + RepoSweepData.ingest; cfaa673 lineage)
 - [x] **95** H37 commit engravings — last 10 commits per repo rendered at the room door (0e83613: `renderCommitEngravings`; local rooms via `git log -10` in RepoMapper, remote-only rooms via `GitHubClient` /commits with a 10-min cache)
 - [ ] **96** H38 push gate — autonomous upsertFile requires quorum APPROVED on the exact diff + critic pass
-- [ ] **97** PR preview branch — agent edits land on `agent/<step>` branches; human merges (safety before trust)
+- [x] **97** PR preview branch — DECIDED 2026-10-18 (#129): DECLINED as not-needed-today. ToolExecutor writes are LOCAL-SANDBOX only (base-path confined, no git/push), so nothing autonomous lands on a default branch. RULE for the future: if an in-game push path ever lands (post-#126 ToolExecutor veto wiring), all autonomous writes go to `agent/<step>` branches, human merges (option 1)
 - [x] **98** Weekly self-report (H50) — metrics + phases + next steps as issue comment + reports/ (scout_bot --weeklyreport: telemetry 7d pulse + NEXT_100_STEPS phase table + queue head -> reports/2026-Www.md + step-log #9, 7d guard, quota-free; wired into cascade_dev.sh step 9)
 
 ## PHASE E/F/G — Economy, Flash, Modules (99–150)
@@ -96,4 +96,4 @@
 ## For Architect review
 1. Approve step order (A-cont → B walls/forest → C bots → D releases → E/F/G)?
 2. Version scheme ok (0.x.0 per phase, exe on every green phase)?
-3. PR-preview-branch safety (97) before autonomous pushes — yes/no?
+3. PR-preview-branch safety (97) — ANSWERED 2026-10-18 via #129: no (declined — writes are sandbox-local; branch gate becomes LAW if an in-game push path ever lands)
