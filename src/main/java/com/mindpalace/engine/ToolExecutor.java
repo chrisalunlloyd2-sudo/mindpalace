@@ -95,8 +95,11 @@ public final class ToolExecutor {
 
         Files.createDirectories(p.getParent());
         Files.writeString(p, content);
+        // H42 (#133): writes log cost+outcome for the Sunday bill — cost is
+        // chars/4 (approx tokens, same math as the #130 compute tax), the
+        // outcome is the event name (create/edit) + filename in detail.
         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE,
-            mustBeNew ? "create" : "edit", filename);
+            mustBeNew ? "create" : "edit", filename, content.length() / 4.0);
         return new ToolResult(true, (mustBeNew ? "created " : "edited ") + filename);
     }
 

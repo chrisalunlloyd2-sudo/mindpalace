@@ -7126,6 +7126,31 @@ public class GameEngine {
             energyOk = false;
         }
         if (energyOk) pass++; else fail++;
+        if (energyOk) pass++; else fail++;
+
+        // 67. (#133) H42 cost telemetry — cost column + bill query; write
+        //     events carry chars/4; costSummary sums per category.
+        boolean costOk;
+        try {
+            java.nio.file.Path cdir = java.nio.file.Files.createTempDirectory("mpcost");
+            com.mindpalace.backup.Telemetry tc =
+                new com.mindpalace.backup.Telemetry(cdir);
+            tc.record(com.mindpalace.backup.Telemetry.CODE, "create", "A.java", 10.0);
+            tc.record(com.mindpalace.backup.Telemetry.CODE, "edit", "B.py", 2.5);
+            tc.record(com.mindpalace.backup.Telemetry.AGENT, "tool_round"); // free
+            boolean wrote = tc.costSummary(7L * 24 * 3600 * 1000).contains("code=13")
+                && tc.costSummary(7L * 24 * 3600 * 1000).contains("total=13u");
+            boolean windowOk = tc.costSummary(1L).contains("no cost rows");
+            boolean legacy = tc.record(com.mindpalace.backup.Telemetry.CODE, "delete", "C.txt");
+            costOk = wrote && windowOk && legacy;
+            System.out.println((costOk ? "PASS" : "FAIL")
+                + " cost telemetry (cost column+bill query; chars/4 write costs)");
+        } catch (Throwable e) {
+            System.out.println("FAIL cost telemetry: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+            costOk = false;
+        }
+        if (costOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

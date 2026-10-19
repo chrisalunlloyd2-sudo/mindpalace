@@ -68,7 +68,7 @@ self-report digest ships automatically for 2 consecutive weeks.
 
 ## Standing rules for the whole quarter
 
-1. **Cascade or it didn't happen** — build → selftest (85/0) → E2E →
+1. **Cascade or it didn't happen** — build → selftest (87/0) → E2E →
    commit → push → step-log evidence, every step (CONTRIBUTING.md).
 2. **Nothing lives forever, nothing runs for free, always advancing** —
    every week ends with a pushed artifact, even if the milestone slipped.

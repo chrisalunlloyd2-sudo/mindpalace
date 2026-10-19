@@ -57,6 +57,9 @@ public final class Telemetry {
                     + "category TEXT NOT NULL,"
                     + "event TEXT NOT NULL,"
                     + "detail TEXT)");
+                // H42 (#133): cost column, added idempotently for pre-existing DBs.
+                try { st.execute("ALTER TABLE events ADD COLUMN cost REAL"); }
+                catch (SQLException alreadyThere) { /* column exists */ }
                 st.execute("CREATE INDEX IF NOT EXISTS idx_events_cat ON events(category)");
                 st.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)");
             }
@@ -97,6 +100,65 @@ public final class Telemetry {
     /** Convenience: record with no detail. */
     public boolean record(String category, String event) {
         return record(category, event, null);
+    }
+
+    /** H42 (#133): record with an explicit cost figure (units — DePIN
+     *  credits, approx tokens, anything bill-shaped). The bill query is
+     *  costSummary(); NULL-cost rows (old events) just don't sum in. */
+    public boolean record(String category, String event, String detail, double cost) {
+        return recordCost(category, event, detail, cost);
+    }
+
+    private synchronized boolean recordCost(String category, String event,
+                                            String detail, Double cost) {
+        if (db == null) return false;
+        long now = System.currentTimeMillis();
+        if (minIntervalMs > 0) {
+            Long last = lastEmit.get(category);
+            if (last != null && now - last < minIntervalMs) return false; // paced
+        }
+        lastEmit.put(category, now);
+        try (PreparedStatement ps = db.prepareStatement(
+                "INSERT INTO events(ts, category, event, detail, cost) VALUES(?,?,?,?,?)")) {
+            ps.setLong(1, now);
+            ps.setString(2, category);
+            ps.setString(3, event);
+            ps.setString(4, detail == null ? null : (detail.length() > 2000 ? detail.substring(0, 2000) : detail));
+            if (cost != null) ps.setDouble(5, cost); else ps.setNull(5, java.sql.Types.REAL);
+            ps.executeUpdate();
+            prune();
+            return true;
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    /** H42 (#133): the weekly bill — summed cost per category over the last
+     *  `windowMs`. "cat=NNNu" lines, cost-free DBs read as "telemetry: none". */
+    public synchronized String costSummary(long windowMs) {
+        if (db == null) return "telemetry: offline";
+        long since = System.currentTimeMillis() - windowMs;
+        StringBuilder sb = new StringBuilder();
+        double total = 0;
+        try (PreparedStatement ps = db.prepareStatement(
+                "SELECT category, SUM(cost) FROM events "
+                    + "WHERE cost IS NOT NULL AND ts >= ? GROUP BY category ORDER BY 2 DESC")) {
+            ps.setLong(1, since);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    double v = rs.getDouble(2);
+                    total += v;
+                    if (sb.length() > 0) sb.append(", ");
+                    sb.append(rs.getString(1)).append('=')
+                        .append(String.format("%.0f", v)).append('u');
+                }
+            }
+        } catch (SQLException e) {
+            return "telemetry: cost query failed";
+        }
+        if (sb.length() == 0) return "telemetry: no cost rows (window)";
+        sb.append(" | total=").append(String.format("%.0f", total)).append('u');
+        return sb.toString();
     }
 
     /** The N most recent events (newest first). */
