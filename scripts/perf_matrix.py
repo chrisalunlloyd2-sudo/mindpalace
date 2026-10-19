@@ -118,6 +118,35 @@ def outlier_rows(frame_lists, load_frame):
     return sorted(out, key=lambda x: -x["frame_ms"])
 
 
+def leaf_histogram(log_paths):
+    """Pooled HitchSampler leaf histogram. Args: Paths to game_stdout.log
+    files (one per run). Two artifact sources are stripped (they are
+    tail/teardown or one-shot cleanup, not per-frame gameplay cost):
+      - PerfCsvLogger.close/Thread.join at finishPerfRun (CSV-writer join)
+      - glfwDestroyWindow at cleanup (window teardown)
+    Both never cross the 200ms mid-run stall threshold in real frames."""
+    import re
+    stripped_markers = ("PerfCsvLogger.close", "glfwDestroyWindow")
+    hist = {}
+    pat = re.compile(r"x(\d+)\s+(.+)")
+    for path in log_paths:
+        path = Path(path) if not isinstance(path, Path) else path
+        if path is None or not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "HitchSampler" not in line:
+                continue
+            m = pat.search(line)
+            if not m:
+                continue
+            if any(mark in line for mark in stripped_markers):
+                continue
+            n = int(m.group(1))
+            leaf = m.group(2).strip().split(" < ")[0]
+            hist[leaf] = hist.get(leaf, 0) + n
+    return hist
+
+
 def prompt_variant(seq, num_predict):
     return (f"Perf matrix probe seq{seq:03d} "
             f"{datetime.now(timezone.utc).isoformat()}. "
@@ -342,7 +371,7 @@ def main():
     # ---- Final aggregation: pool each arm's per-frame rows from disk ----
     arm_blocks = []
     for p, t in arms:
-        frame_lists, oll = [], []
+        frame_lists, oll, run_logs = [], [], []
         contaminated_runs = failed_runs = 0
         for rec in results:
             if rec["arm_predict"] != p or rec["arm_thread"] != t:
@@ -354,8 +383,10 @@ def main():
                 failed_runs += 1
                 continue
             csv_path = Path(rec["run_dir"]) / "perf_frames.csv"
+            log_path = Path(rec["run_dir"]) / "game_stdout.log"
             if csv_path.exists():
                 frame_lists.append(read_csv_full(csv_path))
+                run_logs.append(log_path)
             else:
                 failed_runs += 1
                 continue
@@ -363,6 +394,8 @@ def main():
                 oll.append(rec["ollama"]["tokens_per_s"])
         stats = pooled_stats(frame_lists, args.load_frame) if frame_lists else None
         outliers = outlier_rows(frame_lists, args.load_frame) if frame_lists else []
+        leafs = leaf_histogram(run_logs) if run_logs else {}
+        top_leafs = sorted(leafs.items(), key=lambda kv: -kv[1])[:8]
         block = {"num_predict": p, "num_thread": t,
                  "runs_ok": len(frame_lists),
                  "contaminated_runs": contaminated_runs,
@@ -370,6 +403,7 @@ def main():
                  "windows": stats,
                  "outliers_over_800ms": outliers[:8],
                  "outlier_count": len(outliers),
+                 "hitch_leaf_top": [{"leaf": k, "samples": v} for k, v in top_leafs],
                  "token_s_mean": (round(sum(oll) / len(oll), 1) if oll else None)}
         arm_blocks.append(block)
 
