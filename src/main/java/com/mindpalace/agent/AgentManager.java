@@ -612,6 +612,38 @@ public class AgentManager {
     }
     private java.util.function.Consumer<String> onQuorumVerdict;
 
+    /** T2: current open proposal ids for the mesh vote-sink (set by GameEngine). */
+    private java.util.function.Supplier<java.util.List<String>> openProposalIds;
+
+    /**
+     * T2 mesh-sink: MeshServer forwards verified mesh ballots here; they land
+     * in the existing proposal pipeline via WeightedQuorumVote.castMeshVote
+     * (flat 1.0 weight, ledger outcome=mesh). Proposals map is concurrent and
+     * finishCycle may clear between listing and voting — castMeshVote is
+     * null-safe on unknown ids, so a stale id is fine (409 to the device).
+     */
+    public void sinkMeshVote(String proposalId, String deviceName, String voteText) {
+        if (proposalId == null || proposalId.isBlank()) {
+            // No id given: vote on the most recent open proposal, if any.
+            java.util.List<String> opens = openProposalIds == null
+                ? java.util.Collections.emptyList() : openProposalIds.get();
+            if (opens.isEmpty()) {
+                return; // mesh device told "no open proposal" upstream
+            }
+            proposalId = opens.get(opens.size() - 1);
+        }
+        try {
+            quorum.castMeshVote(proposalId, deviceName, voteText);
+        } catch (Exception e) {
+            // A bad mesh ballot must never break the agent cycle.
+        }
+    }
+
+    /** T2: GameEngine binds the live quorum proposal list after construction. */
+    public void setOpenProposalIds(java.util.function.Supplier<java.util.List<String>> s) {
+        this.openProposalIds = s;
+    }
+
     /** Agents autonomously claim and complete one DePIN job per cycle. */
     private void runDePINWork() {
         if (depin == null) return;

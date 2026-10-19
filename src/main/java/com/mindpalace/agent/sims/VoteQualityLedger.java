@@ -34,6 +34,8 @@ public final class VoteQualityLedger {
     public static final String BLIND      = "blind";
     public static final String SIM        = "sim";
     public static final String SCRIPTED   = "scripted";
+    /** T2: mesh (tailnet device) ballot — signed, arrived over the mesh. */
+    public static final String MESH       = "mesh";
 
     /** True when an outcome string means "the model did not cast a real vote". */
     public static boolean isAbstain(String outcome) {
