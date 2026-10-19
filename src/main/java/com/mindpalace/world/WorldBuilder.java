@@ -973,8 +973,16 @@ public class WorldBuilder {
         int side = room.getHallwaySide();
 
         // Per-room language accent — tint the whole room, then reset to neutral
+        // H36 (#125): the tint ALSO carries the repo-health glow — health 50
+        // (unknown) is EXACT neutral; below 50 dims the accent by up to 40%,
+        // above 50 brightens it by up to +15%. Material/color change only (no
+        // new geometry) per the issue's perf note.
         float[] tint = room.getTint();
-        r.setTint(tint[0], tint[1], tint[2]);
+        int hs = room.getHealthScore();
+        float glow = hs >= 50
+            ? 1.0f + (Math.min(hs, 100) - 50) / 50f * 0.15f
+            : 1.0f - (50 - hs) / 50f * 0.4f;
+        r.setTint(tint[0] * glow, tint[1] * glow, tint[2] * glow);
 
         // Hardwood floor
         r.drawCube(new Vector3f(c.x, c.y - h / 2f, c.z), new Vector3f(w, 0.1f, d), Renderer.TEX_HARDWOOD);

@@ -766,6 +766,7 @@ public class GameEngine {
         bookEditor.setSims(agentManager.getLora(), knowledgeGraph);
         spawnNPCs();
         spawnCrystals();
+        refreshHealthRollup(); // H36 (#125): issue/TODO/activity → Room.healthScore + KG 'health'
         System.out.println("[NPC] " + npcs.size() + " agents spawned, "
             + crystals.size() + " TODO crystals, KG: "
             + knowledgeGraph.nodeCount() + " nodes / " + knowledgeGraph.edgeCount() + " edges");
@@ -808,6 +809,7 @@ public class GameEngine {
                 if (knowledgeGraph != null) {
                     knowledgeGraph.build(world.getRooms());
                 }
+                refreshHealthRollup(); // H36 (#125): keep health + KG attribute current after rebuild
                 // Attract agents toward the new room (curiosity)
                 for (AgentNPC npc : npcs) {
                     npc.attractTo(room);
@@ -1021,6 +1023,31 @@ public class GameEngine {
             TodoCrystal c = new TodoCrystal(briefing[i], "mansion", "briefing");
             c.setPosition(new Vector3f(mansion.x - 3f + i * 2f, mansion.y + 0.4f, mansion.z - 6f));
             addCrystalCapped(c, 60); // #107: atomic check+add
+        }
+    }
+
+    /**
+     * H36 (#125): repo-health rollup — issue count / TODO density / commit
+     * activity per repo, stored on the Room (glow source) AND as a KnowledgeGraph
+     * attribute (`health`) so agents can read the same signal. Called after the
+     * initial crystal scan and after every LiveUpdate world rebuild.
+     */
+    private void refreshHealthRollup() {
+        if (world == null) return;
+        for (Room room : world.getRooms()) {
+            int todoHits = 0;
+            if (crystals != null) {
+                for (TodoCrystal c : crystals) {
+                    if (c.getRepoName() != null
+                        && c.getRepoName().equalsIgnoreCase(room.getRepoName())) todoHits++;
+                }
+            }
+            int score = com.mindpalace.github.RepoScanner.computeHealth(
+                room.getActivity30d(), room.getLastCommit() != null, todoHits);
+            room.setHealthScore(score);
+            if (knowledgeGraph != null) {
+                knowledgeGraph.setAttribute(room.getRepoName(), "health", String.valueOf(score));
+            }
         }
     }
 
@@ -6821,6 +6848,48 @@ public class GameEngine {
                 + e.getClass().getSimpleName() + " " + e.getMessage());
         }
         if (vetoOk) pass++; else fail++;
+
+        // 61. (#125) repo-health rollup — RepoScanner.computeHealth is a pure
+        //     0..100 scorer (backlog −5/issue cap −30, activity +1/4 commits
+        //     cap +20, +10 has-commit); KnowledgeGraph.set/getAttribute is the
+        //     generic per-repo store and SURVIVES a build() rebuild (H36).
+        boolean healthOk = false;
+        try {
+            Class<?> rsc = Class.forName("com.mindpalace.github.RepoScanner");
+            Object scanner = rsc.getConstructor(
+                Class.forName("com.mindpalace.github.GitHubClient")).newInstance((Object) null);
+            java.lang.reflect.Method ch = rsc.getMethod("computeHealth",
+                int.class, boolean.class, int.class);
+            boolean score = (Integer) ch.invoke(scanner, 80, true, 0) == 80   // +20 act, +10 commit, none
+                && (Integer) ch.invoke(scanner, 0, true, 6) == 30             // -30 capped backlog, +10 commit
+                && (Integer) ch.invoke(scanner, 0, false, 12) == 20           // -30 cap, no commit, 0 act
+                && (Integer) ch.invoke(scanner, 0, false, 0) == 50            // unknown = neutral
+                && (Integer) ch.invoke(scanner, 500, true, 0) == 80           // activity bonus capped
+                && Math.max(0, (Integer) ch.invoke(scanner, 0, false, 99)) >= 0;
+            Object kgObj = Class.forName("com.mindpalace.agent.KnowledgeGraph")
+                .getDeclaredConstructor().newInstance();
+            kgObj.getClass().getMethod("setAttribute", String.class, String.class, String.class)
+                .invoke(kgObj, "health-repo", "health", "75");
+            Class<?> roomC = Class.forName("com.mindpalace.world.Room");
+            Object roomObj = roomC.getDeclaredConstructor(String.class).newInstance("health-repo");
+            Object rooms1 = java.util.List.of(roomObj);
+            kgObj.getClass().getMethod("build", java.util.List.class).invoke(kgObj, rooms1);
+            int kgVal = (Integer) kgObj.getClass()
+                .getMethod("getIntAttribute", String.class, String.class, int.class)
+                .invoke(kgObj, "health-repo", "health", -1);
+            int kgMissing = (Integer) kgObj.getClass()
+                .getMethod("getIntAttribute", String.class, String.class, int.class)
+                .invoke(kgObj, "other-repo", "health", -1);
+            healthOk = score && kgVal == 75 && kgMissing == -1;
+            System.out.println((healthOk ? "PASS" : "FAIL")
+                + " repo-health rollup (score curve + KG attribute survives rebuild)");
+            if (!healthOk) System.out.println("  score=" + score + " kgVal=" + kgVal
+                + " kgMissing=" + kgMissing);
+        } catch (Throwable e) {
+            System.out.println("FAIL repo-health rollup: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (healthOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

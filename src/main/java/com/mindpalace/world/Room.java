@@ -102,6 +102,14 @@ public class Room {
     public int getActivity30d() { return activity30d; }
     public void setActivity30d(int a) { this.activity30d = a; }
 
+    // H36 (#125): repo-health rollup, 0..100 (higher = healthier). Computed by
+    // RepoScanner/RepoMapper from inputs the scan already has: activity30d,
+    // commit presence, TODO density in scanned books. Rooms start neutral
+    // (unknown = 50) so rooms only glow-shift once a scan has actually run.
+    private volatile int healthScore = 50;
+    public int getHealthScore() { return healthScore; }
+    public void setHealthScore(int s) { this.healthScore = Math.max(0, Math.min(100, s)); }
+
     public void setPosterImagePath(String p) { this.posterImagePath = p; }
 
     // Door animation

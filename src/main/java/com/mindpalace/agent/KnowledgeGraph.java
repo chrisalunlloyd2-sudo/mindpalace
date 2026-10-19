@@ -22,6 +22,32 @@ public class KnowledgeGraph {
     private volatile Map<String, Set<String>> edges = new HashMap<>();
     private volatile Map<String, String> district = new HashMap<>(); // room -> district label
 
+    // H36 (#125): generic per-repo attribute store, intentionally OUTSIDE the
+    // build() swap — the graph gets rebuilt on every LiveUpdate room add, and
+    // attributes written by the repo scan (e.g. health) must survive that.
+    private final Map<String, Map<String, String>> attributes = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Set a per-repo attribute (keyed by repoName). Survives build() rebuilds. */
+    public void setAttribute(String repoName, String key, String value) {
+        if (repoName == null || key == null || value == null) return;
+        attributes.computeIfAbsent(repoName, k -> new HashMap<>()).put(key, value);
+    }
+
+    /** Get a per-repo attribute; null when unset or value not parseable as an int. */
+    public String getAttribute(String repoName, String key) { return getAttribute(repoName, key, null); }
+
+    public String getAttribute(String repoName, String key, String def) {
+        Map<String, String> m = attributes.get(repoName);
+        return m == null ? def : m.getOrDefault(key, def);
+    }
+
+    /** Integer convenience (H36 health reads). */
+    public int getIntAttribute(String repoName, String key, int def) {
+        String v = getAttribute(repoName, key);
+        if (v == null) return def;
+        try { return Integer.parseInt(v.trim()); } catch (NumberFormatException e) { return def; }
+    }
+
     /** Build the KG from the current world layout. */
     public void build(List<Room> rooms) {
         Map<String, Room> newNodes = new HashMap<>();

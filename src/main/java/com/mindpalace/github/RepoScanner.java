@@ -74,6 +74,24 @@ public class RepoScanner {
     private final java.util.concurrent.ConcurrentLinkedQueue<Room> ledgerQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final java.util.concurrent.atomic.AtomicBoolean ledgerWorkerRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
 
+    /**
+     * H36 (#125): repo-health rollup, 0..100 (higher = healthier). Pure and
+     * deterministic — inputs are the metadata the scan already collects:
+     * open-issue/TODO hit count, commit presence, and 30-day commit activity.
+     * Penalties: up to -30 for the unsolved-issue/TODO backlog, +activity
+     * bonus up to 20, +10 having a recent commit at all. Rooms default to
+     * neutral 50 ("unknown") before any scan lands.
+     */
+    public static int computeHealth(int activity30d, boolean hasCommit, int issueOrTodoCount) {
+        int score = 50;
+        // Backlog pressure: first 6 issues/TODOs cost 5 each, capped at -30.
+        score -= Math.min(30, Math.max(0, issueOrTodoCount) * 5);
+        // Activity bonus: 30d commits, 4 commits per +1 point, capped at +20.
+        score += Math.min(20, Math.max(0, activity30d) / 4);
+        if (hasCommit) score += 10;
+        return Math.max(0, Math.min(100, score));
+    }
+
     private void queueLedgerFetch(Room remote) {
         ledgerQueue.add(remote);
         startLedgerWorker();
