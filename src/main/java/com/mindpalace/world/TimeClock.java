@@ -32,4 +32,18 @@ public final class TimeClock {
             }
         }
     }
+
+    /** Runtime pin (T3 admin API, kanban t_2c1fa168): same semantics as
+     *  {@code --time} but set live from the tailnet route; null clears. */
+    public static void pin(Integer hour) {
+        if (hour != null && (hour < 0 || hour > 23)) {
+            throw new IllegalArgumentException("hour must be 0..23");
+        }
+        override = hour;
+    }
+
+    /** Active pin for the admin state readout (null = wall clock). */
+    public static Integer pinnedHour() {
+        return override;
+    }
 }

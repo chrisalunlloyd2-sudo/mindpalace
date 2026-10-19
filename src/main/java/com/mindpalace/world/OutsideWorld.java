@@ -39,7 +39,10 @@ public class OutsideWorld {
         return Season.AUTUMN;
     }
 
+    private static volatile Weather weatherOverride = null; // T3 admin API (t_2c1fa168)
+
     public static Weather weather() {
+        if (weatherOverride != null) return weatherOverride; // admin pin wins
         // Deterministic pseudo-weather from day-of-year (no network). A live
         // weather API can replace this later without touching the renderer.
         int doy = LocalDate.now().getDayOfYear();
@@ -48,6 +51,16 @@ public class OutsideWorld {
         if (s == Season.WINTER && bucket == 0) return Weather.SNOW;
         if (s != Season.WINTER && (bucket == 1 || bucket == 2)) return Weather.RAIN;
         return Weather.CLEAR;
+    }
+
+    /** Runtime weather pin (T3 admin API): CLEAR|RAIN|SNOW, null clears. */
+    public static void setWeatherOverride(Weather w) {
+        weatherOverride = w;
+    }
+
+    /** Active weather pin for the admin state readout (null = season rules). */
+    public static Weather pinnedWeather() {
+        return weatherOverride;
     }
 
     // ── Feature anchor positions (fixed, so towns/teleporters are stable) ──

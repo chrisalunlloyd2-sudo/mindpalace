@@ -41,6 +41,8 @@ import com.mindpalace.backup.BackupManager;
 import com.mindpalace.backup.MemoryManager;
 import com.mindpalace.agent.IdleDetector;
 import com.mindpalace.integration.ContextBroadcaster;
+import com.mindpalace.tailscale.AdminApi;
+import com.mindpalace.tailscale.SpectatorPage;
 import com.mindpalace.tailscale.MagicDns;
 import com.mindpalace.tailscale.MeshCrypto;
 import com.mindpalace.tailscale.MeshPeerClient;
@@ -166,6 +168,14 @@ public class GameEngine {
     private MemoryManager memoryManager;
     private IdleDetector idleDetector;
     private ContextBroadcaster contextBroadcaster;
+    // T3 (t_2c1fa168): live tailnet services — mesh + admin + spectator + log.
+    private com.mindpalace.tailscale.TailnetServices tailnetServices;
+    private com.mindpalace.tailscale.TaildropFiles taildropFiles;
+    private java.util.concurrent.ScheduledExecutorService taildropShipper;
+    // Remote-control queue: AdminApi.teleport enqueues here (HTTP thread),
+    // update() drains on the game thread (teleport bodies touch OpenAL).
+    private final java.util.concurrent.ConcurrentLinkedQueue<String[]> goQueue =
+        new java.util.concurrent.ConcurrentLinkedQueue<>();
     private boolean searchMode;
     private String searchQuery = "";
     private boolean showHelp;
@@ -893,6 +903,100 @@ public class GameEngine {
             }
         }
 
+        // T3 (t_2c1fa168): live tailnet services — same gating doctrine as the
+        // broadcaster above (never in demo/selftest; the selftest builds its
+        // own loopback transports directly). Owner-login trust: scope default
+        // + SystemTags me-to-me owner login; off-mesh degrades to local-only.
+        if (!demoMode && !selfTest) {
+            try {
+                // Pull-mode Taildrop staging under the live data root; target
+                // defaults to the owner login (Architect's tailnet devices).
+                taildropFiles = new com.mindpalace.tailscale.TaildropFiles(
+                    java.nio.file.Path.of(dataRoot), null);
+                var services = new com.mindpalace.tailscale.TailnetServices();
+                services.start(
+                    (proposalId, deviceId, vote, nonce) -> {
+                        // 4-arg MeshServer.BallotSink; sinkMeshVote is 3-arg
+                        // (the nonce is already verified by MeshServer). Live
+                        // mode always has the pipeline available: accept.
+                        agentManager.sinkMeshVote(proposalId, deviceId, vote);
+                        return true;
+                    },
+                    // AdminApi.WorldControl: HTTP-thread implementor backed by
+                    // the game-thread queue + static pins (see drainGoQueue).
+                    new com.mindpalace.tailscale.AdminApi.WorldControl() {
+                        @Override public String pinClock(Integer hour) {
+                            return adminPinClock(hour);
+                        }
+                        @Override public String setWeather(String weatherName) {
+                            return adminSetWeather(weatherName);
+                        }
+                        @Override public String teleport(String destination, String argument) {
+                            return adminTeleport(destination, argument);
+                        }
+                        @Override public java.util.Map<String, String> state() {
+                            return adminState();
+                        }
+                    },
+                    // SpectatorPage.DataSource: read-only snapshot provider.
+                    new com.mindpalace.tailscale.SpectatorPage.DataSource() {
+                        @Override public java.util.List<String[]> rooms() {
+                            return spectatorRooms();
+                        }
+                        @Override public java.util.List<String> agents() {
+                            return spectatorAgents();
+                        }
+                        @Override public java.util.List<String[]> proposals() {
+                            return spectatorProposals();
+                        }
+                        @Override public java.util.List<String[]> events() {
+                            return spectatorEvents();
+                        }
+                        @Override public String playerState() {
+                            return spectatorPlayerState();
+                        }
+                    },
+                    telemetry, java.nio.file.Path.of(dataRoot), memoryManager);
+                if (services.isRunning()) {
+                    tailnetServices = services;
+                    System.out.println("[Tailscale] live services ready (port "
+                        + services.port() + ")");
+
+                    // Nightly asset push (screenshots/chat/genome/saves) to the
+                    // Architect's tailnet devices; runs on a quiet daemon. No-op
+                    // fast when the tailscale CLI is absent (probeHermetic in
+                    // selftest covers the logic hermetically).
+                    var td = taildropFiles;
+                    java.util.concurrent.TimeUnit unit = java.util.concurrent.TimeUnit.HOURS;
+                    java.util.concurrent.ScheduledExecutorService shipper =
+                        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                            Thread t = new Thread(r, "taildrop-shipper");
+                            t.setDaemon(true);
+                            return t;
+                        });
+                    shipper.scheduleAtFixedRate(() -> {
+                        try {
+                            for (var result : td.shipNightly()) {
+                                if (!result.shipped()) {
+                                    System.out.println("[Taildrop] " + result.asset()
+                                        + ": " + result.detail());
+                                }
+                            }
+                        } catch (Exception | LinkageError e) {
+                            System.out.println("[Taildrop] nightly ship failed: " + e.getMessage());
+                        }
+                    }, 1, 24, unit);
+                    taildropShipper = shipper;
+                } else {
+                    services.close(); // off-mesh: fully closed, local-only stays
+                }
+            } catch (Exception e) {
+                System.err.println("[Tailscale] live services not started: " + e.getMessage());
+                if (tailnetServices != null) tailnetServices.close();
+                tailnetServices = null;
+            }
+        }
+
         loadingText = "Ready.";
         loadingProgress = 1.0f;
         renderLoadingFrame();
@@ -1200,6 +1304,12 @@ public class GameEngine {
             dressingRoom.handleInput(input);
             return;
         }
+
+        // T3 (t_2c1fa168): remote-control queue drain — AdminApi.teleport runs
+        // on an HTTP thread; it can only Enqueue. Execution happens HERE on the
+        // game thread (teleport bodies touch OpenAL, which is render-thread
+        // bound). Drained ahead of input so a queued "go" lands cleanly.
+        drainGoQueue();
 
         // Fact toast timer (Phase D)
         if (factToastTimer > 0) factToastTimer -= dt;
@@ -3804,6 +3914,178 @@ public class GameEngine {
         bloom.resize(width, height);
     }
 
+    // ── T3 (t_2c1fa168): remote world control (use 5) + spectator HUD (use 9) ──
+
+    /** drainGoQueue: game-thread executor for remote teleports.
+     *  item = {dest, id, queuedMs} — age cap 60 s so a stale phone request
+     *  can't teleport the player out from under them an hour later. */
+    private void drainGoQueue() {
+        if (goQueue.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        String[] item;
+        while ((item = goQueue.poll()) != null) {
+            if (item.length < 3) continue;
+            long age;
+            try {
+                age = now - Long.parseLong(item[2]);
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            if (age > 60_000L) {
+                System.out.println("[ADMIN] dropped stale remote 'go " + item[0]
+                    + " " + item[1] + "' (" + (age / 1000) + "s old)");
+                continue;
+            }
+            String message = executeGo(item[0], item[1]);
+            System.out.println("[ADMIN] remote 'go " + item[0] + " " + item[1]
+                + "': " + message);
+        }
+    }
+
+    /** One destination execution — game-thread only (OpenAL). Never throws. */
+    private String executeGo(String dest, String id) {
+        try {
+            switch (dest) {
+                case "room": {
+                    Room target = id.isBlank() ? null : findRepoByName(id);
+                    if (target == null) return "no room matches '" + id + "'";
+                    Vector3f dp = target.getDoorPosition();
+                    player.getCamera().setPosition(
+                        dp.x + (target.getHallwaySide() == 0 ? 1.5f : -1.5f),
+                        player.getCamera().getPosition().y, dp.z);
+                    return "at " + target.getDisplayLabel() + " door";
+                }
+                case "floor": {
+                    int f = id.isBlank() ? -1 : Integer.parseInt(id.trim()) - 1; // 1-based
+                    if (f < 0 || f >= world.getHallways().size()) {
+                        return "floor out of range (1.." + world.getHallways().size() + ")";
+                    }
+                    player.teleportToFloor(f, world);
+                    return "on floor " + (f + 1);
+                }
+                case "pad": {
+                    int p = id.isBlank() ? -1 : Integer.parseInt(id.trim()) - 1; // 1-based
+                    List<Vector3f> pads = world.getTeleporterPads();
+                    if (p < 0 || p >= pads.size()) {
+                        return "pad out of range (1.." + pads.size() + ")";
+                    }
+                    player.teleportToPad(p, world);
+                    return "on pad " + (p + 1);
+                }
+                case "mansion": player.teleportToMansion(world); return "at the mansion";
+                case "outside": player.teleportOutside(world); return "outside";
+                case "planet": player.teleportToPlanet(world); return "on the planet";
+                case "palace": player.teleportToPalace(world); return "at the palace";
+                default: return "unknown dest";
+            }
+        } catch (NumberFormatException e) {
+            return "id must be numeric for " + dest;
+        } catch (Exception e) {
+            return "teleport failed: " + e.getMessage();
+        }
+    }
+
+    /**
+     * AdminApi.WorldControl (mutators) — called from HTTP threads.
+     * Teleport enqueues to goQueue (run on the game thread by drainGoQueue);
+     * clock/weather are plain static field writes, safe from any thread.
+     */
+    private String adminPinClock(Integer hour) {
+        com.mindpalace.world.TimeClock.pin(hour);
+        if (telemetry != null) {
+            telemetry.record(com.mindpalace.backup.Telemetry.SYSTEM, "admin.clock",
+                hour == null ? "cleared" : "pinned " + hour + "h");
+        }
+        return hour == null ? "clock un-pinned (wall clock)" : "clock pinned to " + hour + ":00";
+    }
+
+    private String adminSetWeather(String weatherName) {
+        if (weatherName == null) {
+            OutsideWorld.setWeatherOverride(null);
+            if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.SYSTEM, "admin.weather", "cleared");
+            return "weather un-pinned (deterministic season rules)";
+        }
+        OutsideWorld.setWeatherOverride(OutsideWorld.Weather.valueOf(weatherName));
+        if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.SYSTEM, "admin.weather", weatherName);
+        return "weather pinned to " + weatherName;
+    }
+
+    private String adminTeleport(String destination, String argument) {
+        goQueue.add(new String[]{ destination, argument == null ? "" : argument,
+            String.valueOf(System.currentTimeMillis()) });
+        return "queued (executes on the next game frame)";
+    }
+
+    /** AdminApi.WorldControl.state() — GET /v1/admin/state readback. */
+    private java.util.Map<String, String> adminState() {
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+        Integer pin = com.mindpalace.world.TimeClock.pinnedHour();
+        out.put("clock", pin == null ? "wall-clock (unpinned)" : "pinned " + pin + ":00");
+        out.put("weather", String.valueOf(OutsideWorld.weather()));
+        out.put("weatherPinned", OutsideWorld.pinnedWeather() == null ? "no" : "yes");
+        out.put("queueDepth", String.valueOf(goQueue.size()));
+        out.put("floorCount", String.valueOf(world == null ? 0 : world.getHallways().size()));
+        out.put("roomCount", String.valueOf(world == null ? 0 : world.getRooms().size()));
+        out.put("player", player == null ? "spawning"
+            : "floor " + (player.getPadFloor() + 1) + (player.getCurrentRoom() == null
+                ? "" : " @" + player.getCurrentRoom().getRepoName()));
+        out.put("services", tailnetServices != null && tailnetServices.isRunning()
+            ? "live on port " + tailnetServices.port() : "off-mesh (local-only)");
+        return out;
+    }
+
+    /** SpectatorPage.DataSource — read-only snapshot built on the route thread. */
+    private List<String[]> spectatorRooms() {
+        List<String[]> out = new ArrayList<>();
+        if (world == null) return out;
+        for (Room room : world.getRooms()) {
+            out.add(new String[]{ room.getRepoName(), room.getDisplayLabel(),
+                String.valueOf(room.getFloor()) });
+        }
+        return out;
+    }
+
+    private List<String> spectatorAgents() {
+        List<String> out = new ArrayList<>();
+        for (AgentNPC npc : npcs) {
+            out.add(npc.getName());
+        }
+        return out;
+    }
+
+    private List<String[]> spectatorProposals() {
+        List<String[]> out = new ArrayList<>();
+        if (agentManager == null) return out;
+        try {
+            for (WeightedQuorumVote.Proposal proposal : agentManager.getQuorum().allProposals()) {
+                out.add(new String[]{ proposal.id, proposal.text,
+                    String.valueOf(proposal.approveCount()),
+                    String.valueOf(proposal.rejectCount()),
+                    String.valueOf(proposal.visibleTotal()) });
+            }
+        } catch (Exception ignored) {
+            // read must never break the route
+        }
+        return out;
+    }
+
+    private List<String[]> spectatorEvents() {
+        try {
+            return telemetry != null ? telemetry.recent(20) : List.of();
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private String spectatorPlayerState() {
+        if (player == null) return "(spawning)";
+        Vector3f pos = player.getCamera().getPosition();
+        Room room = player.getCurrentRoom();
+        return String.format("pos(%.0f, %.1f, %.0f) floor %d%s",
+            pos.x, pos.y, pos.z, player.getPadFloor() + 1,
+            room == null ? "" : " @" + room.getRepoName());
+    }
+
     private Room findRepoByName(String query) {
         String q = query.toLowerCase().trim();
         Room best = null;
@@ -3822,6 +4104,8 @@ public class GameEngine {
     private void cleanup() {
         if (telemetryReader != null) telemetryReader.shutdownNow();
         if (contextBroadcaster != null) contextBroadcaster.close();
+        if (taildropShipper != null) { taildropShipper.shutdownNow(); taildropShipper = null; } // T3 asset push
+        if (tailnetServices != null) tailnetServices.close(); // T3 live services
         if (backupManager != null) backupManager.stop();
         if (bdiBridge != null) bdiBridge.stop();
         if (memoryManager != null) memoryManager.stop();
@@ -4515,6 +4799,264 @@ public class GameEngine {
             return false;
         } finally {
             if (transport != null) transport.close();
+        }
+    }
+
+    /** Test helper: loopback request for the T3 route tests; body → holder. */
+    private static int httpSelftest(String base, String method, String path,
+                                    String jsonBody, StringBuilder bodyOut)
+            throws Exception {
+        java.net.http.HttpClient hc = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(3)).build();
+        java.net.http.HttpRequest.Builder rb = java.net.http.HttpRequest.newBuilder(
+            java.net.URI.create(base + path))
+            .header("Content-Type", "application/json");
+        if ("POST".equals(method)) {
+            rb.POST(java.net.http.HttpRequest.BodyPublishers.ofString(
+                jsonBody == null ? "" : jsonBody, java.nio.charset.StandardCharsets.UTF_8));
+        } else {
+            rb.GET();
+        }
+        java.net.http.HttpResponse<String> resp = hc.send(rb.build(),
+            java.net.http.HttpResponse.BodyHandlers.ofString());
+        if (bodyOut != null) bodyOut.append(resp.body());
+        return resp.statusCode();
+    }
+
+    /** 61. T3 admin API: anonymous/stranger fail closed; owner drives every
+     *      route end-to-end through the control stub; invalid bodies → 4xx
+     *      and never reach the control stub. */
+    private boolean testAdminApiRoutes() {
+        TailnetTransport transport = null;
+        try {
+            // Control stub: records every accepted call, mirrors into state().
+            java.util.List<String> calls = new java.util.ArrayList<>();
+            java.util.Map<String, String> pinned = new java.util.LinkedHashMap<>();
+            AdminApi.WorldControl stub = new AdminApi.WorldControl() {
+                @Override public String pinClock(Integer hour) {
+                    calls.add("clock:" + hour);
+                    pinned.put("clockPin", hour == null ? "" : String.valueOf(hour));
+                    return hour == null ? "clock un-pinned" : "clock pinned " + hour;
+                }
+                @Override public String setWeather(String w) {
+                    calls.add("weather:" + w);
+                    pinned.put("weatherPin", w == null ? "" : w);
+                    return w == null ? "weather un-pinned" : "weather set " + w;
+                }
+                @Override public String teleport(String dest, String id) {
+                    calls.add("go:" + dest + ":" + id);
+                    pinned.put("lastGo", dest + " " + id);
+                    return "queued teleport " + dest + " " + id;
+                }
+                @Override public java.util.Map<String, String> state() {
+                    return new java.util.LinkedHashMap<>(pinned);
+                }
+            };
+
+            TailnetTransport.Router router = new TailnetTransport.Router();
+            AdminApi.mount(router, stub, null); // null telemetry: hermetic
+
+            TailnetIdentity owner = new TailnetIdentity("arch@example.test",
+                "viper", java.util.Set.of("tag:architect"));
+            TailnetIdentity stranger = new TailnetIdentity("stranger@example.test",
+                "other-device", java.util.Set.of());
+            final java.util.concurrent.atomic.AtomicReference<TailnetIdentity> peer =
+                new java.util.concurrent.atomic.AtomicReference<>(owner);
+            WhoIsResolver resolver = (address, port) -> peer.get();
+            TailnetRoles.Scope scope = new TailnetRoles.Scope(
+                java.util.Set.of("arch@example.test"),
+                java.util.Set.of(),
+                java.util.Set.of("tag:architect"));
+            transport = TailnetTransport.forLoopbackTest(0, resolver, scope, router);
+            transport.start();
+            String base = "http://127.0.0.1:" + transport.port();
+            StringBuilder body = new StringBuilder();
+
+            // Anonymous (resolver → null): every admin route fails closed 403.
+            peer.set(null);
+            int anonState = httpSelftest(base, "GET", "/v1/admin/state", null, null);
+            int anonClock = httpSelftest(base, "POST", "/v1/admin/clock",
+                "{\"hour\":3}", null);
+
+            // Stranger (untagged, not in allowUsers): fail closed 403.
+            peer.set(stranger);
+            int strangerGo = httpSelftest(base, "POST", "/v1/admin/go",
+                "{\"dest\":\"room\",\"id\":\"hello-world\"}", null);
+
+            // Owner: state echoes the (initially empty) control stub.
+            peer.set(owner);
+            body.setLength(0);
+            int state0 = httpSelftest(base, "GET", "/v1/admin/state", null, body);
+            boolean stateEmpty = state0 == 200 && body.toString().contains("\"ok\":true");
+
+            // Clock pin: accepted → 200, stub recorded, state reflects it.
+            int clock = httpSelftest(base, "POST", "/v1/admin/clock", "{\"hour\":7}", null);
+            body.setLength(0);
+            httpSelftest(base, "GET", "/v1/admin/state", null, body);
+            boolean clockOk = clock == 200 && body.toString().contains("\"clockPin\":\"7\"");
+
+            // Weather pin + queued teleport.
+            int weather = httpSelftest(base, "POST", "/v1/admin/weather",
+                "{\"weather\":\"RAIN\"}", null);
+            int go = httpSelftest(base, "POST", "/v1/admin/go",
+                "{\"dest\":\"room\",\"id\":\"hello-world\"}", null);
+            body.setLength(0);
+            httpSelftest(base, "GET", "/v1/admin/state", null, body);
+            boolean weatherGoOk = weather == 200 && go == 200
+                && body.toString().contains("\"weatherPin\":\"RAIN\"")
+                && body.toString().contains("\"lastGo\":\"room hello-world\"");
+
+            // Invalid bodies: 4xx, and the control stub is never touched.
+            int badHour = httpSelftest(base, "POST", "/v1/admin/clock",
+                "{\"hour\":99}", null);
+            int badHourType = httpSelftest(base, "POST", "/v1/admin/clock",
+                "{\"hour\":\"abc\"}", null);
+            int badWeather = httpSelftest(base, "POST", "/v1/admin/weather",
+                "{\"weather\":\"THUNDER\"}", null);
+            int badDest = httpSelftest(base, "POST", "/v1/admin/go",
+                "{\"dest\":\"kitchen\"}", null);
+            int garbage = httpSelftest(base, "POST", "/v1/admin/clock", "not json", null);
+            int wrongMethod = httpSelftest(base, "GET", "/v1/admin/clock", null, null);
+            boolean rejected = badHour == 400 && badHourType == 400 && badWeather == 400
+                && badDest == 400 && garbage == 400 && wrongMethod == 405
+                && calls.size() == 3;
+
+            boolean ok = anonState == 403 && anonClock == 403 && strangerGo == 403
+                && stateEmpty && clockOk && weatherGoOk && rejected;
+            if (!ok) {
+                System.out.println("  admin: anon=" + anonState + "/" + anonClock
+                    + " stranger=" + strangerGo + " state=" + stateEmpty
+                    + " clock=" + clock + "/" + clockOk
+                    + " weather=" + weather + " go=" + go
+                    + " 4xx=" + badHour + "/" + badHourType + "/" + badWeather
+                    + "/" + badDest + "/" + garbage + "/" + wrongMethod
+                    + " calls=" + calls);
+            }
+            return ok;
+        } catch (Exception e) {
+            System.out.println("  admin self-test error: " + e);
+            return false;
+        } finally {
+            if (transport != null) transport.close();
+        }
+    }
+
+    /** 62. T3 spectator page: architect-tag owner and a spectator-tag peer both
+     *      get the HUD (READ_PUBLIC), every DataSource member present; a peer
+     *      with no capability gets 403. */
+    private boolean testSpectatorPageRoutes() {
+        TailnetTransport transport = null;
+        try {
+            SpectatorPage.DataSource data = new SpectatorPage.DataSource() {
+                @Override public java.util.List<String[]> rooms() {
+                    return java.util.List.of(
+                        new String[]{"hello-world", "Hello World", "1"},
+                        new String[]{"render-ops", "Render Ops", "2"});
+                }
+                @Override public java.util.List<String> agents() {
+                    return java.util.List.of("sims-1", "sims-2");
+                }
+                @Override public java.util.List<String[]> proposals() {
+                    return java.util.Collections.singletonList(
+                        new String[]{"prop-7", "harden vote", "2", "1", "3"});
+                }
+                @Override public java.util.List<String[]> events() {
+                    return java.util.Collections.singletonList(new String[]{
+                        "2026-10-18T12:00:00", "system", "admin.clock",
+                        "pinned 7h by arch@example.test"});
+                }
+                @Override public String playerState() {
+                    return "viper at (1.5, 0.0, -3.0) floor 1 room hello-world";
+                }
+            };
+
+            TailnetTransport.Router router = new TailnetTransport.Router();
+            SpectatorPage.mount(router, data);
+
+            final java.util.concurrent.atomic.AtomicReference<TailnetIdentity> peer =
+                new java.util.concurrent.atomic.AtomicReference<>(new TailnetIdentity(
+                    "arch@example.test", "viper", java.util.Set.of("tag:architect")));
+            WhoIsResolver resolver = (address, port) -> peer.get();
+            TailnetRoles.Scope scope = new TailnetRoles.Scope(
+                java.util.Set.of("arch@example.test"),
+                java.util.Set.of(),
+                java.util.Set.of("tag:architect", "tag:spectator"));
+            transport = TailnetTransport.forLoopbackTest(0, resolver, scope, router);
+            transport.start();
+            String base = "http://127.0.0.1:" + transport.port();
+            StringBuilder body = new StringBuilder();
+
+            // Architect-tag owner: HTML + JSON carry every data member.
+            body.setLength(0);
+            int html = httpSelftest(base, "GET", "/v1/spectator", null, body);
+            String h = body.toString();
+            boolean htmlOk = html == 200 && h.contains("MIND PALACE")
+                && h.contains("hello-world") && h.contains("render-ops")
+                && h.contains("prop-7") && h.contains("sims-1") && h.contains("sims-2")
+                && h.contains("pinned 7h") && h.contains("viper at (1.5, 0.0, -3.0)");
+
+            body.setLength(0);
+            int json = httpSelftest(base, "GET", "/v1/spectator/data", null, body);
+            String j = body.toString();
+            boolean jsonOk = json == 200 && j.contains("\"playerState\"")
+                && j.contains("hello-world") && j.contains("prop-7")
+                && j.contains("sims-1") && j.contains("sims-2")
+                && j.contains("admin.clock");
+
+            // Spectator-tag peer: exactly READ_PUBLIC — page allowed.
+            peer.set(new TailnetIdentity("viewer@example.test", "phone",
+                java.util.Set.of("tag:spectator")));
+            int spectator = httpSelftest(base, "GET", "/v1/spectator", null, null);
+
+            // No-cap stranger: fail closed.
+            peer.set(new TailnetIdentity("stranger@example.test", "lurk",
+                java.util.Set.of()));
+            int stranger = httpSelftest(base, "GET", "/v1/spectator/data", null, null);
+
+            boolean ok = htmlOk && jsonOk && spectator == 200 && stranger == 403;
+            if (!ok) {
+                System.out.println("  spectator: html=" + html + "/" + htmlOk
+                    + " json=" + json + "/" + jsonOk
+                    + " spec=" + spectator + " stranger=" + stranger);
+            }
+            return ok;
+        } catch (Exception e) {
+            System.out.println("  spectator self-test error: " + e);
+            return false;
+        } finally {
+            if (transport != null) transport.close();
+        }
+    }
+
+    /** 65. T3 world-control pins: OutsideWorld weather override and TimeClock
+     *      hour pin round-trip through pin/pinned/read, restoring prior state. */
+    private static boolean testWeatherClockPins() {
+        com.mindpalace.world.OutsideWorld.Weather prevW =
+            com.mindpalace.world.OutsideWorld.pinnedWeather();
+        Integer prevH = com.mindpalace.world.TimeClock.pinnedHour();
+        try {
+            com.mindpalace.world.OutsideWorld.setWeatherOverride(
+                com.mindpalace.world.OutsideWorld.Weather.RAIN);
+            boolean weatherOk = com.mindpalace.world.OutsideWorld.weather()
+                == com.mindpalace.world.OutsideWorld.Weather.RAIN;
+            com.mindpalace.world.OutsideWorld.setWeatherOverride(null);
+            boolean weatherCleared =
+                com.mindpalace.world.OutsideWorld.pinnedWeather() == null;
+
+            com.mindpalace.world.TimeClock.pin(5);
+            boolean clockOk = com.mindpalace.world.TimeClock.hour() == 5
+                && Integer.valueOf(5).equals(com.mindpalace.world.TimeClock.pinnedHour());
+            com.mindpalace.world.TimeClock.pin(null);
+            boolean clockCleared =
+                com.mindpalace.world.TimeClock.pinnedHour() == null;
+
+            return weatherOk && weatherCleared && clockOk && clockCleared;
+        } catch (Exception e) {
+            System.out.println("  pins self-test error: " + e);
+            return false;
+        } finally {
+            com.mindpalace.world.OutsideWorld.setWeatherOverride(prevW);
+            com.mindpalace.world.TimeClock.pin(prevH);
         }
     }
 
@@ -6943,6 +7485,54 @@ public class GameEngine {
         System.out.println((meshOk ? "PASS" : "FAIL")
             + " mesh quorum transport (signed ballots, replay/stale/signature rejects, fail-closed)");
         if (meshOk) pass++; else fail++;
+
+        // 61. T3 admin API: caps (BUILD/ADMIN) required — anonymous/READ fails
+        // closed; a valid admin session drives the WorldControl stub and GET
+        // /v1/admin/state echoes every field.
+        boolean adminOk = testAdminApiRoutes();
+        System.out.println((adminOk ? "PASS" : "FAIL")
+            + " admin api (caps fail-closed, clock/weather/go/state via control stub)");
+        if (adminOk) pass++; else fail++;
+
+        // 62. T3 spectator page: READ_PUBLIC on owner-login scope; every
+        // DataSource member must be present in the rendered HTML/JSON.
+        boolean spectatorOk = testSpectatorPageRoutes();
+        System.out.println((spectatorOk ? "PASS" : "FAIL")
+            + " spectator page (rooms/agents/proposals/events/playerState over loopback)");
+        if (spectatorOk) pass++; else fail++;
+
+        // 63. T3 Taildrop ship logic, hermetic (no tailscale binary needed).
+        boolean taildropOk = false;
+        try {
+            taildropOk = com.mindpalace.tailscale.TaildropFiles.probeHermetic(
+                java.nio.file.Files.createTempDirectory("t3-taildrop"));
+        } catch (java.io.IOException e) {
+            System.out.println("  taildrop self-test error: " + e);
+        }
+        System.out.println((taildropOk ? "PASS" : "FAIL")
+            + " taildrop staging (asset staging + ship logic, hermetic)");
+        if (taildropOk) pass++; else fail++;
+
+        // 64. T3 log collector: ingest dedup/cap + shipTo round-trip.
+        boolean logOk = false;
+        try {
+            logOk = com.mindpalace.tailscale.LogCollector.probe(
+                new com.mindpalace.tailscale.LogCollector(
+                    java.nio.file.Files.createTempDirectory("t3-logcol"), null, null));
+        } catch (java.io.IOException e) {
+            System.out.println("  log collector self-test error: " + e);
+        }
+        System.out.println((logOk ? "PASS" : "FAIL")
+            + " log collector (ingest dedup+cap, HTTP ship round-trip)");
+        if (logOk) pass++; else fail++;
+
+        // 65. T3 weather/clock pins: OutsideWorld.setWeatherOverride must
+        // change what .weather() returns; TimeClock.pin drives TimeClock.hour().
+        boolean pinOk = testWeatherClockPins();
+        System.out.println((pinOk ? "PASS" : "FAIL")
+            + " world control pins (weather override + clock pin round-trip)");
+        if (pinOk) pass++; else fail++;
+
 
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
