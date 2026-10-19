@@ -276,6 +276,45 @@ public class WeightedQuorumVote {
     }
 
     /**
+     * T2 mesh ballots: a tailnet device's vote on the CURRENT open proposal.
+     * The device is NOT a registered model; mesh voters count at flat weight
+     * 1.0 (weightedApprove treats an unregistered key as w += 1.0), never
+     * advance the pulse average, and pass the FOW gate unchanged (no hex to
+     * be blind at). Returns the recorded vote, or null when the proposal is
+     * unknown/gone (mesh requests answer 409 rather than throwing — mesh
+     * ballots must never crash the quorum pipeline, castOrSkip convention).
+     */
+    public Vote castMeshVote(String proposalId, String deviceName, String voteText) {
+        if (deviceName == null || deviceName.isBlank() || voteText == null) {
+            return null;
+        }
+        final Vote intent;
+        try {
+            intent = Vote.valueOf(voteText.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null; // not a vote token
+        }
+        Proposal p = proposals.get(proposalId);
+        if (p == null) {
+            return null; // no such proposal / cleared by finishCycle
+        }
+        p.votes.put(deviceName, intent);
+        VoteQualityLedger.get().record(
+            new VoteQualityLedger.VoteRecord(System.currentTimeMillis(),
+                proposalId, deviceName, intent, VoteQualityLedger.MESH, 0L));
+        Consumer<VoteQualityLedger.VoteRecord> sink = voteSink;
+        if (sink != null) {
+            try {
+                sink.accept(new VoteQualityLedger.VoteRecord(System.currentTimeMillis(),
+                    proposalId, deviceName, intent, VoteQualityLedger.MESH, 0L));
+            } catch (Exception ignored) {
+                // telemetry must never break voting
+            }
+        }
+        return intent;
+    }
+
+    /**
      * Bulk-vote helper: finishCycle() clears the proposal map on another thread, so a proposal can
      * vanish between listing it and voting on it. That is normal, not an error, and must never kill
      * the game loop (2026-10-17: IllegalArgumentException "unknown proposal" crashed the live game).

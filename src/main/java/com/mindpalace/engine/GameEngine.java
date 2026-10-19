@@ -42,6 +42,9 @@ import com.mindpalace.backup.MemoryManager;
 import com.mindpalace.agent.IdleDetector;
 import com.mindpalace.integration.ContextBroadcaster;
 import com.mindpalace.tailscale.MagicDns;
+import com.mindpalace.tailscale.MeshCrypto;
+import com.mindpalace.tailscale.MeshPeerClient;
+import com.mindpalace.tailscale.MeshServer;
 import com.mindpalace.tailscale.StatusSnapshot;
 import com.mindpalace.tailscale.TailnetIdentity;
 import com.mindpalace.tailscale.TailnetRoles;
@@ -682,6 +685,16 @@ public class GameEngine {
                 if (audio != null) audio.playQuorumRejected();
                 System.out.println("[Flare] REJECTED — ice dip");
             }
+        });
+        // T2: mesh ballots fall back to the newest open proposal when the
+        // device casts without an id (AgentManager.sinkMeshVote null-safe).
+        agentManager.setOpenProposalIds(() -> {
+            com.mindpalace.agent.sims.WeightedQuorumVote q = agentManager.getQuorum();
+            java.util.List<String> ids = new java.util.ArrayList<>();
+            for (com.mindpalace.agent.sims.WeightedQuorumVote.Proposal pp : q.allProposals()) {
+                ids.add(pp.id);
+            }
+            return ids;
         });
 
         // Never-twice memory: agents refuse to write identical code twice.
@@ -4371,6 +4384,158 @@ public class GameEngine {
         try (var out = ex.getResponseBody()) { out.write(bytes); }
     }
 
+    /**
+     * T2 mesh quorum transport, hermetic (loopback + stub resolver, same idiom
+     * as testTailnetFoundation): a real MeshServer mounted on a real
+     * TailnetTransport; the device votes via MeshPeerClient with a real
+     * Ed25519 keypair; the ballot lands in the actual WeightedQuorumVote
+     * proposal pipeline (flat 1.0 mesh weight) through AgentManager's sink.
+     * Covers: accepted signed ballots, replay rejection, stale-timestamp
+     * rejection, bad-signature rejection, and the deviceName-missing
+     * fail-closed case (empty identity must never reach the sink).
+     */
+    private boolean testMeshQuorumTransport() {
+        TailnetTransport transport = null;
+        try {
+            // Owner-login = trust: the stub resolver grants the architect tag
+            // to any peer; the pin + signature layer is what rejects abuse.
+            // The device name MUST match the client key store (the server
+            // rebuilds payloads with the WhoIs-resolved device name).
+            TailnetIdentity owner = new TailnetIdentity("arch@example.test",
+                "viper", java.util.Set.of("tag:architect"));
+            TailnetRoles.Scope scope = new TailnetRoles.Scope(
+                java.util.Set.of("arch@example.test"),
+                java.util.Set.of("arch@example.test"),
+                java.util.Set.of("tag:architect"));
+            java.util.concurrent.atomic.AtomicReference<TailnetIdentity> peer =
+                new java.util.concurrent.atomic.AtomicReference<>(owner);
+
+            // Fresh quorum, isolated from the live AgentManager.
+            com.mindpalace.agent.sims.WeightedQuorumVote quorum =
+                new com.mindpalace.agent.sims.WeightedQuorumVote();
+            quorum.registerProposal("mesh-selftest-1", "hermetic mesh proposal",
+                new com.mindpalace.agent.sims.HexCoord(0, 0));
+            final String meshProposalId = "mesh-selftest-1";
+            // Real BallotSink: cast into the pipeline; 409 when not open.
+            MeshServer.BallotSink sink = (proposalId, deviceId, vote, nonce) ->
+                quorum.castMeshVote(proposalId, deviceId, vote) != null;
+
+            // Server with temp-dir keys; client with its own temp-dir keys.
+            java.nio.file.Path serverKeys = java.nio.file.Files.createTempDirectory("mesh-srv");
+            java.nio.file.Path clientKeys = java.nio.file.Files.createTempDirectory("mesh-cli");
+            MeshCrypto serverCrypto = MeshCrypto.open(serverKeys, "viper-host", null);
+            MeshCrypto clientCrypto = MeshCrypto.open(clientKeys, "viper", null);
+
+            TailnetTransport.Router router = new TailnetTransport.Router();
+            MeshServer mesh = MeshServer.mount(router, serverCrypto, sink);
+            transport = TailnetTransport.forLoopbackTest(0,
+                (address, port) -> peer.get(), scope, router);
+            transport.start();
+            String base = "http://127.0.0.1:" + transport.port();
+
+            // Client pins itself as the server would on TOFU: castBallot with
+            // its own keypair through MeshPeerClient against the real routes.
+            MeshPeerClient client = new MeshPeerClient(base, clientCrypto);
+
+            boolean pingOk = client.ping() == 200;
+
+            // Vote on the explicit open id: accepted, counted in the pipeline.
+            int first = client.castBallot(meshProposalId, "APPROVE");
+            boolean accepted = first == 200;
+
+            // Replay is probed at the protocol level below (castBallot makes
+            // a fresh UUID nonce per call, so it cannot be replayed as-is).
+            int replay;
+            try {
+                long ts = System.currentTimeMillis();
+                String nonce = "replay-probe-nonce";
+                String payload = MeshCrypto.ballotPayload(meshProposalId,
+                    clientCrypto.deviceName(), "APPROVE", nonce, ts);
+                String sig = clientCrypto.sign(payload);
+                replay = meshPostRaw(base, meshProposalId, "APPROVE", nonce, ts,
+                    clientCrypto, sig);
+                // Send the identical ballot again — same nonce, same payload.
+                int replay2 = meshPostRaw(base, meshProposalId, "APPROVE", nonce, ts,
+                    clientCrypto, sig);
+                replay = (replay == 200 && replay2 == 409) ? 409 : replay2;
+            } catch (Exception e) {
+                System.out.println("  mesh replay probe error: " + e);
+                replay = -1;
+            }
+
+            // Stale: timestamp 15 min in the past (> 90s window) => 403.
+            int stale = meshPostRaw(base, meshProposalId, "REJECT", "stale-nonce",
+                System.currentTimeMillis() - 900_000L, clientCrypto, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+
+            // Bad signature: fresh ts + wrong signature bytes => 403.
+            int badSig = meshPostRaw(base, meshProposalId, "REJECT", "badsig-nonce",
+                System.currentTimeMillis(), clientCrypto, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+
+            // Unregistered device at flat 1.0: proposal now carries the vote.
+            com.mindpalace.agent.sims.WeightedQuorumVote.Proposal p =
+                quorum.getProposal(meshProposalId);
+            boolean counted = p != null && p.votes.containsKey(clientCrypto.deviceName());
+
+            // Fail-closed: empty-deviceName identity must be rejected with 403.
+            peer.set(new TailnetIdentity("voter@example.test", "", java.util.Set.of()));
+            int noDevice = client.castBallot(meshProposalId, "APPROVE");
+            peer.set(owner);
+            boolean failClosed = noDevice == 403;
+
+            // Server-side counters via /v1/mesh/status: the pipeline accepted
+            // exactly two ballots (the first real cast + the replay probe's
+            // first, valid leg); every protocol-level reject must be
+            // accounted: replay 409, stale 403, badSig 403, noDevice 403.
+            boolean countersOk;
+            try {
+                String statusJson = client.status();
+                com.google.gson.JsonObject st = com.google.gson.JsonParser
+                    .parseString(statusJson).getAsJsonObject();
+                long okC = st.get("ballotsOk").getAsLong();
+                long rejC = st.get("ballotsRejected").getAsLong();
+                countersOk = okC == 2 && rejC >= 3;
+                System.out.println("  mesh status: ok=" + okC + " rejected=" + rejC);
+            } catch (Exception e) {
+                System.out.println("  mesh status probe error: " + e);
+                countersOk = false;
+            }
+
+            boolean ok = pingOk && accepted && replay == 409 && stale == 403
+                && badSig == 403 && counted && failClosed && countersOk;
+            if (!ok) {
+                System.out.println("  mesh: ping=" + pingOk + " accepted=" + accepted
+                    + " first=" + first + " replay=" + replay + " stale=" + stale
+                    + " badSig=" + badSig + " counted=" + counted
+                    + " noDevice=" + noDevice + " failClosed=" + failClosed
+                    + " counters=" + countersOk);
+            }
+            return ok;
+        } catch (Exception e) {
+            System.out.println("  mesh self-test error: " + e);
+            return false;
+        } finally {
+            if (transport != null) transport.close();
+        }
+    }
+
+    /** Test helper: POST a raw ballot body to the mesh vote route. */
+    private static int meshPostRaw(String base, String proposalId, String vote,
+                                   String nonce, long ts, MeshCrypto signerCrypto,
+                                   String sig) throws Exception {
+        String body = "{\"proposalId\":\"" + proposalId + "\",\"vote\":\"" + vote
+            + "\",\"nonce\":\"" + nonce + "\",\"ts\":" + ts
+            + ",\"publicKey\":\"" + signerCrypto.publicKeyBase64().replace("\"", "\\\"")
+            + "\",\"sig\":\"" + sig.replace("\"", "\\\"") + "\"}";
+        java.net.http.HttpClient hc = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(3)).build();
+        java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder(
+            java.net.URI.create(base + "/v1/quorum/vote"))
+            .header("Content-Type", "application/json")
+            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(
+                body, java.nio.charset.StandardCharsets.UTF_8)).build();
+        return hc.send(req, java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode();
+    }
+
     private void runSelfTest() {
         int pass = 0, fail = 0;
         System.out.println("\n===== MIND PALACE SELF-TEST =====");
@@ -6771,6 +6936,14 @@ public class GameEngine {
             System.out.println("FAIL DePIN award: " + e.getClass().getSimpleName() + " " + e.getMessage());
         }
         if (awardOk) pass++; else fail++;
+
+// 60. T2 mesh transport: signed ballots end-to-end over a loopback
+        // TailnetTransport (owner-login = trust per 2026-10-17 override).
+        boolean meshOk = testMeshQuorumTransport();
+        System.out.println((meshOk ? "PASS" : "FAIL")
+            + " mesh quorum transport (signed ballots, replay/stale/signature rejects, fail-closed)");
+        if (meshOk) pass++; else fail++;
+
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
