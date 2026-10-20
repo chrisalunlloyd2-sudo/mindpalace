@@ -5722,6 +5722,19 @@ public class GameEngine {
             + (particleOk ? "" : " -- " + particleWhy));
         if (particleOk) pass++; else fail++;
 
+        // QUAL-3 (t_ddf78c8d): hex-water lattice, proven headless (no GL):
+        // layout facts, corner/node geometry, region fills vs naive census,
+        // exact tileAt, neighbour symmetry, stable id/phase, cap mesh welds +
+        // winding + uv, pond skirt normals + winding, MEASURED zero-alloc query path.
+        String hexWhy;
+        try { hexWhy = com.mindpalace.world.HexWaterSelfCheck.run(); }
+        catch (Throwable t) { hexWhy = "threw " + t; }
+        boolean hexOk = hexWhy.isEmpty();
+        System.out.println((hexOk ? "PASS" : "FAIL")
+            + " QUAL-3 hex grid: layout, census, tileAt, neighbours, ids, cap mesh, pond skirt, zero-alloc"
+            + (hexOk ? "" : " -- " + hexWhy));
+        if (hexOk) pass++; else fail++;
+
         // 43. H04 budgets — read_file returns head+tail 150 lines (test via
         //     AgentManager.truncateHeadTail through a 400-line synthetic file:
         //     expect 150 + elision marker + 150, and short files untouched).
