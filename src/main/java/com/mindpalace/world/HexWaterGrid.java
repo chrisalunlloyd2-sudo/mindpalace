@@ -282,6 +282,13 @@ public final class HexWaterGrid {
         rows = rowList.toArray(new Row[0]);
     }
 
+    /**
+     * QUAL-4: package-visible install for a caller-filtered subset (the lake
+     * basin filter in HexWaterSites). The list MUST be in the r-ascending,
+     * q-ascending order produced by the region fills (the filter preserves it).
+     */
+    void installFiltered(List<Tile> list) { install(list); }
+
     // ── Stable identity / phase ──────────────────────────────────────────────
 
     /** Stable id: (q & 0xFFFF) | ((r & 0xFFFF) &lt;&lt; 16), injective for |q|,|r| ≤ 32767. */

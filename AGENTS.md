@@ -83,7 +83,10 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 - **world/** — room/hallway generation: `WorldBuilder`, `RoomPopulator`,
   `RepoMapper`, `Room`, `Hallway`, `Book`, `FogOfWar`, `PortalTheme`
   (teleporter color pairing), `OutsideWorld`, `CorridorLayout`, `RoomLayout`,
-  `LegacyRepoClassifier`, `TimeClock`, `TimeMachine`. Themed rooms:
+  `LegacyRepoClassifier`, `TimeClock`, `TimeMachine`. Hex water (QUAL-3/4,
+  MP-025, flag `render.hexWater` OFF default): `HexCoord`, `HexWaterGrid`
+  (welded seam-free lattice), `HexWaterFlags`, `HexWaterSites`,
+  `HexWaterSelfCheck`, `HexWaterIntegrationSelfCheck`. Themed rooms:
   `TuringTape`, `RotorRoom`, `EnigmaPlugboard`, `BanburismusGauge`,
   `NashFountain`, `LabDevice`, `Constellation`, `TodoCrystal`.
 - **ui/** — `HUD` (door prompts), `HudLayout`, `InteractionPromptSystem`

@@ -141,3 +141,29 @@ single-source `java Prode.java` instead).
 The three world files compile standalone (no engine/GL import) — hex math is
 GL-free by construction, which is exactly why the selftest can headless-prove
 the lattice.
+
+## 8. QUAL-4 integration (t_9bcb8660, MP-025) — flag `render.hexWater`
+
+Landed 2026-10-19 behind `world/HexWaterFlags.HEX_WATER`
+(`-Dmindpalace.render.hexWater`, OFF default = legacy paths byte-identical):
+
+- `HexWaterSites` — per-site glue: `LAKE_HR=2.4f` (pitch ≡ legacy
+  √3·0.5·hr / 0.75·hr), sand literals (ellipse 34.2/24.2, colors
+  0.62/0.55/0.40) pinned to the legacy `renderLake` scan exactly, motion
+  helpers `lakeWave`/`lakeBob`/`lakeShimmer`/`poolShimmer` (GL-free, unit
+  checked by `HexWaterIntegrationSelfCheck`).
+- `OutsideWorld.renderLakeHex/drawLakeCell` — flag-gated grid-driven tile
+  loop (v4–v7 cell color math verbatim in the shared `drawLakeCell`); legacy
+  branch reuses the SAME drawer with shimmer exactly `1f` (multiplicative
+  no-op) so OFF is byte-identical, and reuses one scratch Vector3f pair.
+- `NashFountain` — flag-ON pool = welded 7-tile rosette from
+  `HexWaterSites.buildPoolGrid()` built AT THE LATTICE ORIGIN (base offset
+  applied at draw time, so the rosette is symmetric whatever the base
+  anchor is: corner max 0.346+0.212=0.558 < 0.6 stone inner face; ring-2
+  excluded at 0.520 > 0.42); OFF = original square slab byte-identical.
+- `HexWaterIntegrationSelfCheck` (GL-free, in `GameEngine.runSelfTest`) —
+  flag-gate desync, site-constant pins, pool rosette, basin, wave-identity
+  vs the legacy formulas, bob/shimmer motion bounds.
+- MP-026 deferral: full per-tile time/view color field (v4–v7 depth tint,
+  specular) is a follow-up card; v1 ships tile geometry + bob + stable
+  per-tile phase shimmer.

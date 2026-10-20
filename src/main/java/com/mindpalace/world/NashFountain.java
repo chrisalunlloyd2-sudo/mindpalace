@@ -31,6 +31,12 @@ public final class NashFountain {
     private float phase = 0f;                 // fountain time (frozen in equilibrium)
     private double frozenSince = -1;
 
+    // QUAL-4 (MP-025): hex pool surface (flag ON only), built once lazily.
+    private HexWaterGrid poolGrid;
+    /** Scratch vectors — the render thread is the only user. */
+    private final Vector3f poolPos = new Vector3f();
+    private final Vector3f poolSize = new Vector3f();
+
     public NashFountain(Vector3f base) {
         this.base = new Vector3f(base);
     }
@@ -73,11 +79,32 @@ public final class NashFountain {
                 base.z + (float) Math.sin(ang) * POOL_R);
             r.drawCubeColor(p, new Vector3f(0.3f, 0.25f, 0.3f), 0.4f, 0.4f, 0.45f);
         }
-        // Pool water — flat disc, cyan shimmer flowing / gold still
-        float shim = equilibrium ? 0.6f : 0.5f + 0.15f * (float) Math.sin(time * 3.0);
+        // Pool water — flat disc, cyan shimmer flowing / gold still.
+        // QUAL-4 (MP-025): behind render.hexWater the square slab becomes a
+        // flat-top hex rosette drawn from the QUAL-3 grid (7-tile flower —
+        // centre + 6 ring; hex corners max ~0.56 from the centre, clear of
+        // the stone ring's inner face ~0.6, and the frozen pool near-stills
+        // with the droplets). Flag OFF = the original square slab,
+        // byte-identical.
         float wr = equilibrium ? 1.0f : 0.2f, wg = 0.7f, wb = equilibrium ? 0.3f : 1.0f;
-        r.drawCubeColor(new Vector3f(base.x, base.y + 0.05f, base.z),
-            new Vector3f(POOL_R * 1.7f, 0.04f, POOL_R * 1.7f), wr * shim, wg * shim, wb * shim);
+        if (HexWaterFlags.HEX_WATER) {
+            if (poolGrid == null) poolGrid = HexWaterSites.buildPoolGrid();
+            HexWaterGrid.Tile[] ts = poolGrid.getTiles();
+            int n = poolGrid.getTileCount();
+            for (int i = 0; i < n; i++) {
+                HexWaterGrid.Tile t = ts[i];
+                float shim = HexWaterSites.poolShimmer(t.phase, time, equilibrium);
+                float dy = equilibrium ? 0f
+                    : 0.006f * (float) Math.cos(HexWaterSites.TWO_PI * t.phase + time * 2.6);
+                r.drawHexPrismColor(poolPos.set(base.x + t.cx, base.y + 0.05f + dy, base.z + t.cz),
+                    poolSize.set(HexWaterSites.POOL_TILE_WORLD, 0.04f, HexWaterSites.POOL_TILE_WORLD),
+                    wr * shim, wg * shim, wb * shim);
+            }
+        } else {
+            float shim = equilibrium ? 0.6f : 0.5f + 0.15f * (float) Math.sin(time * 3.0);
+            r.drawCubeColor(new Vector3f(base.x, base.y + 0.05f, base.z),
+                new Vector3f(POOL_R * 1.7f, 0.04f, POOL_R * 1.7f), wr * shim, wg * shim, wb * shim);
+        }
 
         // Droplets — deterministic arcs, phase-frozen in equilibrium
         for (int i = 0; i < PARTICLES; i++) {

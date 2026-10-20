@@ -219,6 +219,7 @@ public class GameEngine {
     private float orbitTimer;           // dwell clock inside one bearing
     private int e2eWaypoint = 0;
     private double e2ePhaseTimer = 0;
+    private int e2eDoneTicks = 0;       // done-branch wait ticks while the last deferred capture flushes (QUAL-4 exit race)
     // #112: Screenshot.capture reads GL_BACK, but captureLabeled used to run
     // during update() — before the scene was drawn — so the read hit the
     // PREVIOUS frame (or driver-defined leftovers after a swap). The actual
@@ -6141,6 +6142,19 @@ public class GameEngine {
             + (hexOk ? "" : " -- " + hexWhy));
         if (hexOk) pass++; else fail++;
 
+        // QUAL-4 (t_9bcb8660): hex-water integration, proven headless (no GL):
+        // flag gate wiring, site constants vs legacy literals, Nash pool
+        // rosette geometry, lake basin order/round-trip + water/sand split,
+        // bit-exact wave equivalence, bob/shimmer range contracts.
+        String hexIntWhy;
+        try { hexIntWhy = com.mindpalace.world.HexWaterIntegrationSelfCheck.run(); }
+        catch (Throwable t) { hexIntWhy = "threw " + t; }
+        boolean hexIntOk = hexIntWhy.isEmpty();
+        System.out.println((hexIntOk ? "PASS" : "FAIL")
+            + " QUAL-4 hex water integration: flag gate, sites, pool rosette, basin, wave identity, motion bounds"
+            + (hexIntOk ? "" : " -- " + hexIntWhy));
+        if (hexIntOk) pass++; else fail++;
+
         // 43. H04 budgets — read_file returns head+tail 150 lines (test via
         //     AgentManager.truncateHeadTail through a 400-line synthetic file:
         //     expect 150 + elision marker + 150, and short files untouched).
@@ -7794,6 +7808,17 @@ public class GameEngine {
                 if (shoot) { captureLabeled("22_mansion_spawn"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
             default -> { // done — clean exit for CI
+                // QUAL-4 e2e exit race (found twice on the HD 510, 2026-10-19):
+                // at 3-13 fps every frame runs several catch-up physics
+                // ticks, so the tick AFTER the last waypoint's shoot hits this
+                // default case in the SAME update batch — and System.exit()
+                // below killed the JVM before render() could consume
+                // pendingShotLabel → 22_mansion_spawn never wrote and the
+                // harness VERIFY false-failed. Wait (bounded) until the render
+                // tail has flushed the deferred capture.
+                if (pendingShotLabel != null && e2eDoneTicks++ < 60) {
+                    break;
+                }
                 System.out.println("[E2E] tour complete — 22 waypoints captured. Exiting.");
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is

@@ -59,6 +59,9 @@ public class OutsideWorld {
     private final Vector3f factoryPos = new Vector3f(80f, 0f, -150f);
     private final Vector3f tocTreePos = new Vector3f(0f, 0f, -250f);
     private final Vector3f lakeCenter = new Vector3f(40f, 0f, -210f);
+    /** QUAL-4 (MP-025): canonical hex lake basin behind render.hexWater,
+     *  built once lazily on the render thread. Null on the legacy path. */
+    private HexWaterGrid lakeGrid;
 
     // ── Solid-world colliders (H13b, step 60) ─────────────────────────────
     // Every building is an axis-aligned box the player cannot walk through.
@@ -293,6 +296,24 @@ public class OutsideWorld {
         // plane show through as green hairlines at the shoreline.
         final float rxGrown = 30f + xStep, rzGrown = 20f + zStep;
         // STEP 94: foam is a fixed thin waterline band (see loop body).
+        // QUAL-4 (MP-025): behind render.hexWater both lake passes (water +
+        // sand) are driven from ONE canonical HexWaterGrid basin — the grid's
+        // default pitch (R 1.2 → xPitch √3·1.2, zPitch 1.8) is EXACTLY this
+        // legacy lattice (√3·0.5·hr / 0.75·hr), so hex field, per-tile phase
+        // and corner math come from the proven QUAL-3 grid instead of a scan
+        // loop. Water/sand classification reuses the identical grown/sand
+        // ellipse tests of the legacy loops; the per-cell color/foam/moon
+        // math is the shared drawLakeCell (called on BOTH paths) so both
+        // paths draw the same calibrated v7 look. The basin covers every
+        // centre the legacy scans could draw (grown-ellipse overscan
+        // margin by design) and fixes the one-pitch rim sliver the ±32 scan
+        // range cut off at the ±x extremes (grid path only).
+        if (HexWaterFlags.HEX_WATER) {
+            if (lakeGrid == null) lakeGrid = HexWaterSites.buildLakeGrid();
+            renderLakeHex(r, floorY, time, lx, lz, rxGrown, rzGrown);
+            r.popLight(); // STEP 95v8: end lake/home-pair bypass
+            return;
+        }
         int row = 0;
         for (float wz = lz - 24f; wz <= lz + 24f; wz += zStep, row++) {
             float xOff = (row % 2 != 0) ? xStep * 0.5f : 0f;
@@ -307,198 +328,19 @@ public class OutsideWorld {
                 // One deep-skirted column per cell: the cap rides the same
                 // traveling wave family. STEP 94v3: medium swell ±0.14 — the
                 // v2 ±0.20 exposed glowing side walls as green seams between
-                // cells at grazing night light.
-                float h = 0.055f * (float) Math.cos(wx * 0.22f + time * 1.6f)
-                        + 0.045f * (float) Math.cos(wz * 0.30f - time * 1.2f)
-                        + 0.030f * (float) Math.sin((wx + wz) * 0.22f + time * 0.8f);
+                // cells at grazing night light. (QUAL-4 MP-025: the wave
+                // formula lives in HexWaterSites.lakeWave — single source,
+                // bit-exact vs the legacy text; the per-cell color/foam/
+                // moon/bloom body moved into drawLakeCell, SHARED with the
+                // flag-ON grid pass so both paths draw one calibrated look.)
+                float h = HexWaterSites.lakeWave(wx, wz, time);
                 // Shallow-water damping: the swell tapers to 15% over the
                 // outer quarter of the lake — rim cells stay near waterline
                 // level (no wave walls against the sand berm; real
                 // shorelines calm), deep cells keep the full roll.
                 float damp = eTrue > 0.75f ? Math.max(1f - 3.4f * (eTrue - 0.75f), 0.15f) : 1f;
                 h *= damp;
-                // STEP 94v3 (anti "mint floor") — the v2 pale-rim gradient
-                // was read from the shoreline camera: most visible cells sit
-                // at MID eTrue → pastel mint everywhere, no dark anywhere.
-                // v3 inverts it: water is DEEP everywhere (navy→teal only by
-                // depth), the SKY reflection cue is distance-driven (far
-                // water pales toward the horizon — a real Fresnel cue near
-                // the camera is unnecessary), and night drops albedo hard.
-                // STEP 94v4 (anti "white in the water") — Architect saw white
-                // fields on the live v3 lake at night. Root causes, all AFTER
-                // the night-albedo drop so the dimming never touched them:
-                // (1) glitter cells snapped to full white and at unlucky
-                // swell phases merged into connected white patches (Pillow:
-                // 2.15% achromatic-white in a fresh tour vs 0.47% in r6 —
-                // phase-dependent); (2) waterline foam (0.88,0.98,1.0) read
-                // as white dashes around the shore; (3) the far-horizon sky
-                // wash paled past the night dim. v4 removes every white
-                // writer: foam → moonlit seafoam, glitter → additive
-                // cyan-silver shimmer (capped, never a snap), sky wash →
-                // steel blue BEFORE the dim. All writers now sit after the
-                // night drop so night stays dark-coherent. The spectacular
-                // layer: a moon-path specular corridor down the lake
-                // meridian (the classic moonlight streak, strongest at
-                // night) plus deep hue travel — troughs toward indigo,
-                // crests toward cerulean — so the surface undulates in
-                // COLOR, not brightness blobs.
-                float depthT = (float) Math.pow(Math.min(eTrue, 1f), 0.7f);
-                float rC = 0.07f + 0.10f * depthT;      // deep navy → teal
-                float gC = 0.22f + 0.22f * depthT;
-                float bC = 0.40f + 0.16f * depthT;
-                // wave light/dark — k clamps h to [0,1] around the mean.
-                // v4 hue travel: troughs dip toward indigo, crests lift
-                // toward cerulean — the lake rolls in hue, not brightness.
-                float k = Math.min(Math.max(h * 3.2f + 0.5f, 0f), 1f);
-                rC += -0.10f * (1f - k) + 0.02f * k;
-                gC += -0.10f * (1f - k) + 0.10f * k;
-                bC += -0.05f * (1f - k) + 0.14f * k;
-                // sky reflection with distance — starts at 8 m, 70% by 30 m.
-                // v4: target is DAY/NIGHT aware — day keeps the v3 pale-steel
-                // horizon fade (v3's day look was never flagged), night uses
-                // darker steel blue BEFORE the dim (the night wash must not
-                // glow against a night sky).
-                float dCam = (float) Math.sqrt((wx - camX) * (wx - camX) + (wz - camZ) * (wz - camZ));
-                float skyBlend = 0.70f * Math.min(Math.max((dCam - 8f) / 22f, 0f), 1f);
-                boolean nightNow = isNight();
-                float skyR = nightNow ? 0.30f : 0.62f;
-                float skyG = nightNow ? 0.50f : 0.78f;
-                float skyB = nightNow ? 0.66f : 0.90f;
-                rC += (skyR - rC) * skyBlend;
-                gC += (skyG - gC) * skyBlend;
-                bC += (skyB - bC) * skyBlend;
-                // Night albedo drop (tour + real evening play): kill the
-                // pastel brightness so dark blue stays dark blue. v4: every
-                // writer below this line inherits the dim — the v3 ordering
-                // let foam and glitter bypass it entirely.
-                if (isNight()) { rC *= 0.55f; gC *= 0.60f; bC *= 0.62f; }
-                // v4 moon path: one-lobed Gaussian down the lake meridian
-                // (x = lx), 18 m 1/e half-width. Viewer-independent, so the
-                // tour and every shore see the same classic streak. Night
-                // intensity ×0.95, day ×0.25. Additive on a dimmed base —
-                // corridor cells land ~0.2-0.4 per channel, never near
-                // white. A slow phase roll makes the path breathe. v4c
-                // synthesis: r7's base amplitude read "subtle", r8's wide
-                // boost read "milky" — so the base returns to r7 strength
-                // and the punch moves into a NARROW hot core (~2 m
-                // half-width, the true moon column): bright where the eye
-                // looks, dark navy everywhere else.
-                float mpath = (float) Math.exp(-((wx - lx) * (wx - lx)) * 0.00155f);
-                float mNight = isNight() ? 0.95f : 0.25f;
-                float mPhase = 0.85f + 0.15f * (float) Math.sin(time * 0.9f + wz * 0.12f);
-                rC += 0.18f * mNight * mpath * mPhase;
-                gC += 0.22f * mNight * mpath * mPhase;
-                bC += 0.26f * mNight * mpath * mPhase;
-                // v4d hot core: narrow Gaussian ON TOP of the subtle base
-                // path — but windowed by viewer distance. r9 proved the
-                // lesson: a viewer-independent core lights the cells under
-                // the camera, and near-field perspective magnification
-                // turns a modest addend into a 14%-white ice field. A
-                // moon streak physically lives on the FAR water: fade the
-                // core in from 6 m, full by 15 m. Near field stays dark
-                // navy; the streak reads mid-lake → horizon.
-                float core = (float) Math.exp(-((wx - lx) * (wx - lx)) * 0.070f);
-                float vWin = Math.min(Math.max((dCam - 6f) / 9f, 0f), 1f);
-                float cAmp = mNight * mPhase;
-                // v4e: r10 was white-free but the streak read as a thread —
-                // amplitude up into the tinted ceiling (never white) and
-                // width 0.090→0.070 so the column reads at distance.
-                rC += 0.40f * core * cAmp * vWin;
-                gC += 0.52f * core * cAmp * vWin;
-                bC += 0.62f * core * cAmp * vWin;
-                if (eTrue > 0.965f) {
-                    // Thin waterline foam: fixed ~3.5%-of-radius band
-                    // (≈0.5 m wide) gently breathing. v4: moonlit SEAFOAM
-                    // (green-leaning) instead of the v3 near-white ring,
-                    // with its own night palette — the dashes stay but
-                    // they read as foam on a night sea, not white paint.
-                    float breathe = 0.92f + 0.08f * (float) Math.sin(time * 1.3f + (wx + wz) * 0.15f);
-                    if (isNight()) {
-                        rC = 0.21f * breathe; gC = 0.45f * breathe; bC = 0.42f * breathe;
-                    } else {
-                        rC = 0.34f * breathe; gC = 0.72f * breathe; bC = 0.64f * breathe;
-                    }
-                } else {
-                    // Sun glitter v4: sparkle stays pointwise but it now
-                    // MODULATES (additive cyan-silver flash, capped, never
-                    // a snap) instead of snapping to (0.96,0.99,1.0). The
-                    // v3 snap values are exactly the achromatic-white
-                    // patches the Architect caught. v4b: caps stay tinted
-                    // (r well below g/b) so a flash reads unmistakably
-                    // pale-cyan; inside the NARROW hot core the product
-                    // threshold drops to 0.70 so the streak itself
-                    // sparkles denser — light on moving water.
-                    float g1 = (float) Math.sin(wx * 2.1f + wz * 1.7f + time * 2.7f);
-                    float g2 = (float) Math.sin(wz * 1.6f - wx * 1.3f - time * 2.1f);
-                    if (k > 0.55f && (g1 * g2 > 0.82f || (core * vWin > 0.50f && g1 * g2 > 0.70f))) {
-                        float flash = 0.86f + 0.14f * g1;
-                        rC = Math.min(rC + 0.34f * flash, 0.62f);
-                        gC = Math.min(gC + 0.50f * flash, 0.78f);
-                        bC = Math.min(bC + 0.55f * flash, 0.85f);
-                    }
-                    // Moon-path crest kiss: inside the corridor, crests
-                    // lift a hair and troughs drop a hair — the moving
-                    // light-ripple texture the eye reads on a real
-                    // moonlit sea. v4c: back to r7's tight band (the r8
-                    // wide lift helped the milk).
-                    if (mpath > 0.35f) {
-                        float lift = 0.10f * (k - 0.5f) * (mpath - 0.35f) * 2.9f;
-                        rC += lift * 0.7f; gC += lift * 0.9f; bC += lift;
-                    }
-                }
-                // v4d hard tinted ceiling: the structural anti-white
-                // guarantee. No water cell may exceed these post-dim
-                // values (r < g < b, cyan family), so even at full flash
-                // the renderer can never clamp a pale vertex to
-                // screen-white. Achromatic white on the lake is now
-                // geometrically impossible.
-                rC = Math.min(rC, 0.76f);
-                gC = Math.min(gC, 0.86f);
-                bC = Math.min(bC, 0.92f);
-                // STEP 94v5 (bloom white-kill — the REAL root cause): the
-                // v4 vertex ceiling (0.76,0.86,0.92) sits at luminance ~0.85,
-                // INSIDE BloomEffect's bright pass (smoothstep 0.6→0.9).
-                // Composite then adds the blurred scene back at ~0.95
-                // intensity, so every ceiling-hit cell self-adds to ~1.7 and
-                // clips to screen-white. Only cells subtending enough screen
-                // area (standing on the shore, free-look) keep the blur
-                // self-contained; the fixed tour camera saw thin diluted
-                // bands — which is why both r10/r11 passed clean and the
-                // Architect still saw white hexes live. Fix: budget the
-                // final cell luminance BELOW the bright-pass knee (0.58) at
-                // night — water contributes nothing to bloom, so no
-                // composite can lift it to white. The brightness budget
-                // moves into blue: the streak reads as a vivid cerulean
-                // column, still the brightest thing on the lake, never
-                // achromatic. Night-only: the day steel-haze look is
-                // untouched (never flagged) and its bloom is a feature.
-                // STEP 94v6 (all-blue tightening): the v5 budget 0.58 left a
-                // band of streak cells at lum 0.55-0.58 (ceiling-family 0.76/
-                // 0.86/0.92 scaled down) that still reads as PALE MINT at
-                // grazing bearings (orbit-v5c stations 21-23, 32, 35-36).
-                // Architect bar: hex water ALL BLUE. Budget now 0.50 —
-                // every night water cell lands in the saturated-teal band;
-                // the streak stays the brightest blue on the lake, can no
-                // longer read as pale/white anywhere. Night-only; day
-                // steel-haze bloom untouched.
-                if (isNight()) {
-                    // STEP 94v7 (Architect: slight purple hue): night water
-                    // drifts toward indigo-violet — green dips, blue+red lift.
-                    // Order matters: shift FIRST, v6 budget LAST, so every
-                    // cell is still clamped ≤ lum 0.50 (r<g<b cyan family,
-                    // all-blue bar, and purple can never rebloom a cell).
-                    rC += 0.02f * bC;
-                    gC *= 0.94f;
-                    bC += 0.08f * (1f - bC);
-                    float lum = 0.2126f * rC + 0.7152f * gC + 0.0722f * bC;
-                    if (lum > 0.50f) {
-                        float s = 0.50f / lum;
-                        rC *= s; gC *= s; bC *= s;
-                    }
-                }
-                r.drawHexPrismColor(new Vector3f(wx, floorY + 0.22f + h, wz),
-                    new Vector3f(hr * 1.06f, 0.60f, hr * 1.06f),
-                    rC, gC, bC);
+                drawLakeCell(r, floorY, time, wx, wz, lx, eTrue, h, 1f, null, null);
             }
         }
         // Sandy shoreline — hex cells on the SAME grid, just outside the water
@@ -520,6 +362,173 @@ public class OutsideWorld {
             }
         }
         r.popLight(); // STEP 95v8: end lake/home-pair bypass
+    }
+
+    /**
+     * QUAL-4 (MP-025): flag-ON lake pass — one pass over the canonical
+     * {@link HexWaterGrid} basin (pitch provably equal to the legacy scan
+     * lattice), classified by the SAME ellipses the legacy loops use. Water
+     * cells get per-tile stable-phase bob + shimmer riding the shared v7
+     * color body; sand cells get a gentle multiplicative shimmer. The legacy
+     * scan path calls the SAME per-cell drawer with shimmer = 1 (identity),
+     * so flag OFF stays byte-identical.
+     */
+    private void renderLakeHex(Renderer r, float floorY, float time,
+                               float lx, float lz, float rxGrown, float rzGrown) {
+        final float hr = HexWaterSites.LAKE_HR;
+        // Same cap dimensions as the legacy draws (1.06 oversize hides seams).
+        final float hrPow = hr * 1.06f;
+        final float hrPlain = hr;                    // sand (no oversize legacy)
+        // ONE arg set reused per tile (no per-frame allocation in the loop).
+        final Vector3f cellPos = new Vector3f();
+        final Vector3f cellSize = new Vector3f();
+
+        HexWaterGrid.Tile[] tiles = lakeGrid.getTiles();
+        int n = lakeGrid.getTileCount();
+        for (int i = 0; i < n; i++) {
+            HexWaterGrid.Tile t = tiles[i];
+            float wx = t.cx, wz = t.cz;
+            if (!chunkVisible(wx, wz)) continue;
+            float edx = wx - lx, edz = wz - lz;
+            float eOuter = (edx * edx) / (rxGrown * rxGrown)
+                         + (edz * edz) / (rzGrown * rzGrown);
+            if (eOuter < 1f) {
+                float eTrue = (edx * edx) / (30f * 30f) + (edz * edz) / (20f * 20f);
+                float damp = eTrue > 0.75f ? Math.max(1f - 3.4f * (eTrue - 0.75f), 0.15f) : 1f;
+                float bob = HexWaterSites.lakeBob(t.phase, time, HexWaterSites.LAKE_BOB_AMP);
+                float h = damp * HexWaterSites.lakeWave(wx, wz, time) + bob;
+                float shim = HexWaterSites.lakeShimmer(t.phase, time);
+                drawLakeCell(r, floorY, time, wx, wz, lx, eTrue, h, shim, cellPos, cellSize);
+            } else {
+                float sOuter = (edx * edx) / (HexWaterSites.SAND_RX * HexWaterSites.SAND_RX)
+                             + (edz * edz) / (HexWaterSites.SAND_RZ * HexWaterSites.SAND_RZ);
+                if (sOuter >= 1f) continue;
+                float shim = HexWaterSites.lakeShimmer(t.phase, time);
+                r.drawHexPrismColor(cellPos.set(wx, floorY + 0.02f, wz),
+                    cellSize.set(hrPlain, 0.08f, hrPlain),
+                    0.62f * shim, 0.55f * shim, 0.40f * shim);
+            }
+        }
+    }
+
+    /**
+     * Shared per-cell lake draw: the calibrated v4–v7 surface (deep navy→teal
+     * by depth, distance sky wash, night albedo drop, moon path + hot core,
+     * seafoam waterline, capped cyan-silver glitter, hard tinted ceiling,
+     * night luminance budget 0.50) — VERBATIM from the legacy loop so both
+     * render paths draw one look. shimmer ∈ (0, 1] multiplies the FINAL cell
+     * colour (multiplicative-only can never break the anti-white budgets);
+     * the legacy path passes exactly 1f (pure identity → byte-identical).
+     */
+    private void drawLakeCell(Renderer r, float floorY, float time,
+                              float wx, float wz, float lx, float eTrue, float h,
+                              float shimmer, Vector3f posScratch, Vector3f sizeScratch) {
+        // Legacy cap scale (renderLakeHex pins the same 2.4). Local here so
+        // this shared drawer is self-contained for both call sites.
+        final float hr = HexWaterSites.LAKE_HR;
+        boolean identity = shimmer == 1f;
+        float depthT = (float) Math.pow(Math.min(eTrue, 1f), 0.7f);
+        float rC = 0.07f + 0.10f * depthT;      // deep navy → teal
+        float gC = 0.22f + 0.22f * depthT;
+        float bC = 0.40f + 0.16f * depthT;
+        // wave light/dark — k clamps h to [0,1] around the mean.
+        // v4 hue travel: troughs dip toward indigo, crests lift toward
+        // cerulean — the lake rolls in hue, not brightness.
+        float k = Math.min(Math.max(h * 3.2f + 0.5f, 0f), 1f);
+        rC += -0.10f * (1f - k) + 0.02f * k;
+        gC += -0.10f * (1f - k) + 0.10f * k;
+        bC += -0.05f * (1f - k) + 0.14f * k;
+        // sky reflection with distance — starts at 8 m, 70% by 30 m.
+        // Day keeps the v3 pale-steel horizon fade; night uses darker steel
+        // blue BEFORE the dim (the night wash must not glow against a night sky).
+        float dCam = (float) Math.sqrt((wx - camX) * (wx - camX) + (wz - camZ) * (wz - camZ));
+        float skyBlend = 0.70f * Math.min(Math.max((dCam - 8f) / 22f, 0f), 1f);
+        boolean nightNow = isNight();
+        float skyR = nightNow ? 0.30f : 0.62f;
+        float skyG = nightNow ? 0.50f : 0.78f;
+        float skyB = nightNow ? 0.66f : 0.90f;
+        rC += (skyR - rC) * skyBlend;
+        gC += (skyG - gC) * skyBlend;
+        bC += (skyB - bC) * skyBlend;
+        // Night albedo drop: every writer below inherits the dim.
+        if (isNight()) { rC *= 0.55f; gC *= 0.60f; bC *= 0.62f; }
+        // v4 moon path: one-lobed Gaussian down the lake meridian (x = lx),
+        // 18 m 1/e half-width, viewer-independent; night ×0.95, day ×0.25.
+        float mpath = (float) Math.exp(-((wx - lx) * (wx - lx)) * 0.00155f);
+        float mNight = isNight() ? 0.95f : 0.25f;
+        float mPhase = 0.85f + 0.15f * (float) Math.sin(time * 0.9f + wz * 0.12f);
+        rC += 0.18f * mNight * mpath * mPhase;
+        gC += 0.22f * mNight * mpath * mPhase;
+        bC += 0.26f * mNight * mpath * mPhase;
+        // v4d hot core: narrow Gaussian ON TOP of the subtle base path,
+        // windowed by viewer distance (a moon streak lives on FAR water:
+        // fade in from 6 m, full by 15 m).
+        float core = (float) Math.exp(-((wx - lx) * (wx - lx)) * 0.070f);
+        float vWin = Math.min(Math.max((dCam - 6f) / 9f, 0f), 1f);
+        float cAmp = mNight * mPhase;
+        rC += 0.40f * core * cAmp * vWin;
+        gC += 0.52f * core * cAmp * vWin;
+        bC += 0.62f * core * cAmp * vWin;
+        if (eTrue > 0.965f) {
+            // Thin waterline foam: fixed ~3.5%-of-radius band (≈0.5 m wide)
+            // gently breathing — moonlit seafoam (green-leaning), with its
+            // own night palette.
+            float breathe = 0.92f + 0.08f * (float) Math.sin(time * 1.3f + (wx + wz) * 0.15f);
+            if (isNight()) {
+                rC = 0.21f * breathe; gC = 0.45f * breathe; bC = 0.42f * breathe;
+            } else {
+                rC = 0.34f * breathe; gC = 0.72f * breathe; bC = 0.64f * breathe;
+            }
+        } else {
+            // Sun glitter v4: pointwise additive cyan-silver flash, capped,
+            // never a snap; denser inside the narrow hot core.
+            float g1 = (float) Math.sin(wx * 2.1f + wz * 1.7f + time * 2.7f);
+            float g2 = (float) Math.sin(wz * 1.6f - wx * 1.3f - time * 2.1f);
+            if (k > 0.55f && (g1 * g2 > 0.82f || (core * vWin > 0.50f && g1 * g2 > 0.70f))) {
+                float flash = 0.86f + 0.14f * g1;
+                rC = Math.min(rC + 0.34f * flash, 0.62f);
+                gC = Math.min(gC + 0.50f * flash, 0.78f);
+                bC = Math.min(bC + 0.55f * flash, 0.85f);
+            }
+            // Moon-path crest kiss: inside the corridor, crests lift a hair,
+            // troughs drop a hair (the moving light-ripple texture).
+            if (mpath > 0.35f) {
+                float lift = 0.10f * (k - 0.5f) * (mpath - 0.35f) * 2.9f;
+                rC += lift * 0.7f; gC += lift * 0.9f; bC += lift;
+            }
+        }
+        // v4d hard tinted ceiling: r < g < b cyan family; achromatic white on
+        // the lake is geometrically impossible.
+        rC = Math.min(rC, 0.76f);
+        gC = Math.min(gC, 0.86f);
+        bC = Math.min(bC, 0.92f);
+        // STEP 94v5/v6 (bloom white-kill + all-blue): night water stays below
+        // the bright-pass knee 0.50 — vivid cerulean streak, never pale mint.
+        // STEP 94v7 (slight purple hue): indigo-violet drift FIRST, budget
+        // LAST so purple can never rebloom a cell.
+        if (isNight()) {
+            rC += 0.02f * bC;
+            gC *= 0.94f;
+            bC += 0.08f * (1f - bC);
+            float lum = 0.2126f * rC + 0.7152f * gC + 0.0722f * bC;
+            if (lum > 0.50f) {
+                float s = 0.50f / lum;
+                rC *= s; gC *= s; bC *= s;
+            }
+        }
+        // QUAL-4 per-tile shimmer — AFTER every budget writer, purely
+        // multiplicative (≤ 1), so no budget above can be broken by it.
+        if (!identity) {
+            rC *= shimmer; gC *= shimmer; bC *= shimmer;
+        }
+        if (posScratch != null) {
+            r.drawHexPrismColor(posScratch.set(wx, floorY + 0.22f + h, wz),
+                sizeScratch.set(hr * 1.06f, 0.60f, hr * 1.06f), rC, gC, bC);
+        } else {
+            // Legacy shape: same allocations as the pre-refactor loop.
+            r.drawHexPrismColor(new Vector3f(wx, floorY + 0.22f + h, wz),
+                new Vector3f(hr * 1.06f, 0.60f, hr * 1.06f), rC, gC, bC);
+        }
     }
 
     // ── Forest (Fibonacci phyllotaxis, deciduous + evergreen) ──
