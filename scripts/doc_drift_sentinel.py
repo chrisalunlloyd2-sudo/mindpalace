@@ -101,6 +101,7 @@ CLAUSE_SPLIT_RX = re.compile(r"[.;:](?:\s|$)|\)\.?\s| — ")
 
 
 def git_tracked():
+    """Git tracked (function)."""
     out = subprocess.run(["git", "ls-files"], cwd=str(REPO),
                          capture_output=True, text=True, timeout=60)
     return set(out.stdout.replace("\\", "/").splitlines())
@@ -119,6 +120,10 @@ class Tree:
     """Presence checks against the repo tree, with a shared cache."""
 
     def __init__(self, corpus, tracked):
+        """Init.
+
+        Args: corpus, tracked.
+        """
         self.corpus = corpus
         self.tracked = tracked
         self._cache = {}
@@ -228,6 +233,7 @@ def drift_for_doc(doc_text, tree):
 
 
 def gh_open_issue_blob():
+    """Gh open issue blob (function)."""
     try:
         out = subprocess.run(
             ["gh", "issue", "list", "--state", "open", "--limit", "200",
@@ -243,6 +249,7 @@ def gh_open_issue_blob():
 
 
 def gh_credential_env():
+    """Gh credential env (function)."""
     env = {**os.environ}
     if not env.get("GH_TOKEN") and not env.get("GITHUB_TOKEN"):
         try:
@@ -260,6 +267,10 @@ def gh_credential_env():
 
 
 def gh_create(title, body):
+    """Gh create.
+
+    Args: title, body.
+    """
     env = gh_credential_env()
     try:
         r = subprocess.run(
@@ -273,6 +284,7 @@ def gh_create(title, body):
 
 
 def main():
+    """Main (function)."""
     mode = "scan"
     strict = False
     for a in sys.argv[1:]:
