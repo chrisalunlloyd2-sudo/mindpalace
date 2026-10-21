@@ -9,7 +9,7 @@
   {
     "name": "palace-notes",
     "language": "Markdown",
-    "description": "Demo knowledge base",
+    "description": "A tidy knowledge base of field notes, guides, and room-density docs",
     "private": true,
     "path": "data/demo_repos/palace-notes"
   },
@@ -79,7 +79,7 @@
   {
     "name": "c-ember",
     "language": "C",
-    "description": "C sampler",
+    "description": "A tiny ember of C — hello world, pointers, and a Makefile to spark from",
     "private": false,
     "path": "data/demo_repos/c-ember"
   }

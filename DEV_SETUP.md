@@ -76,6 +76,18 @@ guard + frozen copy).
    tour — GameEngine case 12/13). They are
    baseline artifacts, not your regression — the A/B proof lives in the
    step-log.
+7. **Win11-specific rows** (verified 2026-10-20, refs #24):
+   - *Symptom* — SmartScreen blocks `MindPalace.exe` (no EV cert): *Fix* —
+     "More info → Run anyway", or unblock via file Properties; *Why* — the
+     jpackage exe is unsigned, this is normal for local builds.
+   - *Symptom* — `Ollama` service starts after reboot but the game shows
+     agents idle: *Fix* — wait for `http://127.0.0.1:11435` to answer, or
+     `ollama serve` manually; *Why* — Win11 starts Ollama lazily behind the
+     first client call, the engine's gate check can beat it on boot.
+     (Win10-specific Defender/jpackage notes already in the build docs.)
+8. **Console log `?` characters** were listed as gotcha 5 above — on Win11
+   the same codepage rule applies verbatim (UTF-8 arrows render as `?`,
+   parsers must match literal `?`).
 
 ## One-command dev loop
 
