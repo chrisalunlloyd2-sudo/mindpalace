@@ -9,7 +9,8 @@ import java.util.concurrent.*;
  */
 public class AudioEngine {
     private boolean enabled = true;
-    private float masterVolume = 0.5f;
+    /** #32: master volume persists best-effort across restarts (Options audio page). */
+    private float masterVolume = AudioSettings.load("masterVolume", 0.5f);
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private SourceDataLine ambientLine;
     private boolean ambientPlaying;

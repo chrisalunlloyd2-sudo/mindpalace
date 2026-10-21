@@ -30,7 +30,9 @@ public class MusicEngine {
     private final AtomicBoolean beatEnabled = new AtomicBoolean(false);
     private final AtomicBoolean playing = new AtomicBoolean(false);
     private final AtomicBoolean enabled = new AtomicBoolean(true);
-    private final AtomicInteger volumePct = new AtomicInteger(50);
+    /** #32: music volume persists best-effort across restarts (menu knob only). */
+    private final AtomicInteger volumePct = new AtomicInteger(Math.round(
+        AudioSettings.load("musicVolume", 0.5f) * 100f));
 
     private volatile String scale = "minor";
     private volatile int[] progression = {0, 5, 2, 6}; // i–VI–III–VII (minor)

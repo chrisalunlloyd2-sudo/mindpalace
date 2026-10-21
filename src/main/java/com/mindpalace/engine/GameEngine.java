@@ -25,6 +25,7 @@ import com.mindpalace.ui.HudLayout;   // t_0c1374b0: HUD slot table (de-overlap)
 import com.mindpalace.github.GitHubClient;
 import com.mindpalace.github.GistWall;
 import com.mindpalace.audio.AudioEngine;
+import com.mindpalace.audio.AudioSettings;
 import com.mindpalace.audio.MusicEngine;
 import com.mindpalace.audio.StepSequencer;
 import com.mindpalace.agent.AgentManager;
@@ -2031,12 +2032,18 @@ public class GameEngine {
                 if (sel == 0) player.getCamera().setInvertY(!player.getCamera().isInvertY());
                 break;
             case 3: // audio
-                if (sel == 0) audio.setMasterVolume(clamp(audio.getMasterVolume() + dir * 0.1f, 0f, 1f));
+                if (sel == 0) {
+                    audio.setMasterVolume(clamp(audio.getMasterVolume() + dir * 0.1f, 0f, 1f));
+                    AudioSettings.save("masterVolume", audio.getMasterVolume()); // #32 persist
+                }
                 if (sel == 1) audio.setEnabled(!audio.isEnabled());
                 break;
             case 4: // music (Beats StudioLab)
                 if (sel == 0) music.setEnabled(!music.isEnabled());
-                if (sel == 1) music.setVolume(clamp(music.getVolume() + dir * 0.1f, 0f, 1f));
+                if (sel == 1) {
+                    music.setVolume(clamp(music.getVolume() + dir * 0.1f, 0f, 1f));
+                    AudioSettings.save("musicVolume", music.getVolume()); // #32 persist
+                }
                 if (sel == 2) { music.setTempo(music.getTempo() + dir * 4); sequencer.setTempo(music.getTempo()); }
                 if (sel == 3) music.setBeat(!music.isBeat());
                 if (sel == 4) cycleScale(dir);
@@ -4853,10 +4860,15 @@ public class GameEngine {
         if (player.getCamera().getFov() != fovBefore + 5f) menuOk = false;
         player.getCamera().setFov(fovBefore);
         float volBefore = audio.getMasterVolume();
+        float fileBefore = AudioSettings.load("masterVolume", 0.5f); // #32 capture file
         menuPage = 3; menuSel = 0;
-        adjustMenuValue(0, 1); // volume +0.1
+        adjustMenuValue(0, 1); // volume +0.1 (also persists — #32)
         if (Math.abs(audio.getMasterVolume() - (volBefore + 0.1f)) > 0.001f) menuOk = false;
         audio.setMasterVolume(volBefore);
+        // #32: knob changes persist — file must now match the adjusted knob
+        // (set semantics, not accumulate), and nothing overwrites at boot.
+        if (Math.abs(AudioSettings.load("masterVolume", 0.5f) - (volBefore + 0.1f)) > 0.001f) menuOk = false;
+        AudioSettings.save("masterVolume", fileBefore); // restore file
         // Invert Y toggle (controls page)
         boolean invBefore = player.getCamera().isInvertY();
         menuPage = 2; menuSel = 0;
