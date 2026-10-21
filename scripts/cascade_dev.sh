@@ -124,3 +124,6 @@ python scripts/scout_bot.py --botsteplog || log "botsteplog: post failed (non-fa
 # ── 9. H50 (step 98): weekly self-report -> reports/ + step-log ──────
 # Internally 7d-guarded; every-cascade callers safe.
 python scripts/scout_bot.py --weeklyreport || log "weeklyreport: post failed (non-fatal)"
+# ── 10. H48 (step 107, #89): doc-drift sentinel → one issue per drifted
+# file (self-deduping via open-issue marker grep). Non-fatal on gh failure.
+python scripts/doc_drift_sentinel.py --file || log "doc-sentinel: run failed (non-fatal)"
