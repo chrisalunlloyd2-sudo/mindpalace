@@ -26,6 +26,12 @@ public class OllamaClient {
     private final Object userGate = new Object();
     private static final ThreadLocal<Boolean> USER_LANE = ThreadLocal.withInitial(() -> false);
 
+    // #136 (H46, step 105): quota ledger sink. Set once by the engine wiring
+    // (GameEngine, alongside setTelemetry on AgentManager); when null the
+    // metering is a no-op and the digest simply reports no calls. Non-fatal
+    // by design: quota must never break a model call.
+    private volatile java.util.function.BiConsumer<String, Integer> quotaSink;
+
     /** #108 (F14): marks the calling thread as the USER-CHAT lane. Set once by
      * ModelScheduler.drainImmediateLoop so withGate routes user replies to
      * userGate instead of modelGate (one-hot mode). */
@@ -168,6 +174,25 @@ public class OllamaClient {
      * 30s future — observed pre-patch. One-hot mode keeps the physical
      * single-runner invariant.
      */
+    /** #136 (H46, step 105): wire the quota ledger sink (Telemetry-backed).
+     *  Called once at engine boot; null clears metering (digest reports none). */
+    public void setQuotaSink(java.util.function.BiConsumer<String, Integer> sink) {
+        this.quotaSink = sink;
+    }
+
+    /** #136 (H46, step 105): one QUOTA row per completed model call. Cost is
+     *  chars/4 (approx tokens, same units as ToolExecutor / #133). Failures
+     *  inside the sink are swallowed — quota must never break a call. */
+    private void recordQuota(String model, int chars) {
+        java.util.function.BiConsumer<String, Integer> sink = quotaSink;
+        if (sink == null) return;
+        try {
+            sink.accept(model, chars);
+        } catch (RuntimeException ignored) {
+            // non-fatal: ledger down ≠ model call down
+        }
+    }
+
     private <T> T withGate(java.util.function.Supplier<T> work) {
         if (MULTI_RESIDENT) return work.get();
         // #108 (F14): the user-chat lane (marked via ThreadLocal by the
@@ -285,7 +310,11 @@ public class OllamaClient {
                     // are RuntimeExceptions and escaped the IOException catch.
                     if (result == null || result.getAsJsonObject("message") == null) return null;
                     JsonObject msg = result.getAsJsonObject("message");
-                    if (msg.has("content") && !msg.get("content").isJsonNull()) return msg.get("content").getAsString();
+                    if (msg.has("content") && !msg.get("content").isJsonNull()) {
+                        String out = msg.get("content").getAsString();
+                        recordQuota(model, out.length()); // #136 H46: ledger metering
+                        return out;
+                    }
                     return "";
                 } catch (IOException e) {
                     // Supplier lambdas cannot throw checked exceptions — mirror
@@ -358,6 +387,7 @@ public class OllamaClient {
                     JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
                     JsonObject msg = result.getAsJsonObject("message");
                     String content = (msg.has("content") && !msg.get("content").isJsonNull()) ? msg.get("content").getAsString() : "";
+                    if (content.length() > 0) recordQuota(model, content.length()); // #136 H46
                     List<ToolCall> calls = new ArrayList<>();
                     if (msg.has("tool_calls")) {
                         for (JsonElement el : msg.getAsJsonArray("tool_calls")) {

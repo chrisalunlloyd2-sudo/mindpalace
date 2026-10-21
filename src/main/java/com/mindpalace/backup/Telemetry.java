@@ -32,6 +32,8 @@ public final class Telemetry {
     public static final String CODE     = "code";
     public static final String MISTAKE  = "mistake";
     public static final String SYSTEM   = "system";
+    /** #136 (H46, step 105): quota ledger — one row per completed model call. */
+    public static final String QUOTA    = "quota";
 
     private final Connection db;
     private final Map<String, Long> lastEmit = new HashMap<>();
@@ -158,6 +160,42 @@ public final class Telemetry {
         }
         if (sb.length() == 0) return "telemetry: no cost rows (window)";
         sb.append(" | total=").append(String.format("%.0f", total)).append('u');
+        return sb.toString();
+    }
+
+    /**
+     * #136 (H46, step 105): the morning quota digest — model-call spend over
+     * the last `windowMs` (24h from the daily tick). Counts QUOTA rows with
+     * cost > 0 (units ≈ approx tokens, chars/4) plus the cloud/burst lane,
+     * which is 0 BY CONSTRUCTION (#135 firewall). Pure read: never writes.
+     */
+    public synchronized String quotaDigest(long windowMs) {
+        if (db == null) return "quota: offline";
+        long since = System.currentTimeMillis() - windowMs;
+        StringBuilder sb = new StringBuilder();
+        long calls = 0;
+        double total = 0;
+        try (PreparedStatement ps = db.prepareStatement(
+                "SELECT event, COUNT(*), SUM(cost) FROM events "
+                    + "WHERE category = ? AND ts >= ? GROUP BY event ORDER BY 2 DESC")) {
+            ps.setString(1, QUOTA);
+            ps.setLong(2, since);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    calls += rs.getLong(2);
+                    double v = rs.getDouble(3);
+                    total += rs.wasNull() ? 0 : v;
+                    if (sb.length() > 0) sb.append(", ");
+                    sb.append(rs.getString(1)).append('=').append(rs.getLong(2));
+                    if (!rs.wasNull()) sb.append('(').append(String.format("%.0f", v)).append('u').append(')');
+                }
+            }
+        } catch (SQLException e) {
+            return "quota: query failed";
+        }
+        sb.append(" | calls=").append(calls)
+          .append(" | units=").append(String.format("%.0f", total))
+          .append(" | cloud=0 (firewall, #135)");
         return sb.toString();
     }
 

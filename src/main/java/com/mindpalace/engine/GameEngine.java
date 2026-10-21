@@ -641,6 +641,35 @@ public class GameEngine {
             catch (RuntimeException ignored) { /* keep the previous snapshot */ }
         }, 0, 1, java.util.concurrent.TimeUnit.SECONDS);
 
+        // #136 (H46, step 105): morning quota digest — daily tick on the same
+        // daemon executor. Digests the last 24h of QUOTA rows, logs the line
+        // to monitor_log.jsonl (the existing health-snapshot channel), and
+        // posts it to the step-log issue #9 (the step-98 self-report surface)
+        // as an add-only comment. Quota-free: no model call involved. First
+        // tick runs at +24h (digest needs a day of data); skipped in
+        // --demo/--selftest (hermetic) and when GitHub is unauthenticated.
+        if (!demoMode && !selfTest) {
+            telemetryReader.scheduleWithFixedDelay(() -> {
+                try {
+                    String digest = telemetry.quotaDigest(24L * 3600_000L);
+                    com.mindpalace.engine.GameEngine.appendMonitorLine(
+                        "[quota-digest] " + digest);
+                    if (github != null && github.isAuthenticated()) {
+                        // addIssueComment takes the BARE repo name (GitHubClient
+                        // prepends username) — "mindpalace", not owner/repo.
+                        try {
+                            github.addIssueComment("mindpalace", 9,
+                                "# Morning quota digest (H46, step 105)\n\n" + digest
+                                    + "\n\nGenerated quota-free by the in-engine daily tick; "
+                                    + "local mirror in logs/monitor_game.jsonl.");
+                        } catch (java.io.IOException ie) {
+                            System.out.println("[GameEngine] quota digest post failed: " + ie.getMessage());
+                        }
+                    }
+                } catch (RuntimeException ignored) { /* never kill the tick */ }
+            }, 24L * 3600_000L, 24L * 3600_000L, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+
         // Self-managing memory + never-make-code-twice DB (needed by agents).
         memoryManager = new MemoryManager(java.nio.file.Path.of(dataRoot, "mindpalace_memory").toString()); // #49
         memoryManager.start();
@@ -669,6 +698,15 @@ public class GameEngine {
         }
         // Unified telemetry: agents record quorum/DePIN/issue events.
         agentManager.setTelemetry(telemetry);
+        // #136 (H46, step 105): quota ledger — meter every completed model call
+        // through the SAME client AgentManager owns (ModelLifespan delegates
+        // there too, so this catches scheduler drains + tool rounds + NPCs).
+        // Needs a getOllama() accessor (added in AgentManager).
+        agentManager.getOllama().setQuotaSink((model, chars) -> {
+            double units = Math.round(chars / 4.0);
+            telemetry.record(com.mindpalace.backup.Telemetry.QUOTA, model,
+                "call units=~" + units, units);
+        });
         // H21 (step 67): quorum verdicts flare the world — gold bloom flash
         // for APPROVED, ice dip for REJECTED (rides the carry-event pattern;
         // web-side CSS twins already exist).
@@ -1950,6 +1988,29 @@ public class GameEngine {
     }
 
     private static float clamp(float v, float lo, float hi) { return Math.max(lo, Math.min(hi, v)); }
+
+    /**
+     * #136 (H46, step 105): append one plain-text line to the game-side
+     * monitor log (logs/monitor_game.jsonl next to the game jar) — the local
+     * mirror of the morning quota digest. NOT the bot-owned
+     * todo_management/.../monitor_log.jsonl quorum stream: that file is
+     * produced by scripts outside the repo and parsed into proposals, so
+     * engine output must never mix into it. Best-effort: failures are
+     * non-fatal (log down ≠ game down).
+     */
+    static void appendMonitorLine(String line) {
+        try {
+            java.nio.file.Path p = java.nio.file.Paths.get("logs").resolve("monitor_game.jsonl");
+            java.nio.file.Files.createDirectories(p.getParent());
+            String iso = java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME
+                .format(java.time.LocalDateTime.now().withNano(0));
+            String rec = "{\"ts\": \"" + iso + "\", \"src\": \"game-quota-tick\","
+                + " \"line\": \"" + line.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
+            java.nio.file.Files.writeString(p, rec + System.lineSeparator(),
+                java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            System.out.println("[GameEngine] quota tick: " + line);
+        } catch (Exception ignored) { /* non-fatal: log down ≠ game down */ }
+    }
 
 
     // H20 (step 66): region bloom presets — courtyard warm, forest cool,

@@ -661,6 +661,119 @@ public final class SimsHardening100 {
             return LanguageRegistry.byName("Markdown").adapter == AdapterType.CHAT;
         }));
 
+        // ── #136 (H46, step 105): quota ledger + morning digest ─────────────
+        // Fresh-Telemetry-per-case (design rule: no cross-case state leakage,
+        // temp dirs only, stopped + wiped after use).
+        cs.add(new Case("quota.categoryConstantIsLowercaseQuota", () ->
+            "quota".equals(com.mindpalace.backup.Telemetry.QUOTA)));
+        cs.add(new Case("quota.recordAndDigestRoundTrip", () -> {
+            java.nio.file.Path tmp;
+            try { tmp = java.nio.file.Files.createTempDirectory("quota-gate"); }
+            catch (java.io.IOException e) { return false; }
+            try {
+                com.mindpalace.backup.Telemetry t = new com.mindpalace.backup.Telemetry(tmp, 0L);
+                boolean w1 = t.record(com.mindpalace.backup.Telemetry.QUOTA, "qwen2.5:0.5b", "call units=~25", 25);
+                boolean w2 = t.record(com.mindpalace.backup.Telemetry.QUOTA, "tinyllama:1.1b", "call units=~10", 10);
+                // non-quota row must NOT leak into the digest
+                t.record(com.mindpalace.backup.Telemetry.AGENT, "cycle", "x", 99);
+                String digest = t.quotaDigest(java.time.Duration.ofHours(24).toMillis());
+                boolean ok = w1 && w2 && digest.contains("qwen2.5:0.5b=1(25u)")
+                    && digest.contains("tinyllama:1.1b=1(10u)")
+                    && digest.contains("calls=2") && digest.contains("units=35")
+                    && digest.contains("cloud=0");
+                t.stop();
+                return ok && !digest.contains("cycle");
+            } finally {
+                // best-effort wipe (fails silently on locked Windows tmp files)
+                try {
+                    java.util.stream.Stream<java.nio.file.Path> s =
+                        java.nio.file.Files.list(tmp);
+                    s.forEach(p -> p.toFile().delete());
+                    s.close();
+                    tmp.toFile().delete();
+                } catch (Exception ignored) { /* inert */ }
+            }
+        }));
+        cs.add(new Case("quota.emptyLedgerDigestIsGraceful", () -> {
+            java.nio.file.Path tmp;
+            try { tmp = java.nio.file.Files.createTempDirectory("quota-empty"); }
+            catch (java.io.IOException e) { return false; }
+            try {
+                com.mindpalace.backup.Telemetry t = new com.mindpalace.backup.Telemetry(tmp, 0L);
+                String digest = t.quotaDigest(java.time.Duration.ofHours(24).toMillis());
+                boolean ok = digest.contains("calls=0") && digest.contains("cloud=0");
+                t.stop();
+                return ok;
+            } finally {
+                try {
+                    java.util.stream.Stream<java.nio.file.Path> s =
+                        java.nio.file.Files.list(tmp);
+                    s.forEach(p -> p.toFile().delete());
+                    s.close();
+                    tmp.toFile().delete();
+                } catch (Exception ignored) { /* inert */ }
+            }
+        }));
+        cs.add(new Case("quota.oldRowsOutsideWindowExcluded", () -> {
+            // Real window test: record 2 QUOTA rows, backdate one 48h via a
+            // direct connection to the same sqlite file (committed write),
+            // then digest(24h) must count ONLY the fresh row. Deterministic —
+            // 48h >> any ms jitter between record and digest.
+            java.nio.file.Path tmp;
+            try { tmp = java.nio.file.Files.createTempDirectory("quota-window"); }
+            catch (java.io.IOException e) { return false; }
+            try {
+                com.mindpalace.backup.Telemetry t = new com.mindpalace.backup.Telemetry(tmp, 0L);
+                t.record(com.mindpalace.backup.Telemetry.QUOTA, "fresh", "call units=~4", 4);
+                t.record(com.mindpalace.backup.Telemetry.QUOTA, "stale", "call units=~100", 100);
+                try (java.sql.Connection c2 = java.sql.DriverManager.getConnection(
+                        "jdbc:sqlite:" + tmp.resolve("telemetry.db"));
+                     java.sql.Statement st = c2.createStatement()) {
+                    st.execute("UPDATE events SET ts="
+                        + (System.currentTimeMillis() - 48L * 3600_000L)
+                        + " WHERE event='stale'");
+                } catch (java.sql.SQLException e) { return false; }
+                String digest = t.quotaDigest(java.time.Duration.ofHours(24).toMillis());
+                boolean ok = digest.contains("fresh=1(4u)") && digest.contains("calls=1")
+                    && digest.contains("units=4") && !digest.contains("stale");
+                t.stop();
+                return ok;
+            } finally {
+                try {
+                    java.util.stream.Stream<java.nio.file.Path> s =
+                        java.nio.file.Files.list(tmp);
+                    s.forEach(p -> p.toFile().delete());
+                    s.close();
+                    tmp.toFile().delete();
+                } catch (Exception ignored) { /* inert */ }
+            }
+        }));
+        cs.add(new Case("quota.digestAfterStopDegradesGracefully", () -> {
+            // Graceful-degrade rule: a stopped ledger never throws — `db` is
+            // FINAL (never nulled; stop() closes the connection), so post-stop
+            // digests hit the SQLException path and degrade to the
+            // "quota: query failed" readout, NOT "quota: offline" (that's the
+            // db==null constructor-failure shape).
+            java.nio.file.Path tmp;
+            try { tmp = java.nio.file.Files.createTempDirectory("quota-stop"); }
+            catch (java.io.IOException e) { return false; }
+            try {
+                com.mindpalace.backup.Telemetry t = new com.mindpalace.backup.Telemetry(tmp, 0L);
+                t.record(com.mindpalace.backup.Telemetry.QUOTA, "m", "call units=~4", 4);
+                t.stop();
+                String after = t.quotaDigest(java.time.Duration.ofHours(24).toMillis());
+                return "quota: query failed".equals(after);
+            } finally {
+                try {
+                    java.util.stream.Stream<java.nio.file.Path> s =
+                        java.nio.file.Files.list(tmp);
+                    s.forEach(p -> p.toFile().delete());
+                    s.close();
+                    tmp.toFile().delete();
+                } catch (Exception ignored) { /* inert */ }
+            }
+        }));
+
         return cs;
     }
 }

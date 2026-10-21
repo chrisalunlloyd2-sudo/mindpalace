@@ -1789,6 +1789,9 @@ public class AgentManager {
     public ModelLifespan getCriticLifespan() { return criticLifespan; }
     public ModelScheduler getScheduler() { return modelScheduler; }
 
+    /** #136 (H46, step 105): the shared OllamaClient (quota sink wiring in GameEngine). */
+    public OllamaClient getOllama() { return ollama; }
+
     // ── SIMS1337 parity getters (for self-test + telemetry) ──
     public ModelRouter getRouter() { return router; }
     public LoRASwitcher getLora() { return lora; }
