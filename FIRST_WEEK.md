@@ -19,9 +19,11 @@
 - [ ] **#12 CME defensive sweep** — synchronizedList + snapshot audit across
       rooms/books/agents/votes
       *Proof: stress bot zero CME-class regressions; the freeze class dies.*
-- [ ] **#11 installer QA + release hygiene** — retire v1.0.0-coldshot, run the
-      installer fresh end-to-end, write INSTALLER.md
-      *Proof: latest exe == HEAD, documented fresh-install run.*
+- [x] **#11 installer QA + release hygiene** — v1.0.0-coldshot retired on
+      Releases (2026-10-20: marked superseded/redirected to v1.1.0-beta1),
+      installer fresh-run documented in INSTALLER.md, release pipeline
+      uploads EXE+JAR on every green cut (scripts/release_phase.sh:240)
+      *Proof: INSTALLER.md clean-machine section; release assets verified.*
 - [ ] **Tag v1.2.0-beta1** with the frustum + minimap build once #10/#12 land
       *Proof: GitHub Release with installer asset, release notes = step-log digest.*
 

@@ -76,7 +76,8 @@ phase (v1.1.0-beta1 is live).
 
 ## Phase H — Exe Installer
 
-- [x] jpackage native .exe installer (v1.0.0-coldshot, v1.1.0-beta1 on Releases;
+- [x] jpackage native .exe installer (v1.0.0-coldshot SUPERSEDED — see Releases
+      Notes; current = v1.1.0-beta1 on Releases;
       icon Windows-path fix in build-installer.sh)
 - [ ] Auto-updater (checks Releases API; queued NEXT_100 step 109) — reconciled 2026-10-06: `LiveUpdateManager` only watches for new repos/files, it is NOT a release updater
 
