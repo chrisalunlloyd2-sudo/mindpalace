@@ -74,7 +74,49 @@ public class PortalTheme {
 
     /** Theme for pad {@code padIndex} — stable, rotates through the palette. */
     public static PortalTheme forPad(int padIndex) {
-        return PALETTE[Math.floorMod(padIndex, PALETTE.length)];
+        return PALETTE[Math.floorMod(padIndex + paletteOffset(), PALETTE.length)];
+    }
+
+    /**
+     * #139 (H50, step 109): theme-picker offset — shifts every pad's palette
+     * assignment so all pad colors change coherently (0 = default rotation).
+     * Persisted best-effort to {user.home}/.mindpalace/theme.properties so
+     * the choice survives restarts; corrupt file => default 0 (never blocks).
+     */
+    private static volatile int paletteOffset = loadPaletteOffset();
+
+    public static int paletteOffset() { return paletteOffset; }
+
+    /** Cycle the offset by {@code dir} (wraps the palette); persists + returns it. */
+    public static int cyclePaletteOffset(int dir) {
+        int n = PALETTE.length;
+        paletteOffset = Math.floorMod(paletteOffset + dir, n);
+        persistPaletteOffset();
+        return paletteOffset;
+    }
+
+    private static int loadPaletteOffset() {
+        try {
+            java.util.Properties p = new java.util.Properties();
+            java.nio.file.Path f = java.nio.file.Path.of(
+                System.getProperty("user.home"), ".mindpalace", "theme.properties");
+            if (java.nio.file.Files.exists(f)) {
+                try (var in = java.nio.file.Files.newInputStream(f)) { p.load(in); }
+                return Math.floorMod(Integer.parseInt(p.getProperty("paletteOffset", "0")), PALETTE.length);
+            }
+        } catch (Exception ignored) { /* default 0 — never blocks boot */ }
+        return 0;
+    }
+
+    private static void persistPaletteOffset() {
+        try {
+            java.util.Properties p = new java.util.Properties();
+            p.setProperty("paletteOffset", Integer.toString(paletteOffset));
+            java.nio.file.Path f = java.nio.file.Path.of(
+                System.getProperty("user.home"), ".mindpalace", "theme.properties");
+            java.nio.file.Files.createDirectories(f.getParent());
+            try (var out = java.nio.file.Files.newOutputStream(f)) { p.store(out, "MindPalace theme picker (#139)"); }
+        } catch (Exception ignored) { /* best-effort */ }
     }
 
     /** Number of distinct pairs in the fixed palette. */

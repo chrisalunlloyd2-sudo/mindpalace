@@ -935,6 +935,50 @@ public final class SimsHardening100 {
             }
         }));
 
+        // ── #139 (H50, step 109): installer v2 — MSI, update check, wizard ──
+        cs.add(new Case("installer.msiTargetInBuildScript", () -> {
+            // H50: build-installer.sh carries a real jpackage --type msi lane.
+            java.nio.file.Path p = java.nio.file.Path.of("build-installer.sh");
+            if (!java.nio.file.Files.exists(p)) return false;
+            try {
+                String s = java.nio.file.Files.readString(p);
+                return s.contains("--type msi") && s.contains("--win-per-user-install");
+            } catch (Exception e) { return false; }
+        }));
+
+        cs.add(new Case("installer.versionCompareSemver", () -> {
+            // H50: compareVersions is correct — older returns negative, equal 0,
+            // newer positive, across unequal segment counts (1.1.0 vs 1.2).
+            com.mindpalace.deploy.UpdateChecker c = new com.mindpalace.deploy.UpdateChecker();
+            return c.compareVersions("1.1.0", "1.2.0") < 0
+                && c.compareVersions("1.2.0", "1.1.0") > 0
+                && c.compareVersions("1.2.0", "1.2.0") == 0
+                && c.compareVersions("1.2",   "1.2.0") == 0;
+        }));
+
+        cs.add(new Case("installer.firstRunWizardMarker", () -> {
+            // H50: first-run flip + marker persistence, state-restoring —
+            // markerless before => probe true->false then restore (delete);
+            // marker present => read-side invariant only (never re-nags).
+            java.nio.file.Path mp = java.nio.file.Path.of(
+                System.getProperty("user.home"), ".mindpalace", "first_run_done");
+            boolean hadMarker = java.nio.file.Files.exists(mp);
+            try {
+                if (hadMarker) {
+                    return !com.mindpalace.deploy.UpdateChecker.isFirstRun();
+                }
+                boolean before = com.mindpalace.deploy.UpdateChecker.isFirstRun();
+                com.mindpalace.deploy.UpdateChecker.markFirstRunDone();
+                return before
+                    && !com.mindpalace.deploy.UpdateChecker.isFirstRun()
+                    && java.nio.file.Files.exists(mp);
+            } finally {
+                if (!hadMarker) {
+                    try { java.nio.file.Files.deleteIfExists(mp); } catch (Exception ignored) { }
+                }
+            }
+        }));
+
         return cs;
     }
 }

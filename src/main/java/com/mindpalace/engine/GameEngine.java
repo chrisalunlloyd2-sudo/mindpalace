@@ -961,6 +961,35 @@ public class GameEngine {
         music.start();
         sequencer.start();
 
+        // #139 (H50, step 109): ONE tokenless update check per boot, daemon
+        // thread so boot never blocks on the Releases API. Result lands in
+        // the console log + the in-game monitor. Gated like #138: hidden
+        // under selftest/demo/hermetic to keep those runs closed-world.
+        // Same gate carries the first-run wizard: a one-time welcome banner
+        // (marker {user.home}/.mindpalace/first_run_done) printed to console
+        // + monitor so brand-new players see the controls right after spawn.
+        final boolean firstRun = !selfTest && !demoMode
+            && com.mindpalace.deploy.UpdateChecker.isFirstRun();
+        if (!selfTest && !demoMode) {
+            if (firstRun) {
+                Thread wizardThread = new Thread(() -> {
+                    System.out.println("[FirstRun] Welcome to Mind Palace!");
+                    System.out.println("[FirstRun] WASD move · mouse look · Enter doors · ESC menu · F1 help");
+                    appendMonitorLine("[wizard] first run — welcome banner shown");
+                    com.mindpalace.deploy.UpdateChecker.markFirstRunDone();
+                }, "mp-first-run-wizard");
+                wizardThread.setDaemon(true);
+                wizardThread.start();
+            }
+            Thread updateThread = new Thread(() -> {
+                String verdict = new com.mindpalace.deploy.UpdateChecker().check();
+                System.out.println("[Update] " + verdict);
+                appendMonitorLine("[update] " + verdict);
+            }, "mp-update-check");
+            updateThread.setDaemon(true);
+            updateThread.start();
+        }
+
         // Continuous genetic-audio evolution: a background GA that renders real
         // synth patches, scores them, and splices the fittest into the live
         // music every EVOLVE_INTERVAL seconds. Seeded with the current patch.
@@ -1918,13 +1947,14 @@ public class GameEngine {
 
     private int menuOptionCount() {
         switch (menuPage) {
-            case 0: return 8;  // Resume, Video, Controls, Audio, Music, Agents, Evolution, Quit
+            case 0: return 9;  // Resume, Video, Controls, Audio, Music, Agents, Theme, Evolution, Quit
             case 1: return 5;  // FOV, Sensitivity, Fullscreen, Bloom intensity, Bloom threshold
             case 2: return 1;  // Invert Y (rest is informational)
             case 3: return 2;  // Master volume, Sound on/off
             case 4: return 7;  // Music on/off, volume, tempo, beat, scale, mood, sequencer
             case 5: return 2;  // Auto-cycle interval, agent models (info)
             case 6: return 9;  // mutation rate, strength, 5 fitness weights, refresh, back
+            case 7: return 1;  // #139 theme: palette shift (Enter/back handled below)
             default: return 1;
         }
     }
@@ -1953,6 +1983,9 @@ public class GameEngine {
                 if (sel == 4) cycleScale(dir);
                 if (sel == 5) cycleMood(dir);
                 if (sel == 6) { sequencer.setEnabled(!sequencer.isEnabled()); }
+                break;
+            case 7: // theme (#139 H50) — palette rotation + reset
+                if (sel == 0) com.mindpalace.world.PortalTheme.cyclePaletteOffset(dir);
                 break;
             case 6: // evolution (genetic audio) — live GA controls
                 if (audioEvolver == null || sonicFitness == null) break;
@@ -1995,8 +2028,9 @@ public class GameEngine {
                     case 3: menuPage = 3; menuSel = 0; break;
                     case 4: menuPage = 4; menuSel = 0; break;
                     case 5: menuPage = 5; menuSel = 0; break;
-                    case 6: menuPage = 6; menuSel = 0; break; // Evolution
-                    case 7: GLFW.glfwSetWindowShouldClose(window, true); break;
+                    case 6: menuPage = 7; menuSel = 0; break; // Theme (#139 H50)
+                    case 7: menuPage = 6; menuSel = 0; break; // Evolution
+                    case 8: GLFW.glfwSetWindowShouldClose(window, true); break;
                 }
                 break;
             case 4: // music — entering "Sequencer" opens the step grid
@@ -3621,6 +3655,7 @@ public class GameEngine {
                     "Audio",
                     "Music",
                     "Agents",
+                    "Theme",       // #139 (H50) — portal palette picker (page 7)
                     "Evolution",
                     "Quit"
                 };
@@ -3681,6 +3716,16 @@ public class GameEngine {
                     "Novelty weight: " + String.format("%.2f", sonicFitness != null ? sonicFitness.noveltyWeight() : 0f),
                     "Target weight: " + String.format("%.2f", sonicFitness != null ? sonicFitness.targetWeight() : 0f),
                     "Refresh population now",
+                    "(Enter to go back)"
+                };
+            case 7: // theme (#139 H50) — PortalTheme palette rotation
+                int off = com.mindpalace.world.PortalTheme.paletteOffset();
+                String themeName = com.mindpalace.world.PortalTheme.forPad(0).name;
+                return new String[]{
+                    "=== THEME ===",
+                    "Palette shift: " + off + " (pad-0 now: " + themeName + ")",
+                    "Arrow keys rotate every portal's palette coherently",
+                    "Choice persists across restarts",
                     "(Enter to go back)"
                 };
             default:
@@ -4742,7 +4787,7 @@ public class GameEngine {
         // 10. ESC menu: pages render, navigation wraps, settings adjust live
         boolean menuOk = true;
         state = GameState.MENU; menuPage = 0; menuSel = 0;
-        if (menuOptionCount() != 8) menuOk = false;
+        if (menuOptionCount() != 9) menuOk = false; // 8 + Theme (#139 H50, step 109)
         float fovBefore = player.getCamera().getFov();
         menuPage = 1; menuSel = 0;
         adjustMenuValue(0, 1); // FOV +5

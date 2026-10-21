@@ -83,3 +83,39 @@ ICON_ARG=()
 echo ""
 echo "Installer built in: $OUT_DIR"
 ls -la "$OUT_DIR"/*.exe 2>/dev/null
+
+# ── 3. MSI lane (#139 H50, step 109) ────────────────────────────────────
+# Enterprise/Group-Policy target: jpackage --type msi (per-user).
+# Runs when WiX is on PATH (candle.exe) — MSI bundling needs WiX.
+# Skippable with SKIP_MSI=1 (exe tier is the primary deliverable).
+if [ "${SKIP_MSI:-0}" = "1" ]; then
+    echo "SKIP_MSI=1 — leaving MSI lane"
+elif ! command -v candle.exe >/dev/null 2>&1 \
+     && [ ! -f "/c/Program Files (x86)/WiX Toolset v3.14/bin/candle.exe" ]; then
+    echo "WiX not found — skipping MSI lane (install WiX 3.14 to enable)"
+else
+    WIX_BIN="/c/Program Files (x86)/WiX Toolset v3.14/bin"
+    PATH="$WIX_BIN:$PATH"
+    echo "jpackage: building MSI installer (per-user, $APP_VERSION)"
+    if "$JPACKAGE" \
+      --type msi \
+      --name "$APP_NAME" \
+      --app-version "$APP_VERSION" \
+      --input "$REPO_WIN\\target" \
+      --main-jar "$JAR_NAME" \
+      --main-class "$MAIN_CLASS" \
+      --dest "$OUT_DIR_WIN" \
+      --win-shortcut \
+      --win-menu \
+      --win-menu-group "MindPalace" \
+      --win-per-user-install \
+      --vendor "AIGEN_SYS" \
+      --description "3D First-Person GitHub Repository Explorer" \
+      --java-options "-Dprism.order=sw -Dprism.vsync=false -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m" \
+      "${ICON_ARG[@]}"; then
+      echo "MSI built:"
+      ls -la "$OUT_DIR"/*.msi 2>/dev/null || echo "  (no .msi output found — check jpackage log above)"
+    else
+      echo "MSI lane FAILED (exe tier unaffected) — continuing"
+    fi
+fi

@@ -134,6 +134,11 @@
                         <manifest>
                             <mainClass>${main.class}</mainClass>
                         </manifest>
+                        <!-- #139 (H50): stamped so the game can read its own
+                             version (UpdateChecker compares vs GitHub Releases). -->
+                        <manifestEntries>
+                            <Implementation-Version>${project.version}</Implementation-Version>
+                        </manifestEntries>
                     </archive>
                 </configuration>
             </plugin>
