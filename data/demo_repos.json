@@ -82,5 +82,12 @@
     "description": "A tiny ember of C — hello world, pointers, and a Makefile to spark from",
     "private": false,
     "path": "data/demo_repos/c-ember"
+  },
+  {
+    "name": "zig-ember",
+    "language": "Zig",
+    "description": "A tiny ember of Zig — one module, one greeting, real files to spark from",
+    "private": false,
+    "path": "data/demo_repos/zig-ember"
   }
 ]
