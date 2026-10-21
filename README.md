@@ -366,6 +366,20 @@ install; the JRE is bundled.
 The options panel (ESC) is the control center. It is being expanded to cover
 every subsystem. The full target surface:
 
+Every page is captured live by the E2E tour (`bash e2e.sh`) into
+`docs/screenshots/`:
+
+| Menu page | Live capture |
+| --- | --- |
+| Main | ![Options main](docs/screenshots/23_options_main.png) |
+| Video | ![Options video](docs/screenshots/24_options_video.png) |
+| Controls | ![Options controls](docs/screenshots/25_options_controls.png) |
+| Audio | ![Options audio](docs/screenshots/26_options_audio.png) |
+| Music (Beats StudioLab) | ![Options music](docs/screenshots/27_options_music.png) |
+| Agents | ![Options agents](docs/screenshots/28_options_agents.png) |
+| Evolution (genetic audio) | ![Options evolution](docs/screenshots/29_options_evolution.png) |
+| Theme (#139 portal palette picker) | ![Options theme](docs/screenshots/30_options_theme.png) |
+
 ### Controls
 - Look sensitivity (mouse)
 - Invert Y axis

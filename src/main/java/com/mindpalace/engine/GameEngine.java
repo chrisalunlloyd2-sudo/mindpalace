@@ -8076,8 +8076,62 @@ public class GameEngine {
                 cam.setYaw(0); cam.setPitch(2f); // face the mansion front
                 if (shoot) { captureLabeled("22_mansion_spawn"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            // #14 (2026-10-21): options-panel screenshot tour — cases 22-29 walk
+            // the ESC menu pages (labels 23..30) so docs get real captures of
+            // every implemented page. Entry reuses the selftest precedent of
+            // setting state/menuPage directly (:4848 style): no key-event
+            // latching needed, and render() still draws the world behind the
+            // menu (scene -> renderMenu), so the brightness gate stays valid.
+            // Pose: camera stays at waypoint 21's mansion-spawn framing
+            // (gate-proven) — the menu overlay is camera-independent.
+            case 22 -> { // enter ESC menu, page 0 (main) — label 23_options_main
+                if (state != GameState.MENU) { state = GameState.MENU; menuPage = 0; menuSel = 1; }
+                if (shoot) { captureLabeled("23_options_main"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            // Each page case touches menuPage ONLY inside its shoot tick.
+            // captureLabeled DEFERS the PNG write to the frame's render()
+            // tail, and at 3-13 fps the accumulator runs several update
+            // ticks between the capturing tick and that render — writing
+            // menuPage every tick (first draft) made the flush frame show
+            // the NEXT page (vision-verified: 24_options_video contained
+            // the controls page, 29_options_evolution the theme page).
+            // One page per shoot tick => the flush always catches THIS
+            // case's page: no later case mutates the menu before then.
+            case 23 -> {
+                if (shoot) { menuPage = 1; menuSel = 1; captureLabeled("24_options_video"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 24 -> {
+                if (shoot) { menuPage = 2; menuSel = 1; captureLabeled("25_options_controls"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 25 -> {
+                if (shoot) { menuPage = 3; menuSel = 1; captureLabeled("26_options_audio"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 26 -> {
+                if (shoot) { menuPage = 4; menuSel = 1; captureLabeled("27_options_music"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 27 -> {
+                if (shoot) { menuPage = 5; menuSel = 1; captureLabeled("28_options_agents"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 28 -> {
+                if (shoot) { menuPage = 6; menuSel = 1; captureLabeled("29_options_evolution"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 29 -> { // page 7 theme (label 30) — last menu page; no same-tick
+                // PLAYING restore: it made the flush frame capture the raw
+                // gameplay view instead of the theme page. Tour exits from
+                // MENU via the default case below, after the flush.
+                if (shoot) { menuPage = 7; menuSel = 1; captureLabeled("30_options_theme"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 22 waypoints captured. Exiting.");
+                // t_0c1374b0-era captureLabeled DEFERS the PNG write to this
+                // frame's render() tail. If the final waypoint advanced the
+                // counter in the same physics tick, extra accumulator ticks
+                // (3-13 fps => many updates per render) hit this default and
+                // System.exit BEFORE the tail flushed the pending shot — the
+                // tour reported "30 captured" while the last PNG never landed
+                // (observed: no [E2E-SHOT] 30 line). Wait one tick for the
+                // flushed write before exiting.
+                if (pendingShotLabel != null) return;
+                System.out.println("[E2E] tour complete — 30 waypoints captured. Exiting.");
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
                 // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software

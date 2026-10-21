@@ -75,7 +75,9 @@ labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gaug
           "06_room_doorway","07_todo_crystals","08_hall_lookback","09_agents","10_portal_pad",
           "11_floor2_picker","12_nash_fountain","13_door_prompt","14_plugboard",
           "15_forest_path","16_room_interior","17_hall_windows","18_poster_wall",
-          "19_gist_wall","20_sky","21_water","22_mansion_spawn"]
+          "19_gist_wall","20_sky","21_water","22_mansion_spawn",
+          "23_options_main","24_options_video","25_options_controls","26_options_audio",
+          "27_options_music","28_options_agents","29_options_evolution","30_options_theme"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:
