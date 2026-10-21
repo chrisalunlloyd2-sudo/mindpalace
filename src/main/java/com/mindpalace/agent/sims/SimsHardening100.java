@@ -343,6 +343,39 @@ public final class SimsHardening100 {
             com.mindpalace.agent.ModelConfig.FLASH_MODEL != null
                 && com.mindpalace.agent.ModelConfig.FLASH_MODEL.equals(
                     com.mindpalace.agent.ModelConfig.CRITIC_MODEL)));
+        // #135 (H44): quota firewall — burst OFF by default, endpoints rejected,
+        // local tags pass, every configured model survives the firewall.
+        cs.add(new Case("firewall.burstClientOffByDefault", () ->
+            !com.mindpalace.agent.ModelConfig.BURST_CLIENT_ENABLED));
+        cs.add(new Case("firewall.rejectsHttpApi", () -> {
+            try { com.mindpalace.agent.OllamaClient.assertLocalModel("http://api.openai.com/v1"); return false; }
+            catch (IllegalArgumentException expected) { return true; }
+        }));
+        cs.add(new Case("firewall.rejectsHttpsUrl", () -> {
+            try { com.mindpalace.agent.OllamaClient.assertLocalModel("https://api.anthropic.com"); return false; }
+            catch (IllegalArgumentException expected) { return true; }
+        }));
+        cs.add(new Case("firewall.rejectsCloudishHost", () -> {
+            try { com.mindpalace.agent.OllamaClient.assertLocalModel("openai-api.com/model"); return false; }
+            catch (IllegalArgumentException expected) { return true; }
+        }));
+        cs.add(new Case("firewall.acceptsOllamaTags", () -> {
+            com.mindpalace.agent.OllamaClient.assertLocalModel("qwen2.5:0.5b");
+            com.mindpalace.agent.OllamaClient.assertLocalModel("llama3.2:1b");
+            com.mindpalace.agent.OllamaClient.assertLocalModel("localhost:11434");
+            return true;
+        }));
+        cs.add(new Case("firewall.allConfiguredModelsLocal", () -> {
+            com.mindpalace.agent.OllamaClient.assertLocalModel(com.mindpalace.agent.ModelConfig.TOOL_MODEL);
+            com.mindpalace.agent.OllamaClient.assertLocalModel(com.mindpalace.agent.ModelConfig.CRITIC_MODEL);
+            com.mindpalace.agent.OllamaClient.assertLocalModel(com.mindpalace.agent.ModelConfig.EMBED_MODEL);
+            com.mindpalace.agent.OllamaClient.assertLocalModel(ModelRouter.FAST);
+            com.mindpalace.agent.OllamaClient.assertLocalModel(ModelRouter.BALANCED);
+            com.mindpalace.agent.OllamaClient.assertLocalModel(ModelRouter.REASONING);
+            com.mindpalace.agent.OllamaClient.assertLocalModel(ModelRouter.DEEP);
+            com.mindpalace.agent.OllamaClient.assertLocalModel(com.mindpalace.agent.ModelConfig.FLASH_MODEL);
+            return true;
+        }));
         cs.add(new Case("router.estimateLatencyMonotonic", () -> {
             ModelRouter r = new ModelRouter();
             return r.estimateLatency(Complexity.LOW) <= r.estimateLatency(Complexity.MEDIUM)

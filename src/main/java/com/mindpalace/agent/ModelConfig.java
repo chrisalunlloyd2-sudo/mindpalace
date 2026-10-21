@@ -45,6 +45,16 @@ public final class ModelConfig {
     /** Flash token budget — trivial answers only. */
     public static final int FLASH_BUDGET = 500;
 
+    /**
+     * #135 (H44, step 104): quota firewall. false = local-only BY CONSTRUCTION:
+     * every model string constant in this file is a local Ollama tag validated
+     * below, and OllamaClient rejects anything that names a remote endpoint.
+     * There is no cloud client in this repo; if one is ever added it must flip
+     * this switch explicitly AND carry its own opt-in — the flash lane never
+     * consults it (see OllamaClient.assertLocalFlash).
+     */
+    public static final boolean BURST_CLIENT_ENABLED = false;
+
     /** Token budgets (below each model's context ceiling). */
     public static final int TOOL_BUDGET = 4000;
     public static final int CRITIC_BUDGET = 1000;

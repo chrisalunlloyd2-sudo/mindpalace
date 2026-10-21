@@ -73,6 +73,30 @@ public class OllamaClient {
     private final java.util.concurrent.ConcurrentHashMap<String, Boolean> toolSupport = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
+     * #135 (H44, step 104): quota firewall. Local-only BY CONSTRUCTION:
+     * every request URL is BASE = localhost:11434 — a compile-time constant,
+     * not a configurable endpoint — so no cloud/remote model client path
+     * exists. This guard is the second layer: anything that smells like a
+     * remote endpoint (http(s):// with a non-localhost host, or any URL at
+     * all in a model slot) is refused. Flash calls additionally require the
+     * flash model tag itself — the lane cannot be pointed anywhere else
+     * (ModelRouter.selectFlash is a one-way clamp, #134).
+     */
+    public static void assertLocalModel(String model) {
+        if (model == null) return;
+        String m = model.trim().toLowerCase();
+        boolean smellsRemote = m.startsWith("http://") || m.startsWith("https://")
+            || (!m.startsWith("http") && m.contains("://"));
+        boolean namesNonLocalHost = m.contains("localhost") == false
+            && (m.contains(".com") || m.contains(".net") || m.contains(".io")
+                || m.contains(".org") || m.contains("api.") || m.contains("://"));
+        if (smellsRemote || namesNonLocalHost) {
+            throw new IllegalArgumentException(
+                "quota firewall: refusing non-local model endpoint: " + model);
+        }
+    }
+
+    /**
      * True when Ollama's /api/show lists "tools" in the model's capabilities
      * (e.g. llama3.2:1b yes, phi3:mini no). A model without it silently ignores
      * the tools payload, so tool rounds must not be routed to it. If Ollama is
@@ -222,6 +246,7 @@ public class OllamaClient {
      * @return  assistant's reply text, or null on failure
      */
     public String chat(String model, List<Map<String, String>> messages, List<JsonObject> tools) {
+        assertLocalModel(model); // #135 H44: quota firewall on every call path
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
@@ -289,6 +314,7 @@ public class OllamaClient {
      * but never actually invoke read_file/edit_file/create_file/delete_file.
      */
     public ToolResult chatWithTools(String model, List<Map<String, String>> messages, List<JsonObject> tools) {
+        assertLocalModel(model); // #135 H44: quota firewall on every call path
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
