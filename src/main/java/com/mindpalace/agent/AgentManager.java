@@ -563,8 +563,10 @@ public class AgentManager {
             "cycle", proposalTargetName(currentRoom));
 
         // Route the tool agent's model by task complexity (SIMS1337 ModelRouter).
+        // #134 (H43): trivial cycles take the flash lane (cheapest model,
+        // never escalated above flash); real work keeps its normal tier.
         Complexity cx = Complexity.estimate(context);
-        routedModel = router.select(cx);
+        routedModel = router.selectFlash(cx);
         lora.switchAdapter(AdapterType.CODE);
         log("[AgentManager] routed " + cx + " → " + routedModel + " (" + router.reason(cx) + ")");
 
@@ -1138,7 +1140,10 @@ public class AgentManager {
                 + "Issue: " + issue.text + "\n\n"
                 + "Return ONLY the corrected full file content. Do not add commentary.\n\n"
                 + "```\n" + content + "\n```";
-            String fixed = ollama.chat(routedModel, ctx(routedModel) + "\n" + prompt, "");
+            // TOOL_MODEL pinned, NOT routedModel: #134 flash routing keeps
+            // routedModel on the cheapest lane for trivial cycles, but a file
+            // fix is real tool work (same coherence rationale as toolRoundModel).
+            String fixed = ollama.chat(TOOL_MODEL, ctx(TOOL_MODEL) + "\n" + prompt, "");
             // #130: the fix attempt just burned real GPU time — tax it.
             chargeComputeTax("Explorer", prompt, fixed);
             if (fixed == null || fixed.isEmpty() || fixed.equals(content)) return false;

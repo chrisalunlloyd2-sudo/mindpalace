@@ -35,6 +35,19 @@ public class ModelRouter {
         return select(c);
     }
 
+    /**
+     * #134 (H43, step 103): flash lane for trivial tasks. One-way clamp:
+     * trivial-complexity tasks go to the cheapest model (ModelConfig.FLASH_MODEL)
+     * and are never escalated above flash — the caller treats the result as a
+     * floor, not a starting bid. Non-trivial complexity keeps its normal tier.
+     */
+    public String selectFlash(Complexity c) {
+        if (c == Complexity.VERY_LOW || c == Complexity.LOW) {
+            return com.mindpalace.agent.ModelConfig.FLASH_MODEL;
+        }
+        return select(c);
+    }
+
     /** Estimate latency (ms) for a complexity level on its routed tier. */
     public long estimateLatency(Complexity c) {
         long base;

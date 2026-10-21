@@ -77,7 +77,7 @@
 - [x] **100** H40 idle decay — skill/tier decay without completed jobs
 - [x] **101** H41 energy budget — daily ledger caps bloom/trees/scouts; graceful degradation
 - [x] **102** H42 cost telemetry — every autonomous write logs cost+outcome; Sunday review gets a bill
-- [ ] **103** H43 flash tier — ModelConfig FLASH lane; trivial tasks never route above flash
+- [x] **103** H43 flash tier — ModelConfig FLASH lane; trivial tasks never route above flash
 - [ ] **104** H44 quota firewall — flash calls local-only by construction; burst client OFF by default
 - [ ] **105** H46 quota ledger — cloud-call telemetry; morning digest reports spend
 - [ ] **106** H47 dedupe sentinel — static scan for duplicated utilities across repos → issues

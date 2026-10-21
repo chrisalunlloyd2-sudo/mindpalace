@@ -330,6 +330,19 @@ public final class SimsHardening100 {
             new ModelRouter().selectWithLatency(Complexity.CRITICAL, 500).equals(ModelRouter.BALANCED)));
         cs.add(new Case("router.latencyCeilingNoPressureKeepsTier", () ->
             new ModelRouter().selectWithLatency(Complexity.LOW, 60_000).equals(ModelRouter.FAST)));
+        // #134 (H43): flash lane — trivial → FLASH_MODEL, one-way (no escalation).
+        cs.add(new Case("router.flashTrivialGoesFlash", () ->
+            new ModelRouter().selectFlash(Complexity.VERY_LOW)
+                .equals(com.mindpalace.agent.ModelConfig.FLASH_MODEL)));
+        cs.add(new Case("router.flashLowGoesFlash", () ->
+            new ModelRouter().selectFlash(Complexity.LOW)
+                .equals(com.mindpalace.agent.ModelConfig.FLASH_MODEL)));
+        cs.add(new Case("router.flashMediumKeepsTier", () ->
+            new ModelRouter().selectFlash(Complexity.MEDIUM).equals(ModelRouter.BALANCED)));
+        cs.add(new Case("router.flashModelIsConfigured", () ->
+            com.mindpalace.agent.ModelConfig.FLASH_MODEL != null
+                && com.mindpalace.agent.ModelConfig.FLASH_MODEL.equals(
+                    com.mindpalace.agent.ModelConfig.CRITIC_MODEL)));
         cs.add(new Case("router.estimateLatencyMonotonic", () -> {
             ModelRouter r = new ModelRouter();
             return r.estimateLatency(Complexity.LOW) <= r.estimateLatency(Complexity.MEDIUM)

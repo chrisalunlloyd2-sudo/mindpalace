@@ -33,6 +33,18 @@ public final class ModelConfig {
     /** Embedding model for drift detection + RAG memory. */
     public static final String EMBED_MODEL = "nomic-embed-text";
 
+    /**
+     * #134 (H43, step 103): flash tier — the cheapest lane, for trivial tasks.
+     * Trivial-complexity tasks route here (ModelRouter.selectFlash) and are
+     * NEVER escalated above flash: routing is a one-way decision per task, not
+     * a retry-upgrade path. Same install as the critic model (qwen2.5:0.5b) —
+     * already resident, zero extra VRAM/RAM cost.
+     */
+    public static final String FLASH_MODEL = "qwen2.5:0.5b";
+
+    /** Flash token budget — trivial answers only. */
+    public static final int FLASH_BUDGET = 500;
+
     /** Token budgets (below each model's context ceiling). */
     public static final int TOOL_BUDGET = 4000;
     public static final int CRITIC_BUDGET = 1000;
