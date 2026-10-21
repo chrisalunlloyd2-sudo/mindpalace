@@ -1200,6 +1200,65 @@ public class GameEngine {
     private void renderLoadingFrame() {
         GL11.glClearColor(0.02f, 0.02f, 0.05f, 1.0f);
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+        // #19 (docs/DESIGN.md ask 3): progress art between "Scanning
+        // repositories" and "World built". Static palette-token art only — no
+        // animation, no input, no per-frame state: determinism-safe and
+        // reduced-motion respected by construction. The very first beat
+        // (fontRenderer/player still null) keeps the bare history: clear+swap.
+        if (fontRenderer != null && player != null && !loadingText.isEmpty()) {
+            try {
+                Camera cam = player.getCamera();
+                Vector3f front = cam.getFront();
+                Vector3f right = new Vector3f(front).cross(new Vector3f(0, 1, 0)).normalize();
+                Vector3f camPos = cam.getPosition();
+                Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+                Matrix4f view = cam.getViewMatrix();
+                Vector3f up = cam.getUp();
+
+                // Title + percent line first: the anchor's first glyph band
+                // extends UP from position.y (FontRenderer convention), so
+                // the title anchored at slot +0.55 never collides with the
+                // bar band below regardless of label length.
+                Vector3f anchor = HudLayout.anchor(camPos, front, right, up,
+                    HudLayout.LOADING);
+                float pct = Math.max(0f, Math.min(1f, (float) loadingProgress));
+                fontRenderer.renderBillboardOverlay(String.format(
+                    "MindPalace  %d%%", Math.round(pct * 100f)), anchor, 0.09f,
+                    new Vector3f(0.2f, 1.0f, 0.9f), proj, view, camPos);
+                // Status line under the bar — the loadingText itself
+                // ("Scanning repositories..." etc).
+                fontRenderer.renderBillboardOverlay(loadingText,
+                    new Vector3f(anchor.x, anchor.y - 1.05f, anchor.z), 0.06f,
+                    new Vector3f(0.7f, 0.7f, 0.7f), proj, view, camPos);
+
+                // Thin deterministic progress bar — same house pattern as the
+                // teleport veil (drawCubeColorYaw + depth off, GE:3437).
+                // Track + fill ride camera yaw so the bar reads level without
+                // depending on pitch. Track 2.90m wide, 0.045m tall; fill is
+                // the palette progress color behind a 1px-ish gap.
+                GL11.glDisable(GL11.GL_DEPTH_TEST);
+                Vector3f barBase = HudLayout.anchor(camPos, front, right, up,
+                    HudLayout.LOADING.at(0f, -0.60f));
+                float yaw = (float) Math.toRadians(cam.getYaw());
+                float fill = Math.max(0.02f, pct * 2.86f); // 2.90 minus track pad
+                Vector3f barFront = new Vector3f(barBase).add(new Vector3f(front).mul(-0.02f));
+                renderer.drawCubeColorYaw(barFront,
+                    new Vector3f(2.90f, 0.045f, 0.02f), yaw, 0.10f, 0.10f, 0.14f);
+                // Fill grows from the LEFT edge: cube meshes center on their
+                // position, so slide the anchor right by (2.90 - fill)/2.
+                float slide = (2.90f - fill) * 0.5f;
+                Vector3f fillPos = new Vector3f(barBase).add(
+                    new Vector3f(right).mul(-1.45f + slide));
+                fillPos.add(new Vector3f(front).mul(-0.03f));
+                fontRenderer.getClass(); // keep fontRenderer non-null for JIT sanity
+                renderer.drawCubeColorYaw(fillPos,
+                    new Vector3f(fill, 0.03f, 0.02f), yaw, 0.0f, 0.85f, 1.0f);
+                GL11.glEnable(GL11.GL_DEPTH_TEST);
+            } catch (Throwable t) {
+                // Loading art must never gate boot: any failure falls back to
+                // the historical flat clear+swap frame silently.
+            }
+        }
         GLFW.glfwSwapBuffers(window);
         GLFW.glfwPollEvents();
     }

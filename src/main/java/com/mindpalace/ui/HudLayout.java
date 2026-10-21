@@ -93,6 +93,10 @@ public final class HudLayout {
     public static final Slot REGION     = new Slot("region",      0.00f, +0.17f, 0.60f, 0.10f);
     /** Fact toast (potted plant) — lower center (GameEngine.renderFactToast). */
     public static final Slot FACT_TOAST = new Slot("fact_toast",  0.00f, -0.42f, 1.45f, 0.10f);
+    /** Loading screen (#19, GameEngine.renderLoadingFrame) — centered title on
+     *  the anchor, thin progress bar at y -0.60 (bar spans slot x ±1.45),
+     *  percent line under it at y -0.85. Static art only. */
+    public static final Slot LOADING    = new Slot("loading",     0.00f, +0.55f, 2.90f, 1.20f);
     /** TOC toast — bottom center (GameEngine.renderTocToast). */
     public static final Slot TOC_TOAST  = new Slot("toc_toast",   0.00f, -1.20f, 2.26f, 0.10f);
     /** Unified interaction prompt — just above view center. RECORD-ONLY:
