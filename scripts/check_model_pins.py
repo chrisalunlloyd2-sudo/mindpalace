@@ -44,6 +44,10 @@ FIELD_RE = re.compile(r'public static final String (\w+)\s*=\s*"([^"]+)"')
 
 
 def parse_model_config_java(repo_dir):
+    """Parse model config java.
+
+    Args: repo_dir.
+    """
     path = Path(repo_dir) / MODEL_CONFIG_JAVA
     if not path.is_file():
         return None, f"{MODEL_CONFIG_JAVA} not found under {repo_dir}"
@@ -92,6 +96,7 @@ def _model_installed(model, installed):
 
 
 def main():
+    """Main (function)."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pins", default="config/model_pins.json")
     parser.add_argument("--repo-dir", default=".")
