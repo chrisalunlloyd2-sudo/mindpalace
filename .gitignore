@@ -57,3 +57,7 @@ __pycache__/
 # heartbeat re-read a fossil crash that had already been fixed (88bbf63).
 game_console.err.log
 *.err.log
+
+# 2026-10-20: #41 orchestrator state (per-agent rediscovery skip)
+.alice_state.json
+NEXT_STEPS.md
