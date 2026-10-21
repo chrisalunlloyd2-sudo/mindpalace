@@ -900,6 +900,41 @@ public final class SimsHardening100 {
             return com.mindpalace.github.DedupeSentinel.scan(files).isEmpty();
         }));
 
+        // ── #138 (H49, step 108): multiplayer — one WebSocket, additive-only ──
+
+        cs.add(new Case("multiplayer.hubAcceptKeyRfc6455", () -> {
+            // RFC6455 §4.2.2 accept key is deterministic — fixed vector.
+            String key = "dGhlIHNhbXBsZSBub25jZQ=="; // spec example
+            return "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=".equals(
+                com.mindpalace.network.MultiplayerHub.acceptKey(key));
+        }));
+
+        cs.add(new Case("multiplayer.portRejectsOutOfRange", () -> {
+            try {
+                new com.mindpalace.network.MultiplayerHub(70_000);
+                return false; // >65535 must be refused (0 = ephemeral is VALID)
+            } catch (IllegalArgumentException expected) {
+                return true;
+            } catch (Exception other) {
+                return false;
+            }
+        }));
+
+        cs.add(new Case("multiplayer.offByDefaultRequiresFlag", () -> {
+            // H49 contract: gate is false with no flag, true when it flips.
+            String prop = "mindpalace.mp.enabled";
+            String saved = System.getProperty(prop);
+            try {
+                System.clearProperty(prop);
+                if (com.mindpalace.network.MultiplayerHub.enabled()) return false;
+                System.setProperty(prop, "true");
+                return com.mindpalace.network.MultiplayerHub.enabled();
+            } finally {
+                if (saved == null) System.clearProperty(prop);
+                else System.setProperty(prop, saved);
+            }
+        }));
+
         return cs;
     }
 }

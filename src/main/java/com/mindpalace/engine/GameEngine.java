@@ -164,6 +164,8 @@ public class GameEngine {
     private MemoryManager memoryManager;
     private IdleDetector idleDetector;
     private ContextBroadcaster contextBroadcaster;
+    /** #138 (H49): multiplayer hub — null = off (default; flag-gated boot). */
+    private com.mindpalace.network.MultiplayerHub multiplayerHub;
     private boolean searchMode;
     private String searchQuery = "";
     private boolean showHelp;
@@ -927,6 +929,24 @@ public class GameEngine {
                 System.err.println("[Context] broadcaster not started: " + e.getMessage());
                 if (contextBroadcaster != null) contextBroadcaster.close();
                 contextBroadcaster = null;
+            }
+        }
+
+        // #138 (H49, step 108): multiplayer hub — OFF by default; boots only
+        // when mindpalace.mp.enabled=1 / MP_MP_ENABLED=1. Mirrors the
+        // ContextBroadcaster fail-closed shape: any start failure nulls the
+        // field and the game continues solo. #39/#40 zero-network contract
+        // for single-player untouched (no socket exists until this flag is set).
+        if (com.mindpalace.network.MultiplayerHub.enabled()) {
+            try {
+                multiplayerHub = new com.mindpalace.network.MultiplayerHub(
+                    com.mindpalace.network.MultiplayerHub.DEFAULT_PORT);
+                int mpPort = multiplayerHub.start();
+                System.out.println("[Multiplayer] hub listening on " + mpPort);
+            } catch (Exception mpE) {
+                System.err.println("[Multiplayer] hub not started: " + mpE.getMessage());
+                if (multiplayerHub != null) multiplayerHub.close();
+                multiplayerHub = null;
             }
         }
 
@@ -4025,6 +4045,7 @@ public class GameEngine {
     private void cleanup() {
         if (telemetryReader != null) telemetryReader.shutdownNow();
         if (contextBroadcaster != null) contextBroadcaster.close();
+        if (multiplayerHub != null) multiplayerHub.close(); // #138 (H49)
         if (backupManager != null) backupManager.stop();
         if (bdiBridge != null) bdiBridge.stop();
         if (memoryManager != null) memoryManager.stop();
