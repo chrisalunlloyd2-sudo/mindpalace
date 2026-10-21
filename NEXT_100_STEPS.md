@@ -80,7 +80,7 @@
 - [x] **103** H43 flash tier — ModelConfig FLASH lane; trivial tasks never route above flash
 - [x] **104** H44 quota firewall — flash calls local-only by construction; burst client OFF by default
 - [x] **105** H46 quota ledger — cloud-call telemetry; morning digest reports spend
-- [ ] **106** H47 dedupe sentinel — static scan for duplicated utilities across repos → issues
+- [x] **106** H47 dedupe sentinel — static scan for duplicated utilities across repos → issues
 - [ ] **107** H48 doc-drift sentinel — README claims vs file inventory; drift → issue
 - [ ] **108** H49 multiplayer contract — presence + chat over one WebSocket; loopback two-instance demo
 - [~] **109** Installer v2 (reconciled 2026-10-06: a jpackage `.exe` and an Inno Setup warm installer ship via `build-installer.sh` / `build-warm-installer.sh` and `scripts/release_phase.sh`; NOT yet: MSI, per-user install, Releases-API update check, first-run wizard) — jpackage --type msi, per-user, auto-update check against Releases API, better first-run wizard, theme picker

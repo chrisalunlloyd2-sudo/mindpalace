@@ -774,6 +774,132 @@ public final class SimsHardening100 {
             }
         }));
 
+        // ── #137 (H47, step 106): dedupe sentinel — structural duplication ──
+
+        cs.add(new Case("dedupe.copyPastePairFlagged", () -> {
+            // Exact copy-paste across two DIFFERENT files MUST be flagged at
+            // ≥ threshold (the AgentRewardMechanism/Wallet class of bug).
+            String src = "class A {\n"
+                + "    public int sumWeights() {\n"
+                + "        int total = 0;\n"
+                + "        for (int i = 0; i < items.size(); i++) {\n"
+                + "            total += items.get(i).weight();\n"
+                + "        }\n"
+                + "        return total;\n"
+                + "    }\n"
+                + "}\n";
+            java.util.Map<String, java.util.Map<String, String>> files =
+                new java.util.LinkedHashMap<>();
+            java.util.Map<String, String> a = new java.util.HashMap<>();
+            a.put("src/A.java", src);
+            java.util.Map<String, String> b = new java.util.HashMap<>();
+            b.put("src/B.java", src.replace("sumWeights", "tally"));
+            files.put("repoA", a);
+            files.put("repoB", b);
+            java.util.List<com.mindpalace.github.DedupeSentinel.Pair> out =
+                com.mindpalace.github.DedupeSentinel.scan(files);
+            return out.size() == 1 && out.get(0).similarity()
+                >= com.mindpalace.github.DedupeSentinel.THRESHOLD;
+        }));
+
+        cs.add(new Case("dedupe.renamedIdentifiersStillSimilar", () -> {
+            // Same shape, renamed locals/method — normalization maps
+            // non-keyword identifiers to 'x', so rename-invariant detection
+            // still catches the duplication.
+            String srcA = "class A {\n"
+                + "    public int sumWeights() {\n"
+                + "        int total = 0;\n"
+                + "        for (int i = 0; i < items.size(); i++) {\n"
+                + "            total += items.get(i).weight();\n"
+                + "        }\n"
+                + "        return total;\n"
+                + "    }\n"
+                + "}\n";
+            String srcB = "class B {\n"
+                + "    public int tallyWeights() {\n"
+                + "        int sum = 0;\n"
+                + "        for (int k = 0; k < xs.size(); k++) {\n"
+                + "            sum += xs.get(k).weight();\n"
+                + "        }\n"
+                + "        return sum;\n"
+                + "    }\n"
+                + "}\n";
+            java.util.Map<String, java.util.Map<String, String>> files =
+                new java.util.LinkedHashMap<>();
+            java.util.Map<String, String> a = new java.util.HashMap<>();
+            a.put("src/A.java", srcA);
+            java.util.Map<String, String> b = new java.util.HashMap<>();
+            b.put("src/B.java", srcB);
+            files.put("repoA", a);
+            files.put("repoB", b);
+            java.util.List<com.mindpalace.github.DedupeSentinel.Pair> out =
+                com.mindpalace.github.DedupeSentinel.scan(files);
+            return out.size() == 1 && out.get(0).similarity() >= 0.85;
+        }));
+
+        cs.add(new Case("dedupe.intraFilePairNotFlagged", () -> {
+            // Same-file near-duplicates are NOT reported — private helpers
+            // in one file are idiomatic; only cross-file copy-paste is the
+            // bug the sentinel exists for.
+            String src = "class C {\n"
+                + "    public int sumWeights() {\n"
+                + "        int total = 0;\n"
+                + "        for (int i = 0; i < items.size(); i++) {\n"
+                + "            total += items.get(i).weight();\n"
+                + "        }\n"
+                + "        return total;\n"
+                + "    }\n"
+                + "    public int sumWeights2() {\n"
+                + "        int total2 = 0;\n"
+                + "        for (int j = 0; j < items.size(); j++) {\n"
+                + "            total2 += items.get(j).weight();\n"
+                + "        }\n"
+                + "        return total2;\n"
+                + "    }\n"
+                + "}\n";
+            java.util.Map<String, java.util.Map<String, String>> files =
+                new java.util.LinkedHashMap<>();
+            java.util.Map<String, String> a = new java.util.HashMap<>();
+            a.put("src/A.java", src);
+            files.put("repoA", a);
+            return com.mindpalace.github.DedupeSentinel.scan(files).isEmpty();
+        }));
+
+        cs.add(new Case("dedupe.belowThresholdNotFlagged", () -> {
+            // Structurally different logic (string-building vs arithmetic
+            // recurrence) shares no 5-token shingles → NOT flagged (no noise).
+            String srcA = "class D {\n"
+                + "    public String greet(String who) {\n"
+                + "        String msg = \"\";\n"
+                + "        for (int i = 0; i < 3; i++) {\n"
+                + "            msg = msg + \"!\";\n"
+                + "        }\n"
+                + "        return \"hi \" + who + msg;\n"
+                + "    }\n"
+                + "}\n";
+            String srcB = "class E {\n"
+                + "    public long fib(int n) {\n"
+                + "        long prev = 1;\n"
+                + "        long curr = 1;\n"
+                + "        for (int k = 2; k < n; k++) {\n"
+                + "            long next = prev + curr;\n"
+                + "            prev = curr;\n"
+                + "            curr = next;\n"
+                + "        }\n"
+                + "        return curr;\n"
+                + "    }\n"
+                + "}\n";
+            java.util.Map<String, java.util.Map<String, String>> files =
+                new java.util.LinkedHashMap<>();
+            java.util.Map<String, String> a = new java.util.HashMap<>();
+            a.put("src/D.java", srcA);
+            java.util.Map<String, String> b = new java.util.HashMap<>();
+            b.put("src/E.java", srcB);
+            files.put("repoA", a);
+            files.put("repoB", b);
+            return com.mindpalace.github.DedupeSentinel.scan(files).isEmpty();
+        }));
+
         return cs;
     }
 }

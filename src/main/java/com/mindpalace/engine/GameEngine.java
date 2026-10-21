@@ -61,6 +61,7 @@ import java.util.List;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -721,6 +722,11 @@ public class GameEngine {
                 System.out.println("[Flare] REJECTED — ice dip");
             }
         });
+
+        // #137 (H47, step 106): dedupe sentinel — one bounded scan pass over
+        // the mapped repos after boot; raises add-only per flagged duplicate
+        // pair. Self-skips in demo/selftest (hermetic gate covers the core).
+        if (!demoMode && !selfTest) runDedupeSentinelScan();
 
         // Never-twice memory: agents refuse to write identical code twice.
         agentManager.setMemory(memoryManager);
@@ -2010,6 +2016,110 @@ public class GameEngine {
                 java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
             System.out.println("[GameEngine] quota tick: " + line);
         } catch (Exception ignored) { /* non-fatal: log down ≠ game down */ }
+    }
+
+    /**
+     * #137 (H47, step 106): run the dedupe sentinel once over the mapped
+     * repos and raise one add-only issue per flagged duplicate pair (the
+     * AgentRewardMechanism/Wallet class of bug, #96/#97). Pure-scan core is
+     * hermetic and gate-covered (SimsHardening100 dedupe.*); THIS runner is
+     * the network half — GitHub file fetch + issue raise, both capped and
+     * paced by the existing IssueStream (30s pace + per-repo raise caps).
+     * Runs on its own daemon thread one minute after boot so it never
+     * contends with world loading and never blocks startup.
+     */
+    private void runDedupeSentinelScan() {
+        Thread t = new Thread(() -> {
+            try {
+                Thread.sleep(60_000L); // let boot + issue feed settle first
+            } catch (InterruptedException ie) { return; }
+            try {
+                if (github == null || !github.isAuthenticated()) {
+                    System.out.println("[DedupeSentinel] unauthenticated — scan skipped");
+                    return;
+                }
+                // Collect dedupe-participating repos: every mapped room's
+                // repo except the mansion itself (same set as the issue feed).
+                java.util.LinkedHashSet<String> repos = new java.util.LinkedHashSet<>();
+                for (Room room : world.getRooms()) {
+                    String rn = room.getRepoName();
+                    if (rn != null && !"mansion".equals(rn)) repos.add(rn);
+                }
+                if (repos.isEmpty()) {
+                    System.out.println("[DedupeSentinel] no mapped repos — scan skipped");
+                    return;
+                }
+                // Fetch bounded file samples per repo (≤8 files, ≤40KB each)
+                // — KISS first-pass sentinel, not a full corpus crawler.
+                java.util.Map<String, java.util.Map<String, String>> files =
+                    new java.util.LinkedHashMap<>();
+                int fetched = 0;
+                for (String repo : repos) {
+                    java.util.Map<String, String> contents = new java.util.LinkedHashMap<>();
+                    files.put(repo, contents);
+                    try {
+                        List<Book> books = github.fetchRepoContents(repo);
+                        int n = 0;
+                        for (Book b : books) {
+                            if (n >= 8 || fetched >= 64) break;
+                            String path = b.getFilePath();
+                            String name = path.toLowerCase(java.util.Locale.ROOT);
+                            boolean srcLike = name.endsWith(".java") || name.endsWith(".py")
+                                || name.endsWith(".js") || name.endsWith(".ts")
+                                || name.endsWith(".sh") || name.endsWith(".md");
+                            if (!srcLike) continue;
+                            String text = github.fetchFileContent(repo, path);
+                            if (text == null || text.length() > 40_000) continue;
+                            contents.put(path, text);
+                            n++;
+                            fetched++;
+                        }
+                    } catch (IOException ioe) {
+                        System.out.println("[DedupeSentinel] fetch failed for "
+                            + repo + ": " + ioe.getMessage());
+                    }
+                }
+                List<com.mindpalace.github.DedupeSentinel.Pair> pairs =
+                    com.mindpalace.github.DedupeSentinel.scan(files);
+                System.out.println("[DedupeSentinel] scanned " + fetched
+                    + " files across " + repos.size() + " repos → "
+                    + pairs.size() + " duplicate pair(s)");
+                if (pairs.isEmpty()) return;
+                com.mindpalace.github.GitHubIssueStream stream =
+                    agentManager.getIssueStream();
+                if (stream == null) {
+                    System.out.println("[DedupeSentinel] issue stream absent — raising skipped (scan-only pass)");
+                    return;
+                }
+                for (com.mindpalace.github.DedupeSentinel.Pair p : pairs) {
+                    if (p.repoA().equals(p.repoB())) continue; // cross-repo only
+                    String title = "Dedupe: " + p.repoA() + "/" + p.pathA()
+                        + " ~ " + p.repoB() + "/" + p.pathB()
+                        + " (" + Math.round(p.similarity() * 100) + "% similar)";
+                    String body = "**Dedupe sentinel (H47, step 106)** flagged a "
+                        + "structural duplicate pair (≥"
+                        + Math.round(com.mindpalace.github.DedupeSentinel.THRESHOLD * 100)
+                        + "% normalized token-shingle similarity, rename-invariant):\n\n"
+                        + "- `" + p.repoA() + "` / `" + p.pathA() + "` — method `"
+                        + p.sigA() + "`\n"
+                        + "- `" + p.repoB() + "` / `" + p.pathB() + "` — method `"
+                        + p.sigB() + "`\n\n"
+                        + "Similarity: " + String.format(java.util.Locale.ROOT, "%.0f%%",
+                            p.similarity() * 100)
+                        + ". Consider extracting a shared utility instead of "
+                        + "maintaining two copies (the #96/#97 class of bug). "
+                        + "Add-only report by the in-engine dedupe sentinel.";
+                    int num = stream.raise(p.repoA(), title, body, "dedupe");
+                    System.out.println("[DedupeSentinel] raise → " + num
+                        + " (" + title + ")");
+                }
+            } catch (Exception e) { // non-fatal: sentinel down ≠ world down
+                System.out.println("[DedupeSentinel] scan error (non-fatal): "
+                    + e.getMessage());
+            }
+        }, "dedupe-sentinel");
+        t.setDaemon(true);
+        t.start();
     }
 
 
