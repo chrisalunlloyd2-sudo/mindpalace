@@ -6,19 +6,20 @@ reading the actual source (SIMS1337 + MindPalace), not assumption. Grouped by se
 Legend: [BROKEN] = doesn't work at all · [STUB] = defined but not wired · [MISSING] = not built
 
 ═══════════════════════════════════════════════════════════════════════
-1. EMAIL — BROKEN (root cause found)
+1. EMAIL — PARTIAL (himalaya live; morning digest not wired)
 ═══════════════════════════════════════════════════════════════════════
-[BROKEN] himalaya CLI is NOT installed (`which himalaya` → nothing).
-[BROKEN] No email account config — `~/.config/himalaya/` is empty.
-[BROKEN] No IMAP/SMTP credentials anywhere.
-[BROKEN] `~/sent_emails/` is EMPTY → dream_job.py harvests zero emails.
-[BROKEN] dream_correlation_job has `last_run_at: null` — never actually ran.
-[STUB]  dream_job.py only tokenizes + bumps a KG node; it does NOT send a
-        morning email, does NOT correlate with code, does NOT produce a
-        "suggestions + code mind" digest.
+[RECONCILED 2026-10-21 (#294)] himalaya IS installed (`~/bin/himalaya`) and
+          config.toml exists with an imap/smtp account block — the "not
+          installed / empty config / no creds" lines below-became-stale; creds
+          live in the credential store. Sending needs Architect's send-go.
+[BROKEN] `~/sent_emails/` is EMPTY → nothing to harvest from sent mail.
+[PLANNED] dream_job.py / dream_correlation_job were spec'd but never landed
+          in-repo (no git history; absent from AIGEN_SYS/scripts/ — only the
+          unrelated KG dream_loop.py exists [ACTIVE]). The digest pipeline
+          below is designed, not started.
 
-Fix path: install himalaya → configure account (needs Architect's email creds)
-→ wire a real morning-digest job that emails suggestions + code-mind log.
+Fix path: wire a real morning-digest job (harvest himalaya sent mail →
+correlate → email suggestions + code-mind log).
 
 ═══════════════════════════════════════════════════════════════════════
 2. LOCAL MODELS — SHIPPED (was "only 2 wired"; SIMS1337 parity layer landed)
@@ -97,9 +98,14 @@ Fix path: install himalaya → configure account (needs Architect's email creds)
 [MISSING] Intro screen + options screens (ESC menu exists; no intro splash).
 
 ═══════════════════════════════════════════════════════════════════════
-10. MULTIPLAYER — not built
+10. MULTIPLAYER — LANDED ADDITIVE (#138), disabled by default
 ═══════════════════════════════════════════════════════════════════════
-[MISSING] No networking, no second player, no lobby.
+[RECONCILED 2026-10-21 (#294)] MultiplayerHub + MultiplayerClient exist
+          (com.mindpalace.network/, commit #138 batch): RFC6455 WebSocket
+          accept-key, port validation, OFF unless started with the flag
+          (off-by-default, selftest-gated — "multiplayer." SimsHardening100
+          cases green). Not yet a shipped gameplay feature (no lobby flow),
+          but "No networking" is no longer true.
 
 ═══════════════════════════════════════════════════════════════════════
 11. USB BACKUP — SHIPPED: backup-to-usb.sh covers all four categories
