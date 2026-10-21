@@ -64,11 +64,11 @@
 - [x] **89** H33 GitHub releases — cascade tags v0.x.y per phase, builds installer exe, uploads to Release (gh release create; token from Credential Manager)
 - [x] **90** H33a version bump automation — pom.xml version + INSTALLER.md stamp on every phase completion
 - [x] **91** (reconciled 2026-10-15: SHIPPED — the 2026-10-06 "not done" note was a false negative: it grepped the literal symbol `listIssues`, but the shipped read API is `GitHubClient.listOpenIssues` (GitHubClient.java:248) feeding `GitHubIssueStream.refreshCrystals` → GameEngine `spawnIssueCrystal` (feat(#118), commit 38964fa, 2026-10-03; selftest check "issue read feed" green 69/0 at 931d37b)). H34 open-issue crystals — GitHubClient.listIssues → TODO crystals; agents see repo issues in-world
-- [ ] **92** H35 issue verdicts — quorum votes on issues; verdict posted as comment (add-only, never close)
-- [ ] **93** H36 repo health rollup — issues/TODO-density/last-push age → KG attribute + room glow intensity
+- [x] **92** H35 issue verdicts — quorum votes on issues; verdict posted as comment (add-only, never close) (cfaa673, fixes #127; selftest "issue-verdict pipeline" green)
+- [x] **93** H36 repo health rollup — issues/TODO-density/last-push age → KG attribute + room glow intensity (852222a, fixes #125; selftest "repo-health rollup" green)
 - [x] **94** H36a nightly 143-repo sweep — quota-free bot job (scripts/repo_sweep.py + RepoSweepData.ingest; cfaa673 lineage)
 - [x] **95** H37 commit engravings — last 10 commits per repo rendered at the room door (0e83613: `renderCommitEngravings`; local rooms via `git log -10` in RepoMapper, remote-only rooms via `GitHubClient` /commits with a 10-min cache)
-- [ ] **96** H38 push gate — autonomous upsertFile requires quorum APPROVED on the exact diff + critic pass
+- [x] **96** H38 push gate — autonomous upsertFile requires quorum APPROVED on the exact diff + critic pass (43f75b7, fixes #126; selftest "file-write quorum gate" green)
 - [x] **97** PR preview branch — DECIDED 2026-10-18 (#129): DECLINED as not-needed-today. ToolExecutor writes are LOCAL-SANDBOX only (base-path confined, no git/push), so nothing autonomous lands on a default branch. RULE for the future: if an in-game push path ever lands (post-#126 ToolExecutor veto wiring), all autonomous writes go to `agent/<step>` branches, human merges (option 1)
 - [x] **98** Weekly self-report (H50) — metrics + phases + next steps as issue comment + reports/ (scout_bot --weeklyreport: telemetry 7d pulse + NEXT_100_STEPS phase table + queue head -> reports/2026-Www.md + step-log #9, 7d guard, quota-free; wired into cascade_dev.sh step 9)
 
