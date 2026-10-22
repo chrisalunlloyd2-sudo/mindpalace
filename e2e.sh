@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # e2e.sh — the amazing test flow: build → selftest → E2E waypoint tour → verify.
 # Usage: bash e2e.sh [shotdir]   (default: target/e2e-shots)
-set -u
+set -u; PORTAL_FLAGS="${PORTAL_FLAGS:-}"
 # REPO resolves from THIS script's location — main checkout for e2e.sh there,
 # the worktree root for .worktrees/<id>/e2e.sh (the hardcoded checkout path
 # made the worktree copy build+verify the wrong tree).
@@ -56,8 +56,19 @@ rm -rf "$DIR"; mkdir -p "$DIR"
 # world live and no crash in the log. World build ~5-8min + 22 waypoints ×
 # (6s framing + FPS eval at 3-13 fps on this box) needs ~1200s. Same raise
 # precedent as 420→700 above.
-timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
-  -Dmindpalace.quality.doors=true \
+# t_0b39070e (QUAL-5): PORTAL_FLAGS comes from the caller — unset runs the
+# OFF-control tour (doors only); `PORTAL_FLAGS=-Dmindpalace.render.portalDoors=true
+# bash e2e.sh dir` runs the ON strip tour. Default-off contract like the game.
+# Same card: tour grew 22→35 waypoints (5-label dissolve strip, labels below);
+# budget 1800 covers the slow-BOX reality — build alone ~16-28 min here
+# (2026-10-21: remote-merge handshake retry + mvn 10-25 min runs observed).
+# NB run 373 proved the tour phase itself is NOT budget-bound: the original
+# MISSING-34 was the JVM's same-frame exit race (default case System.exit
+# before the deferred PNG flush — fixed in GameEngine, this comment kept at
+# the accurate cause), so 1200 would likely have sufficed; 1800 keeps the
+# whole 4-step gate safe on the 2-core box regardless of build weather.
+timeout 1800 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+  -Dmindpalace.quality.doors=true $PORTAL_FLAGS \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --e2e "$DIR" --time 21 > /tmp/e2e_tour.log 2>&1
 grep -aE "\[E2E\]|\[E2E-SHOT\]|\[E2E-HUD-GATE\] SUMMARY" /tmp/e2e_tour.log
@@ -79,7 +90,9 @@ labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gaug
           "19_gist_wall","20_sky","21_water","22_mansion_spawn",
           "23_door_panel_closed","24_door_panel_open","25_hall_door",
           "26_mansion_entrance","27_town_house_door","28_mansion_door_face",
-          "29_wallpaper_amber_door"]
+          "29_wallpaper_amber_door",
+          "30_portal_dissolve_000","31_portal_dissolve_033","32_portal_dissolve_050",
+          "33_portal_dissolve_067","34_portal_dissolve_100"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:

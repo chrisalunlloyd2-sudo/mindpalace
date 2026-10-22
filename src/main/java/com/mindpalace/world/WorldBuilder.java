@@ -1008,10 +1008,48 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x, c.y + h / 2f - (h - dw) / 2f, fz), new Vector3f(Room.DOOR_WIDTH, h - dw, t), Renderer.TEX_WALLPAPER);
 
         // Door panel — slides up when opened
+        // QUAL-5: when portalDoors flag is ON, the leaf dissolves into a
+        // glowing cyan portal quad instead of sliding: the crossfade runs
+        // linearly over the dissolve while the portal (and its rim) fade in
+        // behind it. Flag OFF keeps the slide-up panel pixel-identical.
         float doorSlide = room.getDoorOpenAmount() * dw;
         float doorPanelY = c.y - h / 2f + dw / 2f + doorSlide;
         float doorPanelH = dw * (1f - room.getDoorOpenAmount());
-        if (doorPanelH > 0.01f) {
+        if (Renderer.PORTAL_DOORS && room.getDoorOpenAmount() > 0.001f) {
+            // QUAL-5 branch: portal quad (emissive cyan) fades in as the
+            // panel dissolves, plus a thin bright rim framing the aperture.
+            // The panel still draws while its alpha > 0 (crossfade, not a
+            // pop), but at full dissolve only the portal remains.
+            float panelA = room.getPortalPanelAlpha();
+            float portalA = room.getPortalAlpha();
+            // Portal quad fills the doorway aperture (slightly in the room,
+            // both faces visible = no cull pop when crossing).
+            float portalZ = side == 0 ? fz + 0.015f : fz - 0.015f;
+            r.setTint(1f, 1f, 1f); // emissive tint must not ride the room accent
+            // Opaque in-slab portal body, drawn FIRST (behind everything in
+            // this block): the semi-transparent panel then blends over an
+            // already-full portal → panel·panelA + portal·(1−panelA), the
+            // exact linear complement. Latching BOTH sides would square the
+            // weaker one's weight (α²) and let wall/void leak mid-dissolve.
+            r.drawCubeColor(new Vector3f(c.x, c.y - h / 2f + dw / 2f, portalZ),
+                new Vector3f(Room.DOOR_WIDTH - 0.02f, dw - 0.02f, 0.02f),
+                Renderer.PORTAL_TINT[0], Renderer.PORTAL_TINT[1],
+                Renderer.PORTAL_TINT[2]);
+            // Room accent back ON before the crossfading panel draw —
+            // flag-OFF renders the same panel geometry under the accent
+            // from the renderRoom header, so the crossfade's start frame
+            // must match.
+            r.setTint(tint[0] * glow, tint[1] * glow, tint[2] * glow);
+            // Crossfading panel: same slide geometry as OFF, alpha follows
+            // the dissolve (opaque at dissolve start → gone at the end).
+            // (The rim pass below runs after the frame block.)
+            if (panelA > 0.001f) {
+                r.setAlphaMul(panelA);
+                r.drawCube(new Vector3f(c.x, doorPanelY, fz),
+                    new Vector3f(Room.DOOR_WIDTH - 0.04f, doorPanelH, t + 0.02f), Renderer.doorTex());
+                r.resetAlphaMul();
+            }
+        } else if (doorPanelH > 0.01f) {
             r.drawCube(new Vector3f(c.x, doorPanelY, fz),
                 new Vector3f(Room.DOOR_WIDTH - 0.04f, doorPanelH, t + 0.02f), Renderer.doorTex());
         }
@@ -1022,6 +1060,35 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x + dh, c.y - h / 2f + dw / 2f, fz), new Vector3f(ft, dw, ft), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw, fz), new Vector3f(Room.DOOR_WIDTH, ft, ft), Renderer.TEX_DOOR);
         r.drawCube(new Vector3f(c.x, c.y - h / 2f + dw + 0.15f, fz), new Vector3f(Room.DOOR_WIDTH * 0.8f, 0.15f, 0.05f), Renderer.TEX_PLAQUE);
+
+        // QUAL-5 rim pass — only in the ON branch. Draws AFTER the frame so
+        // it never pre-writes depth over the wood strips mid-dissolve (the
+        // old in-branch rim position beat the frame to the depth buffer and
+        // depth-rejected it wherever they overlapped). Rims sit proud of
+        // the wall's inner face (fz±0.155 vs ±0.12) — outside the 0.11
+        // panel protrusion, clear of wall slab (±0.10) and frame (±0.04) —
+        // and fade in with the portal (emissive solids are tint-immune).
+        if (Renderer.PORTAL_DOORS && room.getDoorOpenAmount() > 0.001f) {
+            float pa = room.getPortalAlpha();
+            if (pa > 0.003f) { // alpha-0 rims would only depth-pollute
+                r.setAlphaMul(pa);
+                float rimT = 0.045f;
+                float rimZ = side == 0 ? fz + 0.155f : fz - 0.155f;
+                r.drawCubeColor(new Vector3f(c.x - dh, c.y - h / 2f + dw / 2f, rimZ),
+                    new Vector3f(rimT, dw + rimT, 0.02f),
+                    Renderer.PORTAL_TINT[0], Renderer.PORTAL_TINT[1],
+                    Renderer.PORTAL_TINT[2]);
+                r.drawCubeColor(new Vector3f(c.x + dh, c.y - h / 2f + dw / 2f, rimZ),
+                    new Vector3f(rimT, dw + rimT, 0.02f),
+                    Renderer.PORTAL_TINT[0], Renderer.PORTAL_TINT[1],
+                    Renderer.PORTAL_TINT[2]);
+                r.drawCubeColor(new Vector3f(c.x, c.y - h / 2f + dw, rimZ),
+                    new Vector3f(Room.DOOR_WIDTH + rimT * 2, rimT, 0.02f),
+                    Renderer.PORTAL_TINT[0], Renderer.PORTAL_TINT[1],
+                    Renderer.PORTAL_TINT[2]);
+                r.resetAlphaMul();
+            }
+        }
 
         // Repo poster board — above the door, shows repo name/language/stars.
         // Dark backing plate; the text is drawn by GameEngine.renderRoomPoster().

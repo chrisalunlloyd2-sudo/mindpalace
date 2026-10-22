@@ -40,7 +40,7 @@ public class Room {
     // Door animation
     private float doorOpenAmount = 0f;  // 0=closed, 1=fully open (slid up)
     private float doorAnimTarget = 0f;
-    private static final float DOOR_ANIM_SPEED = 3.0f;  // units per second
+    public static final float DOOR_ANIM_SPEED = 3.0f;  // units per second
 
     // Room dimensions
     public static final float ROOM_WIDTH = 6.0f;
@@ -123,6 +123,66 @@ public class Room {
         } else if (doorOpenAmount > doorAnimTarget) {
             doorOpenAmount = Math.max(doorAnimTarget, doorOpenAmount - DOOR_ANIM_SPEED * dt);
         }
+        // QUAL-5: advance the dissolve clock alongside the slide. It starts
+        // the moment the door begins opening and never rewinds while the
+        // door stays open (no auto-close). Closing resets the clock so a
+        // later open-dissolve plays again from the start.
+        if (doorAnimTarget > 0f && doorOpenAmount > 0f) {
+            portalDissolveSec += dt;
+        } else if (doorAnimTarget == 0f) {
+            portalDissolveSec = 0f;
+        }
+    }
+
+    // ── QUAL-5 portal dissolve (flag-gated; GL-free state — all math lives
+    //    here so selftests can drive it without a GL context) ──────────────
+    /** QUAL-5: the dissolve's own clock, seconds since this door started
+     *  opening. 0 = closed, rises through the ~0.5 s dissolve as the door
+     *  leaf crossfades into the portal quad, keeps counting while fully
+     *  open. Set from doorOpenAmount's climb; NOT reset while open (doors
+     *  stay open — no auto-close cycle). */
+    private volatile float portalDissolveSec = 0f;
+
+    /** QUAL-5 dissolve length: ~0.5 s from Enter to fully-open portal. */
+    public static final float PORTAL_DISSOLVE_SECONDS = 0.5f;
+    /** QUAL-5: fraction of the dissolve still revealing panel pixels.
+     *  1.0 = solid door panel, 0.0 = panel fully dissolved into the portal
+     *  quad. Linear (1 - dissolve/length) so the census math stays exact. */
+    public float getPortalPanelAlpha() {
+        if (dissolveDone()) return 0f;
+        return Math.max(0f, 1f - portalDissolveSec / PORTAL_DISSOLVE_SECONDS);
+    }
+    /** QUAL-5: portal appearance amount (crossfade partner of panel alpha
+     *  — reads as 1 - alpha but clamped past the dissolve end). */
+    public float getPortalAlpha() {
+        if (dissolveDone()) return doorOpenAmount < 1f ? 0f : 1f;
+        return Math.min(1f, portalDissolveSec / PORTAL_DISSOLVE_SECONDS);
+    }
+    /** QUAL-5: dissolve finished (panel gone, pure portal). */
+    public boolean dissolveDone() {
+        return portalDissolveSec >= PORTAL_DISSOLVE_SECONDS;
+    }
+    /** QUAL-5: advance the dissolve clock with the same dt as the slide
+     *  (called from updateDoorAnimation so a single tick path drives both). */
+    public float getPortalDissolveSec() { return portalDissolveSec; }
+    /** QUAL-5 (e2e strip + selftest only): snap the dissolve clock to an
+     *  exact second count without an animation tick — deterministic frames
+     *  for the 30-34 label series. */
+    public void snapPortalDissolve(float sec) {
+        portalDissolveSec = Math.max(0f, sec);
+    }
+    /** QUAL-5 (e2e strip only): pin the slide amount directly, so a strip
+     *  waypoint re-derives the exact open-path state (min(1, 3·t)) every
+     *  frame instead of feeding more ticks into updateDoorAnimation — the
+     *  coupled accumulate-then-snap was the waypoint drift vector. */
+    public void snapDoorOpenAmount(float open) {
+        doorOpenAmount = Math.max(0f, Math.min(1f, open));
+    }
+    /** QUAL-5: snapshot for the strip census / probe — one line, GL-free. */
+    public String portalProbeString() {
+        return String.format("doorOpen=%.3f dissolve=%.3fs panelA=%.3f portalA=%.3f done=%b",
+            doorOpenAmount, portalDissolveSec, getPortalPanelAlpha(), getPortalAlpha(),
+            dissolveDone());
     }
 
     /**

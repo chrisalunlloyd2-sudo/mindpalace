@@ -15,6 +15,7 @@ uniform int useTexture;
 uniform vec3 solidColor;   // flat colour when useTexture == 2 (no 1x1 texture needed)
 uniform vec3 tintColor;
 uniform float fogEnabled;
+uniform float alphaMul;    // QUAL-5: portal-dissolve crossfade (1.0 = opaque no-op)
 
 void main() {
     // Ambient
@@ -55,5 +56,5 @@ void main() {
     vec3 fogColor = vec3(0.55, 0.65, 0.78); // pale sky haze
     result = mix(result, fogColor, fogFactor * fogEnabled);
 
-    FragColor = vec4(result, 1.0);
+    FragColor = vec4(result, alphaMul); // QUAL-5: crossfade rides the ALPHA channel
 }

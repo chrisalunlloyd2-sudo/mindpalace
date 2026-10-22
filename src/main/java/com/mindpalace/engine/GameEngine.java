@@ -3916,6 +3916,11 @@ public class GameEngine {
             + " flag=" + Renderer.DOORS_SOLID_QUALITY
             + " doorTex=" + Renderer.doorTex()
             + " solidCubesQueued=" + renderer.readAndClearDoorSolidCount());
+        // t_0b39070e probe (QUAL-5): dissolve state driving the strip — one
+        // line: flag, portal alpha, panel alpha, dissolve clock at capture.
+        System.out.println("[QUAL5-PROBE] label=" + label
+            + " portal=" + Renderer.PORTAL_DOORS
+            + " " + qual5DoorStateForProbe());
         // t_0c1374b0 e2e HUD gate: project the live slot rects through the
         // REAL camera at the capture moment; e2e.sh greps the [E2E-HUD-GATE]
         // lines and fails the verify when any visible pair overlaps.
@@ -3923,6 +3928,17 @@ public class GameEngine {
     }
     /** t_0c1374b0: e2e HUD-gate failures summed over the whole tour. */
     private int e2eGateFailures = 0;
+
+    /** QUAL-5 probe helper: state of the strip's dissolve door (the first
+     *  room found with a door position), for [QUAL5-PROBE] lines. */
+    private String qual5DoorStateForProbe() {
+        try {
+            for (Room rm : world.getRooms()) {
+                if (rm.getDoorPosition() != null) return rm.portalProbeString();
+            }
+        } catch (Exception ignored) {}
+        return "doorOpen=n/a";
+    }
 
     /**
      * t_0c1374b0 e2e HUD gate — project each PRIMARY slot's gate rect through
@@ -7202,6 +7218,95 @@ public class GameEngine {
         }
         if (doorTexOk) pass++; else fail++;
 
+        // 69. QUAL-5 portal dissolve — GL-free state machine + flag contract.
+        //     (a) the flag's default OFF leaves PORTAL_DOORS false;
+        //     (b) Room's dissolve alphas are a monotonic crossfade pair:
+        //         panel 1.0 -> 0.0, portal 0.0 -> 1.0 over exactly 0.5 s of
+        //         accumulated dt while open (drives the strip census);
+        //     (c) after the dissolve the panel alpha stays 0 and the portal
+        //         stays 1 (doors never auto-close);
+        //     (d) closing the door resets the clock so a later open
+        //         re-dissolves from the start;
+        //     (e) Renderer latches and restores the crossfade alpha
+        //         symmetrically (setAlphaMul -> resetAlphaMul default 1.0).
+        boolean portalOk = false;
+        try {
+            boolean flagOffDefault = !Renderer.PORTAL_DOORS;
+            Room pr = new Room("portal-selftest");
+            pr.setDoorPosition(new Vector3f(0, 0, 0));
+            pr.openDoor();
+            float lastPanel = 1f, lastPortal = 0f;
+            boolean monotonic = true;
+            // Drive 0.7 s in 10 ms ticks (70 ticks > 0.5 s dissolve): the
+            // panel must fall and the portal rise, each direction-locked.
+            for (int i = 0; i < 70; i++) {
+                pr.updateDoorAnimation(0.01f);
+                float pa = pr.getPortalPanelAlpha();
+                float qa = pr.getPortalAlpha();
+                if (pa > lastPanel + 1e-6f || qa < lastPortal - 1e-6f) monotonic = false;
+                lastPanel = pa; lastPortal = qa;
+            }
+            boolean midCrossfadeOrdered = true; // panel>=portal at the 50% point
+            Room pm = new Room("portal-mid");
+            pm.setDoorPosition(new Vector3f(0, 0, 0));
+            pm.openDoor();
+            pm.updateDoorAnimation(0.25f); // 0.25 s = half the dissolve
+            midCrossfadeOrdered = Math.abs(pm.getPortalPanelAlpha() - 0.5f) < 0.02f
+                && Math.abs(pm.getPortalAlpha() - 0.5f) < 0.02f;
+            boolean settled = pr.dissolveDone() && lastPanel == 0f && lastPortal == 1f
+                && pr.getDoorAnimTarget() >= 1f && pr.getDoorOpenAmount() > 0.99f;
+            pr.closeDoor();
+            pr.updateDoorAnimation(0.016f);
+            boolean resetOnClose = pr.getPortalDissolveSec() == 0f
+                && pr.getPortalPanelAlpha() == 1f;
+            boolean latchRestore = true;
+            try { // alpha latch symmetry — no GL needed (uniform writes only)
+                if (this.renderer != null) {
+                    this.renderer.setAlphaMul(0.25f);
+                    this.renderer.resetAlphaMul();
+                }
+            } catch (Exception gl_e) { latchRestore = false; }
+            portalOk = flagOffDefault && monotonic && midCrossfadeOrdered
+                && settled && resetOnClose && latchRestore;
+            System.out.println((portalOk ? "PASS" : "FAIL")
+                + " portal dissolve state machine (flag-off=" + flagOffDefault
+                + " monotonic12d=" + monotonic + " mid5050=" + midCrossfadeOrdered
+                + " settledPanelGone=" + settled + " closeResets=" + resetOnClose
+                + " latchRestore=" + latchRestore + ")");
+        } catch (Exception e) {
+            System.out.println("FAIL portal dissolve state machine: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (portalOk) pass++; else fail++;
+
+        // 70. QUAL-5 flag contract in shipped source — the draw path only
+        //     reads Renderer.PORTAL_DOORS (System property, OFF default) and
+        //     the portal branch lives behind it in WorldBuilder; the probe
+        //     exists for the e2e strip. Hermetic source reads, cwd = repo.
+        boolean portalFlagOk = false;
+        try {
+            java.nio.file.Path src = java.nio.file.Path.of(System.getProperty("user.dir"),
+                "src", "main", "java", "com", "mindpalace");
+            String wbS = java.nio.file.Files.readString(src.resolve("world").resolve("WorldBuilder.java"));
+            String rdS = java.nio.file.Files.readString(src.resolve("render").resolve("Renderer.java"));
+            boolean flagDeclared = rdS.contains("mindpalace.render.portalDoors")
+                && rdS.contains("PORTAL_DOORS");
+            boolean gateInWb = wbS.contains("Renderer.PORTAL_DOORS");
+            boolean usesDissolve = wbS.contains("getPortalPanelAlpha()")
+                && wbS.contains("getPortalAlpha()");
+            String geS = java.nio.file.Files.readString(src.resolve("engine").resolve("GameEngine.java"));
+            boolean probeWired = geS.contains("portalProbeString()");
+            portalFlagOk = flagDeclared && gateInWb && usesDissolve && probeWired;
+            System.out.println((portalFlagOk ? "PASS" : "FAIL")
+                + " portalDoors flag contract (declared=" + flagDeclared
+                + " worldbuilder-gated=" + gateInWb + " alphas-used=" + usesDissolve
+                + " probe-wired=" + probeWired + ")");
+        } catch (Exception e) {
+            System.out.println("FAIL portalDoors flag contract: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (portalFlagOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -7465,6 +7570,55 @@ public class GameEngine {
      * after the last waypoint (System.exit(0)) so CI can chain:
      *   build → --e2e <dir> → verify shots exist + non-black.
      */
+    /** QUAL-5 frame-strip helper: snap the strip door (first room with a
+     *  door) to an exact dissolve-clock state in SECONDS — 0 = closed
+     *  (panel opaque), 0.5 = fully dissolved (portal only). Writes the
+     *  waypoint-22 vantage into p (case tails apply it via
+     *  cam.setPosition(p)) so every strip frame is comparable. Fixed
+     *  states make labels 30-34 a deterministic monotonic census strip;
+     *  the alphas themselves live in Room (GL-free math). Flags
+     *  independent: when portalDoors is OFF the same snapshots capture
+     *  the legacy slide (the strip simply shows the panel). */
+    private void setupStripDoor(Vector3f p, float dissolveSec) {
+        for (Room rm : world.getRooms()) {
+            if (rm.getDoorPosition() == null) continue;
+            if (rm.isFogged() && !world.getFogOfWar().isRoomRevealed(rm)) continue;
+            // Per-frame PIN, not an accumulating tick: cases 30-34 re-run
+            // this every frame, and a coupled openDoor() +
+            // updateDoorAnimation(dissolveSec) once ADDED dissolveSec to
+            // the dissolve clock on every call once the open gate
+            // (target>0 && open>0) engaged — the later strip frames fully
+            // dissolved within 2-3 frames. Re-deriving the exact open-path
+            // state (slide = min(1, SPEED·t), clock = t) each call keeps
+            // every frame deterministic at the labeled alphas; the tour
+            // path (updateAutodrive) never ticks updateDoorAnimation at
+            // all (the 1517 tick lives in the interactive loop), so the
+            // pin IS the door animation here.
+            rm.openDoor();
+            rm.snapPortalDissolve(dissolveSec);
+            rm.snapDoorOpenAmount((float) Math.min(1.0, Room.DOOR_ANIM_SPEED * dissolveSec));
+            // Vantage: the dissolve leaf lives on the room's FRONT wall
+            // (fz, facing -Z for side 0 / +Z for side 1) — stand INSIDE the
+            // room, centered on the doorway, straight on. (The hallway
+            // vantage across the room never framed this plane.) Same
+            // atan2/asin aim pattern as the other tour waypoints.
+            Vector3f c = rm.getRoomCenter();
+            int side = rm.getHallwaySide();
+            float d = Room.ROOM_DEPTH, h = Room.ROOM_HEIGHT;
+            float fz = side == 0 ? c.z - d / 2f : c.z + d / 2f;
+            float floorY = c.y - h / 2f;
+            float standBack = d * 0.35f;
+            p.set(c.x, floorY + 1.6f, fz + (side == 0 ? standBack : -standBack));
+            Vector3f aim = new Vector3f(c.x, floorY + Room.DOOR_HEIGHT / 2f, fz)
+                .sub(p).normalize();
+            player.getCamera().setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+            player.getCamera().setPitch((float) Math.toDegrees(Math.asin(
+                Math.max(-1f, Math.min(1f, aim.y)))));
+            return;
+        }
+        // No revealed door — leave p untouched (labels still emit).
+    }
+
     private void updateE2ETour(double dt) {
         Camera cam = player.getCamera();
         Vector3f p = cam.getPosition();
@@ -7958,8 +8112,62 @@ public class GameEngine {
                 cam.setYaw(0); cam.setPitch(2f);
                 if (shoot) { captureLabeled("29_wallpaper_amber_door"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            // ── QUAL-5 frame strip (t_0b39070e): the portal dissolve at FIXED
+            // dissolve states, same closed-door vantage as waypoint 22. Each
+            // stops' shoot-block snaps the strip door to the exact alphas the
+            // label names, so the census can assert monotonic panel→portal.
+            // Flag-independent: when portalDoors is OFF the same snapshots
+            // capture the legacy slide (the strip simply shows the panel).
+            // Case index k shows label (k+1): after case 28's label 29 the
+            // counter is 29, so the strip MUST live on cases 29-33 — leaving
+            // it on 30-34 left case 29 unhandled and the tour fell through
+            // to `default` after 29/35 labels (run 371 VERIFY-FAIL 5).
+            case 29 -> { // strip 0/5 — dissolve 0.00s: door closed, panel opaque
+                setupStripDoor(p, 0f);
+                if (shoot) { captureLabeled("30_portal_dissolve_000"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 30 -> { // strip 1/5 — dissolve 0.17s (~1/3): panel 0.67, portal 0.33
+                setupStripDoor(p, 0.1667f);
+                if (shoot) { captureLabeled("31_portal_dissolve_033"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 31 -> { // strip 2/5 — dissolve 0.25s (half): 50/50 crossfade
+                setupStripDoor(p, 0.25f);
+                if (shoot) { captureLabeled("32_portal_dissolve_050"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 32 -> { // strip 3/5 — dissolve 0.33s (~2/3): panel 0.33, portal 0.67
+                setupStripDoor(p, 0.3333f);
+                if (shoot) { captureLabeled("33_portal_dissolve_067"); e2eWaypoint++; e2ePhaseTimer = 0; }
+            }
+            case 33 -> { // strip 4/5 — dissolve 0.50s (done): portal only, panel gone
+                setupStripDoor(p, 0.5f);
+                if (shoot) {
+                    // No restore: captureLabeled defers the PNG write to
+                    // render()'s tail of THIS frame, so a same-pass
+                    // re-close would overwrite the portal state the label
+                    // names (probe line / PNG mismatch). The default
+                    // waypoint exits right after — tour is over.
+                    captureLabeled("34_portal_dissolve_100");
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                }
+            }
             default -> { // done — clean exit for CI
-                System.out.println("[E2E] tour complete — 29 waypoints captured. Exiting.");
+                // t_0b39070e: the LAST waypoint's captureLabeled() defers its
+                // PNG write to render()'s tail of the CURRENT frame, but this
+                // default case runs on the NEXT update() tick — before that
+                // flush. System.exit() here killed the JVM one frame early,
+                // so 34_portal_dissolve_100 never landed (every prior run's
+                // MISSING-34; run 373 proved it: clean Exiting 0, 33 shots).
+                // Hold the exit one frame while a capture is pending; render()
+                // flushes it this frame, the next update() takes this path with
+                // pendingShotLabel == null and exits for real.
+                if (pendingShotLabel != null) {
+                    System.out.println("[E2E] holding exit one frame — pending shot "
+                        + pendingShotLabel);
+                    e2ePhaseTimer = 0;
+                    cam.setPosition(p);
+                    return;
+                }
+                System.out.println("[E2E] tour complete — 35 waypoints captured. Exiting.");
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
                 // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software

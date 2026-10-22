@@ -83,6 +83,19 @@ public class Renderer {
         return DOORS_SOLID_QUALITY ? TEX_DOOR_SOLID : TEX_DOOR;
     }
 
+    /**
+     * QUAL-5 quality flag: open a door by dissolving the leaf into a glowing
+     * cyan portal quad (rim + halo) over ~0.5 s instead of sliding the panel
+     * up. Off = the QUAL-2 slide-up panel, pixel-identical. Enable with
+     * -Dmindpalace.render.portalDoors=true.
+     */
+    public static final boolean PORTAL_DOORS =
+        Boolean.parseBoolean(System.getProperty("mindpalace.render.portalDoors", "false"));
+
+    /** QUAL-5: portal emissive tint (cyan, matches TEX_NEON_CYAN trim so the
+     *  doorway reads as one lit aperture when the leaf is gone). */
+    public static final float[] PORTAL_TINT = {0.30f, 0.95f, 1.00f};
+
     private Texture[] textures = new Texture[TEX_COUNT];
 
     public Renderer(int width, int height) {
@@ -153,6 +166,7 @@ public class Renderer {
         basicShader.setUniform("viewPos", camPos);
         basicShader.setUniform("tintColor", tintColor);
         basicShader.setUniform("fogEnabled", 1.0f);
+        basicShader.setUniform("alphaMul", 1.0f); // QUAL-5: opaque by default
     }
 
     // ── Live graphics tuning (hot-applied by PatchManager) ──
@@ -286,6 +300,35 @@ public class Renderer {
         solidScratch.set(((int) (r * 255) & 0xFF) / 255f, ((int) (g * 255) & 0xFF) / 255f, ((int) (b * 255) & 0xFF) / 255f);
         basicShader.setUniform("solidColor", solidScratch);
         basicShader.setUniform("useTexture", 2);
+    }
+
+    // ── QUAL-5 portal dissolve alpha latch ────────────────────────────────
+    /** Crossfade alpha (0 = fully panel, 1 = fully portal). Latched per
+     *  draw through the shader uniform alphaMul; the default 1.0 leaves
+     *  every non-portal draw byte-identical (RGB math untouched; a=1 emits
+     *  fragment alpha 1.0, so blending is a no-op). */
+    private float alphaMul = 1.0f;
+    /** Latch the crossfade alpha for the NEXT portal draw(s), then restore
+     *  via {@link #resetAlphaMul}. Mid-frame latch like the solidColor/tint
+     *  uniforms, PLUS the matching GL blend enable — without blending the
+     *  fragment alpha is discarded by the fixed pipeline and a crossfade
+     *  would read as a plain fade to black. Blend state is scoped to the
+     *  latch window (beginFrame re-pins alphaMul to 1.0 every frame;
+     *  resetAlphaMul unconditionally disables the blend). */
+    public void setAlphaMul(float a) {
+        alphaMul = Math.max(0f, Math.min(1f, a));
+        basicShader.setUniform("alphaMul", alphaMul);
+        if (alphaMul < 1.0f) {
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        }
+    }
+    /** Restore opaque (1.0) — call after every alpha-latched draw; runs
+     *  even after an a=1 latch so no blend state can leak past the window. */
+    public void resetAlphaMul() {
+        alphaMul = 1.0f;
+        basicShader.setUniform("alphaMul", 1.0f);
+        GL11.glDisable(GL11.GL_BLEND);
     }
 
     /** Draw a cube with an arbitrary RGB color, rotated around Y (for clothing layers). */
