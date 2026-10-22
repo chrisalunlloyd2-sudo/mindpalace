@@ -1246,13 +1246,20 @@ public class WorldBuilder {
         // Potted plant — back corner
         float plantX = c.x - w / 2f + 0.6f;
         float plantZ = side == 0 ? c.z + d / 2f - 0.6f : c.z - d / 2f + 0.6f;
-        // Pot (brown cylinder approximation)
+        // Pot (brown cylinder approximation) — top at floorY + 0.4.
         r.drawCube(new Vector3f(plantX, floorY + 0.2f, plantZ),
             new Vector3f(0.25f, 0.4f, 0.25f), Renderer.TEX_DOOR);
-        // Plant foliage (green sphere approximation)
-        r.drawCube(new Vector3f(plantX, floorY + 0.55f, plantZ),
+        // canopy base sits 0.05 INSIDE the pot rim so there is no air gap
+        // and the soil line is hidden (QUAL-D2, MP-007 fix pass). The old
+        // hardcoded +0.55/+0.5 offsets left a 0.15 air sliver above the rim
+        // and drifted in rooms whose floorY != 0 (hallway-edge rooms).
+        // Derived from the same floorY the pot uses, so the pair can never
+        // drift again — foliage bottoms land at floorY + 0.35 (potTop -
+        // 0.05), i.e. INSIDE the pot's 0.4-tall body = geo-audit supported.
+        float potTop = floorY + 0.4f;
+        r.drawCube(new Vector3f(plantX, potTop - 0.05f, plantZ),
             new Vector3f(0.35f, 0.35f, 0.35f), Renderer.TEX_GRASS);
-        r.drawCube(new Vector3f(plantX + 0.1f, floorY + 0.5f, plantZ),
+        r.drawCube(new Vector3f(plantX + 0.1f, potTop - 0.07f, plantZ),
             new Vector3f(0.2f, 0.25f, 0.2f), Renderer.TEX_GRASS);
 
         // Floor lamp — opposite corner
