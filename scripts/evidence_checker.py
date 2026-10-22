@@ -154,10 +154,18 @@ def validate_evidence(card, repo_dir=None, strict=False):
 
 
 def e2e_looks_like_path(value):
+    """E2e looks like path.
+
+    Args: value.
+    """
     return "/" in value or "\\" in value or Path(value).is_absolute()
 
 
 def check_card(path, repo_dir=None, strict=False):
+    """Check card.
+
+    Args: path, repo_dir, strict.
+    """
     try:
         card = json.loads(Path(path).read_text(encoding="utf-8"))
     except Exception as e:
@@ -181,6 +189,10 @@ def _card_status_only(path):
 
 
 def list_task_paths(task_dir):
+    """List task paths.
+
+    Args: task_dir.
+    """
     task_dir = Path(task_dir)
     if not task_dir.is_dir():
         # A typo'd or unmounted queue path must never read as "zero cards,
@@ -191,6 +203,10 @@ def list_task_paths(task_dir):
 
 
 def scan_task_dir(task_dir, repo_dir=None, strict=False):
+    """Scan task dir.
+
+    Args: task_dir, repo_dir, strict.
+    """
     results = []
     for path in list_task_paths(task_dir):
         ok, reasons = check_card(path, repo_dir=repo_dir, strict=strict)
@@ -199,6 +215,7 @@ def scan_task_dir(task_dir, repo_dir=None, strict=False):
 
 
 def main():
+    """Main (function)."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--card", help="validate a single TASK_*.json card")
     parser.add_argument("--task-dir", help="scan every TASK_*.json card in this directory")
