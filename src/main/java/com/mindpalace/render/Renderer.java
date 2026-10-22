@@ -116,6 +116,7 @@ public class Renderer {
     }
 
     public void beginFrame(Camera camera) {
+        GeoAudit.frameBegin();
         basicShader.bind();
         float aspect = (float) width / height;
         projectionMatrix = camera.getProjectionMatrix(aspect);
@@ -224,12 +225,14 @@ public class Renderer {
 
     /** Draw a cube with a specific texture type. */
     public void drawCube(Vector3f position, Vector3f size, int texId) {
+        GeoAudit.record("cube", position, size, Float.NaN, texId, -1, -1, -1);
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         drawMesh(getCubeMesh(), model, texId);
     }
 
     /** Draw a cube rotated around the Y axis (yaw in radians) — for oriented limbs. */
     public void drawCubeYaw(Vector3f position, Vector3f size, float yaw, int texId) {
+        GeoAudit.record("cubeYaw", position, size, yaw, texId, -1, -1, -1);
         Matrix4f model = new Matrix4f().translate(position).rotateY(yaw).scale(size);
         drawMesh(getCubeMesh(), model, texId);
     }
@@ -247,6 +250,7 @@ public class Renderer {
 
     /** Draw a cube with an arbitrary RGB color, rotated around Y (for clothing layers). */
     public void drawCubeColorYaw(Vector3f position, Vector3f size, float yaw, float r, float g, float b) {
+        GeoAudit.record("cubeColorYaw", position, size, yaw, -1, r, g, b);
         Matrix4f model = new Matrix4f().translate(position).rotateY(yaw).scale(size);
         basicShader.bind();
         GlTrace.expectProgram(basicShader.getId(), "cubeColorYaw");
@@ -261,6 +265,7 @@ public class Renderer {
 
     /** Draw a cube with the Cortana hologram shader — fresnel rim + scanlines + data lines. */
     public void drawHologramCube(Vector3f position, Vector3f size, float yaw, Vector3f tint, float time) {
+        GeoAudit.record("hologram", position, size, yaw, -1, tint.x, tint.y, tint.z);
         GlTrace.mark("hologram:enter");
         hologramShader.bind();
         GlTrace.mark("hologram:bind");
@@ -314,6 +319,7 @@ public class Renderer {
 
     /** Draw a cube with an arbitrary RGB color (cached 1x1 texture). */
     public void drawCubeColor(Vector3f position, Vector3f size, float r, float g, float b) {
+        GeoAudit.record("cubeColor", position, size, Float.NaN, -1, r, g, b);
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         basicShader.setUniform("model", model);
         solidColor(r, g, b);
@@ -327,6 +333,7 @@ public class Renderer {
         float len = dir.length();
         if (len < 1e-4f) return;
         dir.normalize();
+        GeoAudit.recordLine(mid, dir, thickness, len, r, g, bl);
         // rotateTowards aligns the cube's +Z with dir (the long axis).
         Matrix4f model = new Matrix4f().translate(mid)
             .rotateTowards(dir, new Vector3f(0, 1, 0))
@@ -449,12 +456,14 @@ public class Renderer {
 
     /** Draw a sphere (unit radius) scaled to `size`, with a texture. */
     public void drawSphere(Vector3f position, Vector3f size, int texId) {
+        GeoAudit.record("sphere", position, size, Float.NaN, texId, -1, -1, -1);
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         drawMesh(getSphereMesh(), model, texId);
     }
 
     /** Draw a sphere with an arbitrary RGB color (cached 1x1 texture). */
     public void drawSphereColor(Vector3f position, Vector3f size, float r, float g, float b) {
+        GeoAudit.record("sphereColor", position, size, Float.NaN, -1, r, g, b);
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         basicShader.setUniform("model", model);
         solidColor(r, g, b);
@@ -542,12 +551,14 @@ public class Renderer {
     /** Draw a hexagonal prism scaled to `size` (cap radius = size.x/z sides,
      *  height = size.y), with a texture. */
     public void drawHexPrism(Vector3f position, Vector3f size, int texId) {
+        GeoAudit.record("hexPrism", position, size, Float.NaN, texId, -1, -1, -1);
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         drawMesh(getHexPrismMesh(), model, texId);
     }
 
     /** Draw a hexagonal prism with an arbitrary RGB color. */
     public void drawHexPrismColor(Vector3f position, Vector3f size, float r, float g, float b) {
+        GeoAudit.record("hexPrismColor", position, size, Float.NaN, -1, r, g, b);
         Matrix4f model = new Matrix4f().translate(position).scale(size);
         basicShader.setUniform("model", model);
         solidColor(r, g, b);

@@ -3,6 +3,7 @@ package com.mindpalace.world;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.mindpalace.render.Camera;
+import com.mindpalace.render.GeoAudit;
 import com.mindpalace.render.Renderer;
 import com.mindpalace.render.Texture;
 import com.mindpalace.github.GitHubClient;
@@ -272,8 +273,13 @@ public class WorldBuilder {
         // Planet — always render when active (it's the open world)
         if (planetActive) renderPlanet(r, camPos);
 
+        // QUAL-1 geoAudit sweep: render EVERYTHING for this one frame —
+        // distance-cull + fog checks are bypassed (frustum still applies) so
+        // walls outside the camera's usual radius also land in the dump.
+        boolean sweep = GeoAudit.isSweepFrame();
+
         for (Hallway hw : hallways) {
-            if (isHallwayNear(hw, camPos)) renderHallway(r, hw);
+            if (sweep || isHallwayNear(hw, camPos)) renderHallway(r, hw);
         }
 
         // Outside world — render independently of the hallway, so the player
@@ -291,14 +297,14 @@ public class WorldBuilder {
         for (Room room : rooms) {
             Vector3f c = room.getRoomCenter();
             float dist = camPos.distance(c);
-            if (dist > ROOM_CULL_DISTANCE) continue;
+            if (!sweep && dist > ROOM_CULL_DISTANCE) continue;
             // perf: proper frustum test (room AABB) replaces the 2D front check
             if (!frustum.intersectsAabb(c, Room.ROOM_WIDTH / 2f, 1.5f, Room.ROOM_DEPTH / 2f)) {
                 culledRoomsLastFrame++;
                 continue;
             }
             // Fog of war: skip fogged rooms until their hex is revealed
-            if (room.isFogged() && !fogOfWar.isRoomRevealed(room)) continue;
+            if (room.isFogged() && !fogOfWar.isRoomRevealed(room) && !sweep) continue;
             renderRoom(r, room);
         }
     }
