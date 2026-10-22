@@ -14,7 +14,7 @@
 | Loop ratio (near-dup replies) | 42.9% | scout_bot.py --metrics |
 | Critic reviewing real work | 0% (blind) | console grep critic-skipped vs [Critic] |
 | E2E waypoints | 13 (11 OK + 2 known artifacts) | test_bot.py --verify-shots |
-| Selftest checks | 73 (must stay green) | --selftest RESULT line |
+| Selftest checks | 87 (must stay green) | --selftest RESULT line |
 | Quorum events per boot | ~2,500 and climbing | telemetry ledger |
 | GitHub rate budget | unprotected (agents hit API freely) | rate-limit headers |
 
@@ -52,7 +52,7 @@ M2 done = layout is a swappable strategy with a determinism test; agent API read
 | Time slider depth | 50+ commits scrubable per room | git log -50 load test | OK TimeMachine caps at 50 |
 | Slider content fidelity | book at rev X == git show X:path | selftest check 40 (SHIPPED) + manual A/B | hook wired; check 40 ships it |
 | Heatmap coverage | every scanned repo gets an activity tier | 1 bounded git call per repo at scan | OK wired at scan |
-| Selftest | stays green (0 failed) with all M3 features | RESULT line | OK (73/0 latest) |
+| Selftest | stays green (0 failed) with all M3 features | RESULT line | OK (87/0 latest) |
 
 M3 done = history visible in-world (slider), activity visible at a glance (door colors), navigation instant. MET (both formerly-queued selftest checks shipped: slider fidelity check 40, layout determinism check 41).
 
