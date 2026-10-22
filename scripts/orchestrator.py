@@ -112,6 +112,7 @@ def run_gate() -> tuple[int, dict]:
 
 
 def main() -> int:
+    """Main (function)."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     issue_state = read_issue9()
 
