@@ -9,6 +9,8 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
+import com.mindpalace.render.Shader;
+
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.nio.ByteBuffer;
@@ -210,6 +212,7 @@ public class FontRenderer {
             }
             return;
         }
+        final int previousProgram = Shader.currentProgram();   // text must not leave its shader bound for the next draw
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_CULL_FACE);
@@ -260,6 +263,7 @@ public class FontRenderer {
         GL30.glBindVertexArray(0);
         GL11.glEnable(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_BLEND);
+        Shader.restoreProgram(previousProgram);
     }
 
     /**

@@ -2591,6 +2591,12 @@ public class GameEngine {
     }
 
     private void renderNPCs() {
+        // QUAL-D1: every limb/cube draw below goes through drawMesh/drawCubeColorYaw,
+        // whose uniform calls assume the basic shader is bound. UI/text draws save and
+        // restore their program (Shader.currentProgram/restoreProgram), but restoring
+        // here too costs one no-op when correct and eliminates the whole wrong-program
+        // class if any future draw path forgets to restore. One branch per frame.
+        renderer.bindBasicShader();
         Camera cam = player.getCamera();
         float time = (float) GLFW.glfwGetTime();
         for (AgentNPC npc : npcs) {
