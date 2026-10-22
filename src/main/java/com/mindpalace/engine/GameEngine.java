@@ -4454,6 +4454,22 @@ public class GameEngine {
      * against every room, plus teleporter/agent/world invariants, and prints
      * a PASS/FAIL report. No human driving — this is the definitive check.
      */
+    /** Loopback selftest HTTP helper: 5s caps + one retry on transport
+     *  failure. 2-core hosts starve cold JVMs — loopback calls that complete
+     *  in ms when warm can miss a 2s cap at boot; retry-once removes the
+     *  scheduler-artifact flake without weakening any semantic assertion
+     *  (canon: serial selftests flake one random case, never twice the same). */
+    private java.net.http.HttpResponse<String> sendWithRetry(
+            java.net.http.HttpClient client, java.net.http.HttpRequest req)
+            throws java.io.IOException, InterruptedException {
+        try {
+            return client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+        } catch (java.io.IOException transport) {
+            Thread.sleep(500L);
+            return client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+        }
+    }
+
     private boolean testContextBroadcaster() {
         java.nio.file.Path temp = null;
         ContextBroadcaster broadcaster = null;
@@ -4478,38 +4494,37 @@ public class GameEngine {
                 address -> peer.get());
             broadcaster.start();
 
+            // 2-core hosts starve cold JVMs: loopback HTTP that completes in
+            // ms when warm can miss a 2s cap at boot. 5s caps + one polite
+            // retry per call keeps the test about semantics, not scheduler
+            // timing (canon: serial selftests flake one random case).
             java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(2)).build();
+                .connectTimeout(java.time.Duration.ofSeconds(5)).build();
             String base = "http://127.0.0.1:" + broadcaster.port();
-            var shuttleResponse = client.send(
+            var shuttleResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/shuttle"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString());
-            var cardsResponse = client.send(
+                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
+            var cardsResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString());
-            var tripletsResponse = client.send(
+                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
+            var tripletsResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/triplets"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString());
+                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
             boolean served = shuttleResponse.statusCode() == 200 && shuttle.equals(shuttleResponse.body())
                 && cardsResponse.statusCode() == 200 && cards.equals(cardsResponse.body())
                 && tripletsResponse.statusCode() == 200 && triplets.equals(tripletsResponse.body());
 
             peer.set(new ContextBroadcaster.PeerIdentity("intruder@example.test",
                 java.util.Set.of("tag:other")));
-            var deniedResponse = client.send(
+            var deniedResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString());
+                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
             boolean denied = deniedResponse.statusCode() == 403;
 
             peer.set(new ContextBroadcaster.PeerIdentity("trusted@example.test", java.util.Set.of()));
-            var missingResponse = client.send(
+            var missingResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/not-a-route"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString());
+                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
             boolean missingIsNotFound = missingResponse.statusCode() == 404;
 
             ContextBroadcaster.PeerIdentity whoIs = ContextBroadcaster.parseWhoIs(
@@ -4684,32 +4699,30 @@ public class GameEngine {
             transport = TailnetTransport.forLoopbackTest(0,
                 (address, port) -> peer.get(), scope, router);
             transport.start();
+            // Same 2-core cold-start hardening as testContextBroadcaster above:
+            // 5s caps + one retry per call — semantics, not scheduler timing.
             java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(2)).build();
+                .connectTimeout(java.time.Duration.ofSeconds(5)).build();
             String base = "http://127.0.0.1:" + transport.port();
-            var resp = (java.net.http.HttpResponse<String>) client.send(
+            var resp = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(
-                    base + "/v1/tailscale/status")).GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString());
+                    base + "/v1/tailscale/status")).GET().build());
             boolean served = resp.statusCode() == 200
                 && resp.body().contains("arch@example.test");
             peer.set(voter);
-            var privateResp = client.send(
+            var privateResp = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(
-                    base + "/v1/private")).GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString());
+                    base + "/v1/private")).GET().build());
             peer.set(stranger);
-            var deniedResp = client.send(
+            var deniedResp = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(
-                    base + "/v1/tailscale/status")).GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString());
+                    base + "/v1/tailscale/status")).GET().build());
             boolean gated = privateResp.statusCode() == 403
                 && deniedResp.statusCode() == 403;
             peer.set(new TailnetIdentity("", "", java.util.Set.of()));
-            var missingResp = client.send(
+            var missingResp = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(
-                    base + "/v1/not-a-route")).GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString());
+                    base + "/v1/not-a-route")).GET().build());
             boolean missingIsNotFound = missingResp.statusCode() == 404;
 
             return rolesOk && magicOk && whoIsOk && served && gated && missingIsNotFound;
@@ -6781,17 +6794,30 @@ public class GameEngine {
             com.mindpalace.world.RepoMapper.GitRunner gitR = com.mindpalace.world.RepoMapper.SHARED_GIT;
             java.nio.file.Path seedTxt = gDir.toPath().resolve("seed.txt");
             // Stepped (not one &&-chain) so a failure names the exact git call.
+            // One retry per call: on 2-core hosts a cold JVM can lose the race
+            // spawning git (SHARED_GIT returns null on any exception); a retry
+            // removes the starve, keeps the test contract identical.
+            java.util.function.Function<String[], String> gitRun = (argsL) -> {
+                String out = gitR.run(gDir, argsL);
+                if (out == null) {
+                    try { Thread.sleep(400L); } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                    out = gitR.run(gDir, argsL);
+                }
+                return out;
+            };
             java.nio.file.Files.writeString(seedTxt, "h37 v1\n");
-            String tInit = gitR.run(gDir, "init", "-q");
-            String tAdd1 = gitR.run(gDir, "add", "-A");
-            String tC1 = gitR.run(gDir, "-c", "user.email=selftest@mp", "-c",
-                "user.name=MP", "commit", "-q", "-m", "first seeded change");
+            String tInit = gitRun.apply(new String[]{"init", "-q"});
+            String tAdd1 = gitRun.apply(new String[]{"add", "-A"});
+            String tC1 = gitRun.apply(new String[]{"-c", "user.email=selftest@mp", "-c",
+                "user.name=MP", "commit", "-q", "-m", "first seeded change"});
             java.nio.file.Files.writeString(seedTxt, "h37 v2\n");
-            String tAdd2 = gitR.run(gDir, "add", "-A");
-            String tC2 = gitR.run(gDir, "-c", "user.email=selftest@mp", "-c",
+            String tAdd2 = gitRun.apply(new String[]{"add", "-A"});
+            String tC2 = gitRun.apply(new String[]{"-c", "user.email=selftest@mp", "-c",
                 "user.name=MP", "commit", "-q", "-m",
                 "second seeded change: this subject intentionally runs well "
-                    + "past twenty six characters for cap testing");
+                    + "past twenty six characters for cap testing"});
             boolean setup = tInit != null && tAdd1 != null && tC1 != null
                 && tAdd2 != null && tC2 != null;
             if (setup) {
