@@ -6562,8 +6562,15 @@ public class GameEngine {
                         com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
                 WeightedQuorumVote.QuorumResult r80 = agentManager.getQuorum().calculateQuorum(pid);
                 boolean approved = r80 != null && "APPROVED".equals(r80.status);
-                int crystalsBefore = crystals.size();
-                boolean added80;
+                // 2026-10-23: the live scout (render thread, #107) had just
+                // approved its OWN proposal — its add raced this test's
+                // size check, so (size == before+1) could spuriously read +2
+                // and fail the case (run 380). The property under test is
+                // "the cap helper accepted the add and a crystal with the
+                // visited repo is present", expressed under the list monitor
+                // so concurrent adds can't flip the verdict.
+                boolean added80 = false;
+                boolean spawned = false;
                 if (approved) {
                     TodoCrystal c80 = new TodoCrystal("[Scout] work in " + target.getRepoName(),
                         target.getRepoName(), "scout-patrol");
@@ -6573,12 +6580,10 @@ public class GameEngine {
                     // check through the SAME atomic helper the game uses so the
                     // assert measures production behavior.
                     added80 = addCrystalCapped(c80, 60);
-                } else {
-                    added80 = false;
+                    synchronized (crystals) {
+                        spawned = added80 && crystals.contains(c80);
+                    }
                 }
-                boolean spawned = added80
-                    && crystals.size() == crystalsBefore + 1
-                    && crystals.get(crystals.size() - 1).getRepoName().equalsIgnoreCase(target.getRepoName());
                 scoutQuorumOk = approved && spawned;
                 System.out.println((scoutQuorumOk ? "PASS" : "FAIL")
                     + " scout->quorum (visit proposal APPROVED -> TODO crystal spawned at "
