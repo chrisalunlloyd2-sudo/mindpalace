@@ -33,12 +33,16 @@ echo "=== [2/4] SELFTEST ==="
 # scheduler stuck). The selftest's SIMS1337 parity case blocks on Ollama and
 # burned the entire 3600 cap (27 PASS, no RESULT, timeout kill) on that one
 # case. Preflight refuses to spend the cap on dead infra: the gate fails loud
-# in ~2 min instead. Warm llama3.2:1b with keep_alive=-1 first — a cold load
-# measured 109s under memory pressure, which would otherwise strand the case.
+# Warm llama3.2:1b with keep_alive=-1 first — a cold load measured 109s under
+# memory pressure — but the live game's serial codellama:7b requests (4.6 GB,
+# every 5-15min) evict it from the runner and each swap-then-rewarm cycle
+# measured ~560s on this 2-core/4GB box (run 380c: all 3 tries with -m 280
+# timed out 3x inside that window). One try must be able to outlast a full
+# thrash cycle: -m 580, 2 tries (<=29min worst case, still << 3600s cap).
 echo "e2e: ollama preflight — warm llama3.2:1b..."
 PREFLIGHT_OK=0
-for i in 1 2 3; do
-  if curl -sS -m 280 http://127.0.0.1:11434/api/generate \
+for i in 1 2; do
+  if curl -sS -m 580 http://127.0.0.1:11434/api/generate \
       -d '{"model":"llama3.2:1b","prompt":"ping","stream":false,"options":{"num_predict":2},"keep_alive":-1}' \
       | grep -aq '"done":true'; then
     PREFLIGHT_OK=1; break

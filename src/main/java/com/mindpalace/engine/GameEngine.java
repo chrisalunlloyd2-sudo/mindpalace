@@ -4507,21 +4507,26 @@ public class GameEngine {
             broadcaster.start();
 
             // 2-core hosts starve cold JVMs: loopback HTTP that completes in
-            // ms when warm can miss a 2s cap at boot. 5s caps + one polite
-            // retry per call keeps the test about semantics, not scheduler
-            // timing (canon: serial selftests flake one random case).
+            // ms when warm can miss a soft cap at boot. 5s caps + one polite
+            // retry per call kept the test about semantics, not scheduler
+            // timing (canon: serial selftests flake one random case) — but
+            // run 380c (2026-10-23) still timed out at 5s while the live
+            // game's serial codellama:7b loads thrashed the box. 15s caps +
+            // retry span one full thrash burst without weakening any
+            // semantic assertion (sibling tailscale test has no
+            // per-request cap at all and has never flaked on timeout).
             java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(5)).build();
+                .connectTimeout(java.time.Duration.ofSeconds(15)).build();
             String base = "http://127.0.0.1:" + broadcaster.port();
             var shuttleResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/shuttle"))
-                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
+                    .timeout(java.time.Duration.ofSeconds(15)).GET().build());
             var cardsResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
-                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
+                    .timeout(java.time.Duration.ofSeconds(15)).GET().build());
             var tripletsResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/triplets"))
-                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
+                    .timeout(java.time.Duration.ofSeconds(15)).GET().build());
             boolean served = shuttleResponse.statusCode() == 200 && shuttle.equals(shuttleResponse.body())
                 && cardsResponse.statusCode() == 200 && cards.equals(cardsResponse.body())
                 && tripletsResponse.statusCode() == 200 && triplets.equals(tripletsResponse.body());
@@ -4530,13 +4535,13 @@ public class GameEngine {
                 java.util.Set.of("tag:other")));
             var deniedResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
-                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
+                    .timeout(java.time.Duration.ofSeconds(15)).GET().build());
             boolean denied = deniedResponse.statusCode() == 403;
 
             peer.set(new ContextBroadcaster.PeerIdentity("trusted@example.test", java.util.Set.of()));
             var missingResponse = sendWithRetry(client,
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/not-a-route"))
-                    .timeout(java.time.Duration.ofSeconds(5)).GET().build());
+                    .timeout(java.time.Duration.ofSeconds(15)).GET().build());
             boolean missingIsNotFound = missingResponse.statusCode() == 404;
 
             ContextBroadcaster.PeerIdentity whoIs = ContextBroadcaster.parseWhoIs(
