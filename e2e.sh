@@ -56,7 +56,12 @@ rm -rf "$DIR"; mkdir -p "$DIR"
 # world live and no crash in the log. World build ~5-8min + 22 waypoints ×
 # (6s framing + FPS eval at 3-13 fps on this box) needs ~1200s. Same raise
 # precedent as 420→700 above.
-timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# t_50d9d90b (2026-10-22): 1200 is STILL too small whenever the live game
+# (javaw, unavoidable co-resident) is in a slow agent cycle — world build 10
+# repos+heavy LiveUpdate rooms at 76 repos / 167 rooms measured 3.1 fps /
+# worst 1285 ms, and the run was killed after waypoint 1. Tour budget 2400:
+# same 2x headroom precedent as the raises above.
+timeout 2400 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --e2e "$DIR" --time 21 > /tmp/e2e_tour.log 2>&1
 grep -aE "\[E2E\]|\[E2E-SHOT\]|\[E2E-HUD-GATE\] SUMMARY" /tmp/e2e_tour.log

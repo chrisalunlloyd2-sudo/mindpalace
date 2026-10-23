@@ -766,10 +766,15 @@ public class GameEngine {
         // autonomous cycle claims jobs and votes too, racing the checks
         // (observed: 39/1 with model-gate contention). Parity wiring still
         // runs inside agentManager.start(); only the cycle is suppressed.
-        agentManager.setSelfTest(selfTest);
+        // t_50d9d90b: same suppression for the e2e tour — the toured instance
+        // must sit still (no Ollama HTTP, no DePIN claims, no bridges) so the
+        // 30-waypoint tour measures the RENDERER, not agent background load.
+        // Run-378 evidence: tour frame times doubled while Ollama calls ran.
+        boolean quietMode = selfTest || e2eMode;
+        agentManager.setSelfTest(quietMode);
         agentManager.start();
         // #145: Reddit/GitHub bridges start only on explicit env opt-in; never in --demo or selftest (hermetic).
-        if (!demoMode && !selfTest) {
+        if (!demoMode && !quietMode) {
             agentManager.startBridgesIfConfigured(System::getenv);
         }
 
@@ -876,11 +881,13 @@ public class GameEngine {
                 if (dp != null) animationSystem.startGlowPulse(dp);
             }
         });
-        if (!demoMode) {
+        if (!demoMode && !e2eMode) {
             liveUpdateManager.snapshot();
             liveUpdateManager.start();
         } else {
-            System.out.println("[LiveUpdate] demo mode - poller suppressed (hermetic selftest, refs #39)");
+            System.out.println("[LiveUpdate] poller suppressed ("
+                + (e2eMode ? "e2e tour" : "demo mode")
+                + " — hermetic background-free run, refs #39)");
         }
 
         // Idle detection — agents work harder when idle, quiet when playing
@@ -7769,6 +7776,14 @@ public class GameEngine {
      *   build → --e2e <dir> → verify shots exist + non-black.
      */
     private void updateE2ETour(double dt) {
+        // t_50d9d90b: while a shot is pending, SKIP all tour logic. captureLabeled
+        // defers the PNG write to this frame's render() tail, but at 3-13 fps the
+        // accumulator runs several update ticks after the capturing tick — the next
+        // case's side effects (e.g. case 10's teleportToFloor + teleportMenu=true)
+        // executed BEFORE the flush, so shot 10 got the teleport menu instead of
+        // the pad (observed 2026-10-22, run-378). Same class of bug the options
+        // pages fixed per-case (:8148) and the default exit checks — now global.
+        if (pendingShotLabel != null) return;
         Camera cam = player.getCamera();
         Vector3f p = cam.getPosition();
         float hallY = world.getHallways().isEmpty() ? 0f : world.getHallways().get(0).getStart().y;
