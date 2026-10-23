@@ -1304,6 +1304,18 @@ public class GameEngine {
                 if (autodrive) updateAutodrive(PHYSICS_DT);
                 else update(PHYSICS_DT);
                 accumulator -= PHYSICS_DT;
+                // #152: with an E2E shot pending, run ONE update tick per
+                // rendered frame. The flush reads GL_BACK at the render()
+                // tail, so the frame it captures must contain ONLY the
+                // shoot tick's mutations — at 3-13 fps extra catch-up ticks
+                // ran the NEXT waypoint's entry (case 10 teleports to
+                // floor 2 and opens the destination picker) before the
+                // flush, so [E2E-SHOT] 10_portal_pad photographed the
+                // floor-3 pad under an open 12-entry menu and the hue
+                // gate starved. Leftover accumulator is virtual time, not
+                // wall time; dropping it costs <= PHYSICS_DT for one frame
+                // and the next frame resumes the schedule cleanly.
+                if (pendingShotLabel != null) break;
             }
             if (com.mindpalace.render.GlTrace.PROF) com.mindpalace.render.GlTrace.noteUpdate(System.nanoTime() - updateStart);
 

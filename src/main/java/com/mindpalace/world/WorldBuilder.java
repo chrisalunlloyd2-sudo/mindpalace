@@ -966,6 +966,47 @@ public class WorldBuilder {
 
     // ── Room ──
 
+    /**
+     * MP-006 (#152): per-district solid door color. District == floor (one
+     * hallway per floor, CorridorLayout). Defaults are 4 distinct district
+     * colors; any floor can be overridden via config, e.g.
+     *   MP_DOOR_COLOR_FLOOR1 (env) or mindpalace.door.color.floor1 (property)
+     *   = "R,G,B"  (0..1 floats). One solid color for all doors of a floor;
+     *   frames/handles stay neutral wood.
+     */
+    private static final float[][] DISTRICT_DOOR_COLORS = {
+        {0.15f, 0.45f, 0.75f},  // floor 1 — blue
+        {0.20f, 0.60f, 0.30f},  // floor 2 — green
+        {0.80f, 0.55f, 0.15f},  // floor 3 — amber
+        {0.65f, 0.20f, 0.20f},  // floor 4 — red
+    };
+    /** Neutral fallback for floors beyond the palette (districts stay one color each). */
+    private static final float[] DISTRICT_DOOR_FALLBACK = {0.40f, 0.25f, 0.14f};
+
+    /** District door color for a floor index (0-based), honoring config overrides. */
+    static float[] districtDoorColor(int floor) {
+        int idx = Math.max(0, floor);
+        if (idx >= DISTRICT_DOOR_COLORS.length) return DISTRICT_DOOR_FALLBACK;
+        float[] base = DISTRICT_DOOR_COLORS[idx];
+        String over = System.getProperty("mindpalace.door.color.floor" + idx,
+            System.getenv("MP_DOOR_COLOR_FLOOR" + idx));
+        if (over != null && !over.isBlank()) {
+            String[] p = over.split(",");
+            if (p.length == 3) {
+                try {
+                    return new float[] {
+                        Float.parseFloat(p[0].trim()),
+                        Float.parseFloat(p[1].trim()),
+                        Float.parseFloat(p[2].trim()),
+                    };
+                } catch (NumberFormatException ignored) {
+                    // malformed override -> fall through to the palette default
+                }
+            }
+        }
+        return base;
+    }
+
     private void renderRoom(Renderer r, Room room) {
         Vector3f c = room.getRoomCenter();
         float w = Room.ROOM_WIDTH, d = Room.ROOM_DEPTH, h = Room.ROOM_HEIGHT;
@@ -1007,13 +1048,21 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x + w / 2f - leftW / 2f, c.y, fz), new Vector3f(leftW, h, t), Renderer.TEX_WALLPAPER);
         r.drawCube(new Vector3f(c.x, c.y + h / 2f - (h - dw) / 2f, fz), new Vector3f(Room.DOOR_WIDTH, h - dw, t), Renderer.TEX_WALLPAPER);
 
-        // Door panel — slides up when opened
+        // Door panel — slides up when opened.
+        // MP-006 (#152): per-district solid door color — every house door in a
+        // district reads as ONE district color; frame posts/lintel stay neutral
+        // wood (TEX_DOOR below), plaque/poster own their material. Drawn with
+        // the room accent (setTint above) NEUTRALIZED so the language tint never
+        // re-shifts the district color, then restored for the rest of the room.
         float doorSlide = room.getDoorOpenAmount() * dw;
         float doorPanelY = c.y - h / 2f + dw / 2f + doorSlide;
         float doorPanelH = dw * (1f - room.getDoorOpenAmount());
         if (doorPanelH > 0.01f) {
-            r.drawCube(new Vector3f(c.x, doorPanelY, fz),
-                new Vector3f(Room.DOOR_WIDTH - 0.04f, doorPanelH, t + 0.02f), Renderer.TEX_DOOR);
+            float[] dt = districtDoorColor(room.getFloor());
+            r.setTint(1f, 1f, 1f);
+            r.drawCubeColor(new Vector3f(c.x, doorPanelY, fz),
+                new Vector3f(Room.DOOR_WIDTH - 0.04f, doorPanelH, t + 0.02f), dt[0], dt[1], dt[2]);
+            r.setTint(tint[0] * glow, tint[1] * glow, tint[2] * glow);
         }
 
         // Door frame
