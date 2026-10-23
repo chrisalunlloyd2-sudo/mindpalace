@@ -881,12 +881,17 @@ public class GameEngine {
                 if (dp != null) animationSystem.startGlowPulse(dp);
             }
         });
-        if (!demoMode && !e2eMode) {
+        // Hermetic background-free runs: the LiveUpdate poller fetches remote
+        // repos mid-suite (GitHub HTTP + render-thread room adds + KG rebuilds
+        // per new repo), which slowed selftests enough to blow the e2e.sh
+        // 1200s cap (run 379: truncated at 24 PASS, no RESULT). Intended since
+        // refs #39 but the condition only gated demoMode — close the gap.
+        if (!demoMode && !selfTest && !e2eMode) {
             liveUpdateManager.snapshot();
             liveUpdateManager.start();
         } else {
             System.out.println("[LiveUpdate] poller suppressed ("
-                + (e2eMode ? "e2e tour" : "demo mode")
+                + (selfTest ? "selftest" : e2eMode ? "e2e tour" : "demo mode")
                 + " — hermetic background-free run, refs #39)");
         }
 

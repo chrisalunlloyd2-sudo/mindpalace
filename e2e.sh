@@ -28,6 +28,28 @@ BUILD_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE "original-|-shaded
 [ -n "$BUILD_JAR" ] || { echo "e2e: no built jar in target/"; exit 1; }
 
 echo "=== [2/4] SELFTEST ==="
+# Ollama preflight (t_50d9d90b, run 382): the local ollama serve wedged since
+# 2026-10-16 (accepted TCP, reported models, but /api/generate never returned —
+# scheduler stuck). The selftest's SIMS1337 parity case blocks on Ollama and
+# burned the entire 3600 cap (27 PASS, no RESULT, timeout kill) on that one
+# case. Preflight refuses to spend the cap on dead infra: the gate fails loud
+# in ~2 min instead. Warm llama3.2:1b with keep_alive=-1 first — a cold load
+# measured 109s under memory pressure, which would otherwise strand the case.
+echo "e2e: ollama preflight — warm llama3.2:1b..."
+PREFLIGHT_OK=0
+for i in 1 2 3; do
+  if curl -sS -m 280 http://127.0.0.1:11434/api/generate \
+      -d '{"model":"llama3.2:1b","prompt":"ping","stream":false,"options":{"num_predict":2},"keep_alive":-1}' \
+      | grep -aq '"done":true'; then
+    PREFLIGHT_OK=1; break
+  fi
+  sleep 5
+done
+if [ "$PREFLIGHT_OK" != "1" ]; then
+  echo "e2e: ollama preflight FAILED — llama3.2:1b did not answer after 3 tries (server wedged or down; restart 'ollama serve')"
+  exit 1
+fi
+echo "e2e: ollama preflight OK"
 # 420s cap: the selftest suite grew past 2m (53→54 checks; the sync script
 # got the same raise 2026-09-27 after a cap-110 run silently truncated it).
 # t_0c1374b0: 110/120s starved this box — world build alone runs ~5min on the
@@ -39,10 +61,31 @@ echo "=== [2/4] SELFTEST ==="
 # selftest phase hit timeout 700 mid-suite (27 PASS lines, no RESULT, killed
 # at ~10:47 while the world was still cycling) — same box, same contention.
 # Raised to the same 1200 so both phases cap at identical budgets.
-timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# t_50d9d90b (run 381): STILL truncated at 2400 (32 PASS lines, no RESULT).
+# Root cause measured: e2e.sh selftests against the REAL repo world
+# (`--selftest` alone -> 64 rooms / 1105 books; the standalone green run used
+# `--demo --selftest` -> 13 rooms / 17 books) — the books-clickable ray-cast
+# case alone spans 24 min of agent-timestamp gap on the 2-core box under the
+# live game's ~50-78% CPU. The real-world gate is the point of the phase
+# (selftest must pass on the actual repo map), so do NOT demo-ize it: budget
+# the phase honestly at 3600 and let the hard RESULT gate fail loud.
+timeout 3600 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --selftest > /tmp/e2e_selftest.log 2>&1
 grep -a "RESULT" /tmp/e2e_selftest.log | tail -1
+# t_50d9d90b (run 379): the suite was truncated at the cap (24 PASS lines, no
+# RESULT) yet the script sailed on to a green tour — a green tour is meaningless
+# if the gate before it never finished, so fail hard without a RESULT line.
+# Also refuse a nonzero RESULT (N failed) — old script only printed it.
+# run 380b evidence: even with LiveUpdate + agent suppression, the suite took
+# >1200s under the co-resident live game (53/88 PASS at the cap, log mtime
+# exactly java_start+1200s) — hence 2400, same raise precedent as the tour.
+SELFTEST_RESULT=$(grep -a "===== RESULT" /tmp/e2e_selftest.log | tail -1)
+case "$SELFTEST_RESULT" in
+  *"0 failed"*) echo "selftest gate: $SELFTEST_RESULT" ;;
+  "") echo "e2e: selftest phase produced no RESULT (truncated or crashed)"; exit 1 ;;
+  *) echo "e2e: selftest phase failed: $SELFTEST_RESULT"; exit 1 ;;
+esac
 
 echo "=== [3/4] E2E WAYPOINT TOUR ==="
 rm -rf "$DIR"; mkdir -p "$DIR"
