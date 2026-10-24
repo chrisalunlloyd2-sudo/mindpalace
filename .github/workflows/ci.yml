@@ -52,7 +52,7 @@ jobs:
             passed=$(printf '%s' "$result" | sed -E 's/.*RESULT:[[:space:]]*([0-9]+).*/\1/')
             if [ "$attempt_rc" -eq 0 ] &&
               [ -n "$passed" ] && [ "$passed" -ge 5 ] &&
-              grep -Fq "Demo fixtures loaded: 12 rooms" "$attempt_log" &&
+              grep -Fq "Demo fixtures loaded: 13 rooms" "$attempt_log" &&
               grep -Fq "PASS demo hermeticity" "$attempt_log"; then
               return 0
             fi
@@ -90,7 +90,7 @@ jobs:
           $m = [regex]::Match($log, 'RESULT:\s*(\d+)\s+passed,\s*0\s+failed')
           $n = if ($m.Success) { [int]$m.Groups[1].Value } else { -1 }
           $checks = @(
-            "Demo fixtures loaded: 12 rooms",
+            "Demo fixtures loaded: 13 rooms",
             "PASS demo hermeticity"
           )
           if ($n -lt 5) { Write-Host "::error::RESULT line missing, malformed, or degenerate (<5 checks)"; exit 1 }
