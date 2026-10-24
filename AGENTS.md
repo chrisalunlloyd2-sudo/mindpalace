@@ -107,7 +107,8 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
     `AdapterRegistry` (#71 — voted LoRA weight-set election).
   - **agent/sprites/** — `SpriteProposalService`.
 - **github/** — `GitHubClient`, `RepoScanner`, `GistWall`,
-  `GitHubIssueStream`, `DedupeSentinel`.
+  `GitHubIssueStream`, `DedupeSentinel`, `RepoSweepData` (static KG ingest of
+  `reports/` sweep JSON — wired in GameEngine §14 repo-sweep).
 - **integration/** — cloud↔local bridges: `GitHubPollBridge` (hermes-queue
   issues → local TASK files), `ContextBroadcaster`, `RedditOAuthClient`,
   `OAuthCallbackServer`, `RedditToQuorumBridge`.
@@ -124,9 +125,11 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
   `DeterministicSeed`, `GenomeControl`.
 - **audio/** — `AudioEngine`, `MusicEngine`, `StepSequencer`.
 - **economy/** — `DePIN`, `Wallet`, `Blackboard`, `EconomyLedger`, `Escrow`,
-  `Treasury`. Reward categories (`tool_round`, `bug_fix`, `glitch_found`,
-  `perf_improvement`, `feature`) live on `DePIN.award` — the unwired
-  `economics/AgentRewardMechanism` was removed (#97).
+  `Treasury`, `EnergyBudget` (daily energy drip for spawns/workers — wired in
+  GameEngine; selftest case "energy budget"). Reward categories (`tool_round`,
+  `bug_fix`, `glitch_found`, `perf_improvement`, `feature`) live on
+  `DePIN.award` — the unwired `economics/AgentRewardMechanism` was removed
+  (#97).
 - **backup/** — `Telemetry` (event ledger), `MemoryManager`, `BackupManager`.
 - **deploy/** — `LiveUpdateManager`, `PatchManager`, `DeployManager`,
   `AnimationSystem`.

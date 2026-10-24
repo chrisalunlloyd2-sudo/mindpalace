@@ -40,13 +40,14 @@ body the player actually sees and touches.
 
 | Package | Owns | Key classes |
 |---------|------|-------------|
-| `engine` | game loop, state machine, courtyard coupling | `GameEngine`, `GameState`, `Input`, `ToolExecutor` |
+| `engine` | game loop, state machine, courtyard coupling | `GameEngine`, `GameState`, `Input`, `ToolExecutor`, `AstGate`, `ExitControl` (polite exit/restart) |
 | `world` | everything that exists as place | `WorldBuilder` (hallways/rooms/doors/layout), `Room`, `Book`, `Hallway`, `OutsideWorld` (mansion/towns/forest/shops + building colliders), `RotorRoom`, `TuringTape`, `BanburismusGauge`, `NashFountain`, `EnigmaPlugboard` |
 | `render` | pixels | `Renderer` (cube/quad/sphere meshes, texture atlas), `BloomEffect` (2-pass), `Camera`, `FontRenderer`, `Mesh`, `Shader`, `FrustumCuller`, `GlTrace`, `HitchSampler`, `Particle*` (MP-028: `ParticleBatch`, `ParticleEmitter`, `ParticlePool`, `ParticleQuadBuffer`, `ParticleQuality`, `ParticleSelfCheck`) |
 | `entity` | bodies that move | `Player` (FPS controller, collision + resolveAxis), NPC avatars, `ScoutNPC` |
 | `agent` | minds | `AgentManager` (5-min autonomous cycle), `OllamaClient` (chat + tools), `ModelLifespan` (context budget, drift + repetition), `ContextKit` (LoRA+KG+KV per turn), `ModelScheduler` (one-model cold-shot gate), `BdiBridge` (BDI_FSM webui bridge, step 81) |
 | `agent.sims` | governance | `ModelRouter` (complexity→model), `WeightedQuorumVote` (FOW-gated votes), `LoRASwitcher`, `FOWGate` |
-| `github` | the world's data source | `GitHubClient` (repo/file CRUD, Credential-Manager PAT), `GitHubIssueStream` (add-only), `RepoScanner`, `GistWall`, `DedupeSentinel` |
+| `github` | the world's data source | `GitHubClient` (repo/file CRUD, Credential-Manager PAT), `GitHubIssueStream` (add-only), `RepoScanner`, `GistWall`, `DedupeSentinel`, `RepoSweepData` (KG ingest of `reports/` sweeps) |
+| `economy` | DePIN rewards + energy | `DePIN`, `Wallet`, `Blackboard`, `EconomyLedger`, `Escrow`, `Treasury`, `EnergyBudget` (daily spawn/worker energy drip) |
 | `network` | LAN multiplayer contract | `MultiplayerHub` (JDK ServerSocket + hand-rolled RFC6455 WS server, off by default via `enabled()`), `MultiplayerClient` (#138) |
 | `integration` | cloud↔local bridges | `GitHubPollBridge` (hermes-queue issues → local TASK files), `ContextBroadcaster`, `RedditOAuthClient`, `OAuthCallbackServer`, `RedditToQuorumBridge` |
 | `blocks` | block-assembly architecture (§20 cross-correlated roadmap) | `Block`, `BlockRegistry`, `FireBlock`, `FireflyBlock`, `FrostBlock`, `WeatherBlock`, `SelfTestProbe` |
