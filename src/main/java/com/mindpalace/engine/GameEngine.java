@@ -7775,6 +7775,11 @@ public class GameEngine {
      *   build → --e2e <dir> → verify shots exist + non-black.
      */
     private void updateE2ETour(double dt) {
+        // A capture marked by an earlier tick is written at the render() tail. At 3-13 fps the accumulator can run several
+        // update ticks before that render, and each of them would first move the camera / state for the NEXT waypoint, so the
+        // PNG would no longer match its label (see the per-case "mutate only in the shoot tick" notes below, which work around
+        // this one case at a time). Wait for the flush before touching any waypoint state.
+        if (pendingShotLabel != null) return;
         Camera cam = player.getCamera();
         Vector3f p = cam.getPosition();
         float hallY = world.getHallways().isEmpty() ? 0f : world.getHallways().get(0).getStart().y;
