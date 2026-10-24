@@ -79,7 +79,11 @@ phase (v1.1.0-beta1 is live).
 - [x] jpackage native .exe installer (v1.0.0-coldshot SUPERSEDED — see Releases
       Notes; current = v1.1.0-beta1 on Releases;
       icon Windows-path fix in build-installer.sh)
-- [ ] Auto-updater (checks Releases API; queued NEXT_100 step 109) — reconciled 2026-10-06: `LiveUpdateManager` only watches for new repos/files, it is NOT a release updater
+- [x] Auto-updater (checks Releases API) — SHIPPED #139 (commit `a8e11ce`):
+      `src/main/java/com/mindpalace/deploy/UpdateChecker.java` reads the jar's
+      `Implementation-Version` manifest attribute, does a tokenless GET against
+      `https://api.github.com/repos/chrisalunlloyd2-sudo/mindpalace/releases/latest`,
+      compares semver, fail-soft to "unknown" (never blocks boot).
 
 ---
 

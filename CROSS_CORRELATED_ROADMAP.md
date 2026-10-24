@@ -60,14 +60,11 @@ camera's screen-right vector.
 books or an editor 2d interface… entire game flip between 2d and vr… live toggle all
 text, graphics stay the same… save as vr success… need the doubles for the toggle."
 
-**Status:** `NOT-STARTED` (no toggle exists; only the cropped-window "tunnel view"
-comment at GameEngine:174).
-
-**Next action:**
-1. `ReadMode` enum `{ TUNNEL_VR, SCREEN_2D }`, persisted (in-game config file).
-2. Always-visible HUD button (top-right) toggles it live.
-3. `SCREEN_2D` path = HUD pinning: wall-pin / book-pin / editor-pin (the 2D surface).
-4. VR path stays byte-for-byte. This is an ADD, not a rewrite.
+**Status:** `DONE` (`160b4b9` "feat: VR<->2D text toggle (F4)" —
+`twoDTextMode` field `GameEngine.java:76`, F4 toggle `:1661-1663`,
+2D-pinned render path at `:2431`/`:2787`; hotkey row `F4 2D text mode`
+`:5000`. Spec names differed — no `ReadMode` enum; live F4 toggle shipped
+instead. VR path kept, per "never delete VR".)
 
 ---
 
@@ -163,7 +160,9 @@ FOWGate + LanguageRegistry PORTED from SIMS1337 into `agent/sims/`.
   `drainImmediateLoop()`) so a reply never serializes behind a tool/agent call.
 - `~[BP] P2: lastUserMessage dead field~` ✅ FIXED — buildContext() seeds from it (AgentManager.java:992)
 - `[BP]` P3: guide reply routed via `onToolMessage` → add dedicated `onChatMessage`.
-- `[BP]` P5: book-content bloat (2000 chars every prompt) → truncate to ~500.
+- `~[BP] P5: book-content bloat~ ✅ FIXED — buildContext() truncates to
+  500 chars (`AgentManager.java:1551`, "Truncate hard — a 2000-char excerpt
+  ate ~25% of the small model's token budget").
 - `[UB]` 2: finish SIMS1337 parity — 4-tier ModelPool warm, LoRA switching wired to
   actual model calls, AdapterRegistry election.
 
@@ -203,9 +202,9 @@ self-test now lists "map toggle" among its 13 checks.
 **Ask:** `[UB]` "Architect wants a NEW text file per day, uploaded to GitHub (private
 repo)." (Currently ONE `chat_logs/chat.jsonl`.)
 
-**Status:** `STUB`.
-
-**Next action:** per-day `chat_logs/YYYY-MM-DD.jsonl`, push to a private repo.
+**Status:** `DONE` (`scripts/mindpalace-sync.sh` `sync_chat_logs()` :64-93 —
+per-day `chat_logs/*.jsonl` pushed to the private `mindpalace-chat-logs`
+repo; priority-order line ✅ since #69).
 
 ---
 
@@ -213,12 +212,13 @@ repo)." (Currently ONE `chat_logs/chat.jsonl`.)
 
 **Ask:** working email + a daily "suggestions + code-mind log" digest.
 
-**Status:** `BROKEN` — himalaya CLI not installed, no account config, no IMAP/SMTP
-creds, `dream_job.py` only bumps a KG node (no real digest).
-
-**Next action (needs Architect's email creds):** install himalaya → configure account
-→ wire a real morning-digest job (suggestions + code-mind log) that emails out.
-**This needs Chris's email credentials — flagged, not auto-buildable.**
+**Status:** `NOT-BROKEN — PARTIAL` ([RECONCILED 2026-10-23, mirroring
+UNFINISHED_BUSINESS.md §1 / #294]): himalaya IS installed (`~/bin/himalaya`)
+and `config.toml` has an imap/smtp account block — the "not installed / no
+config / no creds" lines were stale. Real remaining gaps: `~/sent_emails/`
+is empty (nothing to harvest) and the `dream_job.py` → digest-correlation
+job was never built. Wiring a live digest still needs the Architect's
+send-go — flagged, not auto-buildable.
 
 ---
 
@@ -240,10 +240,10 @@ beyond a 40-line dump, undo/redo, multi-file project view, KG read/write.
 **Ask:** keep local models from weighing down the system (RAM cap, disk guard, model
 unload policy).
 
-**Status:** `NOT-STARTED` (only token budgets + 5-min spacing exist).
-
-**Next action:** RAM cap + disk-usage guard + model unload (reuse SIMS1337
-`LoRASwitcher` unload).
+**Status:** `DONE` — memory/HDD fencing shipped (`ModelScheduler.java:53-54`
+`MIN_FREE_HEAP_BYTES` 64MB + `MIN_FREE_DISK_BYTES` 256MB, enforced in
+`resourcesAvailable()` with 30s backoff; `LoRASwitcher.unload()` for model
+unload; priority-order line ✅ since `9ff70a9`, #68).
 
 ---
 

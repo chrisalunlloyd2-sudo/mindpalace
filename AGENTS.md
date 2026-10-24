@@ -106,7 +106,8 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
     (100-case parity gate, runs in selftest as one aggregate check),
     `AdapterRegistry` (#71 — voted LoRA weight-set election).
   - **agent/sprites/** — `SpriteProposalService`.
-- **github/** — `GitHubClient`, `RepoScanner`, `GistWall`, `GitHubIssueStream`.
+- **github/** — `GitHubClient`, `RepoScanner`, `GistWall`,
+  `GitHubIssueStream`, `DedupeSentinel`.
 - **integration/** — cloud↔local bridges: `GitHubPollBridge` (hermes-queue
   issues → local TASK files), `ContextBroadcaster`, `RedditOAuthClient`,
   `OAuthCallbackServer`, `RedditToQuorumBridge`.
@@ -135,6 +136,9 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
   flow), `RedditToQuorumBridge` (top subreddit posts → `community_suggestion`
   quorum proposals), `ContextBroadcaster`. Wired in from `AgentManager`
   (`initGitHub`, `initReddit`).
+- **network/** — LAN multiplayer contract: `MultiplayerHub` (JDK
+  ServerSocket + hand-rolled RFC6455 WebSocket server, off by default via
+  `MultiplayerHub.enabled()`), `MultiplayerClient` (#138).
 
 ## Where data lives
 - `AIGEN_SYS/mindpalace_memory/telemetry.db` (i.e. `C:\Users\viper\AIGEN_SYS\mindpalace_memory\telemetry.db`,

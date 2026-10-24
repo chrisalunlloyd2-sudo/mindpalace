@@ -46,7 +46,8 @@ body the player actually sees and touches.
 | `entity` | bodies that move | `Player` (FPS controller, collision + resolveAxis), NPC avatars, `ScoutNPC` |
 | `agent` | minds | `AgentManager` (5-min autonomous cycle), `OllamaClient` (chat + tools), `ModelLifespan` (context budget, drift + repetition), `ContextKit` (LoRA+KG+KV per turn), `ModelScheduler` (one-model cold-shot gate), `BdiBridge` (BDI_FSM webui bridge, step 81) |
 | `agent.sims` | governance | `ModelRouter` (complexity→model), `WeightedQuorumVote` (FOW-gated votes), `LoRASwitcher`, `FOWGate` |
-| `github` | the world's data source | `GitHubClient` (repo/file CRUD, Credential-Manager PAT), `GitHubIssueStream` (add-only) |
+| `github` | the world's data source | `GitHubClient` (repo/file CRUD, Credential-Manager PAT), `GitHubIssueStream` (add-only), `RepoScanner`, `GistWall`, `DedupeSentinel` |
+| `network` | LAN multiplayer contract | `MultiplayerHub` (JDK ServerSocket + hand-rolled RFC6455 WS server, off by default via `enabled()`), `MultiplayerClient` (#138) |
 | `integration` | cloud↔local bridges | `GitHubPollBridge` (hermes-queue issues → local TASK files), `ContextBroadcaster`, `RedditOAuthClient`, `OAuthCallbackServer`, `RedditToQuorumBridge` |
 | `blocks` | block-assembly architecture (§20 cross-correlated roadmap) | `Block`, `BlockRegistry`, `FireBlock`, `FireflyBlock`, `FrostBlock`, `WeatherBlock`, `SelfTestProbe` |
 | `economy` | money | `DePIN`, `Blackboard` (jobs, wallets, credits), `EconomyLedger`, `Escrow`, `Treasury` |

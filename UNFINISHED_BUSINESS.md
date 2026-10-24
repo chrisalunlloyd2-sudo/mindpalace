@@ -88,13 +88,15 @@ correlate → email suggestions + code-mind log).
           (see UNFINISHED_BUSINESS evidence in issue #68).
 
 ═══════════════════════════════════════════════════════════════════════
-9. WINDOWS INSTALLER — Phase H, not started
+9. WINDOWS INSTALLER — SHIPPED (build-installer.sh / build-warm-installer.sh +
+   MindPalace.iss; documented in INSTALLER.md)
 ═══════════════════════════════════════════════════════════════════════
-[MISSING] jpackage native .exe installer.
-[MISSING] Registers in Program Files + Start Menu.
-[MISSING] Uninstall package.
-[MISSING] Warm welcoming installer GUI (file-location chooser, accessories TBD
-          like Ollama + models).
+[DONE] jpackage native .exe installer (build-installer.sh).
+[DONE] Registers in Program Files + Start Menu.
+[DONE] Uninstall package.
+[DONE] Warm welcoming installer GUI (file-location chooser, Ollama + model
+          accessories) — Inno Setup "warm" installer (build-warm-installer.sh,
+          MindPalace.iss), documented in INSTALLER.md.
 [MISSING] Intro screen + options screens (ESC menu exists; no intro splash).
 
 ═══════════════════════════════════════════════════════════════════════
@@ -108,13 +110,23 @@ correlate → email suggestions + code-mind log).
           but "No networking" is no longer true.
 
 ═══════════════════════════════════════════════════════════════════════
-11. USB BACKUP — SHIPPED: backup-to-usb.sh covers all four categories
+11. USB BACKUP — PARTIAL: plain cp -ru mirror only; #186's encryption +
+    restore-test requirements OPEN (unmerged draft PR #218 has the
+    AES-256-GCM + restoreTest() design)
 ═══════════════════════════════════════════════════════════════════════
 [DONE]    backup-to-usb.sh (repo root) backs up AIGEN_SYS (repos/KG/dashboards),
           databases (keyword/kg/code), hermes config/scripts/skills + cron_logs,
           Desktop task lists; idempotent cp -ru, bails cleanly if D: absent,
           stamps LAST_BACKUP.txt. Chat logs covered by AIGEN_SYS copy + the
           separate private chat-logs repo push (section 6).
+[MISSING] Ledger + keys encrypted at rest — backup-to-usb.sh is a plain
+          `cp -ru` mirror, no encryption (#186 body requirement).
+[MISSING] Restore test — never executed (#186 body requirement). Unmerged
+          draft PR #218 (`backup/OffsiteBackup.java`, AES-256-GCM + PBKDF2,
+          `restoreTest()` round-trip) has a real implementation but nothing
+          calls it from the game and its selftest check has never been run
+          on GL hardware. Either finish/merge #218 or accept the gap
+          explicitly — #186 stays OPEN either way.
 
 ═══════════════════════════════════════════════════════════════════════
 12. OUTSIDE WORLD / PHASE F-G — deferred
