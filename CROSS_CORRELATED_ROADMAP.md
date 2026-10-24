@@ -159,7 +159,7 @@ FOWGate + LanguageRegistry PORTED from SIMS1337 into `agent/sims/`.
 - `[BP]` P1: ✅ FIXED (`340dd2e`) — dedicated user-chat worker (`userWorker` +
   `drainImmediateLoop()`) so a reply never serializes behind a tool/agent call.
 - `~[BP] P2: lastUserMessage dead field~` ✅ FIXED — buildContext() seeds from it (AgentManager.java:992)
-- `[BP]` P3: guide reply routed via `onToolMessage` → add dedicated `onChatMessage`.
+- `~[BP]` P3: guide reply routed via `onToolMessage` → add dedicated `onChatMessage`.~ ✅ FIXED (#290) — `AgentManager.onChatMessage` + 4-arg `setCallbacks(..., chat)`, guide reply emits on the chat lane (`AgentManager.java` onUserChat), legacy 3-arg wiring falls back to `[Guide]` on the tool lane; selftest case 45 asserts both lanes.
 - `~[BP] P5: book-content bloat~ ✅ FIXED — buildContext() truncates to
   500 chars (`AgentManager.java:1551`, "Truncate hard — a 2000-char excerpt
   ate ~25% of the small model's token budget").
@@ -331,7 +331,7 @@ slice (later; Java port where feasible, worker-offload the heavy math).**
 3. §18 gist wall + new entries — **explicit ask**
 4. ~§4 avatars (Phase B1→B2→B3)~ ✅ DONE per §4 status block (`f93243e`)
 5. ~§8 engine TOOLS execution loop~ ✅ DONE per §8 status block
-6. §7 chat priority queue (user chat never waits behind autonomous)
+6. §7 chat priority queue (user chat never waits behind autonomous) — P1/P2/P3/P5 items ✅ shipped (P3 onChatMessage #290); queue itself = P1 userWorker
 7. ~~§3 portal polish: paired colors~~ ✅ DONE (TASK_0001, `PortalTheme.java`) — conduits + Alcubierre jump still open (→ §3)
 8. §6 spring-damper camera + astral walk
 9. §5 sky/outside streaming + local weather

@@ -134,6 +134,7 @@ public class AgentManager {
 
     // Callbacks for tool execution
     private Consumer<String> onToolMessage;
+    private Consumer<String> onChatMessage;   // #290: dedicated guide-reply channel
     private Consumer<String> onCriticMessage;
     private Consumer<String> onConsoleLog;
     private Consumer<List<Issue>> onIssues;   // fired when the lexical bridge finds issues
@@ -162,6 +163,18 @@ public class AgentManager {
     /** Selftest mode: parity wiring runs, the autonomous cycle does not. */
     private volatile boolean selfTest = false;
     public void setSelfTest(boolean st) { this.selfTest = st; }
+
+    /** #290 selftest seam: fire the guide-reply routing EXACTLY as the
+     *  onUserChat thenAccept block does (chat lane when wired, [Guide]
+     *  fallback on the tool lane when legacy 3-arg wiring left it null). */
+    public void emitChatForTest(String resp) {
+        if (resp == null || resp.isEmpty()) return;
+        if (onChatMessage != null) {
+            emit(onChatMessage, resp);
+        } else {
+            emit(onToolMessage, "[Guide] " + resp);
+        }
+    }
 
     // ── Lifecycle ──
 
@@ -254,6 +267,15 @@ public class AgentManager {
         this.onToolMessage = tool;
         this.onCriticMessage = critic;
         this.onConsoleLog = console;
+    }
+
+    /** #290: 4-arg form — chat consumer is threaded through from the last
+     *  (previously null 4th) position so guide replies land on their own
+     *  channel instead of piggybacking on the tool log. */
+    public void setCallbacks(Consumer<String> tool, Consumer<String> critic,
+                             Consumer<String> console, Consumer<String> chat) {
+        setCallbacks(tool, critic, console);
+        this.onChatMessage = chat;
     }
 
     /** Inject a callback for issues found by the lexical bridge (spawn crystals). */
@@ -537,7 +559,14 @@ public class AgentManager {
             ctx(ModelConfig.CHAT_MODEL) + "\n" + prompt, chatLifespan)
             .thenAccept(resp -> {
                 if (resp != null && !resp.isEmpty()) {
-                    emit(onToolMessage, "[Guide] " + resp);
+                    // #290: guide replies route through the DEDICATED chat
+                    // channel; fallback to onToolMessage when the 4-arg
+                    // setter was never wired (legacy 3-arg callers).
+                    if (onChatMessage != null) {
+                        emit(onChatMessage, resp);
+                    } else {
+                        emit(onToolMessage, "[Guide] " + resp);
+                    }
                 }
             });
     }

@@ -736,7 +736,8 @@ public class GameEngine {
         agentManager.setCallbacks(
             msg -> agentChat.addMessage(msg),
             msg -> agentChat.addMessage(msg),
-            msg -> System.out.println("[Agent] " + msg)
+            msg -> System.out.println("[Agent] " + msg),
+            msg -> agentChat.addMessage(msg) // #290: guide replies on their own channel
         );
         // Lexical bridge → spawn a TODO crystal per issue found in non-legacy repos
         agentManager.setIssuesCallback(issues -> {
@@ -7473,6 +7474,43 @@ public class GameEngine {
             costOk = false;
         }
         if (costOk) pass++; else fail++;
+
+        // 45. #290 dedicated onChatMessage — guide replies route through the
+        //     chat channel, NOT the tool channel, and legacy 3-arg wiring
+        //     still falls back cleanly. Pure consumer plumbing (headless).
+        boolean chatCbOk = false;
+        try {
+            com.mindpalace.agent.AgentManager am =
+                new com.mindpalace.agent.AgentManager();
+            java.util.List<String> chatLines = new java.util.ArrayList<>();
+            java.util.List<String> toolLines = new java.util.ArrayList<>();
+            am.setCallbacks(
+                toolLines::add,          // tool lane
+                msg -> { },              // critic lane (unused here)
+                msg -> { },              // console lane (unused here)
+                chatLines::add           // #290 chat lane
+            );
+            // Drive the guide-reply emit path directly via the chat callback
+            // (the ModelScheduler path would need a live Ollama daemon; the
+            // routing decision under test lives in the thenAccept block, so
+            // we assert the channel separation the 4-arg wiring produces).
+            am.emitChatForTest("hello from the guide");
+            chatCbOk = chatLines.size() == 1 && "hello from the guide".equals(chatLines.get(0))
+                && toolLines.isEmpty(); // did NOT leak onto the tool lane
+            // Legacy 3-arg wiring: chat callback null → falls back to tool lane.
+            am = new com.mindpalace.agent.AgentManager();
+            java.util.List<String> toolLegacy = new java.util.ArrayList<>();
+            am.setCallbacks(toolLegacy::add, msg -> { }, msg -> { });
+            am.emitChatForTest("legacy fallback");
+            chatCbOk = chatCbOk && toolLegacy.size() == 1
+                && "[Guide] legacy fallback".equals(toolLegacy.get(0));
+        } catch (Throwable t) {
+            System.out.println("  onChatMessage check threw: " + t);
+            chatCbOk = false;
+        }
+        System.out.println((chatCbOk ? "PASS" : "FAIL")
+            + " #290 onChatMessage: guide replies on chat lane, 3-arg legacy falls back to [Guide] on tool lane");
+        if (chatCbOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
