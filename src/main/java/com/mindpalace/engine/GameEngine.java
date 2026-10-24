@@ -7462,6 +7462,9 @@ public class GameEngine {
             tc.record(com.mindpalace.backup.Telemetry.AGENT, "tool_round"); // free
             boolean wrote = tc.costSummary(7L * 24 * 3600 * 1000).contains("code=13")
                 && tc.costSummary(7L * 24 * 3600 * 1000).contains("total=13u");
+            // Rows are stamped with the current millisecond: on a fast CI runner the
+            // 1 ms window still held them (CI run 40065545640, 86/1). Let them age first.
+            Thread.sleep(5);
             boolean windowOk = tc.costSummary(1L).contains("no cost rows");
             boolean legacy = tc.record(com.mindpalace.backup.Telemetry.CODE, "delete", "C.txt");
             costOk = wrote && windowOk && legacy;
