@@ -6882,9 +6882,10 @@ public class GameEngine {
                 // Full dt path also exercises updateDoorAnimation in update().
                 // Persistence invariant: doorAnimTarget stays 1 for the whole
                 // 10s — an auto-close would revert it to 0. The panel slides
-                // at 3 u/s (~0.4s to fully open), so doorOpenAmount is only
-                // checked AFTER the full 10s: checking it per-tick would break
-                // out while the open animation is still in flight (which also
+                // at 2 u/s (0.5s to fully open, MP-007 #153), so
+                // doorOpenAmount is only checked AFTER the full 10s: checking
+                // it per-tick would break out while the open animation is
+                // still in flight (which also
                 // stranded interactCooldown > 0 and swallowed the exit Enter).
                 boolean stillOpen = true;
                 for (int i = 0; i < 100; i++) {
@@ -8145,6 +8146,81 @@ public class GameEngine {
                 // MENU via the default case below, after the flush.
                 if (shoot) { menuPage = 7; menuSel = 1; captureLabeled("30_options_theme"); e2eWaypoint++; e2ePhaseTimer = 0; }
             }
+            // ── MP-007 (#153): door-dissolve evidence — restore PLAYING, open
+            // the first floor-1 (BLUE) room's door, catch the mid-crossfade, then
+            // the settled open state. Cases 22-29 leave state=MENU, so case 30
+            // restores PLAYING in its shoot tick (mutate-in-shoot-tick pattern,
+            // same as case 22's menuPage). e2e mode runs updateAutodrive, NOT
+            // update() (:1304), so Room.updateDoorAnimation never advances on
+            // its own — each case drives the ramp explicitly. Floor pick: the
+            // leaf and the portal sheet share the district color, so in amber
+            // (floor 3) both states composite to one uniform yellow; floor-1
+            // blue over the darker room interior keeps leaf/sheet/interior
+            // visually distinguishable in both evidence shots.
+            case 30 -> { // mid-dissolve: leaf part-raised + portal alpha ~0.5
+                Vector3f door0 = null; Room doorRoom = null;
+                for (Room rm : world.getRooms()) { // first BLUE district door (contrast, see above)
+                    if (rm.getDoorPosition() != null && rm.getFloor() == 0) { door0 = rm.getDoorPosition(); doorRoom = rm; break; }
+                }
+                if (doorRoom == null) { // degenerate world: fall back to first door
+                    for (Room rm : world.getRooms()) { if (rm.getDoorPosition() != null) { door0 = rm.getDoorPosition(); doorRoom = rm; break; } }
+                }
+                if (shoot && doorRoom != null) {
+                    if (state != GameState.PLAYING) state = GameState.PLAYING;
+                    // Force a closed leaf first (a live Scout may have left it
+                    // anywhere), then ramp exactly halfway: 0.25s of ramp at
+                    // 2.0/s = amount 0.5 = exactly the #153 midpoint.
+                    doorRoom.closeDoor(); doorRoom.updateDoorAnimation(5f); // amount→0
+                    doorRoom.openDoor();
+                    doorRoom.updateDoorAnimation(0.25f); // 0.25s of ramp at 2.0/s = exactly halfway (amount 0.5)
+                    System.out.println("[E2E-DOORPICK] mid: room=" + doorRoom.getRepoName()
+                        + " floor=" + doorRoom.getFloor() + " side=" + doorRoom.getHallwaySide()
+                        + " door=" + door0 + " amount_after=" + doorRoom.getDoorOpenAmount());
+                    // Framing: 2.5m / eye +0.7 is the fog-safe distance proven by
+                    // the amber run (5m puts the aperture past hallway fog).
+                    float towardHall = door0.x < 0 ? 2.5f : -2.5f;
+                    Vector3f stand = new Vector3f(door0.x + towardHall, door0.y + 0.7f, door0.z);
+                    p.set(stand);
+                    Vector3f aim = new Vector3f(door0).sub(stand).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                    captureLabeled("31_door_mid_dissolve");
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                } else if (shoot) { // degenerate world: still progress deterministically
+                    p.set(0f, hallY + 1.7f, hallZ0 + 4f); cam.setYaw(0); cam.setPitch(0);
+                    captureLabeled("31_door_mid_dissolve");
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                }
+            }
+            case 31 -> { // settled open doorway — portal fully lit behind frame + plaque
+                Vector3f door0 = null; Room doorRoom = null;
+                for (Room rm : world.getRooms()) { // same pick as case 30
+                    if (rm.getDoorPosition() != null && rm.getFloor() == 0) { door0 = rm.getDoorPosition(); doorRoom = rm; break; }
+                }
+                if (doorRoom == null) { // degenerate world: fall back to first door
+                    for (Room rm : world.getRooms()) { if (rm.getDoorPosition() != null) { door0 = rm.getDoorPosition(); doorRoom = rm; break; } }
+                }
+                if (shoot && door0 != null) {
+                    // Re-assert fully-open in the shoot tick: updateDoorAnimation(5f)
+                    // jumps amount→1 instantly, so the settled shot can never
+                    // capture a half-dissolved sheet even at tour fps.
+                    if (state != GameState.PLAYING) state = GameState.PLAYING;
+                    doorRoom.openDoor(); doorRoom.updateDoorAnimation(5f);
+                    // Same fog-safe framing as case 30.
+                    float towardHall = door0.x < 0 ? 2.5f : -2.5f;
+                    Vector3f stand = new Vector3f(door0.x + towardHall, door0.y + 0.7f, door0.z);
+                    p.set(stand);
+                    Vector3f aim = new Vector3f(door0).sub(stand).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                    captureLabeled("32_door_portal_open");
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                } else if (shoot) { // degenerate world: still progress deterministically
+                    p.set(0f, hallY + 1.7f, hallZ0 + 4f); cam.setYaw(0); cam.setPitch(0);
+                    captureLabeled("32_door_portal_open");
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                }
+            }
             default -> { // done — clean exit for CI
                 // t_0c1374b0-era captureLabeled DEFERS the PNG write to this
                 // frame's render() tail. If the final waypoint advanced the
@@ -8155,7 +8231,7 @@ public class GameEngine {
                 // (observed: no [E2E-SHOT] 30 line). Wait one tick for the
                 // flushed write before exiting.
                 if (pendingShotLabel != null) return;
-                System.out.println("[E2E] tour complete — 30 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 32 waypoints captured. Exiting.");
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
                 // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software

@@ -136,10 +136,14 @@ public class WorldBuilder {
         return new Vector3f(planetCenter.x, planetCenter.y + PLANET_RADIUS, planetCenter.z);
     }
 
+    /** MP-007 (#153): door-dissolve portal sheet toggle (MP_DOOR_DISSOLVE=0 → pure MP-006). */
+    private final boolean doorDissolveEnabled;
+
     public WorldBuilder() {
         repoMapper = new RepoMapper();
         populator = new RoomPopulator();
         fogOfWar = new FogOfWar(4.0f, 8.0f);
+        doorDissolveEnabled = !"0".equals(System.getenv("MP_DOOR_DISSOLVE"));
     }
 
     public FogOfWar getFogOfWar() { return fogOfWar; }
@@ -937,8 +941,14 @@ public class WorldBuilder {
         // wallX∓0.145), proud of the wall, recessed behind the posts, so
         // no faces are coplanar (the old halo front sat exactly on the
         // post-front plane → z-fight shimmer).
-        r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.025f : 0.025f), floorY + dh / 2f, doorZ),
-            new Vector3f(0.02f, dh + 0.2f, dw + 0.2f), Renderer.TEX_NEON_AMBER);
+        // #153: gate the halo on the door state — opaque and proud of the
+        // wall, it would otherwise sit IN FRONT of the portal sheet and
+        // hide the dissolve; once the door starts opening the sheet owns
+        // the aperture instead.
+        if (room.getDoorOpenAmount() <= 0f) {
+            r.drawCube(new Vector3f(wallX + offsetX + (wallX > 0 ? -0.025f : 0.025f), floorY + dh / 2f, doorZ),
+                new Vector3f(0.02f, dh + 0.2f, dw + 0.2f), Renderer.TEX_NEON_AMBER);
+        }
     }
 
     private void renderPosters(Renderer r, Vector3f s, Hallway hw) {
@@ -1048,20 +1058,54 @@ public class WorldBuilder {
         r.drawCube(new Vector3f(c.x + w / 2f - leftW / 2f, c.y, fz), new Vector3f(leftW, h, t), Renderer.TEX_WALLPAPER);
         r.drawCube(new Vector3f(c.x, c.y + h / 2f - (h - dw) / 2f, fz), new Vector3f(Room.DOOR_WIDTH, h - dw, t), Renderer.TEX_WALLPAPER);
 
-        // Door panel — slides up when opened.
-        // MP-006 (#152): per-district solid door color — every house door in a
-        // district reads as ONE district color; frame posts/lintel stay neutral
-        // wood (TEX_DOOR below), plaque/poster own their material. Drawn with
-        // the room accent (setTint above) NEUTRALIZED so the language tint never
-        // re-shifts the district color, then restored for the rest of the room.
-        float doorSlide = room.getDoorOpenAmount() * dw;
+        // Door panel — MP-006 (#152): per-district solid door color; frame
+        // posts/lintel stay neutral wood. District color drawn with the room
+        // accent (setTint above) NEUTRALIZED so the language tint never
+        // re-shifts the district color, restored for the rest of the room.
+        // MP-007 (#153): as the leaf slides up, a translucent
+        // district-colored portal sheet with a glowing rim fades in inside
+        // the doorway (alpha ramps with the same door-open progress —
+        // ~0.5s at the 2.0/s open speed). Closed doors render exactly the
+        // MP-006 opaque leaf; fully open the sheet stays lit and mostly
+        // solid (~0.85 alpha — the doorway ghosts the room through it, the
+        // promised "window into the room", not a gap in geometry).
+        // MP_DOOR_DISSOLVE=0 falls back to pure MP-006 behaviour.
+        // #153 FIX: leaf + sheet live in the HALLWAY APERTURE (thin in X —
+        // the wall plane renderWallWithDoors cuts at doorX = ±HALLWAY_WIDTH/2).
+        // The old cubes sat on the z-plane "front wall" at doorZ ∓ ROOM_DEPTH/2,
+        // ~3 m off the doorway and edge-on to any hallway camera, so neither the
+        // district leaf (MP-006) nor the portal sheet (MP-007) was ever visible
+        // from the hallway — the always-drawn amber halo read as the door
+        // instead. Same district geometry, re-oriented onto the real aperture;
+        // sheet offset toward the hallway keeps it in front of the leaf so the
+        // crossfade reads as one door, two states.
+        float doorApertureX = room.getDoorPosition() != null
+            ? room.getDoorPosition().x
+            : c.x + (side == 0 ? w / 2f + Room.WALL_THICKNESS : -(w / 2f + Room.WALL_THICKNESS));
+        float hallDir = side == 0 ? 1f : -1f;   // toward the hallway walkway
+        float open = room.getDoorOpenAmount();
+        float doorSlide = open * dw;
         float doorPanelY = c.y - h / 2f + dw / 2f + doorSlide;
-        float doorPanelH = dw * (1f - room.getDoorOpenAmount());
+        float doorPanelH = dw * (1f - open);
         if (doorPanelH > 0.01f) {
             float[] dt = districtDoorColor(room.getFloor());
             r.setTint(1f, 1f, 1f);
-            r.drawCubeColor(new Vector3f(c.x, doorPanelY, fz),
-                new Vector3f(Room.DOOR_WIDTH - 0.04f, doorPanelH, t + 0.02f), dt[0], dt[1], dt[2]);
+            r.drawCubeColor(new Vector3f(doorApertureX, doorPanelY, c.z),
+                new Vector3f(0.06f, doorPanelH, Room.DOOR_WIDTH - 0.04f), dt[0], dt[1], dt[2]);
+            r.setTint(tint[0] * glow, tint[1] * glow, tint[2] * glow);
+        }
+        // Portal sheet — fades in inside the doorway while (and after) the
+        // leaf slides up; fully closed doors draw nothing (the opaque leaf is
+        // the whole doorway, pixel-identical to MP-006).
+        if (doorDissolveEnabled && open > 0f) {
+            float[] dt = districtDoorColor(room.getFloor());
+            float portalAlpha = Math.min(0.85f, open * 1.25f);     // lit by ~80% of the ramp
+            r.setTint(1f, 1f, 1f);
+            r.drawPortalQuad(
+                new Vector3f(doorApertureX + hallDir * 0.08f, c.y - h / 2f + dw / 2f, c.z),
+                new Vector3f(0.06f, dw - 0.08f, Room.DOOR_WIDTH - 0.08f),
+                dt[0] * 1.35f, dt[1] * 1.35f, dt[2] * 1.35f,
+                portalAlpha, 0.22f, 2);                            // plane 2 = thin-X doorway quad (Y/Z rim)
             r.setTint(tint[0] * glow, tint[1] * glow, tint[2] * glow);
         }
 

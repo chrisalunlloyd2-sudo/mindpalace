@@ -21,6 +21,7 @@ public class Renderer {
     public Matrix4f getViewMatrix() { return viewMatrix; }
     private Vector3f viewPos = new Vector3f();
     private Shader hologramShader;
+    private Shader portalShader;   // MP-007 (#153): door-dissolve portal quad
     private int width, height;
 
     // Live-tunable lighting (hot-applied by PatchManager without a restart)
@@ -80,6 +81,7 @@ public class Renderer {
 
         basicShader = new Shader("shaders/basic.vert", "shaders/basic.frag");
         hologramShader = new Shader("shaders/hologram.vert", "shaders/hologram.frag");
+        portalShader = new Shader("shaders/portal.vert", "shaders/portal.frag");
 
         // Create distinct solid-color textures for each surface
         textures[TEX_WALL]   = new Texture(0.55f, 0.40f, 0.28f);  // warm stone
@@ -334,6 +336,44 @@ public class Renderer {
         basicShader.setUniform("model", model);
         solidColor(r, g, bl);
         getCubeMesh().render();
+    }
+
+    /**
+     * MP-007 (#153): draw an unlit translucent portal box with a soft glowing
+     * rim band near the edges of its face(s). The face used for the rim
+     * follows portalPlane (0 = vertical door quad: in-plane X/Y, thin Z;
+     * 1 = flat quad: in-plane X/Z, thin Y; 2 = vertical doorway quad:
+     * in-plane Y/Z, thin X — the hallway-wall aperture plane, #153).
+     * Uses the shared cube mesh
+     * re-rendered with the portal shader; blend/depth-mask state is toggled
+     * here and restored afterwards, mirroring the ParticleBatch sequence.
+     * The default (basic) shader is re-bound before returning.
+     * @param center   world-space centre of the box
+     * @param size     full extents (x, y, z) of the box
+     * @param alpha    global opacity 0..1 — the door-dissolve progress
+     * @param rim      edge band width as a fraction of half-extent (0 = off)
+     */
+    public void drawPortalQuad(Vector3f center, Vector3f size,
+                               float r, float g, float b,
+                               float alpha, float rim, int portalPlane) {
+        Matrix4f model = new Matrix4f().translate(center).scale(size);
+        portalShader.bind();
+        portalShader.setUniform("projection", projectionMatrix);
+        portalShader.setUniform("view", viewMatrix);
+        portalShader.setUniform("model", model);
+        portalShader.setUniform("portalCenter", center);
+        portalShader.setUniform("portalHalf", new Vector3f(size.x / 2f, size.y / 2f, size.z / 2f));
+        portalShader.setUniform("portalColor", new Vector3f(r, g, b));
+        portalShader.setUniform("alpha", alpha);
+        portalShader.setUniform("rimWidth", rim);
+        portalShader.setUniform("portalPlane", portalPlane);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glDepthMask(false);
+        getCubeMesh().render();
+        GL11.glDepthMask(true);
+        GL11.glDisable(GL11.GL_BLEND);
+        basicShader.bind();  // restore the default shader for subsequent draws
     }
 
     /**

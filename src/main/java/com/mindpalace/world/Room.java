@@ -40,7 +40,7 @@ public class Room {
     // Door animation
     private float doorOpenAmount = 0f;  // 0=closed, 1=fully open (slid up)
     private float doorAnimTarget = 0f;
-    private static final float DOOR_ANIM_SPEED = 3.0f;  // units per second
+    private static final float DOOR_ANIM_SPEED = 2.0f;  // units per second → full open/close = 0.5s (MP-007 #153)
 
     // Room dimensions
     public static final float ROOM_WIDTH = 6.0f;
