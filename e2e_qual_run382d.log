@@ -1,0 +1,408 @@
+[E2E] enabled, waypoints + labeled shots -> target/qual1/shots (clock pinned to 12:00 for deterministic brightness)
+[GlTrace] shader program -1 -> 0 between [start] and [init:createCapabilities] (frame 0)
+GPU: Intel(R) HD Graphics 510
+OpenGL: 3.3.0 - Build 31.0.101.2111
+[FontRenderer] Ready — 256x588 atlas
+[Prompt] unified interaction prompt system online (TASK 0002)
+[Audio] Engine initialized — synthesized sounds ready
+[Music] Procedural engine ready — key A minor, 120 BPM
+[Sequencer] 16-step machine ready — kick/snare/hat/bass
+[GlTrace] shader program 0 -> 3 between [init:FontRenderer] and [cubeColorYaw:enter] (frame 0)
+[WorldBuilder] Building MindPalace world...
+[RepoMapper] Found 73 repos locally
+[GitHub] Authenticated via Windows Credential Manager
+[GitHub] Fetched 165 repos from GitHub
+[RepoScanner] Remote: 165 repos
+[RepoScanner] Added remote-only (fogged): Chrisalunlloyd2-sudo
+[RepoScanner] Added remote-only (fogged): agent-squiggly
+[RepoScanner] Added remote-only (fogged): Alice_Kernel_Backup
+[RepoScanner] Added remote-only (fogged): MatrixWinCE
+[RepoScanner] Added remote-only (fogged): Hermes
+[RepoScanner] Added remote-only (fogged): kai-proxy-guard
+[RepoScanner] Added remote-only (fogged): Claude
+[RepoScanner] Added remote-only (fogged): painting-ops-vault
+[RepoScanner] Added remote-only (fogged): disk-steward
+[RepoScanner] Added remote-only (fogged): ViperCli
+[RepoScanner] Added remote-only (fogged): Prometheus
+[RepoScanner] Added remote-only (fogged): AvatarAlive
+[RepoScanner] Added remote-only (fogged): alice-companion
+[RepoScanner] Added remote-only (fogged): agent-laguna
+[RepoScanner] Added remote-only (fogged): Chris_Life
+[RepoScanner] Added remote-only (fogged): chrislloyd-io
+[RepoScanner] Added remote-only (fogged): aria-swarm
+[RepoScanner] Added remote-only (fogged): code_rpg_engine
+[RepoScanner] Added remote-only (fogged): Alice
+[RepoScanner] Added remote-only (fogged): ViperCli-v2
+[RepoScanner] Added remote-only (fogged): ArchivalMoe
+[RepoScanner] Added remote-only (fogged): py4qwhip
+[RepoScanner] Added remote-only (fogged): intelligence_bridge
+[RepoScanner] Added remote-only (fogged): Curie
+[RepoScanner] Added remote-only (fogged): Chris_Lloyd_Website
+[RepoScanner] Added remote-only (fogged): Aegis_Unified
+[RepoScanner] Added remote-only (fogged): fleet-tailscale
+[RepoScanner] Added remote-only (fogged): aria-sync
+[RepoScanner] Added remote-only (fogged): review-inbox
+[RepoScanner] Added remote-only (fogged): mindpalace-chat-logs
+[RepoScanner] Added remote-only (fogged): inference_coin
+[RepoScanner] Added remote-only (fogged): market-research
+[RepoScanner] Added remote-only (fogged): Wonderland
+[RepoScanner] Added remote-only (fogged): VIPER_SCRIPT_LIBRARY
+[RepoScanner] Added remote-only (fogged): viper-claude
+[RepoScanner] Added remote-only (fogged): ViperKernel
+[RepoScanner] Added remote-only (fogged): matrix-story-line
+[RepoScanner] Added remote-only (fogged): talon-gate
+[RepoScanner] Added remote-only (fogged): batch_powershell
+[RepoScanner] Added remote-only (fogged): ViperNote
+[RepoScanner] Added remote-only (fogged): SIMS1337web
+[RepoScanner] Added remote-only (fogged): NOVA_JOB_PHONE_COORDINATOR_APK
+[RepoScanner] Added remote-only (fogged): SIMS1337-cloud-worker
+[RepoScanner] Added remote-only (fogged): Aegis_LeadManager
+[RepoScanner] Added remote-only (fogged): GeneticFoundry
+[RepoScanner] Added remote-only (fogged): viper-state
+[RepoScanner] Added remote-only (fogged): MoeGUI
+[RepoScanner] Added remote-only (fogged): Bookcase
+[RepoScanner] Added remote-only (fogged): avatar-creator
+[RepoScanner] Added remote-only (fogged): viper-package
+[RepoScanner] Added remote-only (fogged): BDI_FSM_DAGs
+[RepoScanner] Added remote-only (fogged): Kernel_Editor
+[RepoScanner] Added remote-only (fogged): Kernel_Pedagogy
+[RepoScanner] Added remote-only (fogged): viper-root
+[RepoScanner] Added remote-only (fogged): aegis-fleet-docs
+[RepoScanner] Added remote-only (fogged): sims-java-neo-fx
+[RepoScanner] Added remote-only (fogged): karoo-hexeract
+[RepoScanner] Added remote-only (fogged): Aegis-GAN-OTG
+[RepoScanner] Added remote-only (fogged): sims
+[RepoScanner] Added remote-only (fogged): local_desktop-main
+[RepoScanner] Added remote-only (fogged): karoo_gp
+[RepoScanner] Added remote-only (fogged): api-orchestrator
+[RepoScanner] Added remote-only (fogged): patternwatch-cli
+[RepoScanner] Added remote-only (fogged): awareness-grid
+[RepoScanner] Added remote-only (fogged): multi-agent-supervisor
+[RepoScanner] Added remote-only (fogged): global-routing-graph
+[RepoScanner] Added remote-only (fogged): ghostcoder
+[RepoScanner] Added remote-only (fogged): qwen-config
+[RepoScanner] Added remote-only (fogged): viper-master-sync
+[RepoScanner] Added remote-only (fogged): win-ce-utilities
+[RepoScanner] Added remote-only (fogged): surgical-patch
+[RepoScanner] Added remote-only (fogged): matrix-ide
+[RepoScanner] Added remote-only (fogged): nova-terminal
+[RepoScanner] Added remote-only (fogged): kai-gen8-installer
+[RepoScanner] Added remote-only (fogged): singularity-engine
+[RepoScanner] Added remote-only (fogged): chriscounts
+[RepoScanner] Added remote-only (fogged): vipernode-sync
+[RepoScanner] Added remote-only (fogged): local_desktop
+[RepoScanner] Added remote-only (fogged): scripts
+[RepoScanner] Added remote-only (fogged): tools
+[RepoScanner] Added remote-only (fogged): adb
+[RepoScanner] Added remote-only (fogged): bin
+[RepoScanner] Added remote-only (fogged): net
+[RepoScanner] Added remote-only (fogged): curator_system
+[RepoScanner] Added remote-only (fogged): darwingeneticllmpipe
+[RepoScanner] Added remote-only (fogged): home
+[RepoScanner] Added remote-only (fogged): test
+[RepoScanner] Added remote-only (fogged): stress_test_mock_dir
+[RepoScanner] Added remote-only (fogged): notes
+[RepoScanner] Added remote-only (fogged): sec
+[RepoScanner] Added remote-only (fogged): data
+[RepoScanner] Added remote-only (fogged): cloudflare
+[RepoScanner] Added remote-only (fogged): db
+[RepoScanner] Added remote-only (fogged): core
+[RepoScanner] Added remote-only (fogged): ui
+[RepoScanner] Added remote-only (fogged): cityskyfx
+[RepoScanner] Added remote-only (fogged): gitautoship
+[RepoScanner] Added remote-only (fogged): local_documents
+[RepoScanner] Added remote-only (fogged): c-1778126163-3c67
+[RepoScanner] Added remote-only (fogged): 02_agent_work
+[RepoScanner] Added remote-only (fogged): Termux-env
+[RepoScanner] Added remote-only (fogged): viper-moe-router
+[RepoScanner] Added remote-only (fogged): NOVA_JOB_NETWORK_SOPS
+[RoomPopulator] aegis-agent-bridge: 30 books
+[RoomPopulator] AegisAgent: 9 books
+[RoomPopulator] Aegis_Agents: 61 books
+[RoomPopulator] batch_termux: 31 books
+[RoomPopulator] BDI_FSM_AGENT: 200 books
+[RoomPopulator] brute-foundry: 55 books
+[RoomPopulator] DARWIN_GRID_DEPLOY: 11 books
+[RoomPopulator] E2E_Final_Test: 11 books
+[RoomPopulator] E2E_Test_Deploy_6172: 9 books
+[RoomPopulator] evolved_system: 13 books
+[RoomPopulator] Flappy_bird_except_python_and: 11 books
+[RoomPopulator] fleet-repo-scanner: 3 books
+[RoomPopulator] frontier-ai-dlc: 4 books
+[RoomPopulator] frontier-ai-dlc: 4 books
+[RoomPopulator] Gitautoworks: 13 books
+[RoomPopulator] H2OIDE: 61 books
+[RoomPopulator] H2OMatrixCE: 142 books
+[RoomPopulator] H2O_MATRIX: 70 books
+[RoomPopulator] house-inference: 13 books
+[RoomPopulator] JRM: 17 books
+[RoomPopulator] living-ascii-art: 28 books
+[RoomPopulator] Machine2: 137 books
+[RoomPopulator] MasterLogs: 8 books
+[RoomPopulator] MatrixCE_GUI: 200 books
+[RoomPopulator] Matrix_CEAGENTS: 76 books
+[RoomPopulator] Matrix_CEAPK: 21 books
+[RoomPopulator] Matrix_CEAPPS: 22 books
+[RoomPopulator] Matrix_CEBack: 9 books
+[RoomPopulator] Matrix_CEKAI9000: 10 books
+[RoomPopulator] Matrix_CESERVERS: 12 books
+[RoomPopulator] matrix_dash: 7 books
+[RoomPopulator] MATRIX_GEN8_HOME: 0 books
+[RoomPopulator] mind-palace: 67 books
+[RoomPopulator] mind-palace: 57 books
+[RoomPopulator] mindpalace: 200 books
+[RoomPopulator] moe-kai-skill: 5 books
+[RoomPopulator] moe-kai-skill: 2 books
+[RoomPopulator] MultiPage_E2E_20010: 8 books
+[RoomPopulator] NAS_SHARE: 8 books
+[RoomPopulator] Nova: 54 books
+[RoomPopulator] openrouter: 14 books
+[RoomPopulator] openrouter_manager: 200 books
+[RoomPopulator] Plane2d: 8 books
+[RoomPopulator] Plane3d: 6 books
+[RoomPopulator] RandomTestProject: 4 books
+[RoomPopulator] Ryush: 49 books
+[RoomPopulator] SimAgentCity: 200 books
+[RoomPopulator] SIMS1337: 127 books
+[RoomPopulator] SIMS1337: 200 books
+[RoomPopulator] sims-javafx-neo: 36 books
+[RoomPopulator] SIMS1337: 126 books
+[RoomPopulator] SIMS1337-BACKEND: 0 books
+[RoomPopulator] SIMS1337-SKY: 0 books
+[RoomPopulator] SIMS1337: 113 books
+[RoomPopulator] SIMS1337BACKEND: 2 books
+[RoomPopulator] SIMS1337SKY: 2 books
+[RoomPopulator] SimsMerged: 200 books
+[RoomPopulator] sims-javafx-neo: 36 books
+[RoomPopulator] Sophia: 24 books
+[RoomPopulator] sophia_bots: 39 books
+[RoomPopulator] sovereign-analytics: 7 books
+[RoomPopulator] Sprite: 7 books
+[RoomPopulator] teaching_sandbox: 32 books
+[RoomPopulator] TestRepo999: 1 books
+[RoomPopulator] TestRepoPush: 1 books
+[RoomPopulator] training_sandbox: 15 books
+[RoomPopulator] vidalialed-lite: 0 books
+[RoomPopulator] viper-scripts: 200 books
+[RoomPopulator] viper-scripts: 200 books
+[RoomPopulator] wip-quantum-asm: 3 books
+[RoomPopulator] wip-quantum-asm: 3 books
+[RoomPopulator] WORKER_PACKAGE: 5 books
+[RoomPopulator] ViperAI_Notes: 3 books
+[WorldBuilder] Deduplicated 9 duplicate repo folders
+[WorldBuilder] Mapped 167 repos to rooms (sorted by size)
+[WorldBuilder] World built: 10 hallways, 167 rooms
+[TELEPORT] -> Mansion
+[GitHub] Authenticated via Windows Credential Manager
+[Telemetry] ledger ready — quorum=199571, system=267, agent=115, depin=45, quota=2
+[Memory] Self-managing memory DB ready at C:\Users\viper\AIGEN_SYS\mindpalace_memory
+[IssueStream] 167 repos in the in-world issue feed (1 read/60s, round-robin)
+[DePIN] economy seeded — 24 jobs, 3 wallets
+[Agent] [2026-10-24T01:58:45.422150100Z] [AgentManager] SIMS1337 parity wired — router + LoRA + quorum + FOW + tie-breaker deepseek-r1:1.5b
+[Agent] [2026-10-24T01:58:46.905868600Z] [AgentManager] Agents started — llama3.2:1b (tool) + qwen2.5:0.5b (critic)
+[Agent] [2026-10-24T01:58:46.907166500Z] [AgentManager] Autonomous cycle: every 5 minutes
+[TuringTape] anchored at main hall z=4.0
+[RotorRoom] three rings in the courtyard z=-14.0
+[Banburismus] gauge mounted on hall wall z=8.0
+[NashFountain] pool in the courtyard z=-14.0
+[Plugboard] mounted on hall right wall z=8.0, wiring AB CD EF GH IJ
+[NPC] SLM brains attached (llama3.2:1b + qwen2.5:0.5b) — serialized via scheduler
+[NPC] Scout on patrol (167 rooms in rotation)
+[NPC] 3 agents spawned, 44 TODO crystals, KG: 167 nodes / 157 edges
+[LiveUpdate] poller suppressed (e2e tour — hermetic background-free run, refs #39)
+[Genome] timeline loaded — 0 modules, 0 mutations
+[Backup] Cold backup to D:\mindpalace_backup started
+[BDI] bridge polling http://localhost:8099/state every 5000ms (step 81)
+[Bloom] region -> forest (intensity 0.75)
+[Weather] rain — score slows to 72 BPM
+[NPC] Explorer picked up TODO: todo_management/todo_f..
+[Bloom] region -> hall (intensity 0.55)
+[Update] up to date (1.1.0-beta1)
+[GameEngine] quota tick: [update] up to date (1.1.0-beta1)
+[E2E-FPS] 01_spawn_view -> 5.7 fps, worst frame 746.8 ms over 21 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 01_spawn_view: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 01_spawn_view -> target/qual1/shots/01_spawn_view_00.png
+[AgentChat] [Scout] VISIT Matrix_CEAPPS genetic_techno_engine.py
+[DePIN] Scout earned 5.0 for unique visit: Matrix_CEAPPS (wallet=5.0, rooms=1/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at Matrix_CEAPPS
+[Scout] quorum APPROVED -> crystal at Matrix_CEAPPS
+[NPC] Explorer picked up TODO: [Scout] work in Matrix..
+[E2E-FPS] 02_rotor_rings -> 5.0 fps, worst frame 2137.9 ms over 23 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 02_rotor_rings: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[Backup] mirror failed: C:\Users\viper\AIGEN_SYS\backups\full_20260825_211216\repos\mindpalace\installer\MindPalace\MindPalace.exe: D:\mindpalace_backup\C\AIGEN_SYS\backups\full_20260825_211216\repos\mindpalace\installer\MindPalace\MindPalace.exe
+[BDI] agent unreachable at http://localhost:8099 - pausing NPC drive, polling continues quietly
+[E2E-SHOT] 02_rotor_rings -> target/qual1/shots/02_rotor_rings_01.png
+[E2E-STARTUP] first frame 2 ms; worst of the next 60 frames 2262 ms
+[E2E-FPS] 03_turing_tape -> 2.7 fps, worst frame 8656.1 ms over 30 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 03_turing_tape: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 03_turing_tape -> target/qual1/shots/03_turing_tape_02.png
+[Prompt] [ENTER] Open door: MatrixCE_GUI (Python)
+[AgentChat] [Scout] VISIT Matrix_CEAPK BLUEPRINT.md
+[DePIN] Scout earned 5.0 for unique visit: Matrix_CEAPK (wallet=10.0, rooms=2/167)
+[Scout] quorum verdict for Matrix_CEAPK: REJECTED
+[E2E-FPS] 04_banburismus_gauge -> 7.1 fps, worst frame 1548.2 ms over 28 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 04_banburismus_gauge: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 04_banburismus_gauge -> target/qual1/shots/04_banburismus_gauge_03.png
+[E2E-FPS] 05_main_hall -> 7.7 fps, worst frame 191.3 ms over 20 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 05_main_hall: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 05_main_hall -> target/qual1/shots/05_main_hall_04.png
+[Backup] mirror failed: C:\Users\viper\AIGEN_SYS\repos\mindpalace\installer\MindPalace\MindPalace.exe: D:\mindpalace_backup\C\AIGEN_SYS\repos\mindpalace\installer\MindPalace\MindPalace.exe
+[AgentChat] [Scout] VISIT JRM .editorconfig
+[DePIN] Scout earned 5.0 for unique visit: JRM (wallet=15.0, rooms=3/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at JRM
+[Scout] quorum APPROVED -> crystal at JRM
+[E2E-FPS] 06_room_doorway -> 4.2 fps, worst frame 3631.8 ms over 25 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 06_room_doorway: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 06_room_doorway -> target/qual1/shots/06_room_doorway_05.png
+[E2E-FPS] 07_todo_crystals -> 7.4 fps, worst frame 181.9 ms over 20 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 07_todo_crystals: gist_wall=[-0.55,0.45..-0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 07_todo_crystals -> target/qual1/shots/07_todo_crystals_06.png
+[AgentChat] [Scout] VISIT training_sandbox Blueprint.md
+[DePIN] Scout earned 5.0 for unique visit: training_sandbox (wallet=20.0, rooms=4/167)
+[Backup] Full crawl done: 32 files, 52.2MB, 2 errors
+[AgentChat] [Quorum] scout proposal — TODO crystal at training_sandbox
+[Scout] quorum APPROVED -> crystal at training_sandbox
+[E2E-FPS] 08_hall_lookback -> 0.8 fps, worst frame 22438.3 ms over 21 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 08_hall_lookback: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 08_hall_lookback -> target/qual1/shots/08_hall_lookback_07.png
+[Bloom] region -> courtyard (intensity 0.95)
+[GlTrace] shader program 3 -> 6 between [hologram:enter] and [hologram:bind] (frame 203)
+[GlTrace] shader program 6 -> 3 between [hologram:mesh.render] and [hologram:enter] (frame 203)
+[GlTrace] shader program 3 -> 6 between [hologram:enter] and [hologram:bind] (frame 203)
+[GlTrace] shader program 6 -> 3 between [hologram:mesh.render] and [hologram:enter] (frame 203)
+[GlTrace] shader program 3 -> 6 between [hologram:enter] and [hologram:bind] (frame 203)
+[GlTrace] shader program 6 -> 3 between [hologram:mesh.render] and [cubeColorYaw:enter] (frame 203)
+[GlTrace] shader program 3 -> 6 between [hologram:enter] and [hologram:bind] (frame 203)
+[GlTrace] shader program 6 -> 3 between [hologram:mesh.render] and [hologram:enter] (frame 203)
+[GlTrace] shader program 3 -> 6 between [hologram:enter] and [hologram:bind] (frame 203)
+[GlTrace] shader program 6 -> 3 between [hologram:mesh.render] and [hologram:enter] (frame 203)
+[E2E-FPS] 09_agents -> 12.8 fps, worst frame 101.2 ms over 34 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 09_agents: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 09_agents -> target/qual1/shots/09_agents_08.png
+[Bloom] region -> hall (intensity 0.55)
+[AgentChat] [Scout] VISIT openrouter .director_payload.md
+[DePIN] Scout earned 5.0 for unique visit: openrouter (wallet=25.0, rooms=5/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at openrouter
+[Scout] quorum APPROVED -> crystal at openrouter
+[E2E-FPS] 10_portal_pad -> 6.3 fps, worst frame 1926.0 ms over 27 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 10_portal_pad: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 10_portal_pad -> target/qual1/shots/10_portal_pad_09.png
+[TELEPORT] -> Floor 3 (Teal/Salmon)
+[E2E-FPS] 11_floor2_picker -> 15.1 fps, worst frame 86.8 ms over 38 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 11_floor2_picker: HUD suppressed (modal) teleport=in-frame (rect -1.75,-0.72 3.30x1.59)
+[E2E-SHOT] 11_floor2_picker -> target/qual1/shots/11_floor2_picker_10.png
+[AgentChat] [Scout] VISIT evolved_system .director_payload.md
+[DePIN] Scout earned 5.0 for unique visit: evolved_system (wallet=30.0, rooms=6/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at evolved_system
+[Scout] quorum APPROVED -> crystal at evolved_system
+[E2E-FPS] 12_nash_fountain -> 11.0 fps, worst frame 1824.4 ms over 47 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 12_nash_fountain: gist_wall=[-0.55,0.45..-0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 12_nash_fountain -> target/qual1/shots/12_nash_fountain_11.png
+[E2E-FPS] 13_door_prompt -> 16.4 fps, worst frame 90.0 ms over 45 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 13_door_prompt: gist_wall=[-0.55,0.45..-0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 13_door_prompt -> target/qual1/shots/13_door_prompt_12.png
+[Prompt] [ENTER] Open door: Matrix_CEAGENTS (Python)
+[AgentChat] [Scout] VISIT Gitautoworks .director_payload.md
+[DePIN] Scout earned 5.0 for unique visit: Gitautoworks (wallet=35.0, rooms=7/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at Gitautoworks
+[Scout] quorum APPROVED -> crystal at Gitautoworks
+[E2E-FPS] 14_plugboard -> 6.8 fps, worst frame 1382.0 ms over 25 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 14_plugboard: gist_wall=[-0.55,0.45..-0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 14_plugboard -> target/qual1/shots/14_plugboard_13.png
+[Bloom] region -> courtyard (intensity 0.95)
+[E2E-FPS] 15_forest_path -> 16.4 fps, worst frame 87.0 ms over 44 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 15_forest_path: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 15_forest_path -> target/qual1/shots/15_forest_path_14.png
+[Bloom] region -> hall (intensity 0.55)
+[AgentChat] [Scout] VISIT house-inference ORCHESTRATION.md
+[DePIN] Scout earned 5.0 for unique visit: house-inference (wallet=40.0, rooms=8/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at house-inference
+[Scout] quorum APPROVED -> crystal at house-inference
+[E2E-FPS] 16_room_interior -> 8.3 fps, worst frame 1318.4 ms over 32 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 16_room_interior: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 16_room_interior -> target/qual1/shots/16_room_interior_15.png
+[H37-BOUND] park=(1.6,2.6,4.7) door0z=8.0 dist=4.97 ledgerLen=69 rows=2 rendered=2608
+[H37-BOUND]  HDR0'c'@z5.80->(696,631) HDR11'e'@z4.70->(960,631) HDR22'0'@z3.60->(1224,631) | R00'f'@z6.02->(613,850) R017't'@z4.66->(971,850) R033'.'@z3.38->(1307,850) R10'7'@z6.02->(617,825) R117'O'@z4.66->(970,825) R133'.'@z3.38->(1303,825)
+[E2E-FPS] 17_hall_windows -> 15.3 fps, worst frame 120.3 ms over 40 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 17_hall_windows: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 17_hall_windows -> target/qual1/shots/17_hall_windows_16.png
+[Prompt] [CLICK] Read book: android_domain.py
+[AgentChat] [Scout] VISIT Matrix_CESERVERS anti_hang_watchdog.py
+[DePIN] Scout earned 5.0 for unique visit: Matrix_CESERVERS (wallet=45.0, rooms=9/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at Matrix_CESERVERS
+[Scout] quorum APPROVED -> crystal at Matrix_CESERVERS
+[E2E-FPS] 18_poster_wall -> 9.1 fps, worst frame 1730.0 ms over 38 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 18_poster_wall: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[TELEPORT] -> Floor 1 (Amber/Cerulean)
+[E2E-SHOT] 18_poster_wall -> target/qual1/shots/18_poster_wall_17.png
+[GlTrace] frame 600: no GL errors
+[E2E-NOTE] gist wall lines=13
+[E2E-FPS] 19_gist_wall -> 9.0 fps, worst frame 157.6 ms over 23 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 19_gist_wall: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 19_gist_wall -> target/qual1/shots/19_gist_wall_18.png
+[Bloom] region -> courtyard (intensity 0.95)
+[AgentChat] [Scout] VISIT DARWIN_GRID_DEPLOY .gitignore
+[DePIN] Scout earned 5.0 for unique visit: DARWIN_GRID_DEPLOY (wallet=50.0, rooms=10/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at DARWIN_GRID_DEPLOY
+[Scout] quorum APPROVED -> crystal at DARWIN_GRID_DEPLOY
+[E2E-FPS] 20_sky -> 8.7 fps, worst frame 2203.9 ms over 40 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 20_sky: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 20_sky -> target/qual1/shots/20_sky_19.png
+[Bloom] region -> forest (intensity 0.75)
+[Weather] rain — score slows to 72 BPM
+[E2E-FPS] 21_water -> 20.1 fps, worst frame 66.1 ms over 54 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 21_water: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 21_water -> target/qual1/shots/21_water_20.png
+[TELEPORT] -> Mansion
+[DedupeSentinel] scanned 64 files across 167 repos ? 0 duplicate pair(s)
+[AgentChat] [Scout] VISIT E2E_Final_Test .director_payload.md
+[DePIN] Scout earned 5.0 for unique visit: E2E_Final_Test (wallet=55.0, rooms=11/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at E2E_Final_Test
+[Scout] quorum APPROVED -> crystal at E2E_Final_Test
+[E2E-FPS] 22_mansion_spawn -> 9.6 fps, worst frame 2167.4 ms over 44 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 22_mansion_spawn: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 22_mansion_spawn -> target/qual1/shots/22_mansion_spawn_21.png
+[E2E-FPS] 23_options_main -> 17.1 fps, worst frame 102.6 ms over 46 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 23_options_main: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 23_options_main -> target/qual1/shots/23_options_main_22.png
+[AgentChat] [Scout] VISIT Flappy_bird_except_python_and .director_payload.md
+[DePIN] Scout earned 5.0 for unique visit: Flappy_bird_except_python_and (wallet=60.0, rooms=12/167)
+[Scout] quorum verdict for Flappy_bird_except_python_and: REJECTED
+[E2E-FPS] 24_options_video -> 9.7 fps, worst frame 1896.5 ms over 42 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 24_options_video: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 24_options_video -> target/qual1/shots/24_options_video_23.png
+[E2E-FPS] 25_options_controls -> 19.3 fps, worst frame 66.7 ms over 51 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 25_options_controls: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 25_options_controls -> target/qual1/shots/25_options_controls_24.png
+[AgentChat] [Scout] VISIT Matrix_CEKAI9000 autonomous_loop.py
+[DePIN] Scout earned 5.0 for unique visit: Matrix_CEKAI9000 (wallet=65.0, rooms=13/167)
+[Scout] quorum verdict for Matrix_CEKAI9000: REJECTED
+[E2E-FPS] 26_options_audio -> 10.7 fps, worst frame 1707.7 ms over 44 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 26_options_audio: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 26_options_audio -> target/qual1/shots/26_options_audio_25.png
+[E2E-FPS] 27_options_music -> 17.9 fps, worst frame 94.1 ms over 48 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 27_options_music: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 27_options_music -> target/qual1/shots/27_options_music_26.png
+[AgentChat] [Scout] VISIT AegisAgent .director_payload.md
+[DePIN] Scout earned 5.0 for unique visit: AegisAgent (wallet=70.0, rooms=14/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at AegisAgent
+[Scout] quorum APPROVED -> crystal at AegisAgent
+[E2E-FPS] 28_options_agents -> 9.2 fps, worst frame 2076.3 ms over 41 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 28_options_agents: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 28_options_agents -> target/qual1/shots/28_options_agents_27.png
+[E2E-FPS] 29_options_evolution -> 18.1 fps, worst frame 130.7 ms over 49 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 29_options_evolution: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 29_options_evolution -> target/qual1/shots/29_options_evolution_28.png
+[AgentChat] [Scout] VISIT E2E_Test_Deploy_6172 .director_payload.md
+[DePIN] Scout earned 5.0 for unique visit: E2E_Test_Deploy_6172 (wallet=75.0, rooms=15/167)
+[AgentChat] [Quorum] scout proposal — TODO crystal at E2E_Test_Deploy_6172
+[Scout] quorum APPROVED -> crystal at E2E_Test_Deploy_6172
+[E2E-FPS] 30_options_theme -> 11.8 fps, worst frame 1909.6 ms over 51 real frames (target >=30, budget SUCCESS_METRICS.md step 78)
+[E2E-HUD-GATE] 30_options_theme: gist_wall=[-0.55,0.45..0.00,0.93] telemetry=[-0.55,-0.07..0.06,0.21] chat=[-0.55,-0.61..0.18,-0.10] bot_roster=[0.42,0.26..1.00,0.67] minimap=[0.51,-0.34..0.96,-0.03] overlaps=0
+[E2E-SHOT] 30_options_theme -> target/qual1/shots/30_options_theme_29.png
+[E2E] tour complete — 30 waypoints captured. Exiting.
+[GeoAudit] dumped 175549 records, 59 snapshots -> C:\Users\viper\AIGEN_SYS\repos\mindpalace\.worktrees\t_50d9d90b\target\qual1\shots\geo_audit_out\meta.json
+[E2E-HUD-GATE] SUMMARY failures=0 (OVERLAP = two visible primary slots intersect on screen; OFFFRAME = slot anchor left the frustum)
+[E2E] HUD gate passed — 0 failures. Exiting 0.
+[BDI] bridge stopped
+gltrace_rc=0

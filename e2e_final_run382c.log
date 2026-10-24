@@ -1,0 +1,92 @@
+=== [1/4] BUILD ===
+[INFO] BUILD SUCCESS
+=== [2/4] SELFTEST ===
+e2e: ollama preflight â€” warm llama3.2:1b...
+e2e: ollama preflight OK
+===== RESULT: 87 passed, 0 failed ====
+selftest gate: ===== RESULT: 87 passed, 0 failed ====
+=== [3/4] E2E WAYPOINT TOUR ===
+[E2E] enabled, waypoints + labeled shots -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots (clock pinned to 12:00 for deterministic brightness)
+[E2E-SHOT] 01_spawn_view -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/01_spawn_view_00.png
+[E2E-SHOT] 02_rotor_rings -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/02_rotor_rings_01.png
+[E2E-SHOT] 03_turing_tape -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/03_turing_tape_02.png
+[E2E-SHOT] 04_banburismus_gauge -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/04_banburismus_gauge_03.png
+[E2E-SHOT] 05_main_hall -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/05_main_hall_04.png
+[E2E-SHOT] 06_room_doorway -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/06_room_doorway_05.png
+[E2E-SHOT] 07_todo_crystals -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/07_todo_crystals_06.png
+[E2E-SHOT] 08_hall_lookback -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/08_hall_lookback_07.png
+[E2E-SHOT] 09_agents -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/09_agents_08.png
+[E2E-SHOT] 10_portal_pad -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/10_portal_pad_09.png
+[E2E-SHOT] 11_floor2_picker -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/11_floor2_picker_10.png
+[E2E-SHOT] 12_nash_fountain -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/12_nash_fountain_11.png
+[E2E-SHOT] 13_door_prompt -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/13_door_prompt_12.png
+[E2E-SHOT] 14_plugboard -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/14_plugboard_13.png
+[E2E-SHOT] 15_forest_path -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/15_forest_path_14.png
+[E2E-SHOT] 16_room_interior -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/16_room_interior_15.png
+[E2E-SHOT] 17_hall_windows -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/17_hall_windows_16.png
+[E2E-SHOT] 18_poster_wall -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/18_poster_wall_17.png
+[E2E-SHOT] 19_gist_wall -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/19_gist_wall_18.png
+[E2E-SHOT] 20_sky -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/20_sky_19.png
+[E2E-SHOT] 21_water -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/21_water_20.png
+[E2E-SHOT] 22_mansion_spawn -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/22_mansion_spawn_21.png
+[E2E-SHOT] 23_options_main -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/23_options_main_22.png
+[E2E-SHOT] 24_options_video -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/24_options_video_23.png
+[E2E-SHOT] 25_options_controls -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/25_options_controls_24.png
+[E2E-SHOT] 26_options_audio -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/26_options_audio_25.png
+[E2E-SHOT] 27_options_music -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/27_options_music_26.png
+[E2E-SHOT] 28_options_agents -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/28_options_agents_27.png
+[E2E-SHOT] 29_options_evolution -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/29_options_evolution_28.png
+[E2E-SHOT] 30_options_theme -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/.worktrees/t_50d9d90b/target/e2e-shots/30_options_theme_29.png
+[E2E] tour complete — 30 waypoints captured. Exiting.
+[E2E-HUD-GATE] SUMMARY failures=0 (OVERLAP = two visible primary slots intersect on screen; OFFFRAME = slot anchor left the frustum)
+[E2E] HUD gate passed — 0 failures. Exiting 0.
+[E2E-SHOT] 22_mansion_spawn -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/22_mansion_spawn_21.png
+[E2E-SHOT] 23_options_main -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/23_options_main_22.png
+[E2E-SHOT] 24_options_video -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/24_options_video_23.png
+[E2E-SHOT] 25_options_controls -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/25_options_controls_24.png
+[E2E-SHOT] 26_options_audio -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/26_options_audio_25.png
+[E2E-SHOT] 27_options_music -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/27_options_music_26.png
+[E2E-SHOT] 28_options_agents -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/28_options_agents_27.png
+[E2E-SHOT] 29_options_evolution -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/29_options_evolution_28.png
+[E2E-SHOT] 30_options_theme -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/30_options_theme_29.png
+[E2E-SHOT] 31_door_mid_dissolve -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/31_door_mid_dissolve_30.png
+[E2E-SHOT] 32_door_portal_open -> C:/Users/viper/AIGEN_SYS/repos/mindpalace/target/e2e-shots/32_door_portal_open_31.png
+[E2E] tour complete — 32 waypoints captured. Exiting.
+[E2E-HUD-GATE] SUMMARY failures=0 (OVERLAP = two visible primary slots intersect on screen; OFFFRAME = slot anchor left the frustum)
+[E2E] HUD gate passed — 0 failures. Exiting 0.
+=== [4/4] VERIFY SHOTS (exist + non-black) ===
+01_spawn_view: 01_spawn_view_00.png 1920x1080 brightness=7.9 OK
+02_rotor_rings: 02_rotor_rings_01.png 1920x1080 brightness=6.0 OK
+03_turing_tape: 03_turing_tape_02.png 1920x1080 brightness=1.9 OK
+04_banburismus_gauge: 04_banburismus_gauge_03.png 1920x1080 brightness=3.9 OK
+05_main_hall: 05_main_hall_04.png 1920x1080 brightness=7.9 OK
+06_room_doorway: 06_room_doorway_05.png 1920x1080 brightness=5.7 OK
+07_todo_crystals: 07_todo_crystals_06.png 1920x1080 brightness=4.8 OK
+08_hall_lookback: 08_hall_lookback_07.png 1920x1080 brightness=5.8 OK
+09_agents: 09_agents_08.png 1920x1080 brightness=9.0 OK
+10_portal_pad: 10_portal_pad_09.png 1920x1080 brightness=5.0 OK
+11_floor2_picker: 11_floor2_picker_10.png 1920x1080 brightness=4.8 OK
+12_nash_fountain: 12_nash_fountain_11.png 1920x1080 brightness=5.7 OK
+13_door_prompt: 13_door_prompt_12.png 1920x1080 brightness=4.5 OK
+14_plugboard: 14_plugboard_13.png 1920x1080 brightness=3.7 OK
+15_forest_path: 15_forest_path_14.png 1920x1080 brightness=5.1 OK
+16_room_interior: 16_room_interior_15.png 1920x1080 brightness=7.2 OK
+17_hall_windows: 17_hall_windows_16.png 1920x1080 brightness=4.8 OK
+18_poster_wall: 18_poster_wall_17.png 1920x1080 brightness=5.2 OK
+19_gist_wall: 19_gist_wall_18.png 1920x1080 brightness=6.3 OK
+20_sky: 20_sky_19.png 1920x1080 brightness=3.8 OK
+21_water: 21_water_20.png 1920x1080 brightness=5.6 OK
+22_mansion_spawn: 22_mansion_spawn_21.png 1920x1080 brightness=8.7 OK
+23_options_main: 23_options_main_22.png 1920x1080 brightness=8.6 OK
+24_options_video: 24_options_video_23.png 1920x1080 brightness=8.8 OK
+25_options_controls: 25_options_controls_24.png 1920x1080 brightness=8.9 OK
+26_options_audio: 26_options_audio_25.png 1920x1080 brightness=8.7 OK
+27_options_music: 27_options_music_26.png 1920x1080 brightness=8.8 OK
+28_options_agents: 28_options_agents_27.png 1920x1080 brightness=8.7 OK
+29_options_evolution: 29_options_evolution_28.png 1920x1080 brightness=9.0 OK
+30_options_theme: 30_options_theme_29.png 1920x1080 brightness=8.9 OK
+portal color pair: amber=1301 cerulean=457 OK
+door prompt magenta text: 133 OK
+HUD slot gate: 0 overlaps, all slots in-frame OK
+VERIFY-PASS
+e2e_rc=0
