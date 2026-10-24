@@ -4176,6 +4176,7 @@ public class GameEngine {
         if (deployManager != null) deployManager.shutdown();
         audio.cleanup();
         music.cleanup();
+        if (world != null) world.cleanup(); // MP-008 (#154): frees preview FBOs
         if (particleBatch != null) particleBatch.cleanup();
         renderer.cleanup();
         bloom.cleanup();

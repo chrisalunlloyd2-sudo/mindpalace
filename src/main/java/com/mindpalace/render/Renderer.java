@@ -19,6 +19,23 @@ public class Renderer {
     public void bindBasicShader() { basicShader.bind(); }
     public Matrix4f getProjectionMatrix() { return projectionMatrix; }
     public Matrix4f getViewMatrix() { return viewMatrix; }
+    public Vector3f getViewPos() { return viewPos; }
+    public int getWidth() { return width; }
+    public int getHeight() { return height; }
+
+    /**
+     * MP-008 (#154): re-latch the basic shader's per-frame matrices/viewPos
+     * from an arbitrary camera (preview-bake restores). Same set that
+     * beginFrame writes, minus light/fog/tint which the bake leaves as-is.
+     */
+    public void setUniformsOnly(Matrix4f projection, Matrix4f view, Vector3f viewPos) {
+        projectionMatrix = projection;
+        viewMatrix.set(view);
+        this.viewPos.set(viewPos);
+        basicShader.setUniform("projection", projectionMatrix);
+        basicShader.setUniform("view", view);
+        basicShader.setUniform("viewPos", viewPos);
+    }
     private Vector3f viewPos = new Vector3f();
     private Shader hologramShader;
     private Shader portalShader;   // MP-007 (#153): door-dissolve portal quad
@@ -356,6 +373,18 @@ public class Renderer {
     public void drawPortalQuad(Vector3f center, Vector3f size,
                                float r, float g, float b,
                                float alpha, float rim, int portalPlane) {
+        drawPortalQuad(center, size, r, g, b, alpha, rim, portalPlane, 0, 0f);
+    }
+
+    /** MP-008 (#154): overload with baked-interior preview. previewTex &gt; 0
+     *  samples the baked room interior (plane-2 remap, parallax + shimmer);
+     *  previewTex == 0 draws the plain MP-007 rim sheet. Hijacks texture
+     *  unit 0 for the pane's sampler — safe here, every later drawMesh
+     *  re-binds its own texture to unit 0. */
+    public void drawPortalQuad(Vector3f center, Vector3f size,
+                               float r, float g, float b,
+                               float alpha, float rim, int portalPlane,
+                               int previewTex, float time) {
         Matrix4f model = new Matrix4f().translate(center).scale(size);
         portalShader.bind();
         portalShader.setUniform("projection", projectionMatrix);
@@ -367,6 +396,17 @@ public class Renderer {
         portalShader.setUniform("alpha", alpha);
         portalShader.setUniform("rimWidth", rim);
         portalShader.setUniform("portalPlane", portalPlane);
+        boolean preview = previewTex > 0;
+        portalShader.setUniform("previewOn", preview ? 1f : 0f);
+        if (preview) {
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, previewTex);
+            portalShader.setUniform("previewTex", 0);
+            portalShader.setUniform("previewParallax", 0.12f);
+            portalShader.setUniform("previewShimmer", 0.18f);
+            portalShader.setUniform("time", time);
+            portalShader.setUniform("viewPos", viewPos);
+        }
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDepthMask(false);

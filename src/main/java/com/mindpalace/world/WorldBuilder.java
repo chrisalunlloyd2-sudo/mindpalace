@@ -139,11 +139,17 @@ public class WorldBuilder {
     /** MP-007 (#153): door-dissolve portal sheet toggle (MP_DOOR_DISSOLVE=0 → pure MP-006). */
     private final boolean doorDissolveEnabled;
 
+    /** MP-008 (#154): baked interior previews on the portal sheet (MP_DOOR_PREVIEW=0 → off). */
+    private final boolean doorPreviewEnabled;
+    private RoomPreviewBank previewBank; // lazy: only if doorPreviewEnabled
+    private boolean interiorOnly = false; // true while baking a preview (see renderRoom)
+
     public WorldBuilder() {
         repoMapper = new RepoMapper();
         populator = new RoomPopulator();
         fogOfWar = new FogOfWar(4.0f, 8.0f);
         doorDissolveEnabled = !"0".equals(System.getenv("MP_DOOR_DISSOLVE"));
+        doorPreviewEnabled = !"0".equals(System.getenv("MP_DOOR_PREVIEW"));
     }
 
     public FogOfWar getFogOfWar() { return fogOfWar; }
@@ -304,6 +310,57 @@ public class WorldBuilder {
             // Fog of war: skip fogged rooms until their hex is revealed
             if (room.isFogged() && !fogOfWar.isRoomRevealed(room)) continue;
             renderRoom(r, room);
+        }
+
+        // MP-008 (#154): pump the preview bank — at most ONE room baked per
+        // frame, drawn from the same visible+revealed set we just rendered.
+        if (doorPreviewEnabled && doorDissolveEnabled) {
+            if (previewBank == null) {
+                previewBank = new RoomPreviewBank(this::renderRoomInterior);
+            }
+            List<Room> visible = new ArrayList<>();
+            for (Room room : rooms) {
+                Vector3f cc = room.getRoomCenter();
+                if (camPos.distance(cc) > ROOM_CULL_DISTANCE) continue;
+                if (room.isFogged() && !fogOfWar.isRoomRevealed(room)) continue;
+                visible.add(room);
+            }
+            if (previewBank.bakeOne(r, visible) > 0) previewsBakedThisSession++;
+            sheetShimmerPhase += 0.016f; // ~1 frame @60fps; shimmer-only, e2e-stable
+        }
+    }
+
+    /** MP-008 evidence counter (F-visible: "[PreviewBank] baked=" in e2e logs). */
+    private int previewsBakedThisSession = 0;
+    public int getPreviewsBaked() { return previewsBakedThisSession; }
+
+    /** MP-008: shimmer clock, advanced once per rendered frame in render(). */
+    private float sheetShimmerPhase = 0f;
+
+    /** MP-008 (#154): release the preview bank's GL resources (idempotent). */
+    public void cleanup() {
+        if (previewBank != null) {
+            previewBank.dispose();
+            previewBank = null;
+        }
+    }
+
+    /** MP-008: preview texture for a room (0 = not baked yet / feature off). */
+    public int getPreviewTexture(Room room) {
+        return previewBank == null ? 0 : previewBank.getPreviewTexture(room);
+    }
+
+    /**
+     * MP-008 (#154): draw one room's interior into the bank's currently-bound
+     * 256² bake FBO. The bake camera is parked inside the bake pass (bank
+     * owns Camera matrices — WorldBuilder only supplies the geometry draw).
+     */
+    private void renderRoomInterior(Renderer r, Room room) {
+        interiorOnly = true;
+        try {
+            renderRoom(r, room);
+        } finally {
+            interiorOnly = false;
         }
     }
 
@@ -1097,15 +1154,21 @@ public class WorldBuilder {
         // Portal sheet — fades in inside the doorway while (and after) the
         // leaf slides up; fully closed doors draw nothing (the opaque leaf is
         // the whole doorway, pixel-identical to MP-006).
+        // MP-008 (#154): when this room's interior preview is baked, the
+        // sheet becomes a sampled window onto the baked interior with
+        // view-angle parallax + a gentle shimmer. Not baked yet → plain
+        // MP-007 rim sheet (also the MP_DOOR_PREVIEW=0 path).
         if (doorDissolveEnabled && open > 0f) {
             float[] dt = districtDoorColor(room.getFloor());
             float portalAlpha = Math.min(0.85f, open * 1.25f);     // lit by ~80% of the ramp
+            int previewTex = doorPreviewEnabled ? getPreviewTexture(room) : 0;
             r.setTint(1f, 1f, 1f);
             r.drawPortalQuad(
                 new Vector3f(doorApertureX + hallDir * 0.08f, c.y - h / 2f + dw / 2f, c.z),
                 new Vector3f(0.06f, dw - 0.08f, Room.DOOR_WIDTH - 0.08f),
                 dt[0] * 1.35f, dt[1] * 1.35f, dt[2] * 1.35f,
-                portalAlpha, 0.22f, 2);                            // plane 2 = thin-X doorway quad (Y/Z rim)
+                portalAlpha, 0.22f, 2,                             // plane 2 = thin-X doorway quad (Y/Z rim)
+                previewTex, sheetShimmerPhase);
             r.setTint(tint[0] * glow, tint[1] * glow, tint[2] * glow);
         }
 
