@@ -80,3 +80,18 @@ curl http://127.0.0.1:11435/stats               # counters + 20-event ring
 
 Never point anything new at `:11434`. If you add a caller, give it an
 X-MP-Caller class and route it through :11435.
+
+## Full-estate sweep addendum (2026-10-23, late)
+
+Estate-wide grep over `AIGEN_SYS/repos/**` (*.py/*.java/*.js/*.ps1/*.sh,
+excluding node_modules/__pycache__/chats/worktrees and the gateway itself +
+its test file) now returns **zero** direct `11434` callers:
+
+- Late finds re-pointed + committed: GEMINIX_ORCHESTRATOR.py (Aegis_Agents),
+  model_pacer.py (batch_termux), model_steer.py (brute_foundry),
+  fetch_data.py aider tip (living_ascii_art), desktop_moe_orchestrator.py
+  (Machine2), slm_api_gate.py primary-tree follow-up (mindpalace b6f0126).
+- Deliberate non-callers left as-is: repo_scanner.py STALE_PORTS lint tuple
+  (flags 11434/11435 as dead-device ports by design); MatrixCE
+  inference_offload_router.py (LAN-peer topology, not this machine); SIMS1337
+  SLMAgent.java/ModelBus.java historical comments.
