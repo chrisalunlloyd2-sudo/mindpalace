@@ -7449,7 +7449,6 @@ public class GameEngine {
             energyOk = false;
         }
         if (energyOk) pass++; else fail++;
-        if (energyOk) pass++; else fail++;
 
         // 67. (#133) H42 cost telemetry — cost column + bill query; write
         //     events carry chars/4; costSummary sums per category.
