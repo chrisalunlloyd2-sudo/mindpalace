@@ -194,6 +194,21 @@ except FileNotFoundError:
     print("HUD slot gate: tour log missing — FAIL")
     hud_fail += 1
 fail += hud_fail
+# #255: MP-004 worst-frame gate double-check — same pattern as the HUD gate
+# (the tour's own exit code 2 also encodes a PERF_FAIL; the script never reads
+# the java exit status, so this grep is the verify-side enforcement).
+perf_fail = 0
+try:
+    tour = open("target/e2e_tour.log", "r", errors="replace").read()
+    perf_fail += tour.count("[PERF_FAIL]")
+    if perf_fail:
+        print(f"PERF gate: {perf_fail} [PERF_FAIL] line(s) — FAIL")
+    else:
+        print("PERF gate: no [PERF_FAIL] — OK" if "[PERF_" in tour else "PERF gate: not armed in this run (no -Dmindpalace.e2e.maxFrameMs) — OK")
+except FileNotFoundError:
+    print("PERF gate: tour log missing — FAIL")
+    perf_fail += 1
+fail += perf_fail
 print("VERIFY-PASS" if fail == 0 else f"VERIFY-FAIL ({fail})")
 sys.exit(0 if fail == 0 else 1)
 PYEOF
