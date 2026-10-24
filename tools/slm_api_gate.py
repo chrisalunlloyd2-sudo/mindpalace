@@ -25,7 +25,7 @@ import sys
 import time
 import urllib.request
 
-OLLAMA = "http://localhost:11434/api/generate"
+OLLAMA = "http://127.0.0.1:11435/api/generate"  # UNIFY-1: via local orchestrator gateway
 MODEL = "llama3.2:3b"
 NUM_CTX = 2048          # 3b defaults to n_ctx=131072 -> 4GB CPU KV cache -> thrash/OOM
 KEEP_ALIVE = "30m"

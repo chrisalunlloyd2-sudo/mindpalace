@@ -7,32 +7,23 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Ollama HTTP API client.
- * Chat completions, model listing, embedding generation.
+ * Ollama HTTP API client — routed EXCLUSIVELY through the local orchestrator
+ * gateway (127.0.0.1:11435, UNIFY-1 + UNIFY-2). Chat completions, model
+ * listing, embedding generation. Every request is tagged X-MP-Caller: "game"
+ * so the gateway queues it at game priority (game > crew > batch); residency
+ * and keep_alive are gateway-owned (one model at a time).
  */
 public class OllamaClient {
-    private static final String BASE = "http://localhost:11434/api";
+    private static final String BASE = "http://127.0.0.1:11435/api";
+    private static final String CALLER = "game"; // gateway queue priority: game > crew > batch
     private final OkHttpClient http;
     private final Gson gson = new Gson();
 
-    // ONE-MODEL GATE: cold-shot policy means exactly one model may be in flight
-    // at any moment. The scheduler already serializes, but this lock makes the
-    // invariant physical — a second caller blocks until the first model unloads.
+    // ONE-MODEL GATE (game-side serialization only — MODEL residency itself is
+    // gateway-owned as of UNIFY-2, do not send eviction/keep_alive from here).
+    // The scheduler already serializes, but this lock makes the invariant
+    // physical — a second caller blocks until the first model unloads.
     private final Object modelGate = new Object();
-
-    // Keep-alive window for the one resident model. "0" restores the old cold-shot
-    // (unload after every reply). Measured 2026-10-03: unload-per-call costs 3.8-5.6 s
-    // per call vs ~0.5 s hot (first disk-cold load up to 86 s). Override with
-    // -Dmindpalace.ollama.keepAlive=... or env MP_OLLAMA_KEEP_ALIVE (e.g. "0", "2m", "5m").
-    private static final String KEEP_ALIVE = resolveKeepAlive();
-    // The one hot model; guarded by modelGate. A different model evicts it first,
-    // so at most one model stays resident regardless of Ollama's own limits.
-    private String hotModel;
-
-    private static String resolveKeepAlive() {
-        String v = System.getProperty("mindpalace.ollama.keepAlive", System.getenv("MP_OLLAMA_KEEP_ALIVE"));
-        return (v == null || v.isBlank()) ? "5m" : v.trim();
-    }
 
     // model -> does Ollama report native tool-calling for it (cached; #144)
     private final java.util.concurrent.ConcurrentHashMap<String, Boolean> toolSupport = new java.util.concurrent.ConcurrentHashMap<>();
@@ -50,8 +41,7 @@ public class OllamaClient {
         try {
             JsonObject b = new JsonObject();
             b.addProperty("model", model);
-            Request r = new Request.Builder().url(BASE + "/show")
-                .post(RequestBody.create(b.toString(), MediaType.parse("application/json"))).build();
+            Request r = post(BASE + "/show", b.toString()).build();
             try (Response resp = http.newCall(r).execute()) {
                 if (resp.isSuccessful() && resp.body() != null) {
                     JsonObject o = gson.fromJson(resp.body().string(), JsonObject.class);
@@ -91,26 +81,25 @@ public class OllamaClient {
         body.add("options", opts);
     }
 
+    // UNIFY-2: keep_alive is stamped by the gateway (KEEP_ALIVE "5m"); the game
+    // no longer sends its own value. Kept as a no-op so call sites compile.
     private static void applyKeepAlive(JsonObject body) {
-        if (KEEP_ALIVE.matches("\\d+")) body.addProperty("keep_alive", Long.parseLong(KEEP_ALIVE));
-        else body.addProperty("keep_alive", KEEP_ALIVE);
+        body.remove("keep_alive");
     }
 
-    /** Caller must hold modelGate. Unloads the previously hot model when switching. */
+    private static okhttp3.Request.Builder post(String url, String json) {
+        return new okhttp3.Request.Builder().url(url)
+            .post(RequestBody.create(json, MediaType.parse("application/json")))
+            .header("X-MP-Caller", CALLER);
+    }
+
+    /** Caller must hold modelGate. No-op: residency is gateway-owned (UNIFY-2). */
+    @SuppressWarnings("unused")
     private void evictPreviousModelLocked(String model) {
-        String prev = hotModel;
-        hotModel = model;
-        if (prev == null || prev.equals(model) || "0".equals(KEEP_ALIVE)) return;
-        try {
-            JsonObject b = new JsonObject();
-            b.addProperty("model", prev);
-            b.addProperty("prompt", "");
-            b.addProperty("stream", false);
-            b.addProperty("keep_alive", 0);
-            Request r = new Request.Builder().url(BASE + "/generate")
-                .post(RequestBody.create(b.toString(), MediaType.parse("application/json"))).build();
-            try (Response resp = http.newCall(r).execute()) { /* best effort */ }
-        } catch (IOException ignored) { /* eviction is best effort; the next load still works */ }
+        // UNIFY-2: the game no longer evicts. The gateway keeps ONE model
+        // resident (keep_alive "5m") and swaps it serially per job; a direct
+        // eviction POST through the gateway would enqueue a pointless inference
+        // job behind the queue. Left as a no-op stub so call sites keep compiling.
     }
 
     public OllamaClient() {
@@ -120,10 +109,11 @@ public class OllamaClient {
             .build();
     }
 
-    /** Check if Ollama is reachable. */
+    /** Check if the gateway is reachable (GET /tags proxies to Ollama). */
     public boolean isAvailable() {
         try {
-            Request r = new Request.Builder().url(BASE + "/tags").get().build();
+            Request r = new Request.Builder().url(BASE + "/tags")
+                .header("X-MP-Caller", CALLER).get().build();
             try (Response resp = http.newCall(r).execute()) {
                 return resp.isSuccessful();
             }
@@ -132,11 +122,12 @@ public class OllamaClient {
         }
     }
 
-    /** List available models. */
+    /** List available models (GET /tags via the gateway). */
     public List<String> listModels() {
         List<String> models = new ArrayList<>();
         try {
-            Request r = new Request.Builder().url(BASE + "/tags").get().build();
+            Request r = new Request.Builder().url(BASE + "/tags")
+                .header("X-MP-Caller", CALLER).get().build();
             try (Response resp = http.newCall(r).execute()) {
                 if (resp.body() == null) return models;
                 JsonObject obj = gson.fromJson(resp.body().string(), JsonObject.class);
@@ -162,8 +153,8 @@ public class OllamaClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
-        // ONE-HOT: the model stays resident for KEEP_ALIVE (default 5m); a different
-        // model evicts it (see evictPreviousModelLocked). "0" = old cold-shot policy.
+        // UNIFY-2: residency + keep_alive are gateway-owned; body carries only
+        // model/stream/messages/tools (+ num_ctx cap). Gateway stamps 5m itself.
         applyKeepAlive(body);
         applyOptions(body);
 
@@ -185,10 +176,7 @@ public class OllamaClient {
         try {
             synchronized (modelGate) {
                 evictPreviousModelLocked(model);
-                Request r = new Request.Builder()
-                    .url(BASE + "/chat")
-                    .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
-                    .build();
+                Request r = post(BASE + "/chat", body.toString()).build();
                 try (Response resp = http.newCall(r).execute()) {
                     if (!resp.isSuccessful() || resp.body() == null) return null;
                     JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
@@ -225,7 +213,7 @@ public class OllamaClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
-        // Same one-hot keep-alive policy as chat().
+        // Same gateway-owned one-hot policy as chat() (UNIFY-2).
         applyKeepAlive(body);
         applyOptions(body);
 
@@ -256,10 +244,7 @@ public class OllamaClient {
         try {
             synchronized (modelGate) {
                 evictPreviousModelLocked(model);
-                Request r = new Request.Builder()
-                    .url(BASE + "/chat")
-                    .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
-                    .build();
+                Request r = post(BASE + "/chat", body.toString()).build();
                 try (Response resp = http.newCall(r).execute()) {
                     if (!resp.isSuccessful() || resp.body() == null) return new ToolResult(null, List.of());
                     JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
@@ -316,10 +301,7 @@ public class OllamaClient {
         body.addProperty("model", "nomic-embed-text");
         body.addProperty("prompt", text);
         try {
-            Request r = new Request.Builder()
-                .url(BASE + "/embeddings")
-                .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
-                .build();
+            Request r = post(BASE + "/embeddings", body.toString()).build();
             try (Response resp = http.newCall(r).execute()) {
                 if (!resp.isSuccessful() || resp.body() == null) return null;
                 JsonObject result = gson.fromJson(resp.body().string(), JsonObject.class);
