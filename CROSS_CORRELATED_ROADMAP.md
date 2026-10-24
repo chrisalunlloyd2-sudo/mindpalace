@@ -380,7 +380,10 @@ assembler composes into the world. Seed with 3 real blocks: **bloom** (render
 sector), **portal** (teleporter sector), **text** (font sector). Then grow the
 registry toward "enough blocks to populate anything."
 
-**Status:** `NOT-STARTED` (vision only; bloom + live-add are the two existing seeds).
+**Status:** `SHIPPED` — block-assembly shells 1-3 landed 2026-10-04 (entries
+below): `Block`, `BlockRegistry`, `FireBlock`, `FireflyBlock`, `FrostBlock`,
+`WeatherBlock`, `SelfTestProbe` under `src/main/java/com/mindpalace/blocks/`;
+registry grows from the two seeds (bloom, live-add) toward the full vision.
 
 ## 2026-10-04 (b) · Block-assembly shells 1-3 + DePIN-selftest ordering fix
 - [x] MP-20 Block/BlockRegistry/FireBlock — commit b4b987f (compiled under real openjdk 17.0.20.1, behavioral proof: lawful flicker band, bit-identical determinism, failed-selftest blocks stay dark / bool-false law; hidden-block applyLuma leak caught by probe, fixed to ACTIVE-only)

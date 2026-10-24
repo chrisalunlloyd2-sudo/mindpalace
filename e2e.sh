@@ -56,7 +56,15 @@ rm -rf "$DIR"; mkdir -p "$DIR"
 # world live and no crash in the log. World build ~5-8min + 22 waypoints ×
 # (6s framing + FPS eval at 3-13 fps on this box) needs ~1200s. Same raise
 # precedent as 420→700 above.
+# #255: the MP-004 worst-frame gate (GameEngine [PERF_OK/FAIL]) was built but
+# e2e.sh never armed it. Thresholds from the box's own baselines: quiet runs
+# peak at 54ms/waypoint (2026-10-07_final_quiet: n=21, max 54.2ms); a
+# co-resident live-game tour shows 0.5-1.2s stalls at ~half the waypoints but
+# still averages 39fps. So: limit 500ms, N=20 of 32 — fails ONLY when the
+# whole tour is contended/regressed, tolerates a few genuine spikes; still
+# only warns on a software rasteriser (engine-side).
 timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+  -Dmindpalace.e2e.maxFrameMs=500 -Dmindpalace.e2e.maxOverWaypoints=20 \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --e2e "$DIR" --time 21 > /tmp/e2e_tour.log 2>&1
 grep -aE "\[E2E\]|\[E2E-SHOT\]|\[E2E-HUD-GATE\] SUMMARY" /tmp/e2e_tour.log

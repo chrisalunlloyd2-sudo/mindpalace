@@ -46,7 +46,7 @@
 - [x] **75** Room interiors II — shelves on the 4th wall (window wall), wall art = repo stars (02df8e0)
 - [x] **76** Minimap walls — wall segments render on the Tab map (02df8e0)
 - [x] **77** E2E waypoints 14–16 — forest path, room interior w/ walls, night window view (02df8e0)
-- [x] **78** Perf pass — HD 510 ≥30fps at all 16 waypoints, profile + tune LOD/fog (02df8e0; measured 120fps all 16)
+- [x] **78** Perf pass — HD 510 ≥30fps at all 16 waypoints, profile + tune LOD/fog (02df8e0; honest re-measure after 3797820 fixed the 1/120dt instrumentation bug: quiet 45.5fps avg / worst 54ms — the earlier "120fps" readout was the instrumentation bug, not real perf)
 
 ## PHASE C — Bots & Scouts (79–88)
 - [x] **79** H24 Scout NPC — firefly bot visiting rooms, `[Scout] VISIT <room> <book>` chat lines (f9d608a; selftest 47/0)
