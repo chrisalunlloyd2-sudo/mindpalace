@@ -1050,8 +1050,9 @@ public class WorldBuilder {
     /** Neutral fallback for floors beyond the palette (districts stay one color each). */
     private static final float[] DISTRICT_DOOR_FALLBACK = {0.40f, 0.25f, 0.14f};
 
-    /** District door color for a floor index (0-based), honoring config overrides. */
-    static float[] districtDoorColor(int floor) {
+    /** District door color for a floor index (0-based), honoring config overrides.
+     *  MP-009 (#155): public — the transporter swirl accents doors by district. */
+    public static float[] districtDoorColor(int floor) {
         int idx = Math.max(0, floor);
         if (idx >= DISTRICT_DOOR_COLORS.length) return DISTRICT_DOOR_FALLBACK;
         float[] base = DISTRICT_DOOR_COLORS[idx];

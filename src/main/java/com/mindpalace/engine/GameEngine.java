@@ -831,6 +831,15 @@ public class GameEngine {
         // Deploy system + animations
         deployManager = new DeployManager();
         animationSystem = new AnimationSystem();
+        // MP-009 (#155): transporter threshold effect — off when render.quality=low
+        // (system property) or MP_SWIRL=0 (env kill-switch, house MP_* style).
+        boolean swirlOn = !"low".equalsIgnoreCase(System.getProperty("mindpalace.render.quality", "high"))
+            && !"0".equals(System.getenv("MP_SWIRL"));
+        if (swirlOn) {
+            player.setTransporterFx(animationSystem);
+        } else {
+            System.out.println("[SWIRL] disabled (render.quality=low or MP_SWIRL=0)");
+        }
         deployManager.setCallback((status, msg) -> {
             System.out.println("[Deploy] " + status + ": " + msg);
             if (status == DeployManager.Status.DEPLOYED && player.getCurrentRoom() != null) {
@@ -8323,6 +8332,38 @@ public class GameEngine {
                     e2eWaypoint++; e2ePhaseTimer = 0;
                 }
             }
+            case 32 -> { // MP-009 (#155): transporter swirl blooming at the door threshold
+                Vector3f door0 = null; Room doorRoom = null;
+                for (Room rm : world.getRooms()) { // same pick as cases 30/31
+                    if (rm.getDoorPosition() != null && rm.getFloor() == 0) { door0 = rm.getDoorPosition(); doorRoom = rm; break; }
+                }
+                if (doorRoom == null) { // degenerate world: fall back to first door
+                    for (Room rm : world.getRooms()) { if (rm.getDoorPosition() != null) { door0 = rm.getDoorPosition(); doorRoom = rm; break; } }
+                }
+                if (shoot && door0 != null) {
+                    if (state != GameState.PLAYING) state = GameState.PLAYING;
+                    // Same fog-safe framing as cases 30/31 (2.5m standoff, eye +0.7).
+                    float towardHall = door0.x < 0 ? 2.5f : -2.5f;
+                    Vector3f stand = new Vector3f(door0.x + towardHall, door0.y + 0.7f, door0.z);
+                    p.set(stand);
+                    Vector3f aim = new Vector3f(door0).sub(stand).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                    // Evidence burst fired directly on the shared system (bypasses
+                    // the quality gate deliberately — the tour must capture the
+                    // effect deterministically even if a dev runs with MP_SWIRL=0).
+                    float[] district = com.mindpalace.world.WorldBuilder.districtDoorColor(doorRoom.getFloor());
+                    animationSystem.startTransporterSwirl(door0,
+                        new Vector3f(district[0], district[1], district[2]),
+                        com.mindpalace.world.PortalTheme.forPad(doorRoom.getFloor()).colorB);
+                    captureLabeled("33_door_swirl");
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                } else if (shoot) { // degenerate world: still progress deterministically
+                    p.set(0f, hallY + 1.7f, hallZ0 + 4f); cam.setYaw(0); cam.setPitch(0);
+                    captureLabeled("33_door_swirl");
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                }
+            }
             default -> { // done — clean exit for CI
                 // t_0c1374b0-era captureLabeled DEFERS the PNG write to this
                 // frame's render() tail. If the final waypoint advanced the
@@ -8333,7 +8374,7 @@ public class GameEngine {
                 // (observed: no [E2E-SHOT] 30 line). Wait one tick for the
                 // flushed write before exiting.
                 if (pendingShotLabel != null) return;
-                System.out.println("[E2E] tour complete — 32 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 33 waypoints captured. Exiting.");
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
                 // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software

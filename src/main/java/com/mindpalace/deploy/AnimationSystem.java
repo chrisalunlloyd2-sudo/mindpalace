@@ -23,6 +23,7 @@ public class AnimationSystem {
         Collections.synchronizedList(new ArrayList<>());
     private final Random rand = new Random();
     private boolean active;
+    private boolean swirlMode; // MP-009 (#155): one-shot transporter burst — no refill, drain-deactivates
     private Vector3f source;
     private float elapsed;
     private static final int MAX_PARTICLES = 200;
@@ -66,6 +67,7 @@ public class AnimationSystem {
      *  the engine loop's update()/render() hold while touching the lists. */
     public synchronized void startDeployAnimation(Vector3f worldPos) {
         active = true;
+        swirlMode = false; // MP-009: a real deploy cancels any leftover swirl branch
         source = new Vector3f(worldPos);
         elapsed = 0;
         particles.clear();
@@ -98,6 +100,7 @@ public class AnimationSystem {
     public synchronized void startConstructionAnimation(Vector3f center, List<Vector3f> blockTargets,
                                            List<Vector3f> blockSizes, List<Integer> texIds) {
         active = true;
+        swirlMode = false;
         source = new Vector3f(center);
         elapsed = 0;
         particles.clear();
@@ -114,6 +117,7 @@ public class AnimationSystem {
     /** Start a glow pulse on a neon sign. Called from the LiveUpdate poller
      *  thread; synchronized against the engine loop like the other mutators. */
     public synchronized void startGlowPulse(Vector3f signPos) {
+        swirlMode = false; // MP-009: glow pulses follow the deploy update path
         for (int i = 0; i < 30; i++) {
             Vector3f vel = new Vector3f(
                 (rand.nextFloat() - 0.5f) * 0.5f,
@@ -130,12 +134,84 @@ public class AnimationSystem {
         }
     }
 
+    /**
+     * MP-009 (#155): transporter effect — a short rising particle swirl and
+     * glow fired as the player crosses a room threshold (door enter/exit).
+     * One-shot burst (no continuous refill), accent = the room district's
+     * door color, complement = its portal pad theme. Budget: 120 particles,
+     * under this system's 200 cap so the burst can never crowd out a
+     * concurrent deploy/construction animation (layered, not clobbered).
+     * Deactivates itself once drained (swirlMode), unlike the 4s deploy
+     * animations, so brief crossings yield brief effects.
+     */
+    public synchronized void startTransporterSwirl(Vector3f at, Vector3f accent, Vector3f complement) {
+        if (at == null || accent == null || complement == null) return;
+        active = true;
+        swirlMode = true;
+        source = new Vector3f(at);
+        elapsed = 0;
+        System.out.println("[SWIRL] threshold burst at " + at + " accent=" + accent + " complement=" + complement);
+        // Layer on top of whatever is already airborne; only a leftover
+        // swirl's residue is reset (the 200-cap holds the total budget).
+        if (swirlMode && particles.size() > MAX_PARTICLES - 120) particles.clear();
+        Random r = rand;
+        for (int i = 0; i < 120; i++) {
+            // Swirl: particles born on a small ring, tangential velocity +
+            // inward pull + gentle rise — reads as a vortex column at the
+            // threshold instead of a random burst.
+            float ang = r.nextFloat() * (float) (Math.PI * 2);
+            float rad = 0.3f + r.nextFloat() * 0.7f;
+            float px = at.x + (float) Math.cos(ang) * rad;
+            float py = at.y + r.nextFloat() * 1.6f;
+            float pz = at.z + (float) Math.sin(ang) * rad;
+            float swirlX = (float) -Math.sin(ang) * (1.2f + r.nextFloat());
+            float swirlZ = (float)  Math.cos(ang) * (1.2f + r.nextFloat());
+            float pull = 2.2f + r.nextFloat();
+            Vector3f vel = new Vector3f(
+                swirlX - (float) Math.cos(ang) * pull,
+                0.6f + r.nextFloat() * 1.2f,
+                swirlZ - (float) Math.sin(ang) * pull);
+            Vector3f color = new Vector3f(
+                r.nextFloat() < 0.55f ? accent : complement);
+            color.mul(0.75f + r.nextFloat() * 0.25f); // brightness variance
+            particles.add(new Particle(
+                new Vector3f(px, py, pz),
+                vel,
+                0.5f + r.nextFloat() * 0.7f,
+                color,
+                r.nextFloat() * 0.12f + 0.08f)); // 0.08-0.20m — deploy-glow size band (0.06-0.18m proven visible at 2.5m framing)
+        }
+    }
+
     /** Update all particles. Engine loop thread only — but mutations are
      *  also serialized against the LiveUpdate poller thread via `this`. */
     public void update(float dt) {
         if (!active) return;
         synchronized (this) {
         elapsed += dt;
+
+        if (swirlMode) { // MP-009: pure drain loop — no refill, no blocks
+            Iterator<Particle> it = particles.iterator();
+            while (it.hasNext()) {
+                Particle p = it.next();
+                p.life -= dt;
+                if (p.life <= 0) { it.remove(); continue; }
+                p.pos.add(p.vel.x * dt, p.vel.y * dt, p.vel.z * dt);
+                // Swirl maintenance: re-impart tangential force around the
+                // source while pulling inward, so the column stays a column.
+                float dx = p.pos.x - source.x, dz = p.pos.z - source.z;
+                float d2 = dx * dx + dz * dz;
+                if (d2 > 1e-4f) {
+                    float d = (float) Math.sqrt(d2);
+                    p.vel.x += (-dz / d) * 3.5f * dt - (dx / d) * 1.6f * dt;
+                    p.vel.z += ( dx / d) * 3.5f * dt - (dz / d) * 1.6f * dt;
+                }
+                p.vel.y += 0.9f * dt; // gentle rise
+                p.size *= 0.995f;
+            }
+            if (particles.isEmpty()) { active = false; swirlMode = false; }
+            return;
+        }
 
         // Update construction blocks
         Iterator<BuildBlock> bit = buildBlocks.iterator();
@@ -201,6 +277,20 @@ public class AnimationSystem {
             partsSnap = new ArrayList<>(particles);
         }
         // Construction blocks first (they're the "building" effect)
+        // t_mp009-renderbind probe + fix: drawMesh() sets uniforms on
+        // Shader.currentProgram() and never binds its own program
+        // (Renderer.drawMesh :231). Any earlier draw that leaves a foreign
+        // shader bound (e.g. renderInternalLeft never restores — text path
+        // leak) makes uniform sets land on the wrong program
+        // (GL_INVALID_OPERATION, silently ignored) and the cubes draw with
+        // the previous program's matrices — invisible. Bind explicitly and
+        // log the pre-bind program on burst frames as evidence.
+        boolean hasDraws = !blocksSnap.isEmpty() || !partsSnap.isEmpty();
+        if (hasDraws) {
+            System.out.println("[SWIRL-RENDER] n=" + partsSnap.size() + " active=" + active
+                + " preBindProg=" + com.mindpalace.render.Shader.currentProgram());
+        }
+        renderer.bindBasicShader();
         for (BuildBlock b : blocksSnap) {
             renderer.drawCube(b.pos, b.size, b.texId);
         }

@@ -7,6 +7,7 @@ import com.mindpalace.world.OutsideWorld;
 import com.mindpalace.world.PortalTheme;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Hallway;
+import com.mindpalace.deploy.AnimationSystem;
 import com.mindpalace.audio.AudioEngine;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
@@ -34,6 +35,7 @@ public class Player {
     private Room currentRoom;
     private double interactCooldown;
     private AudioEngine audio;
+    private AnimationSystem transporterFx; // MP-009 (#155): threshold swirl+glow
     private boolean chatTyping;  // suppress door interaction while typing in chat
     private double teleportCooldown; // prevent pad re-trigger bounce
     private int padFloor = -1;      // floor of the pad the player is standing on (-1 = none)
@@ -56,6 +58,8 @@ public class Player {
     }
 
     public void setAudio(AudioEngine a) { this.audio = a; }
+    /** MP-009 (#155): wire the shared particle system for the threshold transporter effect. */
+    public void setTransporterFx(AnimationSystem fx) { this.transporterFx = fx; }
     public void setChatTyping(boolean t) { this.chatTyping = t; }
     public void setNoclip(boolean n) { this.noclip = n; }
     public boolean isNoclip() { return noclip; }
@@ -449,6 +453,7 @@ public class Player {
         currentRoom = room;
         room.openDoor();
         if (audio != null) audio.playDoorOpen();
+        transporterSwirl(room, true); // MP-009 (#155): swirl+glow crossing the threshold
         Vector3f c = room.getRoomCenter();
         float ez = room.getHallwaySide() == 0 ? c.z + Room.ROOM_DEPTH / 2f - 1.2f
                                               : c.z - Room.ROOM_DEPTH / 2f + 1.2f;
@@ -464,11 +469,27 @@ public class Player {
         // spec: "the doors don't need to cycle open and closed, just open when
         // I press enter"). So we deliberately do NOT call room.closeDoor() here.
         currentRoom = null;
+        transporterSwirl(room, false); // MP-009 (#155): exit crossing swirls too
         Vector3f dp = room.getDoorPosition();
         float ex = room.getHallwaySide() == 0 ? dp.x + 1.2f : dp.x - 1.2f;
         camera.setPosition(ex, EYE_HEIGHT, dp.z);
         camera.setYaw(room.getHallwaySide() == 0 ? 0 : 180);
         System.out.println("[EXIT] " + room.getDisplayLabel());
+    }
+
+    /** MP-009 (#155): particle swirl + glow as the player crosses a threshold
+     *  (door enter/exit). Silent no-op unless the engine wired an
+     *  AnimationSystem in (init order) or the effect is disabled by config
+     *  (render.quality=low / MP_SWIRL=0 kill-switch). */
+    private void transporterSwirl(Room room, boolean entering) {
+        if (transporterFx == null) return;
+        Vector3f doorPos = room.getDoorPosition();
+        if (doorPos == null) return;
+        float[] district = com.mindpalace.world.WorldBuilder.districtDoorColor(room.getFloor());
+        Vector3f accent = new Vector3f(district[0], district[1], district[2]);
+        PortalTheme pad = PortalTheme.forPad(room.getFloor());
+        transporterFx.startTransporterSwirl(doorPos, accent, pad.colorB);
+        System.out.println("[SWIRL] " + (entering ? "enter " : "exit ") + room.getDisplayLabel());
     }
 
     public Camera getCamera() { return camera; }

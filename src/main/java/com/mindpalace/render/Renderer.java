@@ -229,6 +229,10 @@ public class Renderer {
     }
 
     public void drawMesh(Mesh mesh, Matrix4f model, int texId) {
+        // #155: callers after HUD text paths (bloom billboards/font) leave a
+        // foreign program current — drawMesh used to set uniforms on an
+        // unbound shader and the draw clipped out invisible. Always bind.
+        basicShader.bind();
         basicShader.setUniform("model", model);
         Texture tex = textures[texId];
         if (tex != null) {
