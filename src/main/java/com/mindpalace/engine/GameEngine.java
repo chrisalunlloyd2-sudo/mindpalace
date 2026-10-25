@@ -819,6 +819,11 @@ public class GameEngine {
         // quota-free JSON) so agents see swept_issues / swept_push_days too.
         com.mindpalace.github.RepoSweepData.ingest(knowledgeGraph,
             java.nio.file.Path.of(dataRoot, "mindpalace_memory", "repo_sweep"));
+        // H36b: ingest the Claude-lesson ledger (scripts/claude_commit_watch.py).
+        // Claude's code does NOT live on the default branch, so this is where
+        // the bots finally see the agent work they were missing.
+        com.mindpalace.github.ClaudeLessonData.ingest(knowledgeGraph,
+            java.nio.file.Path.of(dataRoot, "mindpalace_memory", "claude_watch"));
         System.out.println("[NPC] " + npcs.size() + " agents spawned, "
             + crystals.size() + " TODO crystals, KG: "
             + knowledgeGraph.nodeCount() + " nodes / " + knowledgeGraph.edgeCount() + " edges");
@@ -7368,6 +7373,57 @@ public class GameEngine {
         } catch (Throwable e) {
             System.out.println("FAIL compute tax: " + e.getClass().getSimpleName() + " " + e.getMessage());
         }
+
+        // 64. (H36b) claude-lesson ingest — parse claude_commit_watch.py's
+        //     latest.json and ingest into a fresh KG (hermetic: temp dir, no
+        //     network). Verifies claude_lessons / claude_pr_lessons /
+        //     claude_branch_lessons / claude_recent_subject land as KG
+        //     attributes and survive a build() rebuild. Also proves a
+        //     private repo arrives under its pseudonym only.
+        boolean lessonOk = false;
+        try {
+            com.mindpalace.agent.KnowledgeGraph lessonKg =
+                new com.mindpalace.agent.KnowledgeGraph();
+            java.nio.file.Path lessonDir = java.nio.file.Files.createTempDirectory(
+                "mp-selftest-lessons");
+            java.nio.file.Files.writeString(lessonDir.resolve("latest.json"),
+                "{\"generated\":\"2026-10-24\",\"new_lessons\":3,\"items\":["
+                    + "{\"repo_key\":\"chrisalunlloyd2-sudo/mindpalace\",\"display_repo\":\"chrisalunlloyd2-sudo/mindpalace\",\"private\":false,\"role\":\"author\",\"origin\":\"pull_request\",\"origin_ref\":\"#242\",\"subject\":\"fix: fire billboards\",\"touched_test\":true,\"files_changed\":4},"
+                    + "{\"repo_key\":\"repo-ff4b9d8d909a\",\"display_repo\":\"\",\"private\":true,\"role\":\"co_author\",\"origin\":\"branch\",\"origin_ref\":\"claude/plan\",\"subject\":\"fix: scrubbed\",\"touched_test\":false,\"files_changed\":1}]}");
+            int ln = com.mindpalace.github.ClaudeLessonData.ingest(lessonKg, lessonDir);
+            lessonOk = ln == 2
+                && lessonKg.getIntAttribute("chrisalunlloyd2-sudo/mindpalace", "claude_lessons", -9) == 1
+                && lessonKg.getIntAttribute("chrisalunlloyd2-sudo/mindpalace", "claude_pr_lessons", -9) == 1
+                && lessonKg.getIntAttribute("chrisalunlloyd2-sudo/mindpalace", "claude_branch_lessons", -9) == 0
+                && lessonKg.getIntAttribute("chrisalunlloyd2-sudo/mindpalace", "claude_test_touched", -9) == 1
+                && "fix: fire billboards".equals(
+                    lessonKg.getAttribute("chrisalunlloyd2-sudo/mindpalace", "claude_recent_subject", ""))
+                // The private lesson must be keyed by its pseudonym, never its real name.
+                && lessonKg.getIntAttribute("repo-ff4b9d8d909a", "claude_lessons", -9) == 1
+                && lessonKg.getIntAttribute("repo-ff4b9d8d909a", "claude_branch_lessons", -9) == 1
+                && lessonKg.getIntAttribute("no-such-key", "claude_lessons", -9) == -9;
+            // Attributes must survive the snapshot-swap build() rebuild.
+            lessonKg.build(java.util.List.of());
+            lessonOk = lessonOk
+                && lessonKg.getIntAttribute("chrisalunlloyd2-sudo/mindpalace", "claude_lessons", -9) == 1;
+            java.util.List<com.mindpalace.github.ClaudeLessonData.Lesson> parsed =
+                com.mindpalace.github.ClaudeLessonData.parse("{\"items\":["
+                    + "{\"repo_key\":\"k\",\"subject\":\"s\",\"role\":\"author\",\"origin\":\"branch\",\"origin_ref\":\"b\",\"private\":true,\"touched_test\":false,\"files_changed\":2}]}");
+            lessonOk = lessonOk && parsed.size() == 1
+                && parsed.get(0).repoKey.equals("k")
+                && parsed.get(0).subject.equals("s")
+                && parsed.get(0).isPrivate
+                && parsed.get(0).filesChanged == 2
+                && com.mindpalace.github.ClaudeLessonData.parse("not json").isEmpty()
+                && com.mindpalace.github.ClaudeLessonData.parse(null).isEmpty();
+            System.out.println((lessonOk ? "PASS" : "FAIL")
+                + " claude-lesson ingest (latest.json → KG claude_lessons/claude_recent_subject, private repo pseudonymised, survives build() swap)");
+            if (!lessonOk) System.out.println("  ingested=" + ln);
+        } catch (Throwable e) {
+            System.out.println("FAIL claude-lesson ingest: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (lessonOk) pass++; else fail++;
         if (taxOk) pass++; else fail++;
 
         // 65. (#131) H40 idle skill decay — tier drops after simulated elapsed
