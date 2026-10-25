@@ -41,12 +41,12 @@
 
 **Left for the local agent (needs real build/test + judgement):**
 
-- **L2. `DeployManager.runBuild`**: `p.waitFor(30, SECONDS)` without reading the pipe (chatty build blocks on
+- ✅ **L2 (fixed, closed as #1). `DeployManager.runBuild`**: `p.waitFor(30, SECONDS)` without reading the pipe (chatty build blocks on
   the 64KB pipe buffer → times out → marked DEPLOYED while still running). Fix: read output to a file,
   check exit code, `destroy()` on timeout.
 - **L3. `BookViewer.java` (214 lines) is dead code** — never referenced. Decide: wire it into the editor
   (dual-pane view) or leave as reference. Do NOT delete (ADD-only doctrine).
-- **L4. `LiveUpdateManager` polls `fetchAllRepos()` every 15s** — wasteful + rate-limit pressure. Bump to
+- ✅ **L4 (fixed, closed as #2). `LiveUpdateManager` polls `fetchAllRepos()` every 15s** — wasteful + rate-limit pressure. Bump to
   60s+ or cache with ETag/`updated_at` watermark.
 - **L5. `OllamaClient.chat` returns null on IO error and "" on missing content** — callers must check BOTH
   (`isBlank()`), some paths only check null (BehaviorTree does check isEmpty; verify others).
