@@ -203,9 +203,39 @@ public class AgentManager {
 
         available = ollama.isAvailable();
         if (!available) {
-            log("[AgentManager] Ollama not available — agents disabled");
+            log("[AgentManager] Ollama not available — agents disabled; rechecking every "
+                    + OLLAMA_RECHECK_S / 60 + " min");
+            // Ollama is a separate service: it may simply not be up yet at launch.
+            // Not in selftest mode (CI has no daemon and a recheck would race the checks).
+            if (!selfTest) {
+                ollamaRecheck = scheduler.scheduleWithFixedDelay(this::recheckOllama,
+                        OLLAMA_RECHECK_S, OLLAMA_RECHECK_S, TimeUnit.SECONDS);
+            }
             return;
         }
+        activateAgents();
+    }
+
+    /** Seconds between availability rechecks while Ollama is down at start(). */
+    static final int OLLAMA_RECHECK_S = 300;
+    private volatile java.util.concurrent.ScheduledFuture<?> ollamaRecheck;
+
+    /** Scheduler worker: once Ollama answers, bring the agents up exactly once and stop rechecking. */
+    private void recheckOllama() {
+        try {
+            if (running || !ollama.isAvailable()) return;
+            available = true;
+            log("[AgentManager] Ollama is now available — starting agents");
+            activateAgents();
+        } catch (Exception ex) {
+            log("[AgentManager] Ollama recheck failed: " + ex.getMessage());
+            return;
+        }
+        java.util.concurrent.ScheduledFuture<?> f = ollamaRecheck;
+        if (f != null) f.cancel(false);
+    }
+
+    private void activateAgents() {
         running = true;
         log("[AgentManager] Agents started — " + TOOL_MODEL + " (tool) + " + CRITIC_MODEL + " (critic)");
         log("[AgentManager] Autonomous cycle: every 5 minutes");
