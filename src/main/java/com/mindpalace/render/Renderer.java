@@ -270,6 +270,7 @@ public class Renderer {
 
     /** Draw a cube with an arbitrary RGB color, rotated around Y (for clothing layers). */
     public void drawCubeColorYaw(Vector3f position, Vector3f size, float yaw, float r, float g, float b) {
+        basicShader.bind();
         Matrix4f model = new Matrix4f().translate(position).rotateY(yaw).scale(size);
         basicShader.bind();
         GlTrace.expectProgram(basicShader.getId(), "cubeColorYaw");
