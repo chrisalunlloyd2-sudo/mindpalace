@@ -2468,6 +2468,15 @@ public class GameEngine {
                 // 2D read mode — pin the key world text into a fixed screen panel.
                 renderTwoDTextPanel();
             }
+        // MP-011 (#157): physical gist wall — a dedicated wall panel in the
+        // world (floor-0 hallway start cap, interior face) instead of only a
+        // HUD overlay. The panel is plain world geometry+text visible from
+        // anywhere in the hall. HUD billboard version stays available behind
+        // the option flag (below).
+        if (!twoDTextMode && fontRenderer != null && fontRenderer.isReady()) {
+            renderGistWallPanel();
+        }
+
         com.mindpalace.render.GlTrace.mark("world-text");
         if (!hudSuppressed()) {
             renderScreenHUD();
@@ -3006,6 +3015,19 @@ public class GameEngine {
     private int e2eLogTick;
     private String fmt(Vector3f v) { return String.format("(%.1f,%.1f,%.1f)", v.x, v.y, v.z); }
     private boolean h37Debug = System.getProperty("mindpalace.debug.h37") != null;
+
+    /** MP-011 (#157): keep the legacy HUD gist-wall billboard? Physical wall
+     *  panel (renderGistWallPanel) is the primary surface regardless. Default
+     *  ON — property mindpalace.render.gistWallHud wins over env
+     *  MP_GIST_WALL_HUD; "0"/"false" (either source) turns OFF. */
+    private static boolean gistWallHudEnabled() {
+        String v = System.getProperty("mindpalace.render.gistWallHud");
+        if (v == null || v.isBlank()) v = System.getenv("MP_GIST_WALL_HUD");
+        if (v == null || v.isBlank()) return true;
+        v = v.trim();
+        return !"0".equals(v) && !"false".equalsIgnoreCase(v);
+    }
+    private final boolean gistWallHudEnabled = gistWallHudEnabled();
     private int rendered;
 
     private void renderFloorMap() {
@@ -3294,14 +3316,86 @@ public class GameEngine {
         }
     }
 
-    /** Phase D — fact toast (from clicking the potted plant). */
+    /**
+     * MP-011 (#157): physical gist wall panel — world geometry + wall-flat
+     * text on the floor-0 hallway START cap (interior face), replacing the
+     * HUD billboard as the PRIMARY surface (the billboard is the flag fallback).
+     *
+     * Geometry: cap cube spans z −0.125..+0.125 relative to the hallway
+     * start (wallT 0.25 centred on s.z=0); only other occupant of that face
+     * is the floating neon floor sign at y 3.3-3.7, so the plate band
+     * y 1.89..3.41 (centre s.y+2.65, 1.52 tall) is free.
+     * z-stack: plate centred capZ+0.010, depth 0.020 → slab 0.125..0.145
+     * (proud of the cap face 0.125 — anything z<0.125 hides INSIDE the
+     * wallpaper cube). Text anchors at capZ+0.045: wall-flat renderText
+     * (facing 0,0,+1) — the glyph quad lies EXACTLY at the anchor z (unit
+     * quad spans local z=0, no ±z extent), so the 0.170 anchor plane is
+     * 0.025 PROUD of the plate front 0.145 — never buried, never coplanar
+     * (122d-n lesson). For ±Z normals glyph centers march world +X with the
+     * string CENTRED on position.x (H37b: byte-identical to the old path),
+     * so the x anchor is each line's center at s.x.
+     *
+     * Rows: head-first (same order as the HUD loop), size 0.055/0.045,
+     * amber (1.0,0.8,0.3) headers / pale-green entries, row step 0.077,
+     * 12-row cap fits the plate band. Head-first keeps the panel in sync
+     * with the HUD fallback so the two never disagree.
+     */
+
+    private void renderGistWallPanel() {
+        if (gistWall == null) return;
+        java.util.List<String> lines = gistWall.getLines();
+        if (lines.isEmpty()) return;
+
+        Camera cam = player.getCamera();
+        Matrix4f proj = cam.getProjectionMatrix((float) width / height);
+        Matrix4f view = cam.getViewMatrix();
+        Vector3f camPos = cam.getPosition();
+
+        // Floor-0 hallway start cap, interior face — computed from the world
+        // so a future CorridorLayout change keeps the panel glued to the cap.
+        if (world.getHallways().isEmpty()) return;
+        Vector3f s = world.getHallways().get(0).getStart();
+        float capZ = s.z + 0.125f; // interior face of the start cap
+        if (camPos.distance(new Vector3f(s.x, s.y + 2f, capZ)) > 30f) return;
+
+        // Slate backing plate, proud of the cap face (see javadoc z-stack).
+        if (renderer != null) {
+            renderer.drawCubeColor(
+                new Vector3f(s.x, s.y + 2.65f, capZ + 0.010f),
+                new Vector3f(3.30f, 1.52f, 0.020f),
+                0.10f, 0.11f, 0.13f);
+        }
+        // Text rows — same palette/sizes/ORDER as the HUD billboard loop.
+        Vector3f facing = new Vector3f(0, 0, 1);
+        float step = 0.077f;
+        float yTop = s.y + 3.30f - 0.16f; // first row inside the plate top edge
+        int shown = Math.min(lines.size(), 12);
+        for (int i = 0; i < shown; i++) {
+            String line = lines.get(i);
+            boolean header = line.startsWith("==");
+            float size = header ? 0.055f : 0.045f;
+            Vector3f color = header
+                ? new Vector3f(1.0f, 0.8f, 0.3f)
+                : new Vector3f(0.6f, 0.9f, 0.6f);
+            fontRenderer.renderText(line, new Vector3f(s.x, yTop - i * step, capZ + 0.045f),
+                size, color, proj, view, facing);
+        }
+    }
+
     /**
      * Fleet gist wall — right-side screen panel (mirror of the telemetry panel on
      * the left) surfacing the live fleet status + workflow logits + word-library
      * success paths. Text is billboard-rendered so it is always readable.
      */
+
     private void renderGistWall() {
         if (gistWall == null) return;
+        // MP-011 (#157): the physical wall panel (renderGistWallPanel) is now
+        // the primary surface — this HUD overlay is the option-flag fallback.
+        // Default ON (behavior unchanged): kill-switches are
+        // mindpalace.render.gistWallHud=false (property, wins) or
+        // MP_GIST_WALL_HUD=0 (env).
+        if (!gistWallHudEnabled) return;
         gistWall.refresh();
         java.util.List<String> lines = gistWall.getLines();
         if (lines.isEmpty()) return;
@@ -3331,6 +3425,7 @@ public class GameEngine {
         }
     }
 
+    /** Phase D — fact toast (from clicking the potted plant). */
     private void renderFactToast() {
         if (factToastTimer <= 0 || factToast.isEmpty()) return;
         Camera cam = player.getCamera();
@@ -8173,9 +8268,11 @@ public class GameEngine {
                 }
                 if (shoot) { captureLabeled("18_poster_wall"); player.teleportToFloor(0, world); /* leave the room again */ e2eWaypoint++; e2ePhaseTimer = 0; }
             }
-            case 18 -> { // MP-004: gist wall — today a HUD overlay on the right of the view (MP-011 makes it a world wall)
+            case 18 -> { // MP-011 (#157): gist wall — the PHYSICAL panel on the hallway START cap is now primary;
+                         // pitch 14/ yaw 180 aims at the plate centre (y s.y+2.65, 4 m away). The flag-gated
+                         // HUD fallback (default ON) overlays the same content, so one frame shows both.
                 p.set(0f, hallY + 1.7f, hallZ0 + 4f);
-                cam.setYaw(0); cam.setPitch(0);
+                cam.setYaw(180); cam.setPitch(14f);
                 if (shoot) {
                     System.out.println("[E2E-NOTE] gist wall lines=" + (gistWall == null ? "none (no wall)" : String.valueOf(gistWall.getLines().size()))
                         + (demoMode ? " (demo mode: no network, empty wall is expected)" : ""));
