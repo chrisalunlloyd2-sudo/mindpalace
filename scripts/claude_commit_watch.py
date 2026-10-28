@@ -310,6 +310,10 @@ def classify_commit(commit: Dict[str, Any]) -> Optional[str]:
 
 
 def commit_subject(commit: Dict[str, Any]) -> str:
+    """Commit subject.
+
+    Args: commit.
+    """
     inner = commit.get("commit") or {}
     message = str(inner.get("message") or "")
     for line in message.splitlines():
@@ -344,6 +348,10 @@ def load_redaction_key(memory_dir: Path) -> bytes:
 
 
 def pseudonym(name: str, key: bytes) -> str:
+    """Pseudonym.
+
+    Args: name, key.
+    """
     digest = hmac.new(key, name.encode("utf-8"), hashlib.sha256).hexdigest()
     return "repo-" + digest[:12]
 
@@ -487,6 +495,10 @@ def load_state(state_dir: Path) -> Tuple[set, Dict[str, Any]]:
 
 
 def save_state(state_dir: Path, repos: Dict[str, Any]) -> None:
+    """Save state.
+
+    Args: state_dir, repos.
+    """
     state_dir.mkdir(parents=True, exist_ok=True)
     path = state_dir / "repos_state.json"
     tmp = path.with_suffix(".json.tmp")
@@ -673,6 +685,10 @@ def harvest(token: str, memory_dir: Path, repos: Sequence[Dict[str, Any]],
 
 
 def summarize(payload: Dict[str, Any]) -> str:
+    """Summarize.
+
+    Args: payload.
+    """
     items = payload.get("items") or []
     lines = [
         "claude-commit-watch: %d new lesson(s) from %d repo(s) "
@@ -692,6 +708,10 @@ def summarize(payload: Dict[str, Any]) -> str:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Main.
+
+    Args: argv.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", help="memory dir override")
     parser.add_argument("--repo", action="append",
