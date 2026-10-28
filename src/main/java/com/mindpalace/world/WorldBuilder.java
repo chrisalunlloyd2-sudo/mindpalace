@@ -136,20 +136,32 @@ public class WorldBuilder {
         return new Vector3f(planetCenter.x, planetCenter.y + PLANET_RADIUS, planetCenter.z);
     }
 
-    /** MP-007 (#153): door-dissolve portal sheet toggle (MP_DOOR_DISSOLVE=0 → pure MP-006). */
+    /** MP-007 (#153): door-dissolve portal sheet toggle (MP_DOOR_DISSOLVE=0 → pure MP-006).
+     *  MP-010 (#156): canonical flag mindpalace.render.portalDoors (default on). */
     private final boolean doorDissolveEnabled;
 
-    /** MP-008 (#154): baked interior previews on the portal sheet (MP_DOOR_PREVIEW=0 → off). */
+    /** MP-008 (#154): baked interior previews on the portal sheet (MP_DOOR_PREVIEW=0 → off).
+     *  MP-010 (#156): canonical flag mindpalace.render.doorPreview (default on). */
     private final boolean doorPreviewEnabled;
     private RoomPreviewBank previewBank; // lazy: only if doorPreviewEnabled
     private boolean interiorOnly = false; // true while baking a preview (see renderRoom)
+
+    /** MP-010 (#156): render config flag — system property wins over the legacy
+     *  env kill-switch, default ON. "0" or "false" (either source) turns OFF. */
+    static boolean renderFlag(String propKey, String envKey) {
+        String v = System.getProperty(propKey);
+        if (v == null || v.isBlank()) v = System.getenv(envKey);
+        if (v == null || v.isBlank()) return true;
+        v = v.trim();
+        return !"0".equals(v) && !"false".equalsIgnoreCase(v);
+    }
 
     public WorldBuilder() {
         repoMapper = new RepoMapper();
         populator = new RoomPopulator();
         fogOfWar = new FogOfWar(4.0f, 8.0f);
-        doorDissolveEnabled = !"0".equals(System.getenv("MP_DOOR_DISSOLVE"));
-        doorPreviewEnabled = !"0".equals(System.getenv("MP_DOOR_PREVIEW"));
+        doorDissolveEnabled = renderFlag("mindpalace.render.portalDoors", "MP_DOOR_DISSOLVE");
+        doorPreviewEnabled = renderFlag("mindpalace.render.doorPreview", "MP_DOOR_PREVIEW");
     }
 
     public FogOfWar getFogOfWar() { return fogOfWar; }
