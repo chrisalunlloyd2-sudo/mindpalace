@@ -35,6 +35,10 @@ EXCLUDE = re.compile(
 
 
 def git(repo: str, args: list) -> str:
+    """Git.
+
+    Args: repo, args.
+    """
     out = subprocess.run(
         ["git", "-C", repo] + args, capture_output=True, text=True, check=True
     )
@@ -42,6 +46,7 @@ def git(repo: str, args: list) -> str:
 
 
 def main() -> int:
+    """Main (function)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", default=".")
     args = ap.parse_args()
