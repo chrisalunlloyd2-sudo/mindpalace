@@ -1631,6 +1631,20 @@ public class GameEngine {
             scrubTimeMachine(1);
         }
 
+        // MP-012 (#158): PgUp/PgDn page the fleet gist wall (both surfaces —
+        // the physical hallway panel and the HUD fallback share GistWall's
+        // page index). PageUp = older pages, PageDown = newer, wrap at ends.
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_PAGE_UP) && gistWall != null) {
+            gistWall.prevPage();
+            System.out.println("[GistWall] page " + (gistWall.getPage() + 1)
+                + "/" + GistWall.pageCount(gistWall.getLines().size(), GistWall.PAGE_ROWS));
+        }
+        if (input.wasKeyPressed(GLFW.GLFW_KEY_PAGE_DOWN) && gistWall != null) {
+            gistWall.nextPage();
+            System.out.println("[GistWall] page " + (gistWall.getPage() + 1)
+                + "/" + GistWall.pageCount(gistWall.getLines().size(), GistWall.PAGE_ROWS));
+        }
+
         // Tab — toggle full-screen map overlay (hold to view, release to close)
         if (input.wasKeyPressed(GLFW.GLFW_KEY_TAB)) {
             showMap = !showMap;
@@ -3343,8 +3357,10 @@ public class GameEngine {
 
     private void renderGistWallPanel() {
         if (gistWall == null) return;
-        java.util.List<String> lines = gistWall.getLines();
-        if (lines.isEmpty()) return;
+        // MP-012 (#158): render the CURRENT page frame (header + 11 rows +
+        // footer, '<'-prefixed markers) instead of the first 12 raw lines.
+        java.util.List<String> paged = gistWall.pagedWallLines();
+        if (paged.size() <= 1) return;
 
         Camera cam = player.getCamera();
         Matrix4f proj = cam.getProjectionMatrix((float) width / height);
@@ -3366,18 +3382,36 @@ public class GameEngine {
                 0.10f, 0.11f, 0.13f);
         }
         // Text rows — same palette/sizes/ORDER as the HUD billboard loop.
+        // MP-012: '<' = header/footer (amber), '<@' = status grid row colored
+        // by parsed status (green/amber/red), plain = plain info rows (green).
         Vector3f facing = new Vector3f(0, 0, 1);
         float step = 0.077f;
         float yTop = s.y + 3.30f - 0.16f; // first row inside the plate top edge
-        int shown = Math.min(lines.size(), 12);
+        int shown = Math.min(paged.size(), 13);
         for (int i = 0; i < shown; i++) {
-            String line = lines.get(i);
-            boolean header = line.startsWith("==");
+            String line = paged.get(i);
+            boolean marker = line.startsWith("<");
+            char statusTok = 0;
+            String text;
+            if (marker && line.startsWith("<@")) {
+                text = line.substring(2);
+                statusTok = GistWall.statusChar(text);
+            } else {
+                text = marker ? line.substring(1) : line;
+            }
+            boolean header = marker && !line.startsWith("<@");
             float size = header ? 0.055f : 0.045f;
-            Vector3f color = header
-                ? new Vector3f(1.0f, 0.8f, 0.3f)
-                : new Vector3f(0.6f, 0.9f, 0.6f);
-            fontRenderer.renderText(line, new Vector3f(s.x, yTop - i * step, capZ + 0.045f),
+            Vector3f color;
+            if (statusTok != 0) {
+                color = statusTok == 'R' ? new Vector3f(1.0f, 0.35f, 0.30f)
+                    : statusTok == 'A' ? new Vector3f(1.0f, 0.8f, 0.3f)
+                    : new Vector3f(0.6f, 0.9f, 0.6f);
+            } else {
+                color = header
+                    ? new Vector3f(1.0f, 0.8f, 0.3f)
+                    : new Vector3f(0.6f, 0.9f, 0.6f);
+            }
+            fontRenderer.renderText(text, new Vector3f(s.x, yTop - i * step, capZ + 0.045f),
                 size, color, proj, view, facing);
         }
     }
@@ -3386,6 +3420,9 @@ public class GameEngine {
      * Fleet gist wall — right-side screen panel (mirror of the telemetry panel on
      * the left) surfacing the live fleet status + workflow logits + word-library
      * success paths. Text is billboard-rendered so it is always readable.
+     * MP-012 (#158): renders the CURRENT page frame (pagedWallLines) with the
+     * same '<'-marker decoding and status colors as the physical panel, capped
+     * to 9 rows so both surfaces show one coherent 11-row page slice.
      */
 
     private void renderGistWall() {
@@ -3397,8 +3434,11 @@ public class GameEngine {
         // MP_GIST_WALL_HUD=0 (env).
         if (!gistWallHudEnabled) return;
         gistWall.refresh();
-        java.util.List<String> lines = gistWall.getLines();
-        if (lines.isEmpty()) return;
+        // MP-012 (#158): same paged frame the physical panel renders so the two
+        // surfaces always agree; '<'-markers decoded identically (minus <@ grid
+        // coloring at this size, plain green keeps the HUD fallback quiet).
+        java.util.List<String> paged = gistWall.pagedWallLines();
+        if (paged.size() <= 1) return;
 
         Camera cam = player.getCamera();
         Matrix4f proj = cam.getProjectionMatrix((float) width / height);
@@ -3411,11 +3451,13 @@ public class GameEngine {
         Vector3f base = hudAnchor(HudLayout.GIST_WALL);
 
         float step = 0.08f;
-        // Cap at 9 lines so the wall never escapes its HudLayout rect (gate).
-        int shown = Math.min(lines.size(), 9);
+        // Cap at 9 frame rows so the wall never escapes its HudLayout rect (gate).
+        int shown = Math.min(paged.size(), 9);
         for (int i = 0; i < shown; i++) {
-            String line = lines.get(i);
-            boolean header = line.startsWith("==");
+            String frameLine = paged.get(i);
+            String line = frameLine.startsWith("<@") ? frameLine.substring(2)
+                : frameLine.startsWith("<") ? frameLine.substring(1) : frameLine;
+            boolean header = frameLine.startsWith("<") && !frameLine.startsWith("<@");
             float size = header ? 0.055f : 0.045f;
             Vector3f color = header
                 ? new Vector3f(1.0f, 0.8f, 0.3f)
@@ -7674,6 +7716,52 @@ public class GameEngine {
             + " #290 onChatMessage: guide replies on chat lane, 3-arg legacy falls back to [Guide] on tool lane");
         if (chatCbOk) pass++; else fail++;
 
+        // 68. (#158) Gist wall paging — MP-012. Pure data-layer check (headless):
+        // a 25-line seeded wall (1 header + 10 fleet rows + 2 section headers +
+        // 6 logits + 6 wordlib) pages 11/11/3 across 3 pages; the shared frame
+        // builder marks header/footer with '<' and fleet-grid rows with '<@';
+        // page flips wrap at both ends and the HUD indicator matches the footer.
+        boolean pagingOk = false;
+        try {
+            java.util.List<String> demo = new java.util.ArrayList<>();
+            demo.add("== FLEET ==");
+            for (int i = 0; i < 10; i++) {
+                demo.add(com.mindpalace.github.GistWall.formatGridRow(
+                    "agent" + (i < 9 ? "0" + i : "10") + "x", i % 3 == 0 ? "green" : "amber-warn", "3s"));
+            }
+            demo.add("== LOGITS ==");
+            for (int i = 0; i < 6; i++) demo.add("wf" + i + " \u00B7 " + (i + 1) + " steps");
+            demo.add("== WORD LIB ==");
+            for (int i = 0; i < 6; i++) demo.add("code_ask:q" + i + " (quality 0.9)");
+            com.mindpalace.github.GistWall gw = new com.mindpalace.github.GistWall();
+            gw.setLines(demo);
+            int total = 25; // 1 header + 10 grid + 2 section headers + 6 + 6
+            boolean structOk = com.mindpalace.github.GistWall.pageCount(total, com.mindpalace.github.GistWall.PAGE_ROWS) == 3
+                && gw.pagedWallLines().size() == com.mindpalace.github.GistWall.PAGE_ROWS + 2   // header + 11 + footer
+                && gw.pageIndicator() != null && gw.pageIndicator().contains("1/3");
+            // Page-2 slice starts mid-grid: section-aware classification must
+            // still mark the remaining fleet rows '<@' (page-1 bug fixed here).
+            List<String> p2 = gw.pagedWallLines();
+            gw.prevPage(); // page 0 -> wraps to page 2 (bottom)
+            boolean wrapUp = gw.getPage() == 2;
+            List<String> p3 = gw.pagedWallLines();
+            gw.nextPage(); // page 2 -> wraps to page 0 (top)
+            boolean wrapDown = gw.getPage() == 0;
+            gw.nextPage(); // and forward from 0 lands on page 1
+            boolean gridMarked = false;
+            for (String l : p2) if (l.startsWith("<@")) { gridMarked = true; break; }
+            boolean page3Plain = false;
+            for (String l : p3) if (l.startsWith("<@")) { page3Plain = true; break; }
+            pagingOk = structOk && wrapUp && wrapDown && gridMarked && !page3Plain
+                && gw.pagedWallLines().size() == 13;
+        } catch (Throwable t) {
+            System.out.println("  gist wall paging check threw: " + t);
+            pagingOk = false;
+        }
+        System.out.println((pagingOk ? "PASS" : "FAIL")
+            + " (#158) gist wall paging: 3 pages/25 lines, <@ grid markers, wrap flips, footer/indicator agree");
+        if (pagingOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains
@@ -8461,6 +8549,27 @@ public class GameEngine {
                     e2eWaypoint++; e2ePhaseTimer = 0;
                 }
             }
+            case 33 -> { // MP-012 (#158): gist wall PAGE 2 — the PagingUp/PagingDn feature
+                         // evidenced the same way as the panel itself: same case-18 framing,
+                         // wall flipped to page 2 first so the shot shows page 2/3 content.
+                if (shoot) {
+                    if (state != GameState.PLAYING) state = GameState.PLAYING;
+                    p.set(0f, hallY + 1.7f, hallZ0 + 4f);
+                    cam.setYaw(180); cam.setPitch(14f);
+                    if (gistWall != null) {
+                        // Tour without a token: seed the deterministic demo wall so the
+                        // page-2 evidence never depends on network (demo = 25 lines, 3 pages).
+                        if (gistWall.getLines().isEmpty()) {
+                            gistWall.setLines(com.mindpalace.github.GistWall.demoLines());
+                        }
+                        gistWall.nextPage(); // 0→1 (1-indexed page 2): footer reads "2/3"
+                        System.out.println("[E2E-NOTE] gist wall p2 page=" + (gistWall.getPage() + 1)
+                            + " lines=" + gistWall.getLines().size() + " indicator=" + gistWall.pageIndicator());
+                    }
+                    captureLabeled("34_gist_wall_p2");
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                }
+            }
             default -> { // done — clean exit for CI
                 // t_0c1374b0-era captureLabeled DEFERS the PNG write to this
                 // frame's render() tail. If the final waypoint advanced the
@@ -8471,7 +8580,7 @@ public class GameEngine {
                 // (observed: no [E2E-SHOT] 30 line). Wait one tick for the
                 // flushed write before exiting.
                 if (pendingShotLabel != null) return;
-                System.out.println("[E2E] tour complete — 33 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 34 waypoints captured. Exiting.");
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
                 // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software

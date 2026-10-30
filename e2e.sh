@@ -60,7 +60,7 @@ rm -rf "$DIR"; mkdir -p "$DIR"
 # e2e.sh never armed it. Thresholds from the box's own baselines: quiet runs
 # peak at 54ms/waypoint (2026-10-07_final_quiet: n=21, max 54.2ms); a
 # co-resident live-game tour shows 0.5-1.2s stalls at ~half the waypoints but
-# still averages 39fps. So: limit 500ms, N=20 of 33 — fails ONLY when the
+# still averages 39fps. So: limit 500ms, N=20 of 34 — fails ONLY when the
 # whole tour is contended/regressed, tolerates a few genuine spikes; still
 # only warns on a software rasteriser (engine-side).
 timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
@@ -86,7 +86,8 @@ labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gaug
           "19_gist_wall","20_sky","21_water","22_mansion_spawn",
           "23_options_main","24_options_video","25_options_controls","26_options_audio",
           "27_options_music","28_options_agents","29_options_evolution","30_options_theme",
-          "31_door_mid_dissolve","32_door_portal_open","33_door_swirl"]
+          "31_door_mid_dissolve","32_door_portal_open","33_door_swirl",
+          "34_gist_wall_p2"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:
