@@ -333,10 +333,16 @@ public class GitHubClient {
     }
 
     public boolean upsertFile(String repoName, String filePath, String content, String commitMessage, String sha) throws IOException {
-        JsonObject body = new JsonObject();
-        body.addProperty("message", commitMessage);
-        body.addProperty("content", java.util.Base64.getEncoder().encodeToString(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        if (sha != null) body.addProperty("sha", sha);
+        return upsertFile(repoName, filePath, content, commitMessage, sha, null);
+    }
+
+    /**
+     * #287: write to a named branch. branch == null keeps the old behaviour (the repo's default branch) for the
+     * player's own edits in BookEditor/BookViewer; autonomous agent writes always pass an agent/ branch.
+     */
+    public boolean upsertFile(String repoName, String filePath, String content, String commitMessage, String sha,
+                              String branch) throws IOException {
+        JsonObject body = contentsBody(commitMessage, content, sha, branch);
 
         RequestBody reqBody = RequestBody.create(body.toString(), MediaType.parse("application/json"));
         Request req = new Request.Builder()
@@ -356,9 +362,12 @@ public class GitHubClient {
      * Delete a file from a repo.
      */
     public boolean deleteFile(String repoName, String filePath, String sha, String commitMessage) throws IOException {
-        JsonObject body = new JsonObject();
-        body.addProperty("message", commitMessage);
-        body.addProperty("sha", sha);
+        return deleteFile(repoName, filePath, sha, commitMessage, null);
+    }
+
+    /** #287: delete on a named branch (null = default branch, the player's own UI path). */
+    public boolean deleteFile(String repoName, String filePath, String sha, String commitMessage, String branch) throws IOException {
+        JsonObject body = contentsBody(commitMessage, null, sha, branch);
 
         RequestBody reqBody = RequestBody.create(body.toString(), MediaType.parse("application/json"));
         Request req = new Request.Builder()
@@ -368,7 +377,108 @@ public class GitHubClient {
             .build();
 
         try (Response resp = http.newCall(req).execute()) {
-            return resp.isSuccessful();
+            boolean ok = resp.isSuccessful();
+            if (ok) clearCache();
+            return ok;
+        }
+    }
+
+    // ── #287: the branch gate (NEXT_100_STEPS step 97's rule, now LAW because an in-game push path exists):
+    // autonomous writes go to agent/<yyyyMMdd>, never to the default branch; a person merges.
+
+    /** Pure: the agent branch for a day, e.g. agent/20261031. One branch per day keeps a day's agent work reviewable as one diff. */
+    public static String agentBranchName(java.time.LocalDate day) {
+        return "agent/" + day.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+    }
+
+    /** Pure: the PUT/DELETE /contents body. content == null for a delete; sha/branch omitted when null. */
+    public static JsonObject contentsBody(String message, String content, String sha, String branch) {
+        JsonObject body = new JsonObject();
+        body.addProperty("message", message);
+        if (content != null) {
+            body.addProperty("content", java.util.Base64.getEncoder().encodeToString(
+                content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        }
+        if (sha != null) body.addProperty("sha", sha);
+        if (branch != null) body.addProperty("branch", branch);
+        return body;
+    }
+
+    /** The repo's default branch name, or null. */
+    public String defaultBranch(String repoName) throws IOException {
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName)
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return null;
+            JsonObject o = JsonParser.parseString(resp.body().string()).getAsJsonObject();
+            return o.has("default_branch") ? o.get("default_branch").getAsString() : null;
+        }
+    }
+
+    /** Head commit sha of a branch, or null when the branch does not exist. */
+    public String branchSha(String repoName, String branch) throws IOException {
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/git/ref/heads/" + branch)
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return null;
+            JsonObject o = JsonParser.parseString(resp.body().string()).getAsJsonObject();
+            return o.getAsJsonObject("object").get("sha").getAsString();
+        }
+    }
+
+    /**
+     * Make sure `branch` exists, branching from the default branch's head if not. true when it exists afterwards.
+     * Never touches the default branch itself; a 422 (someone created it first) counts as existing.
+     */
+    public boolean ensureBranch(String repoName, String branch) throws IOException {
+        if (branchSha(repoName, branch) != null) return true;
+        String def = defaultBranch(repoName);
+        String base = def == null ? null : branchSha(repoName, def);
+        if (base == null) return false;
+        JsonObject body = new JsonObject();
+        body.addProperty("ref", "refs/heads/" + branch);
+        body.addProperty("sha", base);
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/git/refs")
+            .header("Authorization", "token " + token)
+            .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            return resp.isSuccessful() || resp.code() == 422;
+        }
+    }
+
+    /** Blob sha of a file on a branch (needed to update or delete it), or null when the file is not there. */
+    public String fileSha(String repoName, String filePath, String branch) throws IOException {
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/contents/" + filePath
+                + (branch == null ? "" : "?ref=" + branch))
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return null;
+            JsonElement e = JsonParser.parseString(resp.body().string());
+            return e.isJsonObject() && e.getAsJsonObject().has("sha") ? e.getAsJsonObject().get("sha").getAsString() : null;
+        }
+    }
+
+    /** Raw file content on a branch (uncached: agent edits stack on the branch, not on the default branch), or null. */
+    public String fetchFileContent(String repoName, String filePath, String branch) throws IOException {
+        if (branch == null) return fetchFileContent(repoName, filePath);
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/contents/" + filePath + "?ref=" + branch)
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3.raw")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            return resp.isSuccessful() ? resp.body().string() : null;
         }
     }
 

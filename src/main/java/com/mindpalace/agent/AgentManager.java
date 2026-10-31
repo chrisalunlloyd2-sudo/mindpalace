@@ -716,6 +716,22 @@ public class AgentManager {
         }
     }
 
+    /**
+     * #287 (NEXT_100_STEPS step 97's rule: "if an in-game push path ever lands, all autonomous writes go to
+     * agent/&lt;step&gt; branches, human merges"). The push path exists, so every edit/create/delete from the tool
+     * loop lands on today's agent/yyyyMMdd branch, created from the default branch's head when missing.
+     * Returns the branch, or null when it cannot be opened: the caller then writes NOTHING (fail-closed).
+     */
+    private String agentWriteBranch(String repo) {
+        String br = com.mindpalace.github.GitHubClient.agentBranchName(java.time.LocalDate.now());
+        try {
+            return github.ensureBranch(repo, br) ? br : null;
+        } catch (Exception e) {
+            log("[AgentManager] #287 agent branch " + br + " not opened in " + repo + ": " + e.getMessage());
+            return null;
+        }
+    }
+
     /** #126 test seam: force-REJECT the file-write quorum gate so the selftest
      *  can assert a vetoed diff never reaches disk (H38 check). */
     private volatile boolean writeGateVeto = false;
@@ -1517,9 +1533,13 @@ public class AgentManager {
                         return "never-twice: identical code already written";
                     }
                     if (github != null && github.isAuthenticated()) {
-                        boolean ok = github.upsertFile(repo, filename, finalContent, "MindPalace agent edit: " + filename, null);
-                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
-                        return ok ? "edited " + filename : "edit failed";
+                        // #287: onto today's agent/ branch, never the default branch; the sha is the file's ON that branch
+                        String br = agentWriteBranch(repo);
+                        if (br == null) return "edit refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
+                        boolean ok = github.upsertFile(repo, filename, finalContent, "MindPalace agent edit: " + filename,
+                            github.fileSha(repo, filename, br), br);
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename + " @" + br);
+                        return ok ? "edited " + filename + " on " + br + " (a person merges)" : "edit failed";
                     }
                     if (room.getLocalPath() != null) {
                         java.nio.file.Path fp = jailedLocalPath(room, filename);
@@ -1542,9 +1562,12 @@ public class AgentManager {
                         return "never-twice: identical code already written";
                     }
                     if (github != null && github.isAuthenticated()) {
-                        boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent create: " + filename, null);
-                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename);
-                        return ok ? "created " + filename : "create failed";
+                        String br = agentWriteBranch(repo);                                   // #287
+                        if (br == null) return "create refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
+                        boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent create: " + filename,
+                            github.fileSha(repo, filename, br), br);
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename + " @" + br);
+                        return ok ? "created " + filename + " on " + br + " (a person merges)" : "create failed";
                     }
                     if (room.getLocalPath() != null) {
                         java.nio.file.Path fp = jailedLocalPath(room, filename);
@@ -1563,9 +1586,13 @@ public class AgentManager {
                         return "delete vetoed by quorum (#126): " + filename;
                     }
                     if (github != null && github.isAuthenticated()) {
-                        boolean ok = github.deleteFile(repo, filename, null, "MindPalace agent delete: " + filename);
-                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
-                        return ok ? "deleted " + filename : "delete failed";
+                        String br = agentWriteBranch(repo);                                   // #287
+                        if (br == null) return "delete refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
+                        String sha = github.fileSha(repo, filename, br);
+                        if (sha == null) return "delete failed (no such file on " + br + ")";
+                        boolean ok = github.deleteFile(repo, filename, sha, "MindPalace agent delete: " + filename, br);
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename + " @" + br);
+                        return ok ? "deleted " + filename + " on " + br + " (a person merges)" : "delete failed";
                     }
                     if (room.getLocalPath() != null) {
                         java.nio.file.Path fp = jailedLocalPath(room, filename);
@@ -1691,7 +1718,10 @@ public class AgentManager {
     private String readCurrentFile(Room room, String repo, String filename) {
         if (github != null && github.isAuthenticated()) {
             try {
-                return github.fetchFileContent(repo, filename);
+                // #287: a patch applies to the agent branch's copy when the branch has one, so a day's edits stack
+                String br = com.mindpalace.github.GitHubClient.agentBranchName(java.time.LocalDate.now());
+                String onBranch = github.fetchFileContent(repo, filename, br);
+                return onBranch != null ? onBranch : github.fetchFileContent(repo, filename);
             } catch (Exception ignored) { }
         }
         if (room != null && room.getLocalPath() != null) {

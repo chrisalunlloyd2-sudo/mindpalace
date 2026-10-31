@@ -7341,6 +7341,65 @@ public class GameEngine {
         }
         if (vetoOk) pass++; else fail++;
 
+        // 60b. (#287) agent branch gate — the tool loop's GitHub writes land on
+        //      agent/yyyyMMdd, never the default branch (step 97's rule, LAW now
+        //      that a push path exists). Real executeTool path with a recording
+        //      GitHubClient: create/edit/delete each carry today's agent branch;
+        //      when the branch cannot be opened NOTHING is written (fail-closed).
+        boolean branchGateOk = false;
+        try {
+            final java.util.List<String> calls = new java.util.ArrayList<>();
+            final boolean[] branchOpens = {true};
+            GitHubClient fakeGh = new GitHubClient() {
+                @Override public boolean isAuthenticated() { return true; }
+                @Override public boolean ensureBranch(String r, String b) { calls.add("ensure " + b); return branchOpens[0]; }
+                @Override public String fileSha(String r, String p, String b) { return "abc123"; }
+                @Override public String fetchFileContent(String r, String p, String b) { return null; }
+                @Override public String fetchFileContent(String r, String p) { return "original\n"; }
+                @Override public boolean upsertFile(String r, String p, String c, String m, String s, String b) {
+                    calls.add("put " + p + " " + b); return true; }
+                @Override public boolean deleteFile(String r, String p, String s, String m, String b) {
+                    calls.add("del " + p + " " + b); return true; }
+            };
+            Class<?> amc = Class.forName("com.mindpalace.agent.AgentManager");
+            Object am = amc.getDeclaredConstructor().newInstance();
+            amc.getMethod("setSelfTest", boolean.class).invoke(am, true);
+            amc.getMethod("setGitHubClient", GitHubClient.class).invoke(am, fakeGh);
+            Class<?> rm = Class.forName("com.mindpalace.world.Room");
+            Object roomObj = rm.getDeclaredConstructor(String.class).newInstance("selftest-branch-repo");
+            Class<?> bm = Class.forName("com.mindpalace.world.Book");
+            Object bookObj = bm.getDeclaredConstructor(String.class, String.class).newInstance("selftest-branch", "book.md");
+            amc.getMethod("setContext", rm, bm).invoke(am, roomObj, bookObj);
+            Class<?> tcc = Class.forName("com.mindpalace.agent.OllamaClient$ToolCall");
+            java.lang.reflect.Method execT = amc.getDeclaredMethod("executeTool", tcc);
+            execT.setAccessible(true);
+            java.lang.reflect.Constructor<?> tc = tcc.getDeclaredConstructor(String.class, String.class);
+            String today = GitHubClient.agentBranchName(java.time.LocalDate.now());
+            String rc = (String) execT.invoke(am, tc.newInstance("create_file", "{\"filename\":\"a.txt\",\"content\":\"branch gate 1\\n\"}"));
+            String re = (String) execT.invoke(am, tc.newInstance("edit_file", "{\"filename\":\"a.txt\",\"content\":\"branch gate 2\\n\"}"));
+            String rd = (String) execT.invoke(am, tc.newInstance("delete_file", "{\"filename\":\"a.txt\"}"));
+            boolean onBranch = calls.contains("put a.txt " + today) && calls.contains("del a.txt " + today)
+                && calls.stream().filter(c -> c.startsWith("put ") || c.startsWith("del ")).allMatch(c -> c.endsWith(" " + today))
+                && rc.contains("on " + today) && re.contains("on " + today) && rd.contains("on " + today);
+            int writes = calls.size();
+            branchOpens[0] = false;
+            String refused = (String) execT.invoke(am, tc.newInstance("create_file", "{\"filename\":\"b.txt\",\"content\":\"branch gate 3\\n\"}"));
+            boolean failClosed = refused.contains("refused (#287)") && calls.size() == writes + 1;   // only the ensure attempt
+            com.google.gson.JsonObject withB = GitHubClient.contentsBody("m", "x", null, "agent/20261031");
+            com.google.gson.JsonObject noB = GitHubClient.contentsBody("m", null, "s", null);
+            boolean pure = "agent/20261031".equals(GitHubClient.agentBranchName(java.time.LocalDate.of(2026, 10, 31)))
+                && "agent/20261031".equals(withB.get("branch").getAsString()) && !noB.has("branch") && !noB.has("content");
+            branchGateOk = onBranch && failClosed && pure;
+            System.out.println((branchGateOk ? "PASS" : "FAIL")
+                + " agent branch gate (#287: create/edit/delete land on " + today + "; no branch = nothing written)");
+            if (!branchGateOk) System.out.println("  calls=" + calls + " rc=" + rc + " re=" + re + " rd=" + rd + " refused=" + refused
+                + " onBranch=" + onBranch + " failClosed=" + failClosed + " pure=" + pure);
+        } catch (Exception e) {
+            Throwable c = e.getCause() != null ? e.getCause() : e;
+            System.out.println("FAIL agent branch gate: " + c.getClass().getSimpleName() + " " + c.getMessage());
+        }
+        if (branchGateOk) pass++; else fail++;
+
         // 61. (#125) repo-health rollup — RepoScanner.computeHealth is a pure
         //     0..100 scorer (backlog −5/issue cap −30, activity +1/4 commits
         //     cap +20, +10 has-commit); KnowledgeGraph.set/getAttribute is the
