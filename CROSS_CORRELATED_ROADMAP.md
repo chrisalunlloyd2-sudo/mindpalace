@@ -44,13 +44,7 @@ camera's screen-right vector.
 
 **Status:** `DONE` — commit `0a96fa3` (cylindrical billboard: glyph +X follows the camera screen-right from the view matrix, so text reads left-to-right from every angle).
 
-**Next action (minimal, no delete):**
-1. Add a proper billboard matrix that aligns text `+X` with the camera's
-   screen-right (cylindrical billboard using camera basis, not a single `rotateY`).
-2. Add a mirror guard: when `|angleY| > 90°`, flip the glyph UV so it never reads
-   backwards (this is the "doubles" trick — never removes the wall/floor path).
-3. Keep `renderText` (wall), `renderFloorText`, `renderBillboard` all intact — only
-   fix the billboard math. This is the "rotate to face me" ask.
+**Next action:** none — shipped in `0a96fa3`. The cylindrical billboard (camera screen-right basis) supersedes the old single-`rotateY` fix and its mirror guard. Keep `renderText` (wall), `renderFloorText` and `renderBillboard` intact.
 
 ---
 
@@ -107,9 +101,7 @@ rim + scrolling data-lines + scanlines) and tight-fit clothing as material layer
 legs/pelvis; male = bare hologram chest + dark trousers. Arms/head bare hologram; role
 stays on the visor + label.
 
-**Next action:** `[BB]` B1 → B2 → B3 in order: geometric polygon bodies, walk/arm
-swing + idle bob, per-agent color/role silhouette. Keep first-person for player;
-show agents only (B3 = Architect decision, hold).
+**Next action:** B1–B3 are shipped (see Status). Still open: keep first-person for the player and show agents only — an Architect decision, on hold.
 
 ---
 
