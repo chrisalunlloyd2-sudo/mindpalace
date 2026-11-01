@@ -56,6 +56,9 @@ public class AgentManager {
     private static final String TOOL_MODEL = ModelConfig.TOOL_MODEL;
     private static final String CRITIC_MODEL = ModelConfig.CRITIC_MODEL;
     private static final String TIE_MODEL = ModelConfig.TIE_MODEL;
+    // MP-014: extra resident quorum voters (roster hardening, see ModelConfig).
+    private static final String EXTRA_VOTER_A = ModelConfig.EXTRA_VOTER_A;
+    private static final String EXTRA_VOTER_B = ModelConfig.EXTRA_VOTER_B;
 
     // Conversation histories — now managed by ModelLifespan (bounded + drift-corrected)
     private final ModelLifespan toolLifespan;
@@ -267,6 +270,12 @@ public class AgentManager {
         quorum.setModelPosition(TOOL_MODEL, 0, 0);
         quorum.setModelPosition(CRITIC_MODEL, 1, 0);
         quorum.setModelPosition(TIE_MODEL, 0, 0);
+        // MP-014: two extra resident voters — one cold/slow model must not be
+        // able to starve a ballot (all three voters abstain-timed-out in
+        // cascade, real:0 → NO_QUORUM forever). Both hexes stay within FOW
+        // hop 1 of the proposal point (0,0).
+        quorum.setModelPosition(EXTRA_VOTER_A, 0, 1);
+        quorum.setModelPosition(EXTRA_VOTER_B, 1, 0);
 
         // LoRA: start on CODE (the tool agent's primary domain).
         lora.switchAdapter(AdapterType.CODE);
@@ -785,6 +794,32 @@ public class AgentManager {
             // #101: vote ONLY this cycle's proposal (was actualVoteAll —
             // O(registry × models × 30s) and never shrank).
             WeightedQuorumVote.QuorumResult r = quorum.actualVote(id, modelScheduler);
+            // MP-014 (freeze-fix): #101 left real-work proposals registered
+            // but never voted — the stale comment below claimed the shared
+            // actualVoteAll round covered them, but that round no longer
+            // exists. handleRealWorkVerdicts then calculated quorum on empty
+            // ballots (ok:0 no:0 blind:0 abstain:0 visible:[]) and every
+            // backlogged card returned NO_QUORUM forever. Vote each capped
+            // real-work proposal exactly like the synthetic one (per-proposal,
+            // O(models) each); the verdict handler below reads the now-real
+            // results unchanged. Cap bounds the worst-case cycle wall time;
+            // cards beyond the cap keep the pre-fix NO_QUORUM outcome rather
+            // than regressing to unbounded vote rounds.
+            if (realWork != null && !realWork.isEmpty()) {
+                int rwCap = Math.min(realWork.size(),
+                    Integer.getInteger("mindpalace.quorum.realWorkCap", 4));
+                for (int i = 0; i < rwCap; i++) {
+                    var rw = realWork.get(i);
+                    try {
+                        WeightedQuorumVote.QuorumResult wr =
+                            quorum.actualVote(rw.proposalId(), modelScheduler);
+                        if (wr != null) log("[AgentManager] real-work quorum: " + wr);
+                    } catch (Exception e) {
+                        log("[AgentManager] real-work vote failed ("
+                            + rw.proposalId() + "): " + e.getMessage());
+                    }
+                }
+            }
             if (r != null) {
                 log("[AgentManager] quorum: " + r);
                 String voteQuality = com.mindpalace.agent.sims.VoteQualityLedger.summarize(r.voteOutcomes);
@@ -836,10 +871,12 @@ public class AgentManager {
 
     /**
      * t_948a71be: calculate + apply a verdict per real-work proposal.
-     * Voting happened in the shared actualVoteAll round above; this only
-     * reads the results. The source's applyVerdict promotes approved
-     * kanban cards, comments on rejected ones, and parks approved public
-     * items in triage — never past it (Architect sign-off doctrine).
+     * MP-014: ballots for these are cast in runQuorumVote above (per-proposal
+     * actualVote — the shared actualVoteAll round it replaced no longer
+     * exists); this only reads the results. The source's applyVerdict
+     * promotes approved kanban cards, comments on rejected ones, and parks
+     * approved public items in triage — never past it (Architect sign-off
+     * doctrine).
      */
     private void handleRealWorkVerdicts(
             java.util.List<com.mindpalace.agent.sims.QuorumProposalSource.RealWorkProposal> realWork) {
