@@ -21,6 +21,8 @@ public class GitHubClient {
     private String username = "chrisalunlloyd2-sudo";
     private boolean authenticated = false;
 
+    public record FileSnapshot(String content, String sha) {}
+
     public GitHubClient() {
         http = new OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -466,6 +468,26 @@ public class GitHubClient {
             if (!resp.isSuccessful()) return null;
             JsonElement e = JsonParser.parseString(resp.body().string());
             return e.isJsonObject() && e.getAsJsonObject().has("sha") ? e.getAsJsonObject().get("sha").getAsString() : null;
+        }
+    }
+
+    /** File content and blob SHA from the same branch revision, or null when unavailable. */
+    public FileSnapshot fetchFileSnapshot(String repoName, String filePath, String branch) throws IOException {
+        if (branch == null) return null;
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/contents/" + filePath + "?ref=" + branch)
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return null;
+            JsonElement e = JsonParser.parseString(resp.body().string());
+            if (!e.isJsonObject()) return null;
+            JsonObject file = e.getAsJsonObject();
+            if (!file.has("content") || !file.has("sha")) return null;
+            byte[] content = java.util.Base64.getMimeDecoder().decode(file.get("content").getAsString());
+            return new FileSnapshot(new String(content, java.nio.charset.StandardCharsets.UTF_8),
+                file.get("sha").getAsString());
         }
     }
 

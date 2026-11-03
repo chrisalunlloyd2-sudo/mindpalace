@@ -1501,9 +1501,22 @@ public class AgentManager {
                     String content = args.has("content") ? args.get("content").getAsString() : null;
                     if (content == null) content = "";
                     String finalContent = content;
+                    String patchBranch = null;
+                    String patchSha = null;
                     if (oldStr != null && !oldStr.isEmpty()) {
                         String newStr = args.has("new_string") ? args.get("new_string").getAsString() : "";
-                        String current = readCurrentFile(room, repo, filename);
+                        String current;
+                        if (github != null && github.isAuthenticated()) {
+                            patchBranch = agentWriteBranch(repo);
+                            if (patchBranch == null) return "edit refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
+                            com.mindpalace.github.GitHubClient.FileSnapshot snapshot =
+                                github.fetchFileSnapshot(repo, filename, patchBranch);
+                            if (snapshot == null) return "edit failed (cannot read current " + filename + ")";
+                            current = snapshot.content();
+                            patchSha = snapshot.sha();
+                        } else {
+                            current = readCurrentFile(room, repo, filename);
+                        }
                         if (current == null) return "edit failed (cannot read current " + filename + ")";
                         if (!current.contains(oldStr))
                             return "edit failed: old_string not found in " + filename
@@ -1534,10 +1547,10 @@ public class AgentManager {
                     }
                     if (github != null && github.isAuthenticated()) {
                         // #287: onto today's agent/ branch, never the default branch; the sha is the file's ON that branch
-                        String br = agentWriteBranch(repo);
+                        String br = patchBranch != null ? patchBranch : agentWriteBranch(repo);
                         if (br == null) return "edit refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
                         boolean ok = github.upsertFile(repo, filename, finalContent, "MindPalace agent edit: " + filename,
-                            github.fileSha(repo, filename, br), br);
+                            patchBranch != null ? patchSha : github.fileSha(repo, filename, br), br);
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename + " @" + br);
                         return ok ? "edited " + filename + " on " + br + " (a person merges)" : "edit failed";
                     }
