@@ -4212,6 +4212,7 @@ public class GameEngine {
             "ESC: Menu/Close    /: Search Repo",
             "Tab: Map    M: Minimap    1-9: Teleport (map open)",
             "E: Plugboard swap (when near it)    [ / ]: Commit time slider",
+            "PgUp / PgDn: Gist wall page",
             "F1: Help    F3: Noclip    F4: 2D Text    F7: Dressing Room",
             "F8: Debug    F11: Fullscreen    F12: Screenshot",
             "",
