@@ -4214,7 +4214,7 @@ public class GameEngine {
             "E: Plugboard swap (when near it)    [ / ]: Commit time slider",
             "PgUp / PgDn: Gist wall page",
             "F1: Help    F3: Noclip    F4: 2D Text    F7: Dressing Room",
-            "F8: Debug    F11: Fullscreen    F12: Screenshot",
+            "F8: Debug    F11: Fullscreen    F12: Screenshot   PgUp/PgDn: Gist wall",
             "",
             "=== AGENTS ===",
             com.mindpalace.agent.ModelConfig.TOOL_MODEL + " (tool) + " + com.mindpalace.agent.ModelConfig.CRITIC_MODEL + " (critic)",
