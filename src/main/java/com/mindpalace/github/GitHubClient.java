@@ -393,6 +393,11 @@ public class GitHubClient {
         return "agent/" + day.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
     }
 
+    public static boolean isSafeAgentBranch(String branch, String defaultBranch) {
+        return branch != null && !branch.isBlank() && defaultBranch != null && !defaultBranch.isBlank()
+            && !branch.equals(defaultBranch);
+    }
+
     /** Pure: the PUT/DELETE /contents body. content == null for a delete; sha/branch omitted when null. */
     public static JsonObject contentsBody(String message, String content, String sha, String branch) {
         JsonObject body = new JsonObject();
@@ -439,9 +444,10 @@ public class GitHubClient {
      * Never touches the default branch itself; a 422 (someone created it first) counts as existing.
      */
     public boolean ensureBranch(String repoName, String branch) throws IOException {
-        if (branchSha(repoName, branch) != null) return true;
         String def = defaultBranch(repoName);
-        String base = def == null ? null : branchSha(repoName, def);
+        if (!isSafeAgentBranch(branch, def)) return false;
+        if (branchSha(repoName, branch) != null) return true;
+        String base = branchSha(repoName, def);
         if (base == null) return false;
         JsonObject body = new JsonObject();
         body.addProperty("ref", "refs/heads/" + branch);

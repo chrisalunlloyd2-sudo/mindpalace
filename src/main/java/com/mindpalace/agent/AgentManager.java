@@ -1475,7 +1475,9 @@ public class AgentManager {
             switch (call.name) {
                 case "read_file": {
                     if (github != null && github.isAuthenticated()) {
-                        String content = github.fetchFileContent(repo, filename);
+                        String br = agentWriteBranch(repo);
+                        if (br == null) return "read failed (#287): could not open an agent/ branch in " + repo;
+                        String content = github.fetchFileContent(repo, filename, br);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "read", filename);
                         return content != null ? truncateHeadTail(filename, content) : "read failed";
                     }
@@ -1578,7 +1580,7 @@ public class AgentManager {
                         String br = agentWriteBranch(repo);                                   // #287
                         if (br == null) return "create refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
                         boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent create: " + filename,
-                            github.fileSha(repo, filename, br), br);
+                            null, br);
                         if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename + " @" + br);
                         return ok ? "created " + filename + " on " + br + " (a person merges)" : "create failed";
                     }
@@ -1727,16 +1729,9 @@ public class AgentManager {
         }
     }
 
-    /** H05: fetch current file content (github first, then local) for patch edits. */
+    /** H05: fetch current file content from the local checkout when GitHub is unavailable. */
     private String readCurrentFile(Room room, String repo, String filename) {
-        if (github != null && github.isAuthenticated()) {
-            try {
-                // #287: a patch applies to the agent branch's copy when the branch has one, so a day's edits stack
-                String br = com.mindpalace.github.GitHubClient.agentBranchName(java.time.LocalDate.now());
-                String onBranch = github.fetchFileContent(repo, filename, br);
-                return onBranch != null ? onBranch : github.fetchFileContent(repo, filename);
-            } catch (Exception ignored) { }
-        }
+        if (github != null && github.isAuthenticated()) return null;
         if (room != null && room.getLocalPath() != null) {
             try {
                 java.nio.file.Path fp = jailedLocalPath(room, filename);

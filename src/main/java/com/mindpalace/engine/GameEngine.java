@@ -7351,7 +7351,9 @@ public class GameEngine {
         boolean branchGateOk = false;
         try {
             final java.util.List<String> calls = new java.util.ArrayList<>();
+            final java.util.List<String> writeShas = new java.util.ArrayList<>();
             final boolean[] branchOpens = {true};
+            final boolean[] branchFileExists = {true};
             final String[] lastWriteSha = {null};
             GitHubClient fakeGh = new GitHubClient() {
                 @Override public boolean isAuthenticated() { return true; }
@@ -7361,10 +7363,14 @@ public class GameEngine {
                     calls.add("snapshot " + p + " " + b);
                     return new FileSnapshot("original\n", "read-sha");
                 }
-                @Override public String fetchFileContent(String r, String p, String b) { return null; }
-                @Override public String fetchFileContent(String r, String p) { return "original\n"; }
+                @Override public String fetchFileContent(String r, String p, String b) {
+                    calls.add("read " + p + " " + b);
+                    return branchFileExists[0] ? "agent branch content\n" : null;
+                }
+                @Override public String fetchFileContent(String r, String p) { return "default branch content\n"; }
                 @Override public boolean upsertFile(String r, String p, String c, String m, String s, String b) {
                     lastWriteSha[0] = s;
+                    writeShas.add(p + ":" + s);
                     calls.add("put " + p + " " + b); return true; }
                 @Override public boolean deleteFile(String r, String p, String s, String m, String b) {
                     calls.add("del " + p + " " + b); return true; }
@@ -7384,6 +7390,13 @@ public class GameEngine {
             java.lang.reflect.Constructor<?> tc = tcc.getDeclaredConstructor(String.class, String.class);
             String today = GitHubClient.agentBranchName(java.time.LocalDate.now());
             String rc = (String) execT.invoke(am, tc.newInstance("create_file", "{\"filename\":\"a.txt\",\"content\":\"branch gate 1\\n\"}"));
+            String readBranch = (String) execT.invoke(am, tc.newInstance("read_file", "{\"filename\":\"a.txt\"}"));
+            boolean branchRead = readBranch.contains("agent branch content") && !readBranch.contains("default branch content")
+                && calls.indexOf("ensure " + today) < calls.indexOf("read a.txt " + today);
+            branchFileExists[0] = false;
+            String missingBranchRead = (String) execT.invoke(am, tc.newInstance("read_file", "{\"filename\":\"a.txt\"}"));
+            boolean missingReadFailsClosed = "read failed".equals(missingBranchRead);
+            branchFileExists[0] = true;
             String re = (String) execT.invoke(am, tc.newInstance("edit_file", "{\"filename\":\"a.txt\",\"content\":\"branch gate 2\\n\"}"));
             String rp = (String) execT.invoke(am, tc.newInstance("edit_file",
                 "{\"filename\":\"a.txt\",\"old_string\":\"original\",\"new_string\":\"patched\"}"));
@@ -7400,12 +7413,18 @@ public class GameEngine {
             com.google.gson.JsonObject withB = GitHubClient.contentsBody("m", "x", null, "agent/20261031");
             com.google.gson.JsonObject noB = GitHubClient.contentsBody("m", null, "s", null);
             boolean pure = "agent/20261031".equals(GitHubClient.agentBranchName(java.time.LocalDate.of(2026, 10, 31)))
-                && "agent/20261031".equals(withB.get("branch").getAsString()) && !noB.has("branch") && !noB.has("content");
-            branchGateOk = onBranch && snapshotShaRetained && failClosed && pure;
+                && "agent/20261031".equals(withB.get("branch").getAsString()) && !noB.has("branch") && !noB.has("content")
+                && GitHubClient.isSafeAgentBranch("agent/20261103", "main")
+                && !GitHubClient.isSafeAgentBranch("agent/20261103", "agent/20261103")
+                && !GitHubClient.isSafeAgentBranch("agent/20261103", null);
+            boolean createShaLess = writeShas.contains("a.txt:null");
+            branchGateOk = onBranch && snapshotShaRetained && failClosed && pure && createShaLess
+                && branchRead && missingReadFailsClosed;
             System.out.println((branchGateOk ? "PASS" : "FAIL")
                 + " agent branch gate (#287: create/edit/delete land on " + today + "; no branch = nothing written)");
             if (!branchGateOk) System.out.println("  calls=" + calls + " rc=" + rc + " re=" + re + " rd=" + rd + " refused=" + refused
-                + " onBranch=" + onBranch + " snapshotShaRetained=" + snapshotShaRetained + " failClosed=" + failClosed + " pure=" + pure);
+                + " onBranch=" + onBranch + " snapshotShaRetained=" + snapshotShaRetained + " failClosed=" + failClosed + " pure=" + pure
+                + " createShaLess=" + createShaLess + " branchRead=" + branchRead + " missingReadFailsClosed=" + missingReadFailsClosed);
         } catch (Exception e) {
             Throwable c = e.getCause() != null ? e.getCause() : e;
             System.out.println("FAIL agent branch gate: " + c.getClass().getSimpleName() + " " + c.getMessage());
