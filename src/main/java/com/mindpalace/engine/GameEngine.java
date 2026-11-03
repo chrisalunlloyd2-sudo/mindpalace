@@ -4633,6 +4633,7 @@ public class GameEngine {
             broadcaster.start();
 
             java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                .version(java.net.http.HttpClient.Version.HTTP_1_1)
                 .connectTimeout(java.time.Duration.ofSeconds(10)).build();
             String base = "http://127.0.0.1:" + broadcaster.port();
             var shuttleResponse = client.send(
