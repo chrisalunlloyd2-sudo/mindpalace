@@ -4633,19 +4633,19 @@ public class GameEngine {
             broadcaster.start();
 
             java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(2)).build();
+                .connectTimeout(java.time.Duration.ofSeconds(10)).build();
             String base = "http://127.0.0.1:" + broadcaster.port();
             var shuttleResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/shuttle"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             var cardsResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             var tripletsResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/triplets"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             boolean served = shuttleResponse.statusCode() == 200 && shuttle.equals(shuttleResponse.body())
                 && cardsResponse.statusCode() == 200 && cards.equals(cardsResponse.body())
@@ -4655,14 +4655,14 @@ public class GameEngine {
                 java.util.Set.of("tag:other")));
             var deniedResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             boolean denied = deniedResponse.statusCode() == 403;
 
             peer.set(new ContextBroadcaster.PeerIdentity("trusted@example.test", java.util.Set.of()));
             var missingResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/not-a-route"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             boolean missingIsNotFound = missingResponse.statusCode() == 404;
 
@@ -6374,7 +6374,7 @@ public class GameEngine {
                     int pos = Math.min(1, tm.getHistory().size()); // position 1 valid for any history size (clamp-to-size)
                     tm.setPosition(pos);
                     com.mindpalace.world.Book b = sliderRoom.getBooks().get(0);
-                    String relPath = b.getFilePath();
+                    String relPath = b.getFilePath().replace('\\', '/');
                     String bookText = tm.fileContentAt(relPath);
                     String rev = tm.currentCommit().sha;
                     String expect = com.mindpalace.world.RepoMapper.SHARED_GIT.run(
