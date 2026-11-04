@@ -7431,6 +7431,78 @@ public class GameEngine {
         }
         if (branchGateOk) pass++; else fail++;
 
+        // 60c. agent write rules: deny by default, one repo, gates and runnables off limits. Pure attack table, then
+        //      the real executeTool path: a refused write reaches neither the quorum nor GitHub.
+        boolean rulesOk = false;
+        try {
+            final String mp = com.mindpalace.agent.AgentWriteRules.REPO;
+            final String javaOk = "src/main/java/com/mindpalace/world/Room.java";
+            String[][] table = {
+                // repo, path, expected rule ("" = allowed)
+                {mp, javaOk, ""}, {mp, "docs/notes.md", ""}, {mp, "./docs/notes.md", ""}, {mp, "src\\main\\resources\\a.txt", ""},
+                {"some-private-repo", javaOk, "REPO"}, {"MINDPALACE", javaOk, "REPO"}, {null, javaOk, "REPO"},
+                {mp, "../other/x.java", "PATH"}, {mp, "docs/../../x.md", "PATH"}, {mp, "/etc/passwd", "PATH"},
+                {mp, "C:/Windows/x.md", "PATH"}, {mp, "docs/a.md::$DATA", "PATH"}, {mp, "docs/a.md.", "PATH"}, {mp, "docs/a.md ", "PATH"},
+                {mp, "", "PATH"}, {mp, null, "PATH"}, {mp, "docs/", "PATH"},
+                {mp, ".github/workflows/ci.yml", "HIDDEN"}, {mp, ".GitHub/Workflows/ci.yml", "HIDDEN"}, {mp, "docs/.hidden/a.md", "HIDDEN"},
+                {mp, "docs/run.sh", "RUNNABLE"}, {mp, "src/main/java/a.PS1", "RUNNABLE"}, {mp, "scripts/x.py", "RUNNABLE"},
+                {mp, "src/main/java/com/mindpalace/agent/AgentWriteRules.java", "GATES"},
+                {mp, "SRC/MAIN/JAVA/com/mindpalace/agent/agentmanager.java", "GATES"},
+                {mp, "src/main/java/com/mindpalace/engine/GameEngine.java", "GATES"},
+                {mp, "src/main/java/com/mindpalace/github/GitHubClient.java", "GATES"},
+                {mp, "src/main/java/com/mindpalace/agent/sims/WeightedQuorumVote.java", "GATES"},
+                {mp, "pom.xml", "ROOTS"}, {mp, "AGENTS.md", "ROOTS"}, {mp, "scripts/x.txt", "ROOTS"}, {mp, "src/test/x.java", "ROOTS"}, {mp, "newdir/x.md", "ROOTS"},
+                {mp, "docs/github_token.md", "SECRETS"}, {mp, "docs/x.pem", "SECRETS"},
+            };
+            StringBuilder wrong = new StringBuilder();
+            for (String[] row : table) {
+                com.mindpalace.agent.AgentWriteRules.Verdict v = com.mindpalace.agent.AgentWriteRules.checkWrite(row[0], row[1]);
+                if (!v.rule().equals(row[2]) || v.allowed() != row[2].isEmpty()
+                        || (!v.allowed() && v.reason().length() < 40)) wrong.append(row[0]).append('/').append(row[1]).append("->").append(v.rule()).append(' ');
+            }
+            boolean readsScoped = com.mindpalace.agent.AgentWriteRules.checkRead(mp, "pom.xml").allowed()
+                && !com.mindpalace.agent.AgentWriteRules.checkRead("some-private-repo", "README.md").allowed()
+                && !com.mindpalace.agent.AgentWriteRules.checkRead(mp, "config/secrets.json").allowed();
+
+            final java.util.List<String> touched = new java.util.ArrayList<>();
+            GitHubClient fakeGh = new GitHubClient() {
+                @Override public boolean isAuthenticated() { return true; }
+                @Override public String defaultBranch(String r) { return "main"; }
+                @Override public boolean ensureBranch(String r, String b) { touched.add("ensure " + r); return true; }
+                @Override public String fileSha(String r, String f, String b) { return "sha"; }
+                @Override public boolean upsertFile(String r, String p, String c, String m, String s, String b) { touched.add("upsert " + r + "/" + p); return true; }
+                @Override public boolean deleteFile(String r, String p, String s, String m, String b) { touched.add("delete " + r + "/" + p); return true; }
+            };
+            Class<?> amc = Class.forName("com.mindpalace.agent.AgentManager");
+            Object am = amc.getDeclaredConstructor().newInstance();
+            amc.getMethod("setSelfTest", boolean.class).invoke(am, true);
+            amc.getMethod("setWriteRulesInSelfTest", boolean.class).invoke(am, true);
+            amc.getMethod("setGitHubClient", GitHubClient.class).invoke(am, fakeGh);
+            Class<?> rm = Class.forName("com.mindpalace.world.Room");
+            Class<?> bm = Class.forName("com.mindpalace.world.Book");
+            Object bookObj = bm.getDeclaredConstructor(String.class, String.class).newInstance("rules", "book.md");
+            Class<?> tcc = Class.forName("com.mindpalace.agent.OllamaClient$ToolCall");
+            java.lang.reflect.Method execT = amc.getDeclaredMethod("executeTool", tcc);
+            execT.setAccessible(true);
+            java.lang.reflect.Constructor<?> tc = tcc.getDeclaredConstructor(String.class, String.class);
+            amc.getMethod("setContext", rm, bm).invoke(am, rm.getDeclaredConstructor(String.class).newInstance("some-private-repo"), bookObj);
+            String otherRepo = (String) execT.invoke(am, tc.newInstance("create_file", "{\"filename\":\"docs/a.md\",\"content\":\"x\"}"));
+            String otherRead = (String) execT.invoke(am, tc.newInstance("read_file", "{\"filename\":\"docs/a.md\"}"));
+            amc.getMethod("setContext", rm, bm).invoke(am, rm.getDeclaredConstructor(String.class).newInstance(mp), bookObj);
+            String gate = (String) execT.invoke(am, tc.newInstance("delete_file", "{\"filename\":\".github/workflows/ci.yml\"}"));
+            boolean refused = otherRepo.contains("rule REPO") && otherRead.contains("rule REPO") && gate.contains("rule HIDDEN");
+            boolean nothingTouched = touched.isEmpty();
+            rulesOk = wrong.length() == 0 && readsScoped && refused && nothingTouched;
+            System.out.println((rulesOk ? "PASS" : "FAIL") + " agent write rules (" + table.length
+                + " attack rows; other repos and gates refused before quorum or GitHub)");
+            if (!rulesOk) System.out.println("  wrong=" + wrong + " readsScoped=" + readsScoped + " touched=" + touched
+                + " otherRepo=" + otherRepo + " otherRead=" + otherRead + " gate=" + gate);
+        } catch (Exception e) {
+            Throwable c = e.getCause() != null ? e.getCause() : e;
+            System.out.println("FAIL agent write rules: " + c.getClass().getSimpleName() + " " + c.getMessage());
+        }
+        if (rulesOk) pass++; else fail++;
+
         // 61. (#125) repo-health rollup — RepoScanner.computeHealth is a pure
         //     0..100 scorer (backlog −5/issue cap −30, activity +1/4 commits
         //     cap +20, +10 has-commit); KnowledgeGraph.set/getAttribute is the
