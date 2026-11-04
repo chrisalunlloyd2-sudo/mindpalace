@@ -7152,6 +7152,46 @@ public class GameEngine {
             adrOk = det && codeNull && fence;
             System.out.println((adrOk ? "PASS" : "FAIL")
                 + " adapter registry election (deterministic winner, auto-id, negative fence, unknown ballot no-op)");
+
+            // 55b. The win reaches the LIVE switcher (agentManager.getLora(), not a throwaway): electing through
+            //      AgentManager.electAdapters installs the winner's weights on the active adapter, re-electing the
+            //      same winner is a no-op, and a flipped vote changes the active weights. A private registry keeps
+            //      test ballots out of the live one; the live adapter's type + weights are restored afterwards.
+            boolean liveOk = false;
+            if (agentManager != null) {
+                var live = agentManager.getLora();
+                var CHAT = com.mindpalace.agent.sims.AdapterType.CHAT;
+                var prevType = live.currentType();
+                String prevId = live.weightsId(CHAT);
+                var prevW = live.weights(CHAT);
+                try {
+                    live.switchAdapter(CHAT);
+                    var lreg = new com.mindpalace.agent.sims.AdapterRegistry();
+                    lreg.registerCandidate(CHAT, "st-lean", java.util.Map.of("latency", 0.7));
+                    lreg.registerCandidate(CHAT, "st-rich", java.util.Map.of("quality", 1.3));
+                    lreg.castBallot(new com.mindpalace.agent.sims.AdapterRegistry.Ballot(
+                        "v1", CHAT, "st-rich", true, 2.0, "quality"));
+                    long a0 = live.getWeightApplies();
+                    var won = agentManager.electAdapters(lreg);
+                    boolean installed = "st-rich".equals(won.get(CHAT)) && "st-rich".equals(live.currentWeightsId())
+                        && live.weights(CHAT).equals(java.util.Map.of("quality", 1.3)) && live.getWeightApplies() == a0 + 1;
+                    agentManager.electAdapters(lreg);
+                    boolean idem = live.getWeightApplies() == a0 + 1;
+                    lreg.castBallot(new com.mindpalace.agent.sims.AdapterRegistry.Ballot(
+                        "v2", CHAT, "st-lean", true, 5.0, "latency"));
+                    agentManager.electAdapters(lreg);
+                    boolean flipped = "st-lean".equals(live.currentWeightsId())
+                        && live.weights(CHAT).equals(java.util.Map.of("latency", 0.7));
+                    liveOk = installed && idem && flipped;
+                } finally {
+                    live.applyWeights(CHAT, prevId, prevW);
+                    live.switchAdapter(prevType);
+                }
+                liveOk = liveOk && java.util.Objects.equals(live.weightsId(CHAT), prevId) && live.currentType() == prevType;
+            }
+            System.out.println((liveOk ? "PASS" : "FAIL")
+                + " adapter election reaches the live LoRASwitcher (win installs weights, re-elect no-op, flip changes active, state restored)");
+            adrOk = adrOk && liveOk;
         } catch (Exception e) {
             System.out.println("FAIL adapter registry election: "
                 + e.getClass().getSimpleName() + " " + e.getMessage());
