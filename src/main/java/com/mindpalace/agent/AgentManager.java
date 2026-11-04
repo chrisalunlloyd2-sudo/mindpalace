@@ -163,6 +163,10 @@ public class AgentManager {
     /** Selftest mode: parity wiring runs, the autonomous cycle does not. */
     private volatile boolean selfTest = false;
     public void setSelfTest(boolean st) { this.selfTest = st; }
+    // AgentWriteRules are always on live. Older selftests use throwaway repo names, so they opt in here.
+    private volatile boolean writeRulesInSelfTest = false;
+    public void setWriteRulesInSelfTest(boolean on) { this.writeRulesInSelfTest = on; }
+    private boolean writeRulesApply() { return !selfTest || writeRulesInSelfTest; }
 
     /** #290 selftest seam: fire the guide-reply routing EXACTLY as the
      *  onUserChat thenAccept block does (chat lane when wired, [Guide]
@@ -417,6 +421,7 @@ public class AgentManager {
         if (issueStream == null || approvedTopics.isEmpty()) return 0;
         if (room == null) return 0;
         String repo = room.getRepoName();
+        if (writeRulesApply() && !AgentWriteRules.checkRepo(repo).allowed()) return 0;
         int raised = 0;
         for (String topic : approvedTopics) {
             // #103 (F7): each topic is raised AT MOST ONCE, ever (raised-once
@@ -485,6 +490,7 @@ public class AgentManager {
         Room room = currentRoom; // #106: snapshot once per call
         String repo = room == null ? null : room.getRepoName();
         if (repo == null && openIssueSource == null) return 0;
+        if (openIssueSource == null && writeRulesApply() && !AgentWriteRules.checkRepo(repo).allowed()) return 0;
         long now = System.currentTimeMillis();
         // Cooldown is live-path pacing only; selftest seams bypass it.
         if (openIssueSource == null && now - lastIssueVerdictMs < ISSUE_VERDICT_COOLDOWN_MS) return 0;
@@ -1194,6 +1200,13 @@ public class AgentManager {
 
     /** Read → propose-fix → apply for a single issue (local checkout only). */
     private boolean solveOne(Issue issue) {
+        if (writeRulesApply()) {
+            AgentWriteRules.Verdict rule = AgentWriteRules.checkWrite(issue.repo, issue.file);
+            if (!rule.allowed()) {
+                log("[AgentManager] solveOne: " + rule.message("solve", issue.file));
+                return false;
+            }
+        }
         Path repoDir = resolveReposRoot().resolve(issue.repo);
         // #99 path jail: normalize and require the resolved path to stay inside
         // the repo (same guard ToolExecutor.executeTool uses for agent writes).
@@ -1471,6 +1484,15 @@ public class AgentManager {
             JsonObject args = gson.fromJson(call.arguments, JsonObject.class);
             String filename = args.has("filename") ? args.get("filename").getAsString() : null;
             if (filename == null) return "missing filename";
+            if (writeRulesApply()) {
+                AgentWriteRules.Verdict rule = "read_file".equals(call.name)
+                    ? AgentWriteRules.checkRead(repo, filename) : AgentWriteRules.checkWrite(repo, filename);
+                if (!rule.allowed()) {
+                    if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE,
+                        "rule-refused", rule.rule() + " " + repo + "/" + filename);
+                    return rule.message(call.name, filename);
+                }
+            }
 
             switch (call.name) {
                 case "read_file": {
