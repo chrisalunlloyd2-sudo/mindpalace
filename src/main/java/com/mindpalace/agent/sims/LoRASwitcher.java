@@ -18,6 +18,7 @@ public class LoRASwitcher {
     private LoRAAdapter current;
     private long switchCount;
     private long totalSwitchTimeMs;
+    private long weightApplies;
 
     public LoRASwitcher() {
         for (AdapterType t : AdapterType.values()) {
@@ -51,6 +52,31 @@ public class LoRASwitcher {
         return switchAdapter(circular.peek());
     }
 
+    /**
+     * Install an elected weight-set on one adapter (AdapterRegistry.electAndApply). If that adapter is the active one
+     * it is reloaded now, so a win changes the live weights immediately; otherwise the new set loads on the next
+     * switch to it. Same id + same weights is a no-op (no reload, no count). A null id restores the base weights.
+     * Returns true when weights changed.
+     */
+    public synchronized boolean applyWeights(AdapterType type, String id, Map<String, Double> weights) {
+        LoRAAdapter a = adapters.get(type);
+        if (a == null) return false;
+        Map<String, Double> w = (id == null || weights == null) ? Map.of() : Map.copyOf(weights);
+        if (java.util.Objects.equals(id, a.weightsId) && w.equals(a.weights)) return false;
+        a.weightsId = id;
+        a.weights = w;
+        weightApplies++;
+        if (a == current) { a.unload(); a.load(); }
+        return true;
+    }
+
+    /** Elected weight-set id an adapter carries, or null for its base weights. */
+    public String weightsId(AdapterType type) { LoRAAdapter a = adapters.get(type); return a == null ? null : a.weightsId; }
+    public Map<String, Double> weights(AdapterType type) { LoRAAdapter a = adapters.get(type); return a == null ? Map.of() : a.weights; }
+    /** The weight-set id active right now (the current adapter's). */
+    public String currentWeightsId() { return current.weightsId; }
+    public long getWeightApplies() { return weightApplies; }
+
     public AdapterType currentType() { return current.getType(); }
 
     public void setContext(String key, Object value) { current.setContext(key, value); }
@@ -65,6 +91,9 @@ public class LoRASwitcher {
         private final AdapterType type;
         private boolean loaded;
         private final Map<String, Object> context = new HashMap<>();
+        /** Elected weight-set (AdapterRegistry winner); null id = base weights. */
+        String weightsId;
+        Map<String, Double> weights = Map.of();
 
         LoRAAdapter(AdapterType type) { this.type = type; }
 

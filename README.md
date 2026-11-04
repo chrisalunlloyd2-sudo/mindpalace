@@ -333,6 +333,7 @@ install; the JRE is bundled.
 | F8 | Toggle FPS/debug overlay (includes frustum-culled count) |
 | F11 | Fullscreen toggle |
 | F12 | Screenshot (saves to `screenshots/`) |
+| PgUp / PgDn | Page the fleet gist wall (older / newer) |
 | `/` | Search / jump to any repo |
 
 ### Dressing Room Keys

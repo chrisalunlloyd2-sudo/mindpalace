@@ -86,6 +86,8 @@ public class AgentManager {
     //   FOWGate           — fog-of-war visibility (agent→hex, model→agent)
     private final ModelRouter router = new ModelRouter();
     private final LoRASwitcher lora = new LoRASwitcher();
+    // #71: voted LoRA weight-sets; each quorum cycle's winners are installed on `lora` (electAdapters).
+    private final AdapterRegistry adapterRegistry = new AdapterRegistry();
     private final WeightedQuorumVote quorum = new WeightedQuorumVote();
     private final FOWGate fow = new FOWGate();
     private volatile String routedModel = TOOL_MODEL; // set by the router each cycle
@@ -864,9 +866,36 @@ public class AgentManager {
             // synthetic cycle-<ts> proposal when gather() returned empty
             // (otherwise dead synthetic ids pile up cycle over cycle).
             quorum.finishCycle();
+            electAdapters();
         } catch (Exception e) {
             log("[AgentManager] quorum error: " + e.getMessage());
         }
+    }
+
+    /**
+     * #71: elect every AdapterType's best weight-set and install it on the LIVE switcher, so a win changes which
+     * weights are active. Types with no candidates are skipped (the adapter keeps what it has). Returns the
+     * winners by type.
+     */
+    public java.util.Map<AdapterType, String> electAdapters() {
+        return electAdapters(adapterRegistry);
+    }
+
+    /** Same, for a given registry -- the selftest drives the live switcher through this without seeding the live registry. */
+    public java.util.Map<AdapterType, String> electAdapters(AdapterRegistry reg) {
+        java.util.Map<AdapterType, String> won = new java.util.EnumMap<>(AdapterType.class);
+        for (AdapterType t : AdapterType.values()) {
+            try {
+                String before = lora.weightsId(t);
+                String w = reg.electAndApply(t, lora);
+                if (w == null) continue;
+                won.put(t, w);
+                if (!w.equals(before)) log("[AgentManager] adapter " + t + " weights -> " + w);
+            } catch (Exception e) {
+                log("[AgentManager] adapter election " + t + " failed: " + e.getMessage());
+            }
+        }
+        return won;
     }
 
     /**
@@ -1891,6 +1920,7 @@ public class AgentManager {
     // ── SIMS1337 parity getters (for self-test + telemetry) ──
     public ModelRouter getRouter() { return router; }
     public LoRASwitcher getLora() { return lora; }
+    public AdapterRegistry getAdapterRegistry() { return adapterRegistry; }
     public WeightedQuorumVote getQuorum() { return quorum; }
     public FOWGate getFow() { return fow; }
     public String getRoutedModel() { return routedModel; }
