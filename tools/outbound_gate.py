@@ -253,6 +253,10 @@ def _report(draft, findings, verbose):
 
 
 def main(argv):
+    """Main.
+
+    Args: argv.
+    """
     args = [a for a in argv[1:] if not a.startswith("--")]
     opts = [a for a in argv[1:] if a.startswith("--")]
 

@@ -16,8 +16,8 @@ import java.util.Map;
  * deterministic weighted tally — no randomness, so a fixed ballot set always
  * elects the same winner (selftest-assertable).
  *
- * ADD-ONLY: nothing existing is modified; wiring into AgentManager stays a
- * follow-up (registry is standalone + selftest-checked today).
+ * Wired: AgentManager owns one registry and calls {@link #electAndApply} on its live LoRASwitcher every quorum
+ * cycle, for every AdapterType (see AgentManager.electAdapters).
  */
 public class AdapterRegistry {
 
@@ -107,5 +107,17 @@ public class AdapterRegistry {
     public synchronized Map<String, Double> electedWeights(AdapterType type) {
         String k = elected.get(type);
         return k == null ? Map.of() : java.util.Collections.unmodifiableMap(candidates.get(k).weights);
+    }
+
+    /**
+     * Elect the winner for {@code type} and install it on {@code switcher}, so a win changes which weights are
+     * active (the follow-up this class's header left open). No candidates = no election = the switcher keeps what it
+     * has; never clears a live adapter. Returns the winning id, or null when there was nothing to elect.
+     */
+    public String electAndApply(AdapterType type, LoRASwitcher switcher) {
+        if (switcher == null) return null;
+        String win = electBest(type);
+        if (win != null) switcher.applyWeights(type, win, electedWeights(type));
+        return win;
     }
 }

@@ -21,6 +21,16 @@ public final class ModelConfig {
     /** Tie-breaker voter — breaks 1-1 ties in quorum votes (1.1GB, cold-shot). */
     public static final String TIE_MODEL = "deepseek-r1:1.5b";
 
+    /**
+     * MP-014: extra resident quorum voters. A 3-voter roster starves whenever
+     * one model is cold or slow — ballots cascade to abstain-timeout and the
+     * cycle returns real:0 (permanent NO_QUORUM). Five voters tolerate two
+     * stalled ballots and still reach quorumMin=3. Both ship in the local
+     * Ollama roster already — zero download; tool/critic lanes unchanged.
+     */
+    public static final String EXTRA_VOTER_A = "gemma2:2b";
+    public static final String EXTRA_VOTER_B = "phi3:mini";
+
     /** Code-suggestion model for the in-game book editor (small + fast). */
     public static final String CODE_MODEL = "qwen2.5:0.5b";
 
