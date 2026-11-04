@@ -23,6 +23,7 @@ ALIASES = {
     "ENTER": ["ENTER"], "SPACE": ["SPACE"], "TAB": ["TAB"], "F1": ["F1"], "F3": ["F3"], "F4": ["F4"], "F8": ["F8"],
     "F11": ["F11"], "F12": ["F12"], "M": ["M"], "1-9": list("123456789"), "F5": ["F5"], "F6": ["F6"],
     "[": ["LEFT_BRACKET"], "]": ["RIGHT_BRACKET"], "-": ["MINUS"], "=": ["EQUAL"], ",": ["COMMA"], ".": ["PERIOD"],
+    "PGUP": ["PAGE_UP"], "PGDN": ["PAGE_DOWN"],    # #328/#329 documented the gist wall as "PgUp / PgDn"
 }
 # keys that are mouse/text-entry/internal, not instructions a player needs documented as controls
 NOT_CONTROLS = {"LAST", "BACKSPACE", "UP", "DOWN", "LEFT", "RIGHT", "PERIOD", "COMMA", "MINUS", "EQUAL",
