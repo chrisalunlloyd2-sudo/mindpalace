@@ -616,13 +616,8 @@ public class GameEngine {
         renderLoadingFrame();
 
         github = new GitHubClient();
-        // Auto-auth from Windows Credential Manager (env-var fallback) so the
-        // in-game GitHub surfaces (gist wall, editor, agents, live updates) work
-        // without a manual PAT entry. WorldBuilder already does the same.
-        if (!demoMode && !github.loadTokenFromCredentialManager()) {
-            String envTok = System.getenv("MIND_PALACE_GITHUB_TOKEN");
-            if (envTok != null && envTok.length() >= 20) github.setToken(envTok);
-        }
+        // The repo-scoped token, or none: agents share this client, so it never holds the owner's login.
+        if (!demoMode) github.loadAgentToken();
         bookEditor = new BookEditor(github);
         gistWall = new GistWall();
         gistWall.setToken(github.getToken());
@@ -7502,6 +7497,24 @@ public class GameEngine {
             System.out.println("FAIL agent write rules: " + c.getClass().getSimpleName() + " " + c.getMessage());
         }
         if (rulesOk) pass++; else fail++;
+
+        // 60d. the game cannot load the owner's login: the Credential Manager path is gone and the env token is the only source.
+        boolean tokenOk = false;
+        try {
+            boolean gone = java.util.Arrays.stream(GitHubClient.class.getMethods())
+                .noneMatch(m -> m.getName().toLowerCase(java.util.Locale.ROOT).contains("credential"));
+            String envTok = System.getenv(GitHubClient.AGENT_TOKEN_ENV);
+            GitHubClient probe = new GitHubClient();
+            boolean loaded = probe.loadAgentToken();
+            boolean matchesEnv = envTok == null || envTok.isBlank() ? (!loaded && probe.getToken() == null)
+                : envTok.trim().equals(probe.getToken());
+            tokenOk = gone && matchesEnv;
+            System.out.println((tokenOk ? "PASS" : "FAIL") + " agent token source (env only, no Credential Manager path)");
+            if (!tokenOk) System.out.println("  gone=" + gone + " matchesEnv=" + matchesEnv);
+        } catch (Exception e) {
+            System.out.println("FAIL agent token source: " + e);
+        }
+        if (tokenOk) pass++; else fail++;
 
         // 61. (#125) repo-health rollup — RepoScanner.computeHealth is a pure
         //     0..100 scorer (backlog −5/issue cap −30, activity +1/4 commits

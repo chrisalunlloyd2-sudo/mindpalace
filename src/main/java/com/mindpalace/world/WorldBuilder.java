@@ -215,7 +215,7 @@ public class WorldBuilder {
         // Fog of war: fetch remote (incl. private) repos from GitHub and mark them fogged.
         // Demo mode (step 112) must stay zero-network — skip the merge entirely.
         GitHubClient gh = new GitHubClient();
-        if (!demoMode && gh.loadTokenFromCredentialManager()) {
+        if (!demoMode && gh.loadAgentToken()) {
             try {
                 RepoScanner scanner = new RepoScanner(gh);
                 scanner.mergeRemoteRepos(rooms);

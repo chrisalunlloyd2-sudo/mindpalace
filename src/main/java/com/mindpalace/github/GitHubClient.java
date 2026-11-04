@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class GitHubClient {
     private static final String API_BASE = "https://api.github.com";
+    public static final String AGENT_TOKEN_ENV = "MIND_PALACE_AGENT_TOKEN";
     private OkHttpClient http;
     private String token;
     private String username = "chrisalunlloyd2-sudo";
@@ -31,46 +32,18 @@ public class GitHubClient {
     }
 
     /**
-     * Try to get token from Windows Credential Manager.
-     * Spawns `git credential-manager get` directly (no shell) and writes the
-     * credential request to stdin — avoids WSL/bash resolution issues.
+     * The game's only token source: MIND_PALACE_AGENT_TOKEN, a fine-grained token scoped to this repo.
+     * The game and its agents share this client, so it must never hold the owner's login. It no longer reads
+     * Windows Credential Manager, where that login lives; with no token the game runs unauthenticated.
      */
-    public boolean loadTokenFromCredentialManager() {
-        try {
-            ProcessBuilder pb = new ProcessBuilder("git", "credential-manager", "get");
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            p.getOutputStream().write("protocol=https\nhost=github.com\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            p.getOutputStream().flush();
-            p.getOutputStream().close();
-            // t_b2e9bc3f gate fix: GCM intermittently wedges (observed twice
-            // this session — jstack showed the engine hung in readAllBytes on
-            // GCM's stdout). waitFor()/readAllBytes block forever, freezing
-            // startup. Bound the whole handshake to 12s and destroy the child
-            // on timeout — the engine already has a fallback path.
-            boolean finished = p.waitFor(12, TimeUnit.SECONDS);
-            if (!finished) {
-                p.destroyForcibly();
-                System.err.println("[GitHub] Credential Manager timed out after 12s — using fallback auth");
-            }
-            String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-
-            for (String line : out.split("\n")) {
-                if (line.toLowerCase().startsWith("password=")) {
-                    String tok = line.substring("password=".length()).trim();
-                    tok = tok.replaceAll("[^\\x20-\\x7E]", "");
-                    if (tok.length() >= 20) {
-                        this.token = tok;
-                        this.authenticated = true;
-                        System.out.println("[GitHub] Authenticated via Windows Credential Manager");
-                        return true;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("[GitHub] Failed to load token: " + e.getMessage());
+    public boolean loadAgentToken() {
+        String tok = System.getenv(AGENT_TOKEN_ENV);
+        if (tok == null || tok.isBlank()) {
+            System.out.println("[GitHub] " + AGENT_TOKEN_ENV + " not set: running unauthenticated");
+            return false;
         }
-        return false;
+        setToken(tok.trim());
+        return authenticated;
     }
 
     public void setToken(String token) {
