@@ -320,6 +320,7 @@ install; the JRE is bundled.
 | 1-9 | With the map open: teleport to the Nth revealed room on this floor |
 | E | Swap the Enigma plugboard when standing near it |
 | `[` / `]` | Scrub the current room's commit history backwards / forwards (time slider) |
+| PgUp / PgDn | Page the fleet gist wall (older / newer, wraps) |
 | F7 | Dressing room (see its own keys below) |
 | Left Click | Click book to open editor / click plant for a fact |
 | Tab | Toggle full-map overlay |
@@ -333,7 +334,6 @@ install; the JRE is bundled.
 | F8 | Toggle FPS/debug overlay (includes frustum-culled count) |
 | F11 | Fullscreen toggle |
 | F12 | Screenshot (saves to `screenshots/`) |
-| PgUp / PgDn | Page the fleet gist wall (older / newer) |
 | `/` | Search / jump to any repo |
 
 ### Dressing Room Keys

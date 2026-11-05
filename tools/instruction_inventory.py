@@ -22,6 +22,7 @@ ALIASES = {
     "WASD": ["W", "A", "S", "D"], "ESC": ["ESCAPE"], "SHIFT": ["LEFT_SHIFT"], "/": ["SLASH"], "`/`": ["SLASH"],
     "ENTER": ["ENTER"], "SPACE": ["SPACE"], "TAB": ["TAB"], "F1": ["F1"], "F3": ["F3"], "F4": ["F4"], "F8": ["F8"],
     "F11": ["F11"], "F12": ["F12"], "M": ["M"], "1-9": list("123456789"), "F5": ["F5"], "F6": ["F6"],
+    "PGUP": ["PAGE_UP"], "PGDN": ["PAGE_DOWN"],
     "[": ["LEFT_BRACKET"], "]": ["RIGHT_BRACKET"], "-": ["MINUS"], "=": ["EQUAL"], ",": ["COMMA"], ".": ["PERIOD"],
     "PGUP": ["PAGE_UP"], "PGDN": ["PAGE_DOWN"],    # #328/#329 documented the gist wall as "PgUp / PgDn"
 }

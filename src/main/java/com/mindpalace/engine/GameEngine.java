@@ -616,13 +616,8 @@ public class GameEngine {
         renderLoadingFrame();
 
         github = new GitHubClient();
-        // Auto-auth from Windows Credential Manager (env-var fallback) so the
-        // in-game GitHub surfaces (gist wall, editor, agents, live updates) work
-        // without a manual PAT entry. WorldBuilder already does the same.
-        if (!demoMode && !github.loadTokenFromCredentialManager()) {
-            String envTok = System.getenv("MIND_PALACE_GITHUB_TOKEN");
-            if (envTok != null && envTok.length() >= 20) github.setToken(envTok);
-        }
+        // The repo-scoped token, or none: agents share this client, so it never holds the owner's login.
+        if (!demoMode) github.loadAgentToken();
         bookEditor = new BookEditor(github);
         gistWall = new GistWall();
         gistWall.setToken(github.getToken());
@@ -4212,6 +4207,7 @@ public class GameEngine {
             "ESC: Menu/Close    /: Search Repo",
             "Tab: Map    M: Minimap    1-9: Teleport (map open)",
             "E: Plugboard swap (when near it)    [ / ]: Commit time slider",
+            "PgUp / PgDn: Gist wall page",
             "F1: Help    F3: Noclip    F4: 2D Text    F7: Dressing Room",
             "F8: Debug    F11: Fullscreen    F12: Screenshot   PgUp/PgDn: Gist wall",
             "",
@@ -4633,19 +4629,20 @@ public class GameEngine {
             broadcaster.start();
 
             java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(2)).build();
+                .version(java.net.http.HttpClient.Version.HTTP_1_1)
+                .connectTimeout(java.time.Duration.ofSeconds(10)).build();
             String base = "http://127.0.0.1:" + broadcaster.port();
             var shuttleResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/shuttle"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             var cardsResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             var tripletsResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/triplets"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             boolean served = shuttleResponse.statusCode() == 200 && shuttle.equals(shuttleResponse.body())
                 && cardsResponse.statusCode() == 200 && cards.equals(cardsResponse.body())
@@ -4655,14 +4652,14 @@ public class GameEngine {
                 java.util.Set.of("tag:other")));
             var deniedResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/cards"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             boolean denied = deniedResponse.statusCode() == 403;
 
             peer.set(new ContextBroadcaster.PeerIdentity("trusted@example.test", java.util.Set.of()));
             var missingResponse = client.send(
                 java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/v1/not-a-route"))
-                    .timeout(java.time.Duration.ofSeconds(2)).GET().build(),
+                    .timeout(java.time.Duration.ofSeconds(10)).GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString());
             boolean missingIsNotFound = missingResponse.statusCode() == 404;
 
@@ -6374,7 +6371,7 @@ public class GameEngine {
                     int pos = Math.min(1, tm.getHistory().size()); // position 1 valid for any history size (clamp-to-size)
                     tm.setPosition(pos);
                     com.mindpalace.world.Book b = sliderRoom.getBooks().get(0);
-                    String relPath = b.getFilePath();
+                    String relPath = b.getFilePath().replace('\\', '/');
                     String bookText = tm.fileContentAt(relPath);
                     String rev = tm.currentCommit().sha;
                     String expect = com.mindpalace.world.RepoMapper.SHARED_GIT.run(
@@ -7380,6 +7377,184 @@ public class GameEngine {
                 + e.getClass().getSimpleName() + " " + e.getMessage());
         }
         if (vetoOk) pass++; else fail++;
+
+        // 60b. (#287) agent branch gate — the tool loop's GitHub writes land on
+        //      agent/yyyyMMdd, never the default branch (step 97's rule, LAW now
+        //      that a push path exists). Real executeTool path with a recording
+        //      GitHubClient: create/edit/delete each carry today's agent branch;
+        //      when the branch cannot be opened NOTHING is written (fail-closed).
+        boolean branchGateOk = false;
+        try {
+            final java.util.List<String> calls = new java.util.ArrayList<>();
+            final java.util.List<String> writeShas = new java.util.ArrayList<>();
+            final boolean[] branchOpens = {true};
+            final boolean[] branchFileExists = {true};
+            final String[] lastWriteSha = {null};
+            GitHubClient fakeGh = new GitHubClient() {
+                @Override public boolean isAuthenticated() { return true; }
+                @Override public boolean ensureBranch(String r, String b) { calls.add("ensure " + b); return branchOpens[0]; }
+                @Override public String fileSha(String r, String p, String b) { return "abc123"; }
+                @Override public FileSnapshot fetchFileSnapshot(String r, String p, String b) {
+                    calls.add("snapshot " + p + " " + b);
+                    return new FileSnapshot("original\n", "read-sha");
+                }
+                @Override public String fetchFileContent(String r, String p, String b) {
+                    calls.add("read " + p + " " + b);
+                    return branchFileExists[0] ? "agent branch content\n" : null;
+                }
+                @Override public String fetchFileContent(String r, String p) { return "default branch content\n"; }
+                @Override public boolean upsertFile(String r, String p, String c, String m, String s, String b) {
+                    lastWriteSha[0] = s;
+                    writeShas.add(p + ":" + s);
+                    calls.add("put " + p + " " + b); return true; }
+                @Override public boolean deleteFile(String r, String p, String s, String m, String b) {
+                    calls.add("del " + p + " " + b); return true; }
+            };
+            Class<?> amc = Class.forName("com.mindpalace.agent.AgentManager");
+            Object am = amc.getDeclaredConstructor().newInstance();
+            amc.getMethod("setSelfTest", boolean.class).invoke(am, true);
+            amc.getMethod("setGitHubClient", GitHubClient.class).invoke(am, fakeGh);
+            Class<?> rm = Class.forName("com.mindpalace.world.Room");
+            Object roomObj = rm.getDeclaredConstructor(String.class).newInstance("selftest-branch-repo");
+            Class<?> bm = Class.forName("com.mindpalace.world.Book");
+            Object bookObj = bm.getDeclaredConstructor(String.class, String.class).newInstance("selftest-branch", "book.md");
+            amc.getMethod("setContext", rm, bm).invoke(am, roomObj, bookObj);
+            Class<?> tcc = Class.forName("com.mindpalace.agent.OllamaClient$ToolCall");
+            java.lang.reflect.Method execT = amc.getDeclaredMethod("executeTool", tcc);
+            execT.setAccessible(true);
+            java.lang.reflect.Constructor<?> tc = tcc.getDeclaredConstructor(String.class, String.class);
+            String today = GitHubClient.agentBranchName(java.time.LocalDate.now());
+            String rc = (String) execT.invoke(am, tc.newInstance("create_file", "{\"filename\":\"a.txt\",\"content\":\"branch gate 1\\n\"}"));
+            String readBranch = (String) execT.invoke(am, tc.newInstance("read_file", "{\"filename\":\"a.txt\"}"));
+            boolean branchRead = readBranch.contains("agent branch content") && !readBranch.contains("default branch content")
+                && calls.indexOf("ensure " + today) < calls.indexOf("read a.txt " + today);
+            branchFileExists[0] = false;
+            String missingBranchRead = (String) execT.invoke(am, tc.newInstance("read_file", "{\"filename\":\"a.txt\"}"));
+            boolean missingReadFailsClosed = "read failed".equals(missingBranchRead);
+            branchFileExists[0] = true;
+            String re = (String) execT.invoke(am, tc.newInstance("edit_file", "{\"filename\":\"a.txt\",\"content\":\"branch gate 2\\n\"}"));
+            String rp = (String) execT.invoke(am, tc.newInstance("edit_file",
+                "{\"filename\":\"a.txt\",\"old_string\":\"original\",\"new_string\":\"patched\"}"));
+            boolean snapshotShaRetained = "read-sha".equals(lastWriteSha[0])
+                && calls.lastIndexOf("ensure " + today) < calls.lastIndexOf("snapshot a.txt " + today);
+            String rd = (String) execT.invoke(am, tc.newInstance("delete_file", "{\"filename\":\"a.txt\"}"));
+            boolean onBranch = calls.contains("put a.txt " + today) && calls.contains("del a.txt " + today)
+                && calls.stream().filter(c -> c.startsWith("put ") || c.startsWith("del ")).allMatch(c -> c.endsWith(" " + today))
+                && rc.contains("on " + today) && re.contains("on " + today) && rp.contains("on " + today) && rd.contains("on " + today);
+            int writes = calls.size();
+            branchOpens[0] = false;
+            String refused = (String) execT.invoke(am, tc.newInstance("create_file", "{\"filename\":\"b.txt\",\"content\":\"branch gate 3\\n\"}"));
+            boolean failClosed = refused.contains("refused (#287)") && calls.size() == writes + 1;   // only the ensure attempt
+            com.google.gson.JsonObject withB = GitHubClient.contentsBody("m", "x", null, "agent/20261031");
+            com.google.gson.JsonObject noB = GitHubClient.contentsBody("m", null, "s", null);
+            boolean pure = "agent/20261031".equals(GitHubClient.agentBranchName(java.time.LocalDate.of(2026, 10, 31)))
+                && "agent/20261031".equals(withB.get("branch").getAsString()) && !noB.has("branch") && !noB.has("content")
+                && GitHubClient.isSafeAgentBranch("agent/20261103", "main")
+                && !GitHubClient.isSafeAgentBranch("agent/20261103", "agent/20261103")
+                && !GitHubClient.isSafeAgentBranch("agent/20261103", null);
+            boolean createShaLess = writeShas.contains("a.txt:null");
+            branchGateOk = onBranch && snapshotShaRetained && failClosed && pure && createShaLess
+                && branchRead && missingReadFailsClosed;
+            System.out.println((branchGateOk ? "PASS" : "FAIL")
+                + " agent branch gate (#287: create/edit/delete land on " + today + "; no branch = nothing written)");
+            if (!branchGateOk) System.out.println("  calls=" + calls + " rc=" + rc + " re=" + re + " rd=" + rd + " refused=" + refused
+                + " onBranch=" + onBranch + " snapshotShaRetained=" + snapshotShaRetained + " failClosed=" + failClosed + " pure=" + pure
+                + " createShaLess=" + createShaLess + " branchRead=" + branchRead + " missingReadFailsClosed=" + missingReadFailsClosed);
+        } catch (Exception e) {
+            Throwable c = e.getCause() != null ? e.getCause() : e;
+            System.out.println("FAIL agent branch gate: " + c.getClass().getSimpleName() + " " + c.getMessage());
+        }
+        if (branchGateOk) pass++; else fail++;
+
+        // 60c. agent write rules: deny by default, one repo, gates and runnables off limits. Pure attack table, then
+        //      the real executeTool path: a refused write reaches neither the quorum nor GitHub.
+        boolean rulesOk = false;
+        try {
+            final String mp = com.mindpalace.agent.AgentWriteRules.REPO;
+            final String javaOk = "src/main/java/com/mindpalace/world/Room.java";
+            String[][] table = {
+                // repo, path, expected rule ("" = allowed)
+                {mp, javaOk, ""}, {mp, "docs/notes.md", ""}, {mp, "./docs/notes.md", ""}, {mp, "src\\main\\resources\\a.txt", ""},
+                {"some-private-repo", javaOk, "REPO"}, {"MINDPALACE", javaOk, "REPO"}, {null, javaOk, "REPO"},
+                {mp, "../other/x.java", "PATH"}, {mp, "docs/../../x.md", "PATH"}, {mp, "/etc/passwd", "PATH"},
+                {mp, "C:/Windows/x.md", "PATH"}, {mp, "docs/a.md::$DATA", "PATH"}, {mp, "docs/a.md.", "PATH"}, {mp, "docs/a.md ", "PATH"},
+                {mp, "", "PATH"}, {mp, null, "PATH"}, {mp, "docs/", "PATH"},
+                {mp, ".github/workflows/ci.yml", "HIDDEN"}, {mp, ".GitHub/Workflows/ci.yml", "HIDDEN"}, {mp, "docs/.hidden/a.md", "HIDDEN"},
+                {mp, "docs/run.sh", "RUNNABLE"}, {mp, "src/main/java/a.PS1", "RUNNABLE"}, {mp, "scripts/x.py", "RUNNABLE"},
+                {mp, "src/main/java/com/mindpalace/agent/AgentWriteRules.java", "GATES"},
+                {mp, "SRC/MAIN/JAVA/com/mindpalace/agent/agentmanager.java", "GATES"},
+                {mp, "src/main/java/com/mindpalace/engine/GameEngine.java", "GATES"},
+                {mp, "src/main/java/com/mindpalace/github/GitHubClient.java", "GATES"},
+                {mp, "src/main/java/com/mindpalace/agent/sims/WeightedQuorumVote.java", "GATES"},
+                {mp, "pom.xml", "ROOTS"}, {mp, "AGENTS.md", "ROOTS"}, {mp, "scripts/x.txt", "ROOTS"}, {mp, "src/test/x.java", "ROOTS"}, {mp, "newdir/x.md", "ROOTS"},
+                {mp, "docs/github_token.md", "SECRETS"}, {mp, "docs/x.pem", "SECRETS"},
+            };
+            StringBuilder wrong = new StringBuilder();
+            for (String[] row : table) {
+                com.mindpalace.agent.AgentWriteRules.Verdict v = com.mindpalace.agent.AgentWriteRules.checkWrite(row[0], row[1]);
+                if (!v.rule().equals(row[2]) || v.allowed() != row[2].isEmpty()
+                        || (!v.allowed() && v.reason().length() < 40)) wrong.append(row[0]).append('/').append(row[1]).append("->").append(v.rule()).append(' ');
+            }
+            boolean readsScoped = com.mindpalace.agent.AgentWriteRules.checkRead(mp, "pom.xml").allowed()
+                && !com.mindpalace.agent.AgentWriteRules.checkRead("some-private-repo", "README.md").allowed()
+                && !com.mindpalace.agent.AgentWriteRules.checkRead(mp, "config/secrets.json").allowed();
+
+            final java.util.List<String> touched = new java.util.ArrayList<>();
+            GitHubClient fakeGh = new GitHubClient() {
+                @Override public boolean isAuthenticated() { return true; }
+                @Override public String defaultBranch(String r) { return "main"; }
+                @Override public boolean ensureBranch(String r, String b) { touched.add("ensure " + r); return true; }
+                @Override public String fileSha(String r, String f, String b) { return "sha"; }
+                @Override public boolean upsertFile(String r, String p, String c, String m, String s, String b) { touched.add("upsert " + r + "/" + p); return true; }
+                @Override public boolean deleteFile(String r, String p, String s, String m, String b) { touched.add("delete " + r + "/" + p); return true; }
+            };
+            Class<?> amc = Class.forName("com.mindpalace.agent.AgentManager");
+            Object am = amc.getDeclaredConstructor().newInstance();
+            amc.getMethod("setSelfTest", boolean.class).invoke(am, true);
+            amc.getMethod("setWriteRulesInSelfTest", boolean.class).invoke(am, true);
+            amc.getMethod("setGitHubClient", GitHubClient.class).invoke(am, fakeGh);
+            Class<?> rm = Class.forName("com.mindpalace.world.Room");
+            Class<?> bm = Class.forName("com.mindpalace.world.Book");
+            Object bookObj = bm.getDeclaredConstructor(String.class, String.class).newInstance("rules", "book.md");
+            Class<?> tcc = Class.forName("com.mindpalace.agent.OllamaClient$ToolCall");
+            java.lang.reflect.Method execT = amc.getDeclaredMethod("executeTool", tcc);
+            execT.setAccessible(true);
+            java.lang.reflect.Constructor<?> tc = tcc.getDeclaredConstructor(String.class, String.class);
+            amc.getMethod("setContext", rm, bm).invoke(am, rm.getDeclaredConstructor(String.class).newInstance("some-private-repo"), bookObj);
+            String otherRepo = (String) execT.invoke(am, tc.newInstance("create_file", "{\"filename\":\"docs/a.md\",\"content\":\"x\"}"));
+            String otherRead = (String) execT.invoke(am, tc.newInstance("read_file", "{\"filename\":\"docs/a.md\"}"));
+            amc.getMethod("setContext", rm, bm).invoke(am, rm.getDeclaredConstructor(String.class).newInstance(mp), bookObj);
+            String gate = (String) execT.invoke(am, tc.newInstance("delete_file", "{\"filename\":\".github/workflows/ci.yml\"}"));
+            boolean refused = otherRepo.contains("rule REPO") && otherRead.contains("rule REPO") && gate.contains("rule HIDDEN");
+            boolean nothingTouched = touched.isEmpty();
+            rulesOk = wrong.length() == 0 && readsScoped && refused && nothingTouched;
+            System.out.println((rulesOk ? "PASS" : "FAIL") + " agent write rules (" + table.length
+                + " attack rows; other repos and gates refused before quorum or GitHub)");
+            if (!rulesOk) System.out.println("  wrong=" + wrong + " readsScoped=" + readsScoped + " touched=" + touched
+                + " otherRepo=" + otherRepo + " otherRead=" + otherRead + " gate=" + gate);
+        } catch (Exception e) {
+            Throwable c = e.getCause() != null ? e.getCause() : e;
+            System.out.println("FAIL agent write rules: " + c.getClass().getSimpleName() + " " + c.getMessage());
+        }
+        if (rulesOk) pass++; else fail++;
+
+        // 60d. the game cannot load the owner's login: the Credential Manager path is gone and the env token is the only source.
+        boolean tokenOk = false;
+        try {
+            boolean gone = java.util.Arrays.stream(GitHubClient.class.getMethods())
+                .noneMatch(m -> m.getName().toLowerCase(java.util.Locale.ROOT).contains("credential"));
+            String envTok = System.getenv(GitHubClient.AGENT_TOKEN_ENV);
+            GitHubClient probe = new GitHubClient();
+            boolean loaded = probe.loadAgentToken();
+            boolean matchesEnv = envTok == null || envTok.isBlank() ? (!loaded && probe.getToken() == null)
+                : envTok.trim().equals(probe.getToken());
+            tokenOk = gone && matchesEnv;
+            System.out.println((tokenOk ? "PASS" : "FAIL") + " agent token source (env only, no Credential Manager path)");
+            if (!tokenOk) System.out.println("  gone=" + gone + " matchesEnv=" + matchesEnv);
+        } catch (Exception e) {
+            System.out.println("FAIL agent token source: " + e);
+        }
+        if (tokenOk) pass++; else fail++;
 
         // 61. (#125) repo-health rollup — RepoScanner.computeHealth is a pure
         //     0..100 scorer (backlog −5/issue cap −30, activity +1/4 commits

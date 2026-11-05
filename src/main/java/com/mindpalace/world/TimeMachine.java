@@ -85,6 +85,7 @@ public final class TimeMachine {
      */
     public String fileContentAt(String relPath) {
         if (!isActive()) return null;
+        if (relPath != null) relPath = relPath.replace('\\', '/'); // git's rev:path wants '/', Windows books carry '\'
         String rev = history.get(position - 1).sha;
         String key = rev + ":" + relPath;
         int i = cacheKeys.indexOf(key);

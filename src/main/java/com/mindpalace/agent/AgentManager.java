@@ -168,6 +168,10 @@ public class AgentManager {
     /** Selftest mode: parity wiring runs, the autonomous cycle does not. */
     private volatile boolean selfTest = false;
     public void setSelfTest(boolean st) { this.selfTest = st; }
+    // AgentWriteRules are always on live. Older selftests use throwaway repo names, so they opt in here.
+    private volatile boolean writeRulesInSelfTest = false;
+    public void setWriteRulesInSelfTest(boolean on) { this.writeRulesInSelfTest = on; }
+    private boolean writeRulesApply() { return !selfTest || writeRulesInSelfTest; }
 
     /** #290 selftest seam: fire the guide-reply routing EXACTLY as the
      *  onUserChat thenAccept block does (chat lane when wired, [Guide]
@@ -428,6 +432,7 @@ public class AgentManager {
         if (issueStream == null || approvedTopics.isEmpty()) return 0;
         if (room == null) return 0;
         String repo = room.getRepoName();
+        if (writeRulesApply() && !AgentWriteRules.checkRepo(repo).allowed()) return 0;
         int raised = 0;
         for (String topic : approvedTopics) {
             // #103 (F7): each topic is raised AT MOST ONCE, ever (raised-once
@@ -496,6 +501,7 @@ public class AgentManager {
         Room room = currentRoom; // #106: snapshot once per call
         String repo = room == null ? null : room.getRepoName();
         if (repo == null && openIssueSource == null) return 0;
+        if (openIssueSource == null && writeRulesApply() && !AgentWriteRules.checkRepo(repo).allowed()) return 0;
         long now = System.currentTimeMillis();
         // Cooldown is live-path pacing only; selftest seams bypass it.
         if (openIssueSource == null && now - lastIssueVerdictMs < ISSUE_VERDICT_COOLDOWN_MS) return 0;
@@ -724,6 +730,22 @@ public class AgentManager {
         } catch (Exception e) {
             log("[AgentManager] tool-permission vote failed (defaults read-only): " + e.getMessage());
             return false; // fail-safe: no approval → no writes
+        }
+    }
+
+    /**
+     * #287 (NEXT_100_STEPS step 97's rule: "if an in-game push path ever lands, all autonomous writes go to
+     * agent/&lt;step&gt; branches, human merges"). The push path exists, so every edit/create/delete from the tool
+     * loop lands on today's agent/yyyyMMdd branch, created from the default branch's head when missing.
+     * Returns the branch, or null when it cannot be opened: the caller then writes NOTHING (fail-closed).
+     */
+    private String agentWriteBranch(String repo) {
+        String br = com.mindpalace.github.GitHubClient.agentBranchName(java.time.LocalDate.now());
+        try {
+            return github.ensureBranch(repo, br) ? br : null;
+        } catch (Exception e) {
+            log("[AgentManager] #287 agent branch " + br + " not opened in " + repo + ": " + e.getMessage());
+            return null;
         }
     }
 
@@ -1244,6 +1266,13 @@ public class AgentManager {
 
     /** Read → propose-fix → apply for a single issue (local checkout only). */
     private boolean solveOne(Issue issue) {
+        if (writeRulesApply()) {
+            AgentWriteRules.Verdict rule = AgentWriteRules.checkWrite(issue.repo, issue.file);
+            if (!rule.allowed()) {
+                log("[AgentManager] solveOne: " + rule.message("solve", issue.file));
+                return false;
+            }
+        }
         Path repoDir = resolveReposRoot().resolve(issue.repo);
         // #99 path jail: normalize and require the resolved path to stay inside
         // the repo (same guard ToolExecutor.executeTool uses for agent writes).
@@ -1521,11 +1550,22 @@ public class AgentManager {
             JsonObject args = gson.fromJson(call.arguments, JsonObject.class);
             String filename = args.has("filename") ? args.get("filename").getAsString() : null;
             if (filename == null) return "missing filename";
+            if (writeRulesApply()) {
+                AgentWriteRules.Verdict rule = "read_file".equals(call.name)
+                    ? AgentWriteRules.checkRead(repo, filename) : AgentWriteRules.checkWrite(repo, filename);
+                if (!rule.allowed()) {
+                    if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE,
+                        "rule-refused", rule.rule() + " " + repo + "/" + filename);
+                    return rule.message(call.name, filename);
+                }
+            }
 
             switch (call.name) {
                 case "read_file": {
                     if (github != null && github.isAuthenticated()) {
-                        String content = github.fetchFileContent(repo, filename);
+                        String br = agentWriteBranch(repo);
+                        if (br == null) return "read failed (#287): could not open an agent/ branch in " + repo;
+                        String content = github.fetchFileContent(repo, filename, br);
                         if (telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "read", filename);
                         return content != null ? truncateHeadTail(filename, content) : "read failed";
                     }
@@ -1551,9 +1591,22 @@ public class AgentManager {
                     String content = args.has("content") ? args.get("content").getAsString() : null;
                     if (content == null) content = "";
                     String finalContent = content;
+                    String patchBranch = null;
+                    String patchSha = null;
                     if (oldStr != null && !oldStr.isEmpty()) {
                         String newStr = args.has("new_string") ? args.get("new_string").getAsString() : "";
-                        String current = readCurrentFile(room, repo, filename);
+                        String current;
+                        if (github != null && github.isAuthenticated()) {
+                            patchBranch = agentWriteBranch(repo);
+                            if (patchBranch == null) return "edit refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
+                            com.mindpalace.github.GitHubClient.FileSnapshot snapshot =
+                                github.fetchFileSnapshot(repo, filename, patchBranch);
+                            if (snapshot == null) return "edit failed (cannot read current " + filename + ")";
+                            current = snapshot.content();
+                            patchSha = snapshot.sha();
+                        } else {
+                            current = readCurrentFile(room, repo, filename);
+                        }
                         if (current == null) return "edit failed (cannot read current " + filename + ")";
                         if (!current.contains(oldStr))
                             return "edit failed: old_string not found in " + filename
@@ -1583,9 +1636,13 @@ public class AgentManager {
                         return "never-twice: identical code already written";
                     }
                     if (github != null && github.isAuthenticated()) {
-                        boolean ok = github.upsertFile(repo, filename, finalContent, "MindPalace agent edit: " + filename, null);
-                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename);
-                        return ok ? "edited " + filename : "edit failed";
+                        // #287: onto today's agent/ branch, never the default branch; the sha is the file's ON that branch
+                        String br = patchBranch != null ? patchBranch : agentWriteBranch(repo);
+                        if (br == null) return "edit refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
+                        boolean ok = github.upsertFile(repo, filename, finalContent, "MindPalace agent edit: " + filename,
+                            patchBranch != null ? patchSha : github.fileSha(repo, filename, br), br);
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "edit", filename + " @" + br);
+                        return ok ? "edited " + filename + " on " + br + " (a person merges)" : "edit failed";
                     }
                     if (room.getLocalPath() != null) {
                         java.nio.file.Path fp = jailedLocalPath(room, filename);
@@ -1608,9 +1665,12 @@ public class AgentManager {
                         return "never-twice: identical code already written";
                     }
                     if (github != null && github.isAuthenticated()) {
-                        boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent create: " + filename, null);
-                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename);
-                        return ok ? "created " + filename : "create failed";
+                        String br = agentWriteBranch(repo);                                   // #287
+                        if (br == null) return "create refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
+                        boolean ok = github.upsertFile(repo, filename, content, "MindPalace agent create: " + filename,
+                            null, br);
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "create", filename + " @" + br);
+                        return ok ? "created " + filename + " on " + br + " (a person merges)" : "create failed";
                     }
                     if (room.getLocalPath() != null) {
                         java.nio.file.Path fp = jailedLocalPath(room, filename);
@@ -1629,9 +1689,13 @@ public class AgentManager {
                         return "delete vetoed by quorum (#126): " + filename;
                     }
                     if (github != null && github.isAuthenticated()) {
-                        boolean ok = github.deleteFile(repo, filename, null, "MindPalace agent delete: " + filename);
-                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename);
-                        return ok ? "deleted " + filename : "delete failed";
+                        String br = agentWriteBranch(repo);                                   // #287
+                        if (br == null) return "delete refused (#287): could not open an agent/ branch in " + repo + "; nothing written";
+                        String sha = github.fileSha(repo, filename, br);
+                        if (sha == null) return "delete failed (no such file on " + br + ")";
+                        boolean ok = github.deleteFile(repo, filename, sha, "MindPalace agent delete: " + filename, br);
+                        if (ok && telemetry != null) telemetry.record(com.mindpalace.backup.Telemetry.CODE, "delete", filename + " @" + br);
+                        return ok ? "deleted " + filename + " on " + br + " (a person merges)" : "delete failed";
                     }
                     if (room.getLocalPath() != null) {
                         java.nio.file.Path fp = jailedLocalPath(room, filename);
@@ -1753,13 +1817,9 @@ public class AgentManager {
         }
     }
 
-    /** H05: fetch current file content (github first, then local) for patch edits. */
+    /** H05: fetch current file content from the local checkout when GitHub is unavailable. */
     private String readCurrentFile(Room room, String repo, String filename) {
-        if (github != null && github.isAuthenticated()) {
-            try {
-                return github.fetchFileContent(repo, filename);
-            } catch (Exception ignored) { }
-        }
+        if (github != null && github.isAuthenticated()) return null;
         if (room != null && room.getLocalPath() != null) {
             try {
                 java.nio.file.Path fp = jailedLocalPath(room, filename);

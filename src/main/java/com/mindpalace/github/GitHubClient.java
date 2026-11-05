@@ -16,10 +16,13 @@ import java.util.concurrent.TimeUnit;
  */
 public class GitHubClient {
     private static final String API_BASE = "https://api.github.com";
+    public static final String AGENT_TOKEN_ENV = "MIND_PALACE_AGENT_TOKEN";
     private OkHttpClient http;
     private String token;
     private String username = "chrisalunlloyd2-sudo";
     private boolean authenticated = false;
+
+    public record FileSnapshot(String content, String sha) {}
 
     public GitHubClient() {
         http = new OkHttpClient.Builder()
@@ -29,46 +32,18 @@ public class GitHubClient {
     }
 
     /**
-     * Try to get token from Windows Credential Manager.
-     * Spawns `git credential-manager get` directly (no shell) and writes the
-     * credential request to stdin — avoids WSL/bash resolution issues.
+     * The game's only token source: MIND_PALACE_AGENT_TOKEN, a fine-grained token scoped to this repo.
+     * The game and its agents share this client, so it must never hold the owner's login. It no longer reads
+     * Windows Credential Manager, where that login lives; with no token the game runs unauthenticated.
      */
-    public boolean loadTokenFromCredentialManager() {
-        try {
-            ProcessBuilder pb = new ProcessBuilder("git", "credential-manager", "get");
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            p.getOutputStream().write("protocol=https\nhost=github.com\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            p.getOutputStream().flush();
-            p.getOutputStream().close();
-            // t_b2e9bc3f gate fix: GCM intermittently wedges (observed twice
-            // this session — jstack showed the engine hung in readAllBytes on
-            // GCM's stdout). waitFor()/readAllBytes block forever, freezing
-            // startup. Bound the whole handshake to 12s and destroy the child
-            // on timeout — the engine already has a fallback path.
-            boolean finished = p.waitFor(12, TimeUnit.SECONDS);
-            if (!finished) {
-                p.destroyForcibly();
-                System.err.println("[GitHub] Credential Manager timed out after 12s — using fallback auth");
-            }
-            String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-
-            for (String line : out.split("\n")) {
-                if (line.toLowerCase().startsWith("password=")) {
-                    String tok = line.substring("password=".length()).trim();
-                    tok = tok.replaceAll("[^\\x20-\\x7E]", "");
-                    if (tok.length() >= 20) {
-                        this.token = tok;
-                        this.authenticated = true;
-                        System.out.println("[GitHub] Authenticated via Windows Credential Manager");
-                        return true;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("[GitHub] Failed to load token: " + e.getMessage());
+    public boolean loadAgentToken() {
+        String tok = System.getenv(AGENT_TOKEN_ENV);
+        if (tok == null || tok.isBlank()) {
+            System.out.println("[GitHub] " + AGENT_TOKEN_ENV + " not set: running unauthenticated");
+            return false;
         }
-        return false;
+        setToken(tok.trim());
+        return authenticated;
     }
 
     public void setToken(String token) {
@@ -333,10 +308,16 @@ public class GitHubClient {
     }
 
     public boolean upsertFile(String repoName, String filePath, String content, String commitMessage, String sha) throws IOException {
-        JsonObject body = new JsonObject();
-        body.addProperty("message", commitMessage);
-        body.addProperty("content", java.util.Base64.getEncoder().encodeToString(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        if (sha != null) body.addProperty("sha", sha);
+        return upsertFile(repoName, filePath, content, commitMessage, sha, null);
+    }
+
+    /**
+     * #287: write to a named branch. branch == null keeps the old behaviour (the repo's default branch) for the
+     * player's own edits in BookEditor/BookViewer; autonomous agent writes always pass an agent/ branch.
+     */
+    public boolean upsertFile(String repoName, String filePath, String content, String commitMessage, String sha,
+                              String branch) throws IOException {
+        JsonObject body = contentsBody(commitMessage, content, sha, branch);
 
         RequestBody reqBody = RequestBody.create(body.toString(), MediaType.parse("application/json"));
         Request req = new Request.Builder()
@@ -356,9 +337,12 @@ public class GitHubClient {
      * Delete a file from a repo.
      */
     public boolean deleteFile(String repoName, String filePath, String sha, String commitMessage) throws IOException {
-        JsonObject body = new JsonObject();
-        body.addProperty("message", commitMessage);
-        body.addProperty("sha", sha);
+        return deleteFile(repoName, filePath, sha, commitMessage, null);
+    }
+
+    /** #287: delete on a named branch (null = default branch, the player's own UI path). */
+    public boolean deleteFile(String repoName, String filePath, String sha, String commitMessage, String branch) throws IOException {
+        JsonObject body = contentsBody(commitMessage, null, sha, branch);
 
         RequestBody reqBody = RequestBody.create(body.toString(), MediaType.parse("application/json"));
         Request req = new Request.Builder()
@@ -368,7 +352,134 @@ public class GitHubClient {
             .build();
 
         try (Response resp = http.newCall(req).execute()) {
-            return resp.isSuccessful();
+            boolean ok = resp.isSuccessful();
+            if (ok) clearCache();
+            return ok;
+        }
+    }
+
+    // ── #287: the branch gate (NEXT_100_STEPS step 97's rule, now LAW because an in-game push path exists):
+    // autonomous writes go to agent/<yyyyMMdd>, never to the default branch; a person merges.
+
+    /** Pure: the agent branch for a day, e.g. agent/20261031. One branch per day keeps a day's agent work reviewable as one diff. */
+    public static String agentBranchName(java.time.LocalDate day) {
+        return "agent/" + day.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+    }
+
+    public static boolean isSafeAgentBranch(String branch, String defaultBranch) {
+        return branch != null && !branch.isBlank() && defaultBranch != null && !defaultBranch.isBlank()
+            && !branch.equals(defaultBranch);
+    }
+
+    /** Pure: the PUT/DELETE /contents body. content == null for a delete; sha/branch omitted when null. */
+    public static JsonObject contentsBody(String message, String content, String sha, String branch) {
+        JsonObject body = new JsonObject();
+        body.addProperty("message", message);
+        if (content != null) {
+            body.addProperty("content", java.util.Base64.getEncoder().encodeToString(
+                content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        }
+        if (sha != null) body.addProperty("sha", sha);
+        if (branch != null) body.addProperty("branch", branch);
+        return body;
+    }
+
+    /** The repo's default branch name, or null. */
+    public String defaultBranch(String repoName) throws IOException {
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName)
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return null;
+            JsonObject o = JsonParser.parseString(resp.body().string()).getAsJsonObject();
+            return o.has("default_branch") ? o.get("default_branch").getAsString() : null;
+        }
+    }
+
+    /** Head commit sha of a branch, or null when the branch does not exist. */
+    public String branchSha(String repoName, String branch) throws IOException {
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/git/ref/heads/" + branch)
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return null;
+            JsonObject o = JsonParser.parseString(resp.body().string()).getAsJsonObject();
+            return o.getAsJsonObject("object").get("sha").getAsString();
+        }
+    }
+
+    /**
+     * Make sure `branch` exists, branching from the default branch's head if not. true when it exists afterwards.
+     * Never touches the default branch itself; a 422 (someone created it first) counts as existing.
+     */
+    public boolean ensureBranch(String repoName, String branch) throws IOException {
+        String def = defaultBranch(repoName);
+        if (!isSafeAgentBranch(branch, def)) return false;
+        if (branchSha(repoName, branch) != null) return true;
+        String base = branchSha(repoName, def);
+        if (base == null) return false;
+        JsonObject body = new JsonObject();
+        body.addProperty("ref", "refs/heads/" + branch);
+        body.addProperty("sha", base);
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/git/refs")
+            .header("Authorization", "token " + token)
+            .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            return resp.isSuccessful() || resp.code() == 422;
+        }
+    }
+
+    /** Blob sha of a file on a branch (needed to update or delete it), or null when the file is not there. */
+    public String fileSha(String repoName, String filePath, String branch) throws IOException {
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/contents/" + filePath
+                + (branch == null ? "" : "?ref=" + branch))
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return null;
+            JsonElement e = JsonParser.parseString(resp.body().string());
+            return e.isJsonObject() && e.getAsJsonObject().has("sha") ? e.getAsJsonObject().get("sha").getAsString() : null;
+        }
+    }
+
+    /** File content and blob SHA from the same branch revision, or null when unavailable. */
+    public FileSnapshot fetchFileSnapshot(String repoName, String filePath, String branch) throws IOException {
+        if (branch == null) return null;
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/contents/" + filePath + "?ref=" + branch)
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            if (!resp.isSuccessful()) return null;
+            JsonElement e = JsonParser.parseString(resp.body().string());
+            if (!e.isJsonObject()) return null;
+            JsonObject file = e.getAsJsonObject();
+            if (!file.has("content") || !file.has("sha")) return null;
+            byte[] content = java.util.Base64.getMimeDecoder().decode(file.get("content").getAsString());
+            return new FileSnapshot(new String(content, java.nio.charset.StandardCharsets.UTF_8),
+                file.get("sha").getAsString());
+        }
+    }
+
+    /** Raw file content on a branch (uncached: agent edits stack on the branch, not on the default branch), or null. */
+    public String fetchFileContent(String repoName, String filePath, String branch) throws IOException {
+        if (branch == null) return fetchFileContent(repoName, filePath);
+        Request req = new Request.Builder()
+            .url(API_BASE + "/repos/" + username + "/" + repoName + "/contents/" + filePath + "?ref=" + branch)
+            .header("Authorization", "token " + token)
+            .header("Accept", "application/vnd.github.v3.raw")
+            .build();
+        try (Response resp = http.newCall(req).execute()) {
+            return resp.isSuccessful() ? resp.body().string() : null;
         }
     }
 
