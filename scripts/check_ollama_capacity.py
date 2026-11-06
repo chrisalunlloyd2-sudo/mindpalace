@@ -162,6 +162,7 @@ def check_env(env, roster):
 
 
 def main():
+    """Main (function)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-dir", default=".")
     ap.add_argument("--host", default=DEFAULT_HOST)
