@@ -91,7 +91,9 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 - **world/** — room/hallway generation: `WorldBuilder`, `RoomPopulator`,
   `RepoMapper`, `Room`, `Hallway`, `Book`, `FogOfWar`, `PortalTheme`
   (teleporter color pairing), `OutsideWorld`, `CorridorLayout`, `RoomLayout`,
-  `LegacyRepoClassifier`, `TimeClock`, `TimeMachine`. Themed rooms:
+  `LegacyRepoClassifier`, `TimeClock`, `TimeMachine`, `RoomPreviewBank`
+  (MP-008/#154: baked 256x256 interior previews for the portal sheet — one
+  shared FBO, one room re-rendered per frame round-robin). Themed rooms:
   `TuringTape`, `RotorRoom`, `EnigmaPlugboard`, `BanburismusGauge`,
   `NashFountain`, `LabDevice`, `Constellation`, `TodoCrystal`.
 - **ui/** — `HUD` (door prompts), `HudLayout`, `InteractionPromptSystem`
@@ -135,7 +137,9 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 - **genetics/** — procedural audio GA: `AudioEvolver`, `AudioGenome`,
   `SonicFitness`, `FFT`, `PatchSynth`, `GenomeArchive`, `GeneticTimeline`,
   `DeterministicSeed`, `GenomeControl`.
-- **audio/** — `AudioEngine`, `MusicEngine`, `StepSequencer`.
+- **audio/** — `AudioEngine`, `MusicEngine`, `StepSequencer`, `AudioSettings`
+  (#32: best-effort volume-knob persistence via the PortalTheme properties
+  pattern).
 - **economy/** — `DePIN`, `Wallet`, `Blackboard`, `EconomyLedger`, `Escrow`,
   `Treasury`, `EnergyBudget` (daily energy drip for spawns/workers — wired in
   GameEngine; selftest case "energy budget"). Reward categories (`tool_round`,
@@ -144,7 +148,9 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
   (#97).
 - **backup/** — `Telemetry` (event ledger), `MemoryManager`, `BackupManager`.
 - **deploy/** — `LiveUpdateManager`, `PatchManager`, `DeployManager`,
-  `AnimationSystem`.
+  `AnimationSystem`, `UpdateChecker` (#139/H50, step 109: GitHub Releases-API
+  update check — tokenless GET `/releases/latest`, semver compare,
+  fail-soft).
 - **integration/** — external feed adapters: `GitHubPollBridge` (polls
   `hermes-queue`-labeled GitHub issues → local `TASK_####_*.md` task files
   for Hermes), `RedditOAuthClient` + `OAuthCallbackServer` (Reddit OAuth2

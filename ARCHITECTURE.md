@@ -41,7 +41,7 @@ body the player actually sees and touches.
 | Package | Owns | Key classes |
 |---------|------|-------------|
 | `engine` | game loop, state machine, courtyard coupling | `GameEngine`, `GameState`, `Input`, `ToolExecutor`, `AstGate`, `ExitControl` (polite exit/restart) |
-| `world` | everything that exists as place | `WorldBuilder` (hallways/rooms/doors/layout), `Room`, `Book`, `Hallway`, `OutsideWorld` (mansion/towns/forest/shops + building colliders), `RotorRoom`, `TuringTape`, `BanburismusGauge`, `NashFountain`, `EnigmaPlugboard` |
+| `world` | everything that exists as place | `WorldBuilder` (hallways/rooms/doors/layout), `Room`, `Book`, `Hallway`, `OutsideWorld` (mansion/towns/forest/shops + building colliders), `RotorRoom`, `TuringTape`, `BanburismusGauge`, `NashFountain`, `EnigmaPlugboard`, `RoomPreviewBank` (MP-008/#154 baked 256px interior previews) |
 | `render` | pixels | `Renderer` (cube/quad/sphere meshes, texture atlas), `BloomEffect` (2-pass), `Camera`, `FontRenderer`, `Mesh`, `Shader`, `FrustumCuller`, `GlTrace`, `HitchSampler`, `Particle*` (MP-028: `ParticleBatch`, `ParticleEmitter`, `ParticlePool`, `ParticleQuadBuffer`, `ParticleQuality`, `ParticleSelfCheck`) |
 | `entity` | bodies that move | `Player` (FPS controller, collision + resolveAxis), NPC avatars, `ScoutNPC` |
 | `agent` | minds | `AgentManager` (5-min autonomous cycle), `OllamaClient` (chat + tools), `ModelLifespan` (context budget, drift + repetition), `ContextKit` (LoRA+KG+KV per turn), `ModelScheduler` (one-model cold-shot gate), `BdiBridge` (BDI_FSM webui bridge, step 81) |
@@ -51,10 +51,13 @@ body the player actually sees and touches.
 | `network` | LAN multiplayer contract | `MultiplayerHub` (JDK ServerSocket + hand-rolled RFC6455 WS server, off by default via `enabled()`), `MultiplayerClient` (#138) |
 | `integration` | cloud↔local bridges | `GitHubPollBridge` (hermes-queue issues → local TASK files), `ContextBroadcaster`, `RedditOAuthClient`, `OAuthCallbackServer`, `RedditToQuorumBridge` |
 | `blocks` | block-assembly architecture (§20 cross-correlated roadmap) | `Block`, `BlockRegistry`, `FireBlock`, `FireflyBlock`, `FrostBlock`, `WeatherBlock`, `SelfTestProbe` |
-| `economy` | money | `DePIN`, `Blackboard` (jobs, wallets, credits), `EconomyLedger`, `Escrow`, `Treasury` |
 | `genetics` | evolving audio | `AudioEvolver`, `AudioGenome`, `PatchSynth` (fitness via `MusicEngine.renderOffline`) |
-| `audio` | sound | `AudioEngine` (SFX, wind, rotor carries), `MusicEngine` (procedural score, rotor-clock), `StepSequencer` |
+| `audio` | sound | `AudioEngine` (SFX, wind, rotor carries), `MusicEngine` (procedural score, rotor-clock), `StepSequencer`, `AudioSettings` (#32 volume-knob persistence) |
 | `backup` | memory + billing | `Telemetry` (append-only ledger), `MemoryManager` (never-twice) |
+| `deploy` | live updates + patching | `LiveUpdateManager`, `PatchManager`, `DeployManager`, `AnimationSystem`, `UpdateChecker` (Releases-API update check, #139) |
+| `avatar` | parametric NPC bodies | `AvatarDescriptor`, `AvatarLibrary` (presets + seeded procedural), `CharacterDNA`, `AvatarImporter` |
+| `agent.sprites` | sprite proposals | `SpriteProposalService` |
+| `tailscale` | tailnet layer (owner login, never Funnel/public) | `TailscaleCli`, `StatusSnapshot`, `MagicDns`, `WhoIsResolver`, `TailnetIdentity`, `TailnetRoles`, `TailnetTransport` |
 | `ui` | overlays | `HUD`, map overlay, help |
 
 ## Where do I add…?

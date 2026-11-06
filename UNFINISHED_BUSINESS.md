@@ -12,7 +12,10 @@ Legend: [BROKEN] = doesn't work at all · [STUB] = defined but not wired · [MIS
           config.toml exists with an imap/smtp account block — the "not
           installed / empty config / no creds" lines below-became-stale; creds
           live in the credential store. Sending needs Architect's send-go.
-[BROKEN] `~/sent_emails/` is EMPTY → nothing to harvest from sent mail.
+[RECONCILED 2026-11-05] `~/sent_emails/` is no longer empty — 399 sent
+       messages on disk (oldest 2026-10-25, newest 2026-11-04), so harvest input
+       EXISTS. What's still open is the dream_job/digest pipeline itself (see
+       [PLANNED] below + #306).
 [PLANNED] dream_job.py / dream_correlation_job were spec'd but never landed
           in-repo (no git history; absent from AIGEN_SYS/scripts/ — only the
           unrelated KG dream_loop.py exists [ACTIVE]). The digest pipeline
@@ -132,9 +135,11 @@ correlate → email suggestions + code-mind log).
           explicitly — #186 stays OPEN either way.
 
 ═══════════════════════════════════════════════════════════════════════
-12. OUTSIDE WORLD / PHASE F-G — deferred
+12. OUTSIDE WORLD / PHASE F-G — SHIPPED (Phase F reconciled 2026-11-05, #307; Phase G since 2026-10-18)
 ═══════════════════════════════════════════════════════════════════════
-[MISSING] Phase F: outside world streaming (small chunks).
+[DONE] Phase F: outside world streaming (small chunks) — shipped:
+       WorldBuilder.chunkVisibleAt + OutsideWorld.chunkVisible (chunked draw;
+       ROADMAP.md Phase F [x] since #79; verified vs source 2026-11-05, #307).
 [DONE] Phase G: teleporter graphics upgrade — particle swirl, glow ring, animated pad all shipped (ROADMAP.md Phase G all [x]; ROADMAP.md sweep 2026-10-18).
 
 ═══════════════════════════════════════════════════════════════════════
