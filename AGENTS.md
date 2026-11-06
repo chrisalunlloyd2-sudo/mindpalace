@@ -178,8 +178,12 @@ tinyllama:1.1b, phi:latest, gemma2:2b, mistral:7b, codellama:7b,
 nomic-embed-text. Game roles: tool=llama3.2:1b, critic=qwen2.5:0.5b,
 tie-breaker=deepseek-r1:1.5b. These are pinned declaratively in
 `config/model_pins.json` — run `python scripts/check_model_pins.py`
-before a cron job's Ollama call to fail loud on drift instead of silently
-skipping (MP-042/#187); see `docs/MODEL_PINS.md`.
+(model pin drift) and `python scripts/check_ollama_capacity.py`
+(serve capacity: MAX_LOADED_MODELS/KEEP_ALIVE/NUM_PARALLEL vs the quorum
+roster — catches the serve silently reverting to defaults after a reboot,
+which resurrects the NO_QUORUM livelock; #327) before a cron job's Ollama
+call to fail loud on drift instead of silently skipping (MP-042/#187);
+see `docs/MODEL_PINS.md`.
 
 ## Throughput tooling (2026-10-17, MP-045/#94)
 - `scripts/evidence_checker.py` — gate before marking a TASK card
