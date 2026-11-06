@@ -115,8 +115,10 @@ day/night, magnetic field lines, parallax shells).
 more black sky", "planet open world with radial gravity", "tree branches + bark,
 procedural grass, water waves", "day/night cycle". `[RM]` Phase F day/night = DONE.
 
-**Still open (`[RM]` Phase F unchecked):** outside-world *streaming* (render small
-chunks, not all at once), Diablo/Zelda top-down view, local-weather sync. Plus
+**Still open (`[RM]` Phase F unchecked):** Diablo/Zelda top-down view, local-weather
+sync. (Outside-world *streaming* was here until 2026-11-05 (#322) — it shipped:
+`WorldBuilder.chunkVisibleAt` + `OutsideWorld.chunkVisible`, ROADMAP.md Phase F
+`[x]` "render the outside world in small chunks".) Plus
 `[SPEC]` I-1..10 scattering/Fresnel/volumetric-clouds/aurora/parallax shells — hold
 these for when a GPU budget is confirmed (BLACKBOARD constraint: Intel HD 510 /
 OpenGL 3.3, low cost).
@@ -169,8 +171,8 @@ has `executeToolRound()` + `executeTool()` (read_file/edit_file/create_file/dele
 with GitHub + local-path fallback), driven by `modelScheduler.submitToolRound()` inside
 `autonomousCycle()`. The earlier "no executeTool()" note was STALE.
 
-**Next action:** implement `executeTool()` + tool-call parsing + result loop. This
-is the biggest "not hooked in" gap (`[UB]` priority #2).
+**Next action:** (none — superseded by Status above; the stale "implement
+executeTool()" line was removed 2026-11-05, #318.)
 
 ---
 
@@ -251,8 +253,13 @@ jpackage's own uninstaller); `INSTALLER.md` documents the verified install; two 
 
 ## 16. USB backup  (`[UB]` 11)
 
-**Status:** `DONE` (2026-10-18 sweep) — `backup-to-usb.sh` at repo root (commit b0b61b8,
-"mirror AIGEN_SYS + hermes + databases to USB (merge-only)") covers all four targets.
+**Status:** `PARTIAL` (downgraded 2026-11-05, #315 — mirrors UNFINISHED_BUSINESS.md §11)
+— `backup-to-usb.sh` at repo root (commit b0b61b8,
+"mirror AIGEN_SYS + hermes + databases to USB (merge-only") covers the plain
+`cp -ru` mirror path for all four targets. Still open, tracked in #186 (MP-041):
+encryption-at-rest + a restore test (draft AES-256-GCM implementation sits
+unmerged in PR #218; `grep -niE "encrypt|gpg|openssl|aes" backup-to-usb.sh`
+matches nothing).
 
 
 ---
@@ -262,11 +269,15 @@ jpackage's own uninstaller); `INSTALLER.md` documents the verified install; two 
 **Ask:** `[chat]` "sims1337 will be the backend with the players and chat."
 
 **Status:** `PARTIAL` — SIMS1337 *concepts* ported (ModelRouter, LoRA, FOWGate,
-quorum, LanguageRegistry). Networking/lobby/second-player NOT built.
+quorum, LanguageRegistry). Presence/chat client contract SHIPPED (#138, step 108 —
+`network/MultiplayerHub.java` + `network/MultiplayerClient.java`, wire protocol
+`{"type":"presence"...}` / `{"type":"chat"...}`; off by default, loopback
+two-instance demo; matches UNFINISHED_BUSINESS.md §10 "LANDED ADDITIVE, disabled
+by default"). Lobby/matchmaking/second-player UX still open.
 
-**Next action:** define the client contract (presence heartbeat + chat stream), stub
-the adapter with graceful local-fallback, wire real keys when they arrive. Keep the
-game fully functional offline.
+**Next action:** lobby/matchmaking UX flow only (the presence heartbeat + chat
+stream contract it used to ask for is done, #138). Keep the game fully
+functional offline.
 
 ---
 
@@ -279,9 +290,15 @@ background daemon fetch, 60s cooldown) surfaces fleet_status.jsonl + workflow_lo
 + word_library/success.jsonl as a right-side screen panel (`renderGistWall()`). Auth via
 Credential Manager PAT or `MIND_PALACE_GITHUB_TOKEN`.
 
-**Next action:** add a "Gist Wall" room/panel that reads the fleet gist
-(`fleet_status.jsonl` + `workflow_logits.jsonl`) and word-library success paths, and
-renders entries as readable billboards (reuse Section 1 fix). Then add new entries.
+In-world physical panel also SHIPPED — commit `e413357` (MP-011, #157, 2026-10-27):
+`renderGistWallPanel()` in `GameEngine` renders a slate plate on the hallway-0
+start cap, amber-header/green-entry billboards, gated behind
+`mindpalace.render.gistWallHud` / `MP_GIST_WALL_HUD`; paging shipped in `788dc5d`
+(MP-012, #158 — 25 demo lines across 3 flip-able pages).
+
+**Next action:** (none for the panel itself — superseded by the Status above,
+reconciled 2026-11-05 (#317).) Genuinely still open: add new entries to the
+wall feed as the fleet produces them.
 
 ---
 

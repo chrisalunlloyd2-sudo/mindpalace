@@ -153,6 +153,12 @@ GAME_PID=$(real_game_pid)
 # exactly 30000ms post-relaunch). The WeightedQuorumVote knob exists for
 # exactly this; pass it at every relaunch. 180s covers r1 think-blocks
 # warm-queued; total ballot ceiling still bounded by vote lane serialization.
+# RECONCILED 2026-11-05 (#327): the quorum-livelock fix commit 385ddf5's
+# message recommended 300000 — but the LIVE value here stays 180000:
+# measured ballots at 180s all complete warm-queued (41s worst), and 300s
+# only extends the wall-clock cost of a doomed cold-load cycle. Both
+# numbers must never drift apart silently again — this comment is the
+# single source of truth for the timeout choice.
 VOTE_JAVA_FLAGS="-Dmindpalace.vote.timeoutMs=180000"
 if [ -z "$GAME_PID" ] && [ -f "mindpalace-live.jar" ]; then
     # Windows javaw cannot open MSYS paths (/c/Users/...) — pass the jar

@@ -29,7 +29,10 @@ correlate → email suggestions + code-mind log).
 [DONE] 4-tier ModelPool — replaced by SIMS-parity ModelRouter tiers in AgentManager.
 [DONE] LoRA adapters + LoRASwitcher — src/main/java/com/mindpalace/agent/sims/LoRASwitcher.java.
 [DONE] AdapterRegistry voting/election — src/main/java/com/mindpalace/agent/sims/AdapterRegistry.java
-       (shipped for issue #71; runtime ballot wiring from AgentManager is follow-up).
+       (shipped for issue #71; runtime ballot wiring landed 2026-11-04 in
+       commit 432271e — a winning election now applies live via
+       LoRASwitcher.applyWeights; selftest "adapter election -> live switcher
+       weights" green, issue #288).
 [DONE] WeightedQuorumVote — FOW-gated quorum voting with 4D time pulse, exercised
        at AgentManager quorum call sites; 100-case parity gate in SimsHardening100
        (selftest aggregate check).

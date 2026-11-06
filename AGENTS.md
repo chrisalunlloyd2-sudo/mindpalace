@@ -52,6 +52,14 @@ system — the world is running right now, most hours of most days.
    the player sees a countdown and can press Esc to cancel (exit code 2 = cancelled,
    do not ask again for 10 minutes; 3 = game not responding). Batch changes so one
    restart covers many cards. Only a game that is not running may be launched directly.
+9. **Autonomous writes never land on the default branch.** All agent tool-loop
+   writes (create/edit/delete via `executeTool`) open an `agent/yyyyMMdd`
+   branch first and write NOTHING if it cannot be opened (fail-closed); a
+   person merges (#287/#321, commit `9a1b04c`). The deny-by-default
+   read/write gate is `AgentWriteRules` (tracked by selftest
+   "agent write rules" + "agent write branch gate"). GitHub auth uses
+   `MIND_PALACE_AGENT_TOKEN` only — the Credential-Manager PAT path was
+   removed (#333, `9a1b04c`); with no token the game runs unauthenticated.
 
 ## Build & verify
 ```
@@ -97,7 +105,9 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 - **agent/** — `AgentManager` (the autonomous cycle), `OllamaClient`,
   `ModelScheduler`, `ModelConfig`, `ModelLifespan`, `KnowledgeGraph`,
   `LexicalAnalyzer`, `BehaviorTree`, `ContextKit`, `KVTree`, `AgentChat`,
-  `IdleDetector`, `BdiBridge`.
+  `IdleDetector`, `BdiBridge`, `AgentWriteRules` (deny-by-default
+  read/write gate for the agent tool loop — autonomous writes open an
+  `agent/yyyyMMdd` branch and never touch the default branch, #287/#321).
   - **agent/sims/** — SIMS1337 parity: `ModelRouter`, `LoRASwitcher`,
     `AdapterType`, `FOWGate`, `WeightedQuorumVote` (quorum backend — no
     in-game room/UI for it yet), `LanguageRegistry`, `HexCoord`,
@@ -108,7 +118,9 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
   - **agent/sprites/** — `SpriteProposalService`.
 - **github/** — `GitHubClient`, `RepoScanner`, `GistWall`,
   `GitHubIssueStream`, `DedupeSentinel`, `RepoSweepData` (static KG ingest of
-  `reports/` sweep JSON — wired in GameEngine §14 repo-sweep).
+  `reports/` sweep JSON — wired in GameEngine §14 repo-sweep),
+  `ClaudeLessonData` (claude-code lesson ingest, selftest
+  "claude-lesson ingest" green).
 - **integration/** — cloud↔local bridges: `GitHubPollBridge` (hermes-queue
   issues → local TASK files), `ContextBroadcaster`, `RedditOAuthClient`,
   `OAuthCallbackServer`, `RedditToQuorumBridge`.

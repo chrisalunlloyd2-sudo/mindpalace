@@ -193,21 +193,21 @@ phase (v1.1.0-beta1 is live).
 
 ## Phase 11 — Polish, Release & Beautiful GitHub
 
-- [ ] Windows installer (Inno Setup / jpackage), auto-updater
+- [x] Windows installer (Inno Setup / jpackage), auto-updater — SHIPPED: build-installer.sh (jpackage) + build-warm-installer.sh (Inno Setup), UpdateChecker auto-updater (#139, a8e11ce; Phase H above + #300)
 - [ ] Real textures, VR mode (OpenXR), gamepad support
 - [ ] GitHub: embedded CSS, visuals, graphs, benchmarks, TODOs, thoughts
-- [ ] Binary releases on GitHub
-- [ ] CI/CD, test suite, performance benchmarks
+- [x] Binary releases on GitHub — SHIPPED: scripts/release_phase.sh --cut runs gh release create (step 89, H33)
+- [x] CI/CD, test suite, performance benchmarks — SHIPPED: .github/workflows/ci.yml (headless --demo --selftest under Xvfb) + e2e.sh/cascade_dev.sh perf gate (MP-004 worst-frame)
 
 ---
 
 ## Tech Debt & Infrastructure
 
-- [ ] Automated checkpoint releases
-- [ ] CI/CD for builds, test suite, performance benchmarks
+- [x] Automated checkpoint releases — SHIPPED: scripts/release_phase.sh bumps pom.xml version + stamps INSTALLER.md on phase completion (step 90, H33a)
+- [x] CI/CD for builds, test suite, performance benchmarks — SHIPPED: same .github/workflows/ci.yml as Phase 11 (duplicate line, ticked to match)
 - [ ] Asset pipeline documentation
 
 ---
 
-*Last updated: August 2026*
+*Last updated: November 2026*
 *Repo: https://github.com/chrisalunlloyd2-sudo/mindpalace*

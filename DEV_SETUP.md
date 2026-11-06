@@ -84,7 +84,16 @@ guard + frozen copy).
      agents idle: *Fix* — wait for `http://127.0.0.1:11435` to answer, or
      `ollama serve` manually; *Why* — Win11 starts Ollama lazily behind the
      first client call, the engine's gate check can beat it on boot.
-     (Win10-specific Defender/jpackage notes already in the build docs.)
+     **Required env when starting `ollama serve` manually** (#327, from the
+     MP-014/`385ddf5` root-cause fix): run it as
+     `OLLAMA_MAX_LOADED_MODELS=4 OLLAMA_KEEP_ALIVE=-1 OLLAMA_NUM_PARALLEL=2 OLLAMA_FLASH_ATTENTION=1 ollama serve`
+     — with the default `MAX_LOADED_MODELS=1` the 5-voter quorum LRU-evicts
+     every other voter's model each ballot, cold-loads blow the vote timeout
+     and the NO_QUORUM livelock (`ok:0 abstain:3 real:0 visible:[]`) recurs.
+     `OllamaClient`'s MULTI_RESIDENT pinning only holds up TO the server cap.
+     Symptom of a wrong server env: every quorum line reads `abstain:3` with
+     `visible:[]` or cold-model latencies (100s+) per ballot.
+       (Win10-specific Defender/jpackage notes already in the build docs.)
 8. **Console log `?` characters** were listed as gotcha 5 above — on Win11
    the same codepage rule applies verbatim (UTF-8 arrows render as `?`,
    parsers must match literal `?`).

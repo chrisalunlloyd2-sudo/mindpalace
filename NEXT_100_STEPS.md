@@ -7,7 +7,7 @@
 
 ## Where we are (2026-10-18)
 - PHASE B world finishing (59-78): ✅ COMPLETE — walls, wall collision, roofs, heights, forest ×3, paths, bloom, quorum flares, palette, windows, doors, lanterns, weather (e6ba132, 02df8e0, 7d3f52f)
-- Selftest gate: 87/0 exit-0 (latest run; gate grew through hardening + parity work)
+- Selftest gate: 92/0 exit-0 expected (static `pass++` site count at `9a1b04c`; was 87/0 at `dd470f6`, 89 after claude-lesson + gist-wall paging, 92 after #287's branch-gate/write-rules/token cases; latest run — gate grew through hardening + parity work)
 - SIMS1337 parity layer: SHIPPED — ModelRouter/LoRASwitcher/FOWGate/WeightedQuorumVote/AdapterRegistry + 100-case gate (SimsHardening100, 621d317)
 - Hardening x100 gate: PASS 100/100 cases (STEP 97, 34ad118)
 - Doc-drift sweep: shipped docs refreshed to real state (#64/#65/#67/#68/#69/#72/#78/#79/#83/#84/#85/#87)
@@ -69,7 +69,7 @@
 - [x] **94** H36a nightly 143-repo sweep — quota-free bot job (scripts/repo_sweep.py + RepoSweepData.ingest; cfaa673 lineage)
 - [x] **95** H37 commit engravings — last 10 commits per repo rendered at the room door (0e83613: `renderCommitEngravings`; local rooms via `git log -10` in RepoMapper, remote-only rooms via `GitHubClient` /commits with a 10-min cache)
 - [x] **96** H38 push gate — autonomous upsertFile requires quorum APPROVED on the exact diff + critic pass (43f75b7, fixes #126; selftest "file-write quorum gate" green)
-- [x] **97** PR preview branch — DECIDED 2026-10-18 (#129): DECLINED as not-needed-today. ToolExecutor writes are LOCAL-SANDBOX only (base-path confined, no git/push), so nothing autonomous lands on a default branch. RULE for the future: if an in-game push path ever lands (post-#126 ToolExecutor veto wiring), all autonomous writes go to `agent/<step>` branches, human merges (option 1)
+- [x] **97** PR preview branch — DECIDED 2026-10-18 (#129): DECLINED as not-needed-today. ToolExecutor writes are LOCAL-SANDBOX only (base-path confined, no git/push), so nothing autonomous lands on a default branch. RULE for the future: if an in-game push path ever lands (post-#126 ToolExecutor veto wiring), all autonomous writes go to `agent/<step>` branches, human merges (option 1). RECONCILED 2026-11-05 (#336): the in-game push path HAS landed — #287 found AgentManager executeTool → GitHubClient.upsertFile/deleteFile with no branch — and the RULE became law in #321/commit `9a1b04c`: all autonomous tool-loop writes now open `agent/yyyyMMdd` branches (fail-closed), human merges; `AgentWriteRules` gates reads/writes deny-by-default; GitHub auth is `MIND_PALACE_AGENT_TOKEN`-only (#333).
 - [x] **98** Weekly self-report (H50) — metrics + phases + next steps as issue comment + reports/ (scout_bot --weeklyreport: telemetry 7d pulse + NEXT_100_STEPS phase table + queue head -> reports/2026-Www.md + step-log #9, 7d guard, quota-free; wired into cascade_dev.sh step 9)
 
 ## PHASE E/F/G — Economy, Flash, Modules (99–150)
