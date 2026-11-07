@@ -211,12 +211,14 @@ public class ModelLifespan {
         // The cure fed the disease. Now the correction rides the SYSTEM
         // prompt (instructions, never conversational turns) and demands a
         // concrete artifact, so the next reply has work to do.
-        int extra = correctionCount++;
+        // TASK_0142 rev2 (#270): the old 5th-correction "variation (N)" tail was a
+        // replaceAll against a marker no code path ever inserted — dead escalation,
+        // removed (with its now-unused `extra` local). The ANTI-LOOP DIRECTIVE
+        // append below is the live corrector; correctionCount keeps ticking for
+        // telemetry/diagnostics.
+        correctionCount++;
         if (systemPrompt != null && !systemPrompt.contains("ANTI-LOOP DIRECTIVE")) {
             systemPrompt = systemPrompt + "\n\nANTI-LOOP DIRECTIVE: You repeat yourself when you have nothing concrete to do. NEVER write meta-talk (\"Would you like...\", \"let's continue\", \"refocus\"). Instead do exactly ONE of: (a) name a file and one specific action on it, (b) state a specific question about the code with your current guess, or (c) output 'SILENT' if truly nothing applies. This directive overrides habits.";
-        } else if (extra > 0 && (extra % 5 == 0) && systemPrompt != null) {
-            // Escalate temperature pressure every 5th correction via a varied tail
-            systemPrompt = systemPrompt.replaceAll("\\(variation " + "\\d+\\)", "(variation " + extra + ")");
         }
 
         // Compact: fold old history into a summary to free budget
