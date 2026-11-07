@@ -150,10 +150,22 @@ def check_env(env, roster):
         print(f"  note: MAX_LOADED_MODELS={cap} < roster {roster} — spec-conformant "
               "(385ddf5 accepts reload-padded ballots above MAX=4)")
     keep = str(env.get("OLLAMA_KEEP_ALIVE", "")).strip()
-    if not keep.startswith("-"):
-        problems.append(("DRIFT", f"OLLAMA_KEEP_ALIVE={keep or 'unset'} — not infinity; "
-                        "voters unload between ballots (cold-load abstains; this exact "
-                        "env was live on the 11436 mirror serve 2026-11-05)"))
+    # Keep-alive is judged against the game's 5-minute autonomous cycle: any
+    # value >= 6 min (or -1/infinity) keeps voters resident ACROSS cycles.
+    # The sanctioned small profile on the 12GB HDD box is 10m — warm by this
+    # rule, and intentional (bigger profiles thrash the box). Only unset/0/short
+    # keep-alives guarantee unloads between ballots (the cold-load abstain path).
+    if keep.startswith("-"):
+        pass
+    else:
+        mins = None
+        m = re.fullmatch(r"(\d+)\s*(s|m|h)?", keep or "")
+        if m:
+            n, unit = int(m.group(1)), (m.group(2) or "s")
+            mins = n / 60.0 if unit == "s" else (n if unit == "m" else n * 60)
+        if mins is None or mins < 6:
+            problems.append(("WARN", f"OLLAMA_KEEP_ALIVE={keep or 'unset'} < 6 min — voters unload "
+                            "between the 5-min cycles (cold-load abstains); 10m+ or -1 is warm"))
     par = geti("OLLAMA_NUM_PARALLEL")
     if par is not None and par < 2:
         problems.append(("WARN", f"OLLAMA_NUM_PARALLEL={par} < 2 — serialized ballots on a "
