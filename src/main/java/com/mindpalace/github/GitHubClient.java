@@ -12,7 +12,9 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * GitHub REST API client.
- * Uses PAT from Windows Credential Manager or settings.
+ * Uses MIND_PALACE_AGENT_TOKEN only (see loadAgentToken()); the Credential-
+ * Manager PAT path was removed (#333). With no token the game runs
+ * unauthenticated — never falls back to the owner's Windows login.
  */
 public class GitHubClient {
     private static final String API_BASE = "https://api.github.com";

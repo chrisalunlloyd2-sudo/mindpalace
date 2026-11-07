@@ -30,7 +30,7 @@ phase (v1.1.0-beta1 is live).
 - Teleporter pads (pulsing cyan portals) between floors
 - Hardwood floors, wallpaper, exit signs, crown molding, baseboard, ornaments
 - Retro terminal book editor (view/edit/create/delete/suggest), full GitHub CRUD
-- GitHub PAT from Windows Credential Manager
+- GitHub auth via `MIND_PALACE_AGENT_TOKEN` env var (Credential-Manager PAT removed, #333)
 - Frustum + distance culling, acceleration/friction, wall collision, noclip (F3)
 - Font renderer (bitmap atlas, wall/floor/billboard), HUD, minimap, F1 help
 - Synthesized audio, search/filter (`/`)

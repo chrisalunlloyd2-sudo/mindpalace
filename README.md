@@ -100,7 +100,7 @@ editor with a keystroke. The databases grow massive — that's the point.
 - **Telemetry panel** — real-time clock, KG stats, model telemetry (last model,
   total calls, avg latency, queue depth)
 - Retro terminal book editor (view/edit/create/delete/suggest)
-- GitHub PAT auto-loaded from Windows Credential Manager; full CRUD synced
+- GitHub auth via `MIND_PALACE_AGENT_TOKEN` only (no Credential-Manager PAT — removed #333); full CRUD synced when set, read-only demo otherwise
 - Frustum + distance culling, acceleration/friction movement, wall collision
 - Font renderer (bitmap atlas, wall/floor/billboard modes)
 - On-screen HUD (hotkey bar + room info), minimap, **Tab full-map overlay**,
@@ -252,7 +252,7 @@ and powers the agents' spatial awareness.
 
 - Java 17+
 - Maven 3.9+
-- Windows 10/11 (uses Windows Credential Manager for GitHub auth)
+- Windows 10/11 (GitHub auth via the `MIND_PALACE_AGENT_TOKEN` env var)
 - GPU with OpenGL 3.3 support
 - (Optional) Ollama running locally for the SLM agents
 
@@ -644,7 +644,7 @@ A: Yes — the SLM brains call Ollama. Without it, agents fall back to
 deterministic behavior (they still roam and read, just without LLM reasoning).
 
 **Q: Is my GitHub token safe?**
-A: The token is loaded from Windows Credential Manager and only ever sent to
+A: The token comes from the `MIND_PALACE_AGENT_TOKEN` env var you set yourself and is only ever sent to
 api.github.com. It never leaves your machine otherwise.
 
 **Q: Can I play with friends?**
@@ -709,7 +709,7 @@ a real economy, and a day/night cycle synced to your clock and local weather.
 | `FEATURE_BACKLOG.md` | Prioritized feature backlog with P·C/(E·R) scoring, tiers, and queue rules |
 | `ROADMAP_3MONTH.md` | 3-month milestones: Month 1 world+bots, Month 2 trustworthy agents, Month 3 open to contributors |
 | `docs/DEMO_MODE.md` | Demo mode: full palace, zero setup (fixture world) |
-| `docs/GITHUB_AUTH.md` | How the PAT-from-Credential-Manager auth works + troubleshooting |
+| `docs/GITHUB_AUTH.md` | How `MIND_PALACE_AGENT_TOKEN` auth works + troubleshooting |
 | `docs/PERFORMANCE.md` | Tuning flags, in-game knobs, budget rules |
 | `docs/LAYOUT_ALGORITHMS.md` | How repos become rooms + adding new layout algorithms |
 | `docs/GAMEPLAY_FEATURES.md` | Feature usage guide: everything the player can do |

@@ -51,7 +51,7 @@ prompts (Phase A fixes) and tiny token budgets.
   `mindpalace.burst.enabled=false` in a game config file) — the only
   class allowed to talk to ollama-cloud, so quota spend is auditable in
   one file. NEVER hardcode cloud keys in the repo — read from Windows
-  Credential Manager like GitHubClient does.
+  the `MIND_PALACE_AGENT_TOKEN` env var, the way GitHubClient does (Credential-Manager path removed, #333).
 
 ## Success metrics (scout_bot tracks, H12)
 - flash calls/min: expect 10–20 during active cycles.

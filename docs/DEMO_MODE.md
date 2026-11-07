@@ -17,7 +17,7 @@ walking, doors, books, rotor, music — but the world is built from
 | Live mode | Demo mode |
 |-----------|-----------|
 | 143 rooms from your real GitHub repos | 12 fixture rooms (varied languages/sizes) |
-| PAT from Windows Credential Manager | no auth, no API calls |
+| `MIND_PALACE_AGENT_TOKEN` (when set) | no auth, no API calls |
 | Live repo sync (hourly) | static snapshot |
 | Agents chat via local Ollama (optional anyway) | identical — still optional |
 

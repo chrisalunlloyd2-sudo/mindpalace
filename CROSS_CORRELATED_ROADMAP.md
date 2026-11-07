@@ -288,7 +288,7 @@ functional offline.
 **Status:** `DONE` — commit `380c49c` — `com.mindpalace.github.GistWall` (OkHttp,
 background daemon fetch, 60s cooldown) surfaces fleet_status.jsonl + workflow_logits.jsonl
 + word_library/success.jsonl as a right-side screen panel (`renderGistWall()`). Auth via
-Credential Manager PAT or `MIND_PALACE_GITHUB_TOKEN`.
+the `MIND_PALACE_AGENT_TOKEN` env var only (Credential-Manager PAT path removed, #333).
 
 In-world physical panel also SHIPPED — commit `e413357` (MP-011, #157, 2026-10-27):
 `renderGistWallPanel()` in `GameEngine` renders a slate plate on the hallway-0

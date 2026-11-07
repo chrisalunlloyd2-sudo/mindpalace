@@ -14,7 +14,7 @@
 | R4 | ~~`bookEditor.open()` never wired~~ **CORRECTED 2026-08-17**: `open()` IS wired at `GameEngine:490` — the earlier claim was a broken grep. Books fail to open because of R5 (index math returns wrong book / none) | See R5 | ✅ fixed by A3 |
 | R5 | Raycast index math ≠ visual placement | `raycastBooks` mapped hit → `startIdx + row*(perWall/3) + b` assuming uniform row-major layout; `WorldBuilder` places books grouped BY LANGUAGE with divider slots and 15-book cap → mismatch, wrong book or none | ✅ FIXED (A3): `findBookInSights` now iterates `book.isPlaced()` books and ray-AABBs their real `getWorldPosition()`; nearest hit wins |
 | R6 | `actionSuggest()` is fake | Prints hardcoded generic tips ("Add docstring", "Extract magic numbers"); never calls `OllamaClient`. `:a` (apply) not even handled (only `:q` in SUGGEST mode) | Real call: send file path + current content + cursor line to `ModelConfig.CODE_MODEL` (qwen2.5:0.5b), render suggestions, wire `:a` to insert |
-| R7 | Repo discovery depends on hardcoded path | `RepoMapper.AIGEN_SYS = "C:/Users/viper/AIGEN_SYS/repos"` — if that path doesn't exist on this machine → 0 local rooms; remote merge needs PAT from Windows Credential Manager | Make paths configurable (settings.json + env var), add `--repos <dir>` CLI flag; verify token path |
+| R7 | Repo discovery depends on hardcoded path | `RepoMapper.AIGEN_SYS = "C:/Users/viper/AIGEN_SYS/repos"` — if that path doesn't exist on this machine → 0 local rooms; remote merge needs `MIND_PALACE_AGENT_TOKEN` | Make paths configurable (settings.json + env var), add `--repos <dir>` CLI flag; verify token path |
 
 ---
 

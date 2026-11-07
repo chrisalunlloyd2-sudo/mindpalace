@@ -1,49 +1,54 @@
-# GitHub Auth — how the palace signs in
+# GitHub auth — `MIND_PALACE_AGENT_TOKEN` only
 
-MindPalace never asks you to paste a token anywhere. The world is built
-from your real GitHub account, read through a Personal Access Token (PAT)
-that is loaded automatically from Windows Credential Manager.
+MindPalace talks to the GitHub REST API with a **repo-scoped token supplied by
+you through one environment variable**. Nothing else is consulted.
 
-## How it works (automatic)
+```
+setx MIND_PALACE_AGENT_TOKEN "github_pat_..."     # Windows, persists for new shells
+```
 
-1. You have already pushed with git at least once → Credential Manager
-   holds a github.com PAT.
-2. At boot, `GitHubClient.loadTokenFromCredentialManager()` runs
-   `git credential-manager get` (no shell, stdin-fed), grabs the
-   `password=` line, sanitizes it, and authenticates.
-3. Console confirms: `[GitHub] Authenticated via Windows Credential Manager`.
+Or for a single session (git-bash):
 
-No env vars, no config files, no tokens in the repo — ever.
+```
+MIND_PALACE_AGENT_TOKEN=github_pat_... java -jar mindpalace-live.jar
+```
 
-## First-time setup (fresh machine)
+## What happens at boot
 
-If Credential Manager has no github.com entry yet, create one the normal
-git way — the game reuses it:
+1. `GitHubClient.loadAgentToken()` reads `MIND_PALACE_AGENT_TOKEN`
+   (`GitHubClient.AGENT_TOKEN_ENV`).
+2. Token present → `[GitHub] Authenticated (agent token)`; repos, files and
+   issues are live.
+3. Token **unset** → the game runs **unauthenticated**: demo fixtures only,
+   `--demo` behaviour, no API calls. This is the fail-soft path, not an error.
 
-    git ls-remote https://github.com/youruser/anyrepo.git
+## What is deliberately NOT used
 
-(credential-manager prompts once, stores the PAT, done), or explicitly:
+- **No Windows Credential Manager.** The Credential-Manager PAT path was
+  removed in #333 (commit 9a1b04c). The agent fleet must never hold the
+  owner's personal Windows login; `loadAgentToken()` has no git or
+  credential-manager fallback.
+- **No hardcoded tokens** in files, configs or jars — ever.
 
-    git credential-manager github login
+## Token scope
 
-## PAT scope
+A **fine-grained** token scoped to the repositories the world should show
+(`Contents: read/write` for CRUD, `Issues: read/write` for the issue stream).
+Prefer a short expiry and rotate it; classic PATs also work but carry more
+privilege than needed.
 
-The token needs `repo` scope (contents CRUD + issues). Classic PAT works;
-fine-grained tokens work if they include Contents + Issues read/write.
+## Autonomous writes
+
+Agent tool-loop writes never land on the default branch: they open an
+`agent/yyyyMMdd` branch (fail-closed) and a person merges — `AgentWriteRules`
+gates reads/writes deny-by-default (#287/#321). That is policy, enforced in
+code, independent of the token's own scope.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---------|-----|
-| `[GitHub] Failed to load token` | no github.com credential stored — run any `git ls-remote` against github.com once |
-| `IssueStream raise failed: 401` | PAT expired or lacks `repo` scope — re-login as above |
-| Private repos missing from world | the PAT's user must have access; private repos render pink |
-| Works in game, `gh` CLI not | separate credential: `gh auth login` or `GH_TOKEN` env var |
-
-## Security notes
-
-- Token lives in OS credential storage, loaded per-boot, never logged.
-- The agents' file writes go through the same token — the push-gate
-  (step 96) will require quorum approval on diffs before autonomous pushes.
-- The issue stream is ADD-ONLY: agents can raise issues, never close,
-  edit, or delete anything.
+| Symptom | Cause / fix |
+|---|---|
+| `[GitHub] no agent token — running unauthenticated` | `MIND_PALACE_AGENT_TOKEN` not set in the launching shell/env |
+| `IssueStream raise failed: 401` | token expired or lacks `Issues` permission — mint a new one |
+| Private repos missing from world | the token's account must have access; private rooms render pink |
+| Everything empty after a Windows update | the env var is per-user, per-session — `setx` again or set it in the launching script |

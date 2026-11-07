@@ -11,7 +11,7 @@ import java.lang.reflect.Method;
  *   javac -cp target/mindpalace-1.1.0-beta1.jar -d build-e2e scripts/e2e/Gate287.java
  *   java -cp "target/mindpalace-1.1.0-beta1.jar;build-e2e" Gate287 live PRIVATE_REPO     (writes ONLY to agent/yyyyMMdd)
  * Run 2026-10-31 on BDI_FSM_AGENT: 6/6, main stayed 35f36ac.
- * The token is loaded by GitHubClient itself (Windows Credential Manager); this program never prints it.
+ * The token comes from MIND_PALACE_AGENT_TOKEN via GitHubClient.loadAgentToken(); this program never prints it.
  * Checks: the default branch head is the same before and after; create/edit/delete each land on agent/yyyyMMdd;
  * the file exists on the agent branch after create, is gone after delete, and never appears on the default branch.
  */
@@ -22,7 +22,7 @@ public class Gate287 {
     public static void main(String[] a) throws Exception {
         String repo = a.length > 1 ? a[1] : "BDI_FSM_AGENT";
         GitHubClient gh = new GitHubClient();
-        if (!gh.loadTokenFromCredentialManager()) { System.out.println("FAIL no GitHub token from Credential Manager"); System.exit(2); }
+        if (!gh.loadAgentToken()) { System.out.println("FAIL no GitHub token — set MIND_PALACE_AGENT_TOKEN (repo-scoped)"); System.exit(2); }
         AgentManager am = new AgentManager();
         am.setSelfTest(true);                 // the quorum seam auto-approves; the GitHub write path is the live one
         am.setGitHubClient(gh);

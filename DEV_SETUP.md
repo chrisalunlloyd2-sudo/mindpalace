@@ -10,7 +10,7 @@ gotchas that cost us hours. (Windows 10/11 is the dev+target platform.)
 | JDK | 17 (LTS) | `C:/Program Files/Java/jdk-17` on this machine; set `JAVA_HOME` |
 | Maven | 3.9.x | choco-installed at `C:/ProgramData/chocolatey/lib/maven/apache-maven-3.9.16` |
 | GPU | OpenGL 3.3+ | Intel HD 510 works (software-first: `-Dprism.order=sw`) |
-| Git | any | Credential Manager holds the GitHub PAT (never hardcode tokens) |
+| Git | any | GitHub auth via `MIND_PALACE_AGENT_TOKEN` env var (never hardcode tokens) |
 | Ollama | any | optional — 11 SLMs local; game runs fine without (agents idle) |
 | Python | 3.11 + Pillow | only for `scripts/test_bot.py` shot verification |
 
@@ -36,8 +36,8 @@ Flags matter: `prism.order=sw` keeps Intel HD 510 stable; the G1GC floor
 
 ## Environment / auth
 
-- **GitHub PAT**: loaded automatically from Windows Credential Manager
-  (`git credential-manager get` → github.com). Never put tokens in files.
+- **GitHub token**: read from `MIND_PALACE_AGENT_TOKEN` only (no Credential-Manager fallback)
+  Unset = the game runs unauthenticated. Never put tokens in files.
 - No env vars required. Optional: `GH_TOKEN` for the `gh` CLI when posting
   step-log comments manually.
 
