@@ -55,9 +55,11 @@ The installer's post-install step runs only if the user ticks the boxes:
 
 ## Intro / options screens
 
-The in-game ESC menu already has pages (video/controls/audio/music/agents). An
-**intro splash screen** (title + "press any key") is a separate small feature —
-not yet built. Options screens are largely done via the ESC menu.
+The in-game ESC menu has pages (video/controls/audio/music/agents), and the
+**intro splash screen** (title + "press any key") is SHIPPED (#304) — it shows
+before the world view on interactive boots and is gated off for
+`--demo`/`--selftest` so automated runs and the E2E waypoint tour never block.
+Options screens are done via the ESC menu.
 
 ## Clean-machine install test (step 110, #140)
 

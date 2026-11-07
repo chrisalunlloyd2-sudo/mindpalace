@@ -453,6 +453,9 @@ public class GameEngine {
     private boolean demoMode = false;
     public void setDemo() { this.demoMode = true; }
 
+    /** #304: intro splash state (gated off for demo/selftest at boot). */
+    private final com.mindpalace.ui.SplashScreen splash = new com.mindpalace.ui.SplashScreen();
+
     // #49 (Alice 2026-09-14): demo hermeticity - persistence root routing.
     // Live keeps the exact historical root (~/AIGEN_SYS); demo routes ALL
     // persistence into a per-run temp dir so --demo --selftest never touches
@@ -965,7 +968,15 @@ public class GameEngine {
         loadingProgress = 1.0f;
         renderLoadingFrame();
 
-        state = GameState.PLAYING;
+        // #304: intro splash — title + press-any-key before the world. Off in
+        // demo/selftest so automated boots (and the E2E waypoint tour) never
+        // block on it; boot goes straight to PLAYING there.
+        if (com.mindpalace.ui.SplashScreen.shouldShow(demoMode, selfTest)) {
+            splash.show();
+            state = GameState.SPLASH;
+        } else {
+            state = GameState.PLAYING;
+        }
         loading = false;
         input.setCursorCaptured(true);
         audio.playAmbientStart();
@@ -1485,6 +1496,19 @@ public class GameEngine {
         // Shop menu handler — Enter to buy, Escape to cancel.
         if (shopMenu) {
             handleShopMenu(input);
+        }
+
+        // #304: intro splash — any input dismisses. Runs BEFORE the idle
+        // detector so it sees the activity flag first (the detector's own
+        // consumeActivity would eat it).
+        if (state == GameState.SPLASH) {
+            if (!splash.isVisible()) {
+                state = GameState.PLAYING;
+            } else if (input.consumeActivity() || input.isLeftClick() || input.isRightClick()) {
+                splash.dismiss();
+                state = GameState.PLAYING;
+                appendMonitorLine("[splash] dismissed — world view");
+            }
         }
 
         // Idle detection: mark activity on any input (non-draining — does NOT
@@ -2365,6 +2389,16 @@ public class GameEngine {
             renderer.beginFrame(player.getCamera());
             dressingRoom.render(renderer, fontRenderer, player.getCamera(),
                 (float) width / height, (float) GLFW.glfwGetTime());
+            bloom.end();
+            GLFW.glfwSwapBuffers(window);
+            return;
+        }
+
+        // #304: intro splash replaces the world view entirely until dismissed
+        // (same early-return shape as the dressing room above — nothing draws
+        // over the dark wash).
+        if (state == GameState.SPLASH) {
+            splash.render(fontRenderer, player.getCamera(), width, height);
             bloom.end();
             GLFW.glfwSwapBuffers(window);
             return;
@@ -7976,6 +8010,28 @@ public class GameEngine {
         System.out.println((pagingOk ? "PASS" : "FAIL")
             + " (#158) gist wall paging: 3 pages/25 lines, <@ grid markers, wrap flips, footer/indicator agree");
         if (pagingOk) pass++; else fail++;
+
+        // #304: intro splash — gated off for demo/selftest (so automated boots
+        // and the E2E tour never block), dismisses on first input, idempotent.
+        boolean splashOk;
+        try {
+            com.mindpalace.ui.SplashScreen sp = new com.mindpalace.ui.SplashScreen();
+            boolean hiddenAutomated = !com.mindpalace.ui.SplashScreen.shouldShow(true, false)
+                && !com.mindpalace.ui.SplashScreen.shouldShow(false, true);
+            boolean shownInteractive = com.mindpalace.ui.SplashScreen.shouldShow(false, false);
+            sp.show();
+            boolean vis = sp.isVisible();
+            boolean dismissed = sp.dismiss();
+            boolean gone = !sp.isVisible();
+            boolean dismissAgain = sp.dismiss();   // idempotent: second call is a no-op
+            splashOk = hiddenAutomated && shownInteractive && vis && dismissed && gone && !dismissAgain;
+        } catch (Throwable t) {
+            System.out.println("  intro splash check threw: " + t);
+            splashOk = false;
+        }
+        System.out.println((splashOk ? "PASS" : "FAIL")
+            + " (#304) intro splash: gated off in demo/selftest, dismisses cleanly, idempotent");
+        if (splashOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);

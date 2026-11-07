@@ -103,7 +103,8 @@ correlate → email suggestions + code-mind log).
 [DONE] Warm welcoming installer GUI (file-location chooser, Ollama + model
           accessories) — Inno Setup "warm" installer (build-warm-installer.sh,
           MindPalace.iss), documented in INSTALLER.md.
-[MISSING] Intro screen + options screens (ESC menu exists; no intro splash).
+[DONE] Intro splash screen (title + press any key, gated off for demo/selftest) — shipped #304;
+       options screens via the ESC menu. Reconciled 2026-11-07.
 
 ═══════════════════════════════════════════════════════════════════════
 10. MULTIPLAYER — LANDED ADDITIVE (#138), disabled by default
