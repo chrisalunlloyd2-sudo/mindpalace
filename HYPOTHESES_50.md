@@ -195,7 +195,7 @@ Quota-free bots (no LLM) that work FOR the system and appear IN the game.
 - **H44** Ollama-cloud quota firewall: ModelScheduler routes ONLY the
   tool/critic deep calls through a configurable endpooint; flash calls
   never touch cloud. Config flag `mindpalace.flash.local=true` default.
--- **H45** Cloud burst-mode (optional, off by default): if a task exceeds
+- **H45** Cloud burst-mode (optional, off by default) — DECLINED 2026-11-06 (#260): superseded by the Architect's LOCAL-MODELS-ONLY directive (2026-10-10); no CloudBurstClient will be built. Original text: if a task exceeds
   N local attempts, escalate ONE call to ollama-cloud glm flash (small
   max_tokens, single round) — the only sanctioned quota spend, and only
   after H01–H05 land so the prompt it sends is worth the tokens.

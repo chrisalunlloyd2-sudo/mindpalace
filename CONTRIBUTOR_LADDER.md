@@ -22,7 +22,9 @@ genuinely doesn't have (AMD GPUs, Win11, discrete GPUs).
 ## Rung 2 — Contributor
 
 **Door: [`good first issue`](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)**
-(#13–#18, all copy-paste runnable) or FIRST_PR.md's fixture-room lane.
+(link resolves live; RECONCILED 2026-11-06 (#261): the former starter batch #13–#18 is ALL shipped/closed — new
+starters take one of the open [roadmap-2026-10] `good first issue` candidates when filed, or take the FIRST_PR.md
+fixture-room lane) — or FIRST_PR.md's fixture-room lane.
 After a merged PR: first-PR-author row, and the same access as everyone —
 scored backlog tiers, the cascade, the step-log.
 
