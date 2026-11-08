@@ -71,4 +71,35 @@ public final class ModelConfig {
 
     /** Drift threshold — cosine similarity below this = drifted. */
     public static final float DRIFT_THRESHOLD = 0.55f;
+
+    /** Quorum needs at least this many distinct voters (WeightedQuorumVote quorumMin). */
+    public static final int MIN_VOTERS = 3;
+
+    /**
+     * The quorum roster. Default: tool, critic, tie-breaker + the two MP-014 extras.
+     * {@code -Dmindpalace.voters=a,b,c} replaces it (small boxes: 12 GB RAM, HDD,
+     * server cap of 2 resident models). There the default rotates 5 distinct
+     * models (~9 GB of blobs, more with chat) through 2 slots, so nearly every
+     * ballot re-reads a model from the spinning disk and the whole machine
+     * waits on the disk queue (2026-11-07: queue 33, 21 MB/s of page faults).
+     * Three small voters (~2.8 GB) stay in the OS file cache, so their reloads
+     * come from RAM. Fewer than MIN_VOTERS distinct entries, or a cloud model,
+     * falls back to the default: the quorum must stay valid and local.
+     */
+    public static java.util.List<String> voters() {
+        java.util.List<String> def = java.util.List.of(TOOL_MODEL, CRITIC_MODEL, TIE_MODEL, EXTRA_VOTER_A, EXTRA_VOTER_B);
+        return parseVoters(System.getProperty("mindpalace.voters"), def);
+    }
+
+    static java.util.List<String> parseVoters(String spec, java.util.List<String> def) {
+        if (spec == null || spec.isBlank()) return def;
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        for (String s : spec.split(",")) {
+            String m = s.trim();
+            if (m.isEmpty()) continue;
+            if (m.toLowerCase(java.util.Locale.ROOT).contains("cloud")) return def;   // LOCAL ONLY
+            out.add(m);
+        }
+        return out.size() >= MIN_VOTERS ? java.util.List.copyOf(out) : def;
+    }
 }

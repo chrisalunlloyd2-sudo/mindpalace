@@ -56,9 +56,6 @@ public class AgentManager {
     private static final String TOOL_MODEL = ModelConfig.TOOL_MODEL;
     private static final String CRITIC_MODEL = ModelConfig.CRITIC_MODEL;
     private static final String TIE_MODEL = ModelConfig.TIE_MODEL;
-    // MP-014: extra resident quorum voters (roster hardening, see ModelConfig).
-    private static final String EXTRA_VOTER_A = ModelConfig.EXTRA_VOTER_A;
-    private static final String EXTRA_VOTER_B = ModelConfig.EXTRA_VOTER_B;
 
     // Conversation histories — now managed by ModelLifespan (bounded + drift-corrected)
     private final ModelLifespan toolLifespan;
@@ -273,15 +270,18 @@ public class AgentManager {
         // Quorum: register THREE voters (quorumMin=3 requires it). The tie-breaker
         // is gemma2:2b — pinned at the proposal hex so it always sees votes that
         // land on (0,0) where the lexical bridge anchors them.
-        quorum.setModelPosition(TOOL_MODEL, 0, 0);
-        quorum.setModelPosition(CRITIC_MODEL, 1, 0);
-        quorum.setModelPosition(TIE_MODEL, 0, 0);
-        // MP-014: two extra resident voters — one cold/slow model must not be
-        // able to starve a ballot (all three voters abstain-timed-out in
-        // cascade, real:0 → NO_QUORUM forever). Both hexes stay within FOW
-        // hop 1 of the proposal point (0,0).
-        quorum.setModelPosition(EXTRA_VOTER_A, 0, 1);
-        quorum.setModelPosition(EXTRA_VOTER_B, 1, 0);
+        // MP-014: by default two extra resident voters — one cold/slow model must
+        // not be able to starve a ballot (all three voters abstain-timed-out in
+        // cascade, real:0 → NO_QUORUM forever). Every hex stays within FOW hop 1
+        // of the proposal point (0,0). -Dmindpalace.voters replaces the roster
+        // (small boxes), see ModelConfig.voters().
+        int[][] hexes = {{0, 0}, {1, 0}, {0, 0}, {0, 1}, {1, 0}};
+        java.util.List<String> voters = ModelConfig.voters();
+        for (int i = 0; i < voters.size(); i++) {
+            int[] h = hexes[i % hexes.length];
+            quorum.setModelPosition(voters.get(i), h[0], h[1]);
+        }
+        log("[AgentManager] quorum voters " + voters);
 
         // LoRA: start on CODE (the tool agent's primary domain).
         lora.switchAdapter(AdapterType.CODE);
