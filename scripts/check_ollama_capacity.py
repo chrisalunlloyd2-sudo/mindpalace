@@ -26,6 +26,18 @@ Checks:
   3. OLLAMA_KEEP_ALIVE is negative (infinity pin — what the fix prescribed).
   4. OLLAMA_NUM_PARALLEL >= 2 (serialized ballots are the freeze pattern).
 
+SMALL BOX PROFILE (2026-11-07, Architect's game law "max 2 resident models"): on a machine with less than
+SMALL_BOX_GB of RAM the block above is not the spec, it is the fault. On the 12 GB HDD worker it pinned four
+voters forever, NUM_PARALLEL=2 doubled every runner's KV cache (-c 16384), the box paged to a crawl and Claude
+Code's memory reaper killed every job. There the spec is the user environment (HKCU) the Aria-Ollama-Serve task
+inherits:
+
+    OLLAMA_MAX_LOADED_MODELS=2 OLLAMA_NUM_PARALLEL=1 OLLAMA_KEEP_ALIVE=10m OLLAMA_FLASH_ATTENTION=1
+    OLLAMA_KV_CACHE_TYPE=q8_0 OLLAMA_CONTEXT_LENGTH=8192 OLLAMA_NO_CLOUD=1
+
+and DRIFT means going ABOVE it. Ballots reload voters inside the raised vote timeout instead (slower, proven
+workable on MAX=3 on 11-04). The game still sends keep_alive -1 per request; the server cap is what holds.
+
 psutil is optional-but-expected on the dev box; without it the env checks are
 reported as skipped (exit 2, distinguishable from drift's exit 1) so a cron
 job without psutil still gets the API-level liveness check.
@@ -55,6 +67,8 @@ VOTER_FIELDS = ["FLASH_MODEL", "TIE_MODEL", "EXTRA_VOTER_A", "EXTRA_VOTER_B"]
 BASE_VOTER_COUNT = 3  # pre-MP-014 base roster WeightedQuorumVote always reads
 
 DEFAULT_HOST = "http://127.0.0.1:11434"
+SMALL_BOX_GB = 16
+SMALL_MAX_LOADED = 2
 
 
 def parse_voter_roster(repo_dir):
@@ -109,6 +123,38 @@ def _host_matches(env, host):
     bound = str(env.get("OLLAMA_HOST", "127.0.0.1:11434")).strip() or "127.0.0.1:11434"
     target = host.replace("http://", "").replace("https://", "").rstrip("/")
     return bound == target or bound.endswith(":" + target.split(":")[-1]) and target.split(":")[0] in bound
+
+
+def total_ram_gb():
+    """Physical RAM in GB, or None without psutil."""
+    try:
+        import psutil
+    except ImportError:
+        return None
+    return psutil.virtual_memory().total / 2**30
+
+
+def check_env_small(env):
+    """Problem list on a small box: over the cap is DRIFT (it thrashes the machine), under it only a WARN."""
+    problems = []
+    def geti(key):
+        try:
+            return int(str(env.get(key, "")).strip())
+        except ValueError:
+            return None
+    cap = geti("OLLAMA_MAX_LOADED_MODELS")
+    if cap is None or cap > SMALL_MAX_LOADED:
+        problems.append(("DRIFT", f"OLLAMA_MAX_LOADED_MODELS={cap if cap is not None else 'unset (default 3 on CPU)'}"
+                         f" on a small box: over the cap of {SMALL_MAX_LOADED} resident models"))
+    elif cap < SMALL_MAX_LOADED:
+        problems.append(("WARN", f"OLLAMA_MAX_LOADED_MODELS={cap} < {SMALL_MAX_LOADED}: every ballot reloads"))
+    if str(env.get("OLLAMA_KEEP_ALIVE", "")).strip().startswith("-"):
+        problems.append(("DRIFT", "OLLAMA_KEEP_ALIVE is negative on a small box: idle models never give their RAM back"))
+    par = geti("OLLAMA_NUM_PARALLEL")
+    if par is None or par > 1:
+        problems.append(("DRIFT", f"OLLAMA_NUM_PARALLEL={par if par is not None else 'unset (auto)'} on a small box: "
+                         "each parallel slot multiplies the runner's KV cache"))
+    return problems
 
 
 def check_env(env, roster):
@@ -204,6 +250,10 @@ def main():
               "(tray-app service model) — verify the serve env manually per DEV_SETUP.md")
         return 1
 
+    ram = total_ram_gb()
+    small = ram is not None and ram < SMALL_BOX_GB
+    if small:
+        print(f"small box: {ram:.1f} GB RAM < {SMALL_BOX_GB} GB, checking against the small-box profile")
     drift = False
     warn = False
     checked = 0
@@ -211,7 +261,7 @@ def main():
         if not _host_matches(env, args.host):
             continue
         checked += 1
-        problems = check_env(env, roster)
+        problems = check_env_small(env) if small else check_env(env, roster)
         host = env.get("OLLAMA_HOST", DEFAULT_HOST)
         if problems:
             print(f"problems in serve pid {pid} (OLLAMA_HOST={host}):")
@@ -231,6 +281,10 @@ def main():
         print(f"DRIFT: no serve process bound to {args.host} found (API answered, "
               "so the owner may be a service we can't read env from) — verify the "
               "serve env manually per DEV_SETUP.md")
+        return 1
+    if drift and small:
+        print("Fix: set the small-box profile in the user environment (see the docstring), then stop the serve and "
+              "run the Aria-Ollama-Serve task. Never start `ollama serve` by hand with an env block on this box.")
         return 1
     if drift:
         print("Fix: restart the serve with the DEV_SETUP.md env block "

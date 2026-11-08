@@ -84,7 +84,15 @@ guard + frozen copy).
      agents idle: *Fix* — wait for `http://127.0.0.1:11435` to answer, or
      `ollama serve` manually; *Why* — Win11 starts Ollama lazily behind the
      first client call, the engine's gate check can beat it on boot.
-     **Required env when starting `ollama serve` manually** (#327, from the
+     **Machines under 16 GB RAM** (the 12 GB HDD worker): do NOT use the
+     block below. It pins four voters forever and doubles each KV cache;
+     that box paged to a crawl on 2026-11-07. Set the small-box profile in
+     the user environment instead and restart through the
+     `Aria-Ollama-Serve` task: `OLLAMA_MAX_LOADED_MODELS=2
+     OLLAMA_NUM_PARALLEL=1 OLLAMA_KEEP_ALIVE=10m OLLAMA_FLASH_ATTENTION=1
+     OLLAMA_KV_CACHE_TYPE=q8_0 OLLAMA_CONTEXT_LENGTH=8192 OLLAMA_NO_CLOUD=1`.
+     `scripts/check_ollama_capacity.py` picks the profile by RAM.
+     **Required env when starting `ollama serve` manually on 16 GB or more** (#327, from the
      MP-014/`385ddf5` root-cause fix): run it as
      `OLLAMA_MAX_LOADED_MODELS=4 OLLAMA_KEEP_ALIVE=-1 OLLAMA_NUM_PARALLEL=2 OLLAMA_FLASH_ATTENTION=1 ollama serve`
      — with the default `MAX_LOADED_MODELS=1` the 5-voter quorum LRU-evicts
