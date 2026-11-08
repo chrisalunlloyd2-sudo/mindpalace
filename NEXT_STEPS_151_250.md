@@ -26,7 +26,7 @@
 - [ ] **162** (H) Hermes card template "slow box" with law lines 1–5 pre-filled
 - [ ] **163** (C) Startup log line printing the active Ollama profile (from `/api/ps` context lengths)
 - [ ] **164** (C) Doc-drift sentinel learns the small-box section (no false DRIFT on 12 GB)
-- [ ] **165** (A) Decide: keep gemma2/phi3 for big boxes only, or retire them
+- [x] **165** (A→C, delegated 2026-11-08) gemma2:2b and phi3:mini stay installed and are the extra voters of the full 5-roster (`-Dmindpalace.voters=all`, or `GAME_VOTERS`). They are NOT in the default roster below 16 GB: 5 voters through 2 slots gave a disk queue of 33. First governed load test (`budget.py run --job phi-gemma-check --class heavy`) was refused 4 times by the CPU gate (game at 100%); rerun it when the box is calm, script: `warm_check.py` (load time, tok/s, one reply per model)
 
 ## PHASE I — Character & voice (166–185)
 - [ ] **166** (C) Confirmation A/B on llama3.2:3b with 3 seeds × 10 prompts (today: 1 seed)
