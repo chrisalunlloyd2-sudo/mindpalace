@@ -401,6 +401,16 @@ public class AgentManager {
 
     /** Render the riding context prefix for a model (LoRA+KG+KV in one line). */
     private String ctx(String model) {
+        return roomKit(model).render();
+    }
+
+    /** The same kit in plain words, for the model that talks to the player (see ContextKit.renderVoice). */
+    private String voice(String model) {
+        return roomKit(model).renderVoice();
+    }
+
+    /** The model's kit with the KG neighborhood of the current room. */
+    private ContextKit roomKit(String model) {
         ContextKit k = kit(model);
         // Refresh the KG neighborhood when a room is present. Room snapshotted
         // once: a mid-call room change must not misattribute the neighborhood (#106).
@@ -411,7 +421,7 @@ public class AgentManager {
             nodes.add(room.getRepoName());
             k.setKgNodes(nodes);
         }
-        return k.render();
+        return k;
     }
 
     private com.mindpalace.backup.MemoryManager memory;
@@ -603,7 +613,7 @@ public class AgentManager {
         // Direct conversational reply via the chat model, on the IMMEDIATE path
         // (bypasses the 5-min spacing gate so the player isn't left waiting).
         modelScheduler.submitImmediate(ModelConfig.CHAT_MODEL,
-            ctx(ModelConfig.CHAT_MODEL) + "\n" + prompt, chatLifespan)
+            voice(ModelConfig.CHAT_MODEL) + "\n" + prompt, chatLifespan)
             .thenAccept(resp -> {
                 if (resp != null && !resp.isEmpty()) {
                     // #290: guide replies route through the DEDICATED chat

@@ -7572,6 +7572,31 @@ public class GameEngine {
         }
         if (rulesOk) pass++; else fail++;
 
+        // 60c2. the chat kit is plain words: no tags or numbers for a small model to read as content; the tool kit keeps its tags.
+        boolean voiceOk = false;
+        try {
+            com.mindpalace.agent.ContextKit kit = new com.mindpalace.agent.ContextKit("selftest",
+                com.mindpalace.agent.sims.AdapterType.CODE, 42L);
+            kit.setKgNodes(java.util.Arrays.asList("a", "b", "c", "d", "e", "f", "g"));
+            kit.remember("curiosity", 0.9f);
+            kit.remember("riskTolerance", 0.1f);
+            kit.remember("focus", 0.5f);
+            String v = kit.renderVoice();
+            String t = kit.render();
+            boolean plain = !v.contains("[") && !v.contains("=") && !v.matches("(?s).*\\d\\.\\d.*") && !v.contains("CODE");
+            boolean says = v.contains("You are very curious.") && v.contains("You avoid risks.")
+                && v.contains("You stay on a task for a while.") && v.contains("Rooms near you: a, b, c, d, e and 2 more.");
+            boolean stable = v.equals(kit.renderVoice());
+            boolean toolsKeepTags = t.startsWith("[ctx model=selftest lora=CODE]") && t.contains("[kv");
+            voiceOk = plain && says && stable && toolsKeepTags;
+            System.out.println((voiceOk ? "PASS" : "FAIL") + " chat kit plain words: plain=" + plain + " says=" + says
+                + " stable=" + stable + " toolsKeepTags=" + toolsKeepTags);
+            if (!voiceOk) System.out.println("  voice=" + v + "\n  tags=" + t);
+        } catch (Exception e) {
+            System.out.println("FAIL chat kit plain words: " + e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (voiceOk) pass++; else fail++;
+
         // 60d. the game cannot load the owner's login: the Credential Manager path is gone and the env token is the only source.
         boolean tokenOk = false;
         try {
