@@ -20,7 +20,7 @@
 - [ ] **156** (C) Selftest: a ballot on the small roster reaches quorum with one voter cold-loaded (MP-014 guarantee re-proved for 3 voters)
 - [ ] **157** (C) Telemetry: model-load count per hour in the weekly report; alert above 30/h (disk thrash signature)
 - [ ] **158** (C) `check_ollama_capacity.py` also reads `/api/ps` and flags distinct-models-per-hour above the cap
-- [ ] **159** (C) Disk-queue probe in `ops_health.py` (PerfDisk queue > 8 for 2 cycles = WARN card)
+- [x] **159** (C) Disk-queue probe in `ops_health.py` (in-process PDH read, a few ms; typeperf took 32 s). Queue > 8 for 2 cycles raises violation L5 `disk_queue` (investigate, never auto-kill). Tested with simulated samples; first live read 2026-11-08 was 11-13 during a model load
 - [ ] **160** (C) Boot recorder pattern (faulthandler on line 1) in every scheduled Python job
 - [ ] **161** (C) `budget.py` refuses heavy jobs while the disk queue is high (new gate 6)
 - [ ] **162** (H) Hermes card template "slow box" with law lines 1–5 pre-filled
