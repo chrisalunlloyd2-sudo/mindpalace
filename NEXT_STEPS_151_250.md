@@ -22,7 +22,7 @@
 - [ ] **158** (C) `check_ollama_capacity.py` also reads `/api/ps` and flags distinct-models-per-hour above the cap
 - [x] **159** (C) Disk-queue probe in `ops_health.py` (in-process PDH read, a few ms; typeperf took 32 s). Queue > 8 for 2 cycles raises violation L5 `disk_queue` (investigate, never auto-kill). Tested with simulated samples; first live read 2026-11-08 was 11-13 during a model load
 - [ ] **160** (C) Boot recorder pattern (faulthandler on line 1) in every scheduled Python job
-- [ ] **161** (C) `budget.py` refuses heavy jobs while the disk queue is high (new gate 6)
+- [x] **161** (C) `budget.py` gate 6: class "heavy" is refused (exit 75, wait 120 s) while the disk queue is above `ops.disk_queue_ceiling` (default 8); unknown never blocks; the reading is logged on START (2026-11-08, 35/35 selftest)
 - [ ] **162** (H) Hermes card template "slow box" with law lines 1–5 pre-filled
 - [ ] **163** (C) Startup log line printing the active Ollama profile (from `/api/ps` context lengths)
 - [ ] **164** (C) Doc-drift sentinel learns the small-box section (no false DRIFT on 12 GB)
