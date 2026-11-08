@@ -99,7 +99,7 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
 - **ui/** — `HUD` (door prompts), `HudLayout`, `InteractionPromptSystem`
   (unified nearby-interactable prompt, shipped — TASK 0002), `BookViewer`,
   `BookEditor`, `DressingRoom`, `SplashScreen` (#304 intro title +
-press-any-key; off for `--demo`/`--selftest`).
+  press-any-key; off for `--demo`/`--selftest`).
 - **render/** — `Renderer`, `Camera`, `Shader`, `Mesh`, `Texture`,
   `FontRenderer`, `BloomEffect`, `Screenshot`, `FrustumCuller`; particles
   (opt-in): `ParticleBatch`, `ParticleEmitter`, `ParticlePool`,
