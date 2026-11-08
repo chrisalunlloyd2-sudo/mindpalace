@@ -159,7 +159,8 @@ GAME_PID=$(real_game_pid)
 # only extends the wall-clock cost of a doomed cold-load cycle. Both
 # numbers must never drift apart silently again — this comment is the
 # single source of truth for the timeout choice.
-VOTE_JAVA_FLAGS="-Dmindpalace.vote.timeoutMs=180000"
+. "$(dirname "${BASH_SOURCE[0]}")/game_flags.sh"   # step 152: one shared flag set (heap, renderer, vote timeout)
+VOTE_JAVA_FLAGS="$GAME_JAVA_FLAGS"
 if [ -z "$GAME_PID" ] && [ -f "mindpalace-live.jar" ]; then
     # Windows javaw cannot open MSYS paths (/c/Users/...) — pass the jar
     # RELATIVE (cwd is $REPO). 2026-09-27: every relaunch used "$REPO/..."
