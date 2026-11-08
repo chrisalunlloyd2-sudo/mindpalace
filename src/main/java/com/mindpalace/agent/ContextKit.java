@@ -92,4 +92,40 @@ public final class ContextKit {
         }
         return sb.toString();
     }
+
+    /** Trait phrases for renderVoice: key, then high (>= 0.66), mid (>= 0.34), low. Fixed order, so a prompt never reshuffles. */
+    private static final String[][] VOICE = {
+        {"curiosity", "You are very curious.", "You are a little curious.", "You are not very curious."},
+        {"wanderlust", "You love to wander.", "You wander now and then.", "You like to stay put."},
+        {"riskTolerance", "You love taking risks.", "You take some risks.", "You avoid risks."},
+        {"verbosity", "You like to talk.", "You say enough and no more.", "You keep it short."},
+        {"gossip", "You love to share news.", "You share news now and then.", "You keep news to yourself."},
+        {"focus", "You stick with one thing until it is done.", "You stay on a task for a while.", "You move on quickly."},
+    };
+
+    /**
+     * The kit for a model that talks to the player: the same KV and KG, said in plain English. Small models read
+     * render()'s tags as content and refuse ("I can't continue this conversation as it's in a language that I don't
+     * understand"); measured 2026-11-05 in the box, qwen2.5:0.5b, 20 replies each, refusals: tags 15, role line plus
+     * tags 5, role line plus these words 0. The adapter tag is left out: chat is not CODE work.
+     */
+    public String renderVoice() {
+        turns++;
+        StringBuilder sb = new StringBuilder(256);
+        Map<String, Float> snap = kv.snapshot();
+        for (String[] t : VOICE) {
+            Float v = snap.get(t[0]);
+            if (v == null) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(v >= 0.66f ? t[1] : v >= 0.34f ? t[2] : t[3]);
+        }
+        List<String> nodes = kgNodes();
+        if (!nodes.isEmpty()) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append("Rooms near you: ").append(String.join(", ", nodes.subList(0, Math.min(nodes.size(), 5))));
+            if (nodes.size() > 5) sb.append(" and ").append(nodes.size() - 5).append(" more");
+            sb.append('.');
+        }
+        return sb.toString();
+    }
 }
