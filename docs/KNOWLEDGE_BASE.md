@@ -26,7 +26,7 @@ entries get a dated correction under them).
    waits for it to come up (a grace window), then keeps it alive through its 5-min cycle.
 3. **Three small voters** on this box (`llama3.2:1b, qwen2.5:0.5b, deepseek-r1:1.5b`, ~2.8 GB).
    They stay in the OS file cache. The 5-voter roster rotates ~9 GB through 2 slots
-   and saturates the disk. `-Dmindpalace.voters=` (#344) sets the roster; #347 (open)
+   and saturates the disk. `-Dmindpalace.voters=` (#344) sets the roster; #347 (merged)
    makes the small roster automatic under 16 GB.
 4. One heavy job at a time, through `budget.py`.
 5. LOCAL MODELS ONLY inside the game. Cloud is for Hermes' own outside work only.

@@ -6,15 +6,15 @@
 > **Owner** tags: (C) Claude/Sonnet, (H) Hermes, (A) Architect decision.
 
 ## Where we are (2026-11-07)
-- Small-box stability: [x] #342 capacity profile, [x] #344 voter roster flag, [~] #347 automatic roster (CI green, awaiting merge)
+- Small-box stability: [x] #342 capacity profile, [x] #344 voter roster flag, [x] #347 automatic roster
 - Chat voice: [x] #346 plain-words kit (qwen 0.5b breaks 15→0 of 20; 3b no refusals either way)
 - Watchdog: heartbeats restored 16:42 after a 6 h gap (outside the repo, `~/.aria/engine`)
 - Docs: [x] #345 (closes #343), this file + `docs/KNOWLEDGE_BASE.md` + `docs/HANDOFF_SONNET.md`
 
 ## PHASE H — Small-box hardening (151–165)
-- [ ] **151** (A) Merge #347 (automatic small roster under 16 GB)
+- [x] **151** (A) Merge #347 (automatic small roster under 16 GB)
 - [ ] **152** (C) Pass `-Dmindpalace.voters` through `mindpalace-sync.sh`, `release_phase.sh` and Hermes' copy, from one shared `GAME_JAVA_FLAGS` (belt and braces with #347)
-- [ ] **153** (C) Watchdog `install()` registers tasks at Priority 4 (normal), not 7; remove the in-code raise once the tasks are re-registered
+- [~] **153** (C) Tasks re-registered at Priority 4 (done 2026-11-07); still to do: `install()` default and remove the in-code raise
 - [ ] **154** (C) Replace the Aria-Ollama-Serve PowerShell launcher with `watchdog.py start-ollama` (that launcher hung 20+ min)
 - [ ] **155** (C) Port the loopback `urlopen` → `http.client` fix to `scripts/monitor_mindpalace.py` and `scripts/system_maintenance.py` (same SSL-context stall)
 - [ ] **156** (C) Selftest: a ballot on the small roster reaches quorum with one voter cold-loaded (MP-014 guarantee re-proved for 3 voters)
