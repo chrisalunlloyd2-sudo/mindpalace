@@ -1,0 +1,9 @@
+{
+  "_comment": "MP-014 (#160): gist wall sources. Overrides: -Dmindpalace.gist.config=<path>. Every field is optional; absent fields fall back to the built-in defaults in GistWallConfig. This file is the canonical, inspectable source — nothing about the wall's gist id or file names is hard-coded any more.",
+  "gistId": "04debe0724a26fdee12a9e6d82c4eb56",
+  "apiBase": "https://api.github.com",
+  "statusFile": "fleet_status.jsonl",
+  "logitsFile": "workflow_logits.jsonl",
+  "wordLibRepo": "chrisalunlloyd2-sudo/BDI_FSM_DAGs",
+  "wordLibPath": "word_library/success.jsonl"
+}

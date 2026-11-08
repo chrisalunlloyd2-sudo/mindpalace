@@ -8058,6 +8058,56 @@ public class GameEngine {
             + " (#304) intro splash: gated off in demo/selftest, dismisses cleanly, idempotent");
         if (splashOk) pass++; else fail++;
 
+        // #160 (MP-014): gist wall config parsing + cache age label.
+        // Pure file/JSON logic, no network: good JSON overrides, absent fields
+        // keep defaults, malformed JSON reports loadError + defaults, and the
+        // cache round-trips with a coarse age label.
+        boolean gistCfgOk;
+        try {
+            java.nio.file.Path tmpDir = java.nio.file.Files.createTempDirectory("mp-gistcfg-");
+            java.nio.file.Path good = tmpDir.resolve("good.json");
+            java.nio.file.Files.writeString(good,
+                "{\"gistId\":\"abc123\",\"statusFile\":\"s.jsonl\",\"apiBase\":\"https://example.test/\"}");
+            com.mindpalace.github.GistWallConfig parsed = com.mindpalace.github.GistWallConfig.load(good);
+            boolean applied = "abc123".equals(parsed.gistId)
+                && "s.jsonl".equals(parsed.statusFile)
+                && "https://example.test".equals(parsed.apiBase)   // trailing slash trimmed
+                && "workflow_logits.jsonl".equals(parsed.logitsFile) // absent -> default
+                && parsed.loadError == null;
+
+            java.nio.file.Path bad = tmpDir.resolve("bad.json");
+            java.nio.file.Files.writeString(bad, "{ not json");
+            com.mindpalace.github.GistWallConfig broken = com.mindpalace.github.GistWallConfig.load(bad);
+            boolean fallback = broken.loadError != null
+                && com.mindpalace.github.GistWallConfig.defaults().gistId.equals(broken.gistId);
+
+            boolean missing = com.mindpalace.github.GistWallConfig
+                .load(tmpDir.resolve("absent.json")).loadError == null;
+
+            // cache round-trip + age label ("3m" for 180s ago)
+            com.mindpalace.github.GistWallCache cache =
+                new com.mindpalace.github.GistWallCache(java.util.List.of("row1", "row2"), 1_000_000L);
+            java.nio.file.Path cacheFile = tmpDir.resolve("cache.json");
+            cache.save(cacheFile);
+            com.mindpalace.github.GistWallCache reloaded = com.mindpalace.github.GistWallCache.load(cacheFile);
+            boolean cacheOk = reloaded != null && reloaded.lines.size() == 2
+                && reloaded.fetchedAtMs == 1_000_000L
+                && "3m".equals(reloaded.ageLabel(1_000_000L + 180_000L))
+                && reloaded.linesWithAge(1_000_000L + 180_000L).get(2).contains("cached 3m ago");
+
+            gistCfgOk = applied && fallback && missing && cacheOk;
+            for (java.nio.file.Path f : new java.nio.file.Path[]{good, bad, cacheFile}) {
+                java.nio.file.Files.deleteIfExists(f);
+            }
+            java.nio.file.Files.deleteIfExists(tmpDir);
+        } catch (Throwable t) {
+            System.out.println("  gist wall config check threw: " + t);
+            gistCfgOk = false;
+        }
+        System.out.println((gistCfgOk ? "PASS" : "FAIL")
+            + " (#160) gist wall config: JSON overrides + defaults on absent/malformed, cache round-trip + age label");
+        if (gistCfgOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains

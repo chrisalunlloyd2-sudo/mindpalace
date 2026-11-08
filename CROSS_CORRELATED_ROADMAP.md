@@ -290,6 +290,12 @@ background daemon fetch, 60s cooldown) surfaces fleet_status.jsonl + workflow_lo
 + word_library/success.jsonl as a right-side screen panel (`renderGistWall()`). Auth via
 the `MIND_PALACE_AGENT_TOKEN` env var only (Credential-Manager PAT path removed, #333).
 
+Source config + offline cache also SHIPPED — MP-014 (#160, 2026-11-07): gist id, fleet
+file names and the word-library repo/path now come from `config/gist_wall.json`
+(`-Dmindpalace.gist.config=` override; `GistWallConfig`), and the wall persists its
+last-good lines (`~/.mindpalace/gist_wall_cache.json`, `GistWallCache`) so an offline
+or token-less boot renders the cached wall with a "[cached 3m ago]" age label.
+
 In-world physical panel also SHIPPED — commit `e413357` (MP-011, #157, 2026-10-27):
 `renderGistWallPanel()` in `GameEngine` renders a slate plate on the hallway-0
 start cap, amber-header/green-entry billboards, gated behind

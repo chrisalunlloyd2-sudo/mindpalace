@@ -23,9 +23,11 @@ import java.util.concurrent.TimeUnit;
  * the game keeps running.
  */
 public class GistWall {
-    private static final String API_BASE = "https://api.github.com";
-    private static final String FLEET_GIST_ID = "04debe0724a26fdee12a9e6d82c4eb56";
-    private static final String WORDLIB_PATH = "word_library/success.jsonl";
+    // MP-014 (#160): the gist id + source file names live in config now
+    // (config/gist_wall.json, -Dmindpalace.gist.config override) — the
+    // defaults in GistWallConfig keep today's values byte-identical.
+    private final GistWallConfig cfg;
+    private final java.nio.file.Path cacheFile;
     private static final long COOLDOWN_MS = 60_000L;
     // MP-012 (#158): deeper tails so the paged wall has something to page
     // through — 10 fleet status rows fill one full 11-row page.
@@ -50,11 +52,22 @@ public class GistWall {
     private String lastError = null;
 
     public GistWall() {
+        this(GistWallConfig.load(), java.nio.file.Path.of(
+            System.getProperty("user.home", "."), GistWallCache.DEFAULT_FILE));
+    }
+
+    /** MP-014 (#160): explicit config + cache path (tests, alternate profiles). */
+    public GistWall(GistWallConfig cfg, java.nio.file.Path cachePath) {
+        this.cfg = cfg == null ? GistWallConfig.defaults() : cfg;
+        this.cacheFile = cachePath;
         http = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .build();
     }
+
+    /** Effective source config (for telemetry/tests). */
+    public GistWallConfig getConfig() { return cfg; }
 
     public void setToken(String t) { this.token = t; }
     public boolean isFetched() { return fetched; }
@@ -171,8 +184,16 @@ public class GistWall {
      */
     public synchronized void refresh() {
         if (token == null || token.length() < 20) {
-            // No token — show an offline hint instead of a blank wall (matches javadoc).
-            if (lines.isEmpty()) lines = java.util.Collections.singletonList("[gist wall: no token]");
+            // No token — MP-014 (#160): show the last-good cache with its age
+            // label instead of a blank/one-line wall.
+            if (lines.isEmpty()) {
+                GistWallCache cached = GistWallCache.load(cacheFile);
+                if (cached != null && !cached.isEmpty()) {
+                    lines = cached.linesWithAge(System.currentTimeMillis());
+                } else {
+                    lines = java.util.Collections.singletonList("[gist wall: no token]");
+                }
+            }
             return;
         }
         long now = System.currentTimeMillis();
@@ -188,9 +209,9 @@ public class GistWall {
         try {
             List<String> next = new ArrayList<>();
             next.add("== FLEET ==");
-            fetchGistLines("fleet_status.jsonl", next, MAX_STATUS, Source.STATUS);
+            fetchGistLines(cfg.statusFile, next, MAX_STATUS, Source.STATUS);
             next.add("== LOGITS ==");
-            fetchGistLines("workflow_logits.jsonl", next, MAX_LOGIT, Source.LOGITS);
+            fetchGistLines(cfg.logitsFile, next, MAX_LOGIT, Source.LOGITS);
             next.add("== WORD LIB ==");
             fetchWordLibrary(next, MAX_WORDLIB);
             synchronized (this) {
@@ -198,10 +219,20 @@ public class GistWall {
                 fetched = true;
                 lastError = null;
             }
+            // MP-014 (#160): persist the last-good wall so an offline boot can
+            // show it with an age label.
+            new GistWallCache(next, System.currentTimeMillis()).save(cacheFile);
         } catch (Exception e) {
             synchronized (this) {
                 lastError = e.getMessage();
-                if (lines.isEmpty()) lines = java.util.Collections.singletonList("[gist wall offline]");
+                if (lines.isEmpty()) {
+                    GistWallCache cached = GistWallCache.load(cacheFile);
+                    if (cached != null && !cached.isEmpty()) {
+                        lines = cached.linesWithAge(System.currentTimeMillis());
+                    } else {
+                        lines = java.util.Collections.singletonList("[gist wall offline]");
+                    }
+                }
             }
         } finally {
             synchronized (this) { fetching = false; }
@@ -215,7 +246,7 @@ public class GistWall {
     private void fetchGistLines(String filename, List<String> out, int max, Source src) throws IOException {
         String rawUrl = null;
         Request meta = new Request.Builder()
-            .url(API_BASE + "/gists/" + FLEET_GIST_ID)
+            .url(cfg.apiBase + "/gists/" + cfg.gistId)
             .header("Authorization", "token " + token)
             .header("Accept", "application/vnd.github.v3+json")
             .build();
@@ -244,7 +275,7 @@ public class GistWall {
 
     /** Fetch the last {@code max} lines of the word-library success paths. */
     private void fetchWordLibrary(List<String> out, int max) throws IOException {
-        String url = API_BASE + "/repos/chrisalunlloyd2-sudo/BDI_FSM_DAGs/contents/" + WORDLIB_PATH;
+        String url = cfg.apiBase + "/repos/" + cfg.wordLibRepo + "/contents/" + cfg.wordLibPath;
         Request req = new Request.Builder()
             .url(url)
             .header("Authorization", "token " + token)
