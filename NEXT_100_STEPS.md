@@ -5,6 +5,8 @@
 > Nothing lives forever, nothing runs for free, always advancing.
 > Status markers: [x] shipped · [~] in flight · [ ] queued.
 
+> **2026-11-07:** steps 151-250 (phases H-L, Hermes lane) continue in `NEXT_STEPS_151_250.md`; start with `docs/KNOWLEDGE_BASE.md`.
+
 ## Where we are (2026-10-18)
 - PHASE B world finishing (59-78): ✅ COMPLETE — walls, wall collision, roofs, heights, forest ×3, paths, bloom, quorum flares, palette, windows, doors, lanterns, weather (e6ba132, 02df8e0, 7d3f52f)
 - Selftest gate: 93/0 exit-0 expected (static `pass++` site count at `9a1b04c`; was 87/0 at `dd470f6`, 89 after claude-lesson + gist-wall paging, 92 after #287's branch-gate/write-rules/token cases, 93 with #304's splash case; latest run — gate grew through hardening + parity work)
