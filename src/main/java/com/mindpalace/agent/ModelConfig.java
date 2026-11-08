@@ -85,10 +85,32 @@ public final class ModelConfig {
      * Three small voters (~2.8 GB) stay in the OS file cache, so their reloads
      * come from RAM. Fewer than MIN_VOTERS distinct entries, or a cloud model,
      * falls back to the default: the quorum must stay valid and local.
+     *
+     * <p>Without the flag, a machine under SMALL_BOX_BYTES of RAM gets
+     * SMALL_BOX_VOTERS automatically, so a relaunch by any script (sync, release,
+     * Hermes) cannot bring the 5-model rotation back. {@code -Dmindpalace.voters=all}
+     * forces the full roster anywhere.</p>
      */
     public static java.util.List<String> voters() {
         java.util.List<String> def = java.util.List.of(TOOL_MODEL, CRITIC_MODEL, TIE_MODEL, EXTRA_VOTER_A, EXTRA_VOTER_B);
-        return parseVoters(System.getProperty("mindpalace.voters"), def);
+        String spec = System.getProperty("mindpalace.voters");
+        if ((spec == null || spec.isBlank()) && smallBox()) return SMALL_BOX_VOTERS;
+        return parseVoters(spec, def);   // "all" has < MIN_VOTERS entries -> def
+    }
+
+    /** Below this much physical RAM the small roster is the default (matches check_ollama_capacity SMALL_BOX_GB). */
+    public static final long SMALL_BOX_BYTES = 16L << 30;
+    /** Small-box roster: tool, critic, tie-breaker (~2.8 GB of blobs, stays in the OS file cache). */
+    public static final java.util.List<String> SMALL_BOX_VOTERS = java.util.List.of(TOOL_MODEL, CRITIC_MODEL, TIE_MODEL);
+
+    static boolean smallBox() {
+        try {
+            var os = (com.sun.management.OperatingSystemMXBean) java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            long total = os.getTotalMemorySize();
+            return total > 0 && total < SMALL_BOX_BYTES;
+        } catch (Throwable t) {
+            return false;   // unknown RAM: keep the default roster
+        }
     }
 
     static java.util.List<String> parseVoters(String spec, java.util.List<String> def) {
