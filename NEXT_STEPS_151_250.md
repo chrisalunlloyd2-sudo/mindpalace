@@ -14,9 +14,9 @@
 ## PHASE H — Small-box hardening (151–165)
 - [x] **151** (A) Merge #347 (automatic small roster under 16 GB)
 - [ ] **152** (C) Pass `-Dmindpalace.voters` through `mindpalace-sync.sh`, `release_phase.sh` and Hermes' copy, from one shared `GAME_JAVA_FLAGS` (belt and braces with #347)
-- [~] **153** (C) Tasks re-registered at Priority 4 (done 2026-11-07); still to do: `install()` default and remove the in-code raise
+- [x] **153** (C) Tasks re-registered at Priority 4 and `install()` now sets it (2026-11-08); the in-code raise in `normal_priority()` stays as a backup
 - [ ] **154** (C) Replace the Aria-Ollama-Serve PowerShell launcher with `watchdog.py start-ollama` (that launcher hung 20+ min)
-- [ ] **155** (C) Port the loopback `urlopen` → `http.client` fix to `scripts/monitor_mindpalace.py` and `scripts/system_maintenance.py` (same SSL-context stall)
+- [x] **155** (C) Loopback `urlopen` → `http.client` in `system_maintenance.py` and both `monitor_mindpalace.py` copies (AIGEN_SYS, Hermes), 2026-11-08. Open: the AIGEN_SYS copy polls port 11435, where nothing listens; confirm the intended port
 - [ ] **156** (C) Selftest: a ballot on the small roster reaches quorum with one voter cold-loaded (MP-014 guarantee re-proved for 3 voters)
 - [ ] **157** (C) Telemetry: model-load count per hour in the weekly report; alert above 30/h (disk thrash signature)
 - [ ] **158** (C) `check_ollama_capacity.py` also reads `/api/ps` and flags distinct-models-per-hour above the cap
