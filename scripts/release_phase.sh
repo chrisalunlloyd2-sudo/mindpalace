@@ -218,12 +218,13 @@ SIZE_MB=$(( $(stat -c %s "$EXE") / 1048576 ))
 [ "$SIZE_MB" -ge 40 ] && [ "$SIZE_MB" -le 150 ] || { revert_versions; die "exe size ${SIZE_MB}MB outside 40-150 sanity"; }
 log "exe: $EXE (${SIZE_MB} MB)"
 
+. "$(dirname "${BASH_SOURCE[0]}")/game_flags.sh"   # step 152
 # ── 6b. relaunch the ONE game (MP invariant: never leave the world dark) ─
 LEFT2=$(sweep_java)
 [ "$LEFT2" = "0" ] || { revert_versions; die "pre-relaunch sweep failed — $LEFT2 java procs alive (version edits reverted)"; }
 cp -f "$JAR" mindpalace-live.jar
 # jar path RELATIVE (Windows javaw can't open MSYS /c/... paths — sync step 1b)
-JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" -jar mindpalace-live.jar \
+JAVA_HOME="$JAVA_HOME" nohup "$JAVA_HOME/bin/javaw.exe" $GAME_JAVA_FLAGS -jar mindpalace-live.jar \
     >> "$REPO/game_console.log" 2>&1 &
 disown
 sleep 8
