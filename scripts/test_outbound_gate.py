@@ -12,10 +12,14 @@ model, so the cases that matter are:
 
 Zero network, zero model calls. Pure string logic.
 """
+import os
 import unittest
 from pathlib import Path
 
 from tools.outbound_gate import (
+    draft_digest,
+    load_approvals,
+    main,
     parse_drafts,
     scan_body,
     shannon,
@@ -130,10 +134,16 @@ class StructureTests(unittest.TestCase):
 
 
 class VerdictTests(unittest.TestCase):
-    def test_clean_email_sends(self):
-        v = verdict(scan_body("hello there", subject="s", to="a@b.com"))
-        self.assertTrue(v["send"])
-        self.assertEqual(0, v["blockers"])
+    def test_clean_email_sends_only_with_approval(self):
+        # #316: content-clean is not permission — no approval record = held;
+        # with a human approval the same clean email passes.
+        held = verdict(scan_body("hello there", subject="s", to="a@b.com"))
+        self.assertFalse(held["send"])
+        self.assertIn("no_human_approval", held["hold_reasons"])
+        self.assertEqual(0, held["blockers"])
+        approved = verdict(scan_body("hello there", subject="s", to="a@b.com"), True)
+        self.assertTrue(approved["send"])
+        self.assertEqual(0, approved["blockers"])
 
     def test_blocked_email_holds(self):
         v = verdict(scan_body(f"tok {REAL_PAT}", subject="s", to="a@b.com"))
@@ -179,6 +189,71 @@ Second body here.
         drafts = parse_drafts(self.SAMPLE)
         self.assertEqual("other@example.com", drafts[1]["to"])
         self.assertIn("Second body", drafts[1]["body"])
+
+
+class ApprovalTests(unittest.TestCase):
+    """#316: content-clean is NOT permission to send — a human approval record
+    keyed by the draft digest is also required."""
+
+    def _draft(self, body="Hi there, ordinary prose.", to="a@example.com", subject="Hello"):
+        return {"num": 1, "title": "t", "to": to, "subject": subject, "body": body}
+
+    def test_unapproved_draft_is_held(self):
+        v = verdict([], False)
+        self.assertFalse(v["send"])
+        self.assertIn("no_human_approval", v["hold_reasons"])
+
+    def test_approved_clean_draft_sends(self):
+        v = verdict([], True)
+        self.assertTrue(v["send"])
+        self.assertEqual([], v["hold_reasons"])
+
+    def test_approval_never_overrides_blockers(self):
+        blocker = [{"severity": "blocker", "category": "credential", "rule": "x", "preview": ""}]
+        v = verdict(blocker, True)
+        self.assertFalse(v["send"])
+        self.assertIn("content_blockers", v["hold_reasons"])
+
+    def test_digest_is_stable_and_body_sensitive(self):
+        a = self._draft()
+        b = self._draft()
+        self.assertEqual(draft_digest(a), draft_digest(b))
+        self.assertNotEqual(draft_digest(a), draft_digest(self._draft(body="different body")))
+
+    def test_load_approvals_roundtrip_and_malformed(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            good = Path(td) / "ok.json"
+            good.write_text('{"approvals":[{"sha256":"' + "a" * 64 + '","approvedBy":"Architect"}]}',
+                            encoding="utf-8")
+            self.assertIn("a" * 64, load_approvals(good))
+            bad = Path(td) / "bad.json"
+            bad.write_text("{not json", encoding="utf-8")
+            self.assertEqual({}, load_approvals(bad))
+            self.assertEqual({}, load_approvals(Path(td) / "absent.json"))
+
+    def test_cli_holds_without_approval_then_clears_with_it(self):
+        import contextlib
+        import io
+        import tempfile
+        draft = ("## Draft 1 (x)\nTo: someone@example.com\nSubject: Hello\nBody:\n"
+                 "Ordinary prose, nothing risky.\n")
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "drafts.md"
+            f.write_text(draft, encoding="utf-8")
+            os.environ.pop("MINDPALACE_OUTREACH_APPROVALS", None)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(1, main(["outbound_gate.py", str(f)]), "unapproved must be held")
+            d = parse_drafts(draft)[0]
+            approvals = Path(td) / "approvals.json"
+            approvals.write_text('{"approvals":[{"sha256":"%s","approvedBy":"Architect"}]}'
+                                 % draft_digest(d), encoding="utf-8")
+            os.environ["MINDPALACE_OUTREACH_APPROVALS"] = str(approvals)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(0, main(["outbound_gate.py", str(f)]), "approved+clean must pass")
+            finally:
+                os.environ.pop("MINDPALACE_OUTREACH_APPROVALS", None)
 
 
 if __name__ == "__main__":

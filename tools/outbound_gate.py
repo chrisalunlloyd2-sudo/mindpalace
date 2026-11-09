@@ -11,6 +11,17 @@ The gate is deterministic and offline. It never sends anything. It reads a
 draft file (or stdin) and reports blockers per draft. A blocker means DO NOT
 SEND. Warnings are advisory.
 
+HUMAN APPROVAL (2026-11-08, #316). Content being clean is NOT permission to
+send. Every draft must also match an explicit human approval record in
+config/outreach_approvals.json keyed by the draft's sha256 (digest over
+to+subject+body). No record = HELD (reason: no_human_approval). This closes
+the 2026-10-26 incident in which three content-clean cold-outreach drafts
+signed "Alice, Chris's business AI partner" were sent to strangers: the gate
+said "clear to send" because it only judged content.
+
+Print the digests an operator needs to approve with:
+    python3 tools/outbound_gate.py drafts.md --print-digests
+
 What it blocks:
   credential     PATs, API keys, private keys, Bearer tokens, PAT-in-URL remotes
   high_entropy   long hex/base64/encoded-payload runs and shell one-liners
@@ -26,8 +37,10 @@ Usage:
 Exit: 0 = no blockers, 1 = blockers found, 2 = bad usage.
 """
 import argparse
+import hashlib
 import json
 import math
+import os
 import re
 import sys
 from collections import Counter
@@ -192,15 +205,58 @@ def scan_body(body: str, subject: str = "", to: str = ""):
     return findings
 
 
-def verdict(findings):
-    """Summarise findings into a send/hold decision."""
+APPROVALS_ENV = "MINDPALACE_OUTREACH_APPROVALS"
+DEFAULT_APPROVALS = Path("config/outreach_approvals.json")
+
+
+def approvals_path():
+    """Approvals file: env override, else the repo default."""
+    return Path(os.environ.get(APPROVALS_ENV) or DEFAULT_APPROVALS)
+
+
+def load_approvals(path=None):
+    """sha256 -> {"approvedBy", "date", "scope"}; missing/broken file = {}."""
+    p = Path(path) if path else approvals_path()
+    if not p.is_file():
+        return {}
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for rec in (doc.get("approvals") or []):
+        sha = str(rec.get("sha256", "")).strip().lower()
+        if len(sha) == 64:
+            out[sha] = rec
+    return out
+
+
+def draft_digest(draft):
+    """Stable approval key: sha256 over normalised to+subject+body."""
+    norm = "\n".join([
+        (draft.get("to") or "").strip().lower(),
+        (draft.get("subject") or "").strip(),
+        " ".join((draft.get("body") or "").split()),
+    ])
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
+
+
+def verdict(findings, approved=False):
+    """Summarise findings + human approval into a send/hold decision."""
     blockers = [f for f in findings if f["severity"] == "blocker"]
     warnings = [f for f in findings if f["severity"] == "warning"]
+    hold = []
+    if blockers:
+        hold.append("content_blockers")
+    if not approved:
+        hold.append("no_human_approval")
     return {
-        "send": not blockers,
+        "send": not blockers and approved,
+        "approved": bool(approved),
         "blockers": len(blockers),
         "warnings": len(warnings),
         "categories": sorted({f["category"] for f in blockers}),
+        "hold_reasons": hold,
     }
 
 
@@ -284,24 +340,40 @@ def main(argv):
         if not drafts:
             drafts = [{"num": 1, "title": "", "to": "", "subject": "", "body": text.strip()}]
 
+    if "--print-digests" in opts:
+        for d in drafts:
+            print(f"draft {d['num']}: sha256={draft_digest(d)}  to={d['to']}")
+        return 0
+
+    approvals = load_approvals()
     results = []
     for d in drafts:
         findings = scan_body(d["body"], d["subject"], d["to"])
-        results.append({"draft": d, "findings": findings, "verdict": verdict(findings)})
+        digest = draft_digest(d)
+        approved = digest in approvals
+        results.append({"draft": d, "findings": findings, "digest": digest,
+                        "approved": approved, "verdict": verdict(findings, approved)})
 
     if as_json:
         print(json.dumps([{
             "num": r["draft"]["num"], "title": r["draft"]["title"], "to": r["draft"]["to"],
-            "subject": r["draft"]["subject"], "verdict": r["verdict"], "findings": r["findings"],
+            "subject": r["draft"]["subject"], "digest": r["digest"], "verdict": r["verdict"],
+            "findings": r["findings"],
         } for r in results], indent=2))
     else:
         for r in results:
             _report(r["draft"], r["findings"], verbose=False)
+            if not r["approved"]:
+                print(f"  HELD draft {r['draft']['num']}: no human approval "
+                      f"(add sha256={r['digest']} to {approvals_path()})")
 
     blocked = [r for r in results if not r["verdict"]["send"]]
     if not as_json:
+        content_held = sum(1 for r in results if "content_blockers" in r["verdict"]["hold_reasons"])
+        unapproved = sum(1 for r in results if "no_human_approval" in r["verdict"]["hold_reasons"])
         print()
-        print(f"{len(results) - len(blocked)}/{len(results)} drafts clear to send, {len(blocked)} held")
+        print(f"{len(results) - len(blocked)}/{len(results)} drafts clear to send, {len(blocked)} held"
+              f" ({content_held} content, {unapproved} awaiting human approval)")
     return 1 if blocked else 0
 
 

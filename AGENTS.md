@@ -60,6 +60,16 @@ system — the world is running right now, most hours of most days.
    "agent write rules" + "agent write branch gate"). GitHub auth uses
    `MIND_PALACE_AGENT_TOKEN` only — the Credential-Manager PAT path was
    removed (#333, `9a1b04c`); with no token the game runs unauthenticated.
+10. **No unapproved outbound contact with third parties.** Agents must never
+   send cold outreach, sign as the Architect ("Chris's business AI partner"),
+   or use personal/researched details to contact strangers. The only send path
+   (`tools/outbound_gate.py`) requires, per draft, BOTH clean content AND a
+   human approval record keyed by the draft's sha256 in
+   `config/outreach_approvals.json` — no record = held (`no_human_approval`).
+   Print digests with `python tools/outbound_gate.py <drafts.md>
+   --print-digests`; tests: `scripts/test_outbound_gate.py`. (2026-10-26
+   incident: three cold-outreach drafts signed "Alice, Chris's business AI
+   partner" were sent to strangers under the Architect's address — #316.)
 
 ## Build & verify
 ```

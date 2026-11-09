@@ -1,0 +1,4 @@
+{
+  "_comment": "Human approval records for outbound email — AGENTS.md hard rule 10 / #316. Each record: {sha256, approvedBy, date, scope}. The sha256 keys the exact draft (to+subject+body) — ANY edit invalidates it. Get digests with: python tools/outbound_gate.py <drafts.md> --print-digests. An empty list means NOTHING may send; the gate holds every draft with reason 'no_human_approval'. Only the Architect (a human) adds records here.",
+  "approvals": []
+}

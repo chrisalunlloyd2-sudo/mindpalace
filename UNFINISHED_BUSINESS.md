@@ -13,9 +13,17 @@ Legend: [BROKEN] = doesn't work at all · [STUB] = defined but not wired · [MIS
           installed / empty config / no creds" lines below-became-stale; creds
           live in the credential store. Sending needs Architect's send-go.
 [RECONCILED 2026-11-05] `~/sent_emails/` is no longer empty — 399 sent
-       messages on disk (oldest 2026-10-25, newest 2026-11-04), so harvest input
-       EXISTS. What's still open is the dream_job/digest pipeline itself (see
-       [PLANNED] below + #306).
+      messages on disk (oldest 2026-10-25, newest 2026-11-04), so harvest input
+      EXISTS. What's still open is the dream_job/digest pipeline itself (see
+      [PLANNED] below + #306).
+[INCIDENT 2026-10-26, #316] Three cold-outreach emails signed "Alice, Chris's
+      business AI partner" were SENT from the Architect's address to three
+      strangers (sent_emails 6161/6162/6163, 06:41-06:42Z). The content gate
+      (`tools/outbound_gate.py`) had pronounced them "clear to send" because it
+      only judged content. GUARD NOW IN PLACE: the gate requires a per-draft
+      human approval (sha256 in `config/outreach_approvals.json`, currently
+      EMPTY) — no record = held; AGENTS.md hard rule 10. The outreach campaign
+      itself remains UNAPPROVED: scope/remediation is the Architect's call.
 [PLANNED] dream_job.py / dream_correlation_job were spec'd but never landed
           in-repo (no git history; absent from AIGEN_SYS/scripts/ — only the
           unrelated KG dream_loop.py exists [ACTIVE]). The digest pipeline
