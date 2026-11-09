@@ -453,6 +453,12 @@ public class GameEngine {
     private boolean demoMode = false;
     public void setDemo() { this.demoMode = true; }
 
+    /** MP-036 (#182): current effects tier (config-chosen, auto-downgraded under load). */
+    private volatile com.mindpalace.render.ParticleQuality particleQuality =
+        com.mindpalace.render.ParticleQuality.OFF;
+    /** MP-036 (#182): frame-time watchdog that lowers the tier and logs it. */
+    private final com.mindpalace.render.PerfGuard perfGuard = new com.mindpalace.render.PerfGuard();
+
     /** #304: intro splash state (gated off for demo/selftest at boot). */
     private final com.mindpalace.ui.SplashScreen splash = new com.mindpalace.ui.SplashScreen();
 
@@ -550,7 +556,7 @@ public class GameEngine {
         input = new Input(window);
         renderer = new Renderer(width, height);
         com.mindpalace.render.GlTrace.mark("init:Renderer");
-        com.mindpalace.render.ParticleQuality particleQuality = com.mindpalace.render.ParticleQuality.fromConfig();
+        particleQuality = com.mindpalace.render.ParticleQuality.fromConfig();
         if (particleQuality != com.mindpalace.render.ParticleQuality.OFF) {
             try {
                 particleBatch = new com.mindpalace.render.ParticleBatch(particleQuality.cap);
@@ -1295,6 +1301,22 @@ public class GameEngine {
     private int startupFrames;
     private double startupFirstMs, startupWorstMs;
 
+    /** MP-036 (#182): switch the effects tier, rebuilding the particle batch at the new cap. */
+    private void applyEffectsTier(com.mindpalace.render.ParticleQuality tier) {
+        particleQuality = tier;
+        if (particleBatch != null) {
+            try { particleBatch.cleanup(); } catch (Throwable ignored) { /* best effort */ }
+            particleBatch = null;
+        }
+        if (tier == com.mindpalace.render.ParticleQuality.OFF) return;
+        try {
+            particleBatch = new com.mindpalace.render.ParticleBatch(tier.cap);
+            System.out.println("[Particles] tier applied: quality=" + tier + " cap=" + tier.cap);
+        } catch (RuntimeException e) {
+            System.err.println("[Particles] tier rebuild failed (cube path stays): " + e);
+        }
+    }
+
     private void loop() {
         com.mindpalace.render.HitchSampler.start(Thread.currentThread());
         while (running && !GLFW.glfwWindowShouldClose(window)) {
@@ -1308,6 +1330,24 @@ public class GameEngine {
             else {
                 frameTimes.addLast(Math.max(frameTime, 1e-6));
                 if (frameTimes.size() > 120) frameTimes.removeFirst();
+            }
+            // MP-036 (#182): particle-budget watchdog — sustained slow frames
+            // lower the effects tier (downgrade-only, cooldown-limited) and the
+            // change is logged. E2E pins the tier (determinism) and demo runs
+            // start at OFF, so this never perturbs the tour.
+            if (!e2eMode && !selfTest) {
+                if (perfGuard.sample(frameTime * 1000.0)) {
+                    com.mindpalace.render.PerfGuard.Decision perfDecision =
+                        perfGuard.evaluate(particleQuality, System.currentTimeMillis());
+                    if (perfDecision == com.mindpalace.render.PerfGuard.Decision.DOWNGRADE) {
+                        com.mindpalace.render.ParticleQuality from = particleQuality;
+                        com.mindpalace.render.ParticleQuality to =
+                            com.mindpalace.render.PerfGuard.nextTier(from);
+                        System.out.println(com.mindpalace.render.PerfGuard.describe(
+                            from, to, perfGuard.averageMs(), perfGuard.sampleCount()));
+                        applyEffectsTier(to);
+                    }
+                }
             }
             if (e2eMode && startupFrames < 61) {          // MP-004: startup latency reported apart from steady-state hitching
                 startupFrames++;
@@ -8107,6 +8147,56 @@ public class GameEngine {
         System.out.println((gistCfgOk ? "PASS" : "FAIL")
             + " (#160) gist wall config: JSON overrides + defaults on absent/malformed, cache round-trip + age label");
         if (gistCfgOk) pass++; else fail++;
+
+        // #182 (MP-036): perf guard — sustained slow frames downgrade the tier,
+        // only with a full window and outside the cooldown; ladder bottoms at OFF.
+        boolean perfOk;
+        try {
+            com.mindpalace.render.ParticleQuality H = com.mindpalace.render.ParticleQuality.HIGH;
+            com.mindpalace.render.ParticleQuality M = com.mindpalace.render.ParticleQuality.MEDIUM;
+            com.mindpalace.render.ParticleQuality L = com.mindpalace.render.ParticleQuality.LOW;
+            com.mindpalace.render.ParticleQuality O = com.mindpalace.render.ParticleQuality.OFF;
+            boolean ladder = com.mindpalace.render.PerfGuard.nextTier(H) == M
+                && com.mindpalace.render.PerfGuard.nextTier(M) == L
+                && com.mindpalace.render.PerfGuard.nextTier(L) == O
+                && com.mindpalace.render.PerfGuard.nextTier(O) == O;
+
+            // fast frames never downgrade; a full slow window outside cooldown does
+            boolean fast = com.mindpalace.render.PerfGuard.decide(H, 10.0, 60_000L, 33.0, 15_000L, true)
+                == com.mindpalace.render.PerfGuard.Decision.NONE;
+            boolean slow = com.mindpalace.render.PerfGuard.decide(H, 50.0, 60_000L, 33.0, 15_000L, true)
+                == com.mindpalace.render.PerfGuard.Decision.DOWNGRADE;
+            // guards: partial window, cooldown, and OFF all hold
+            boolean notFull = com.mindpalace.render.PerfGuard.decide(H, 50.0, 60_000L, 33.0, 15_000L, false)
+                == com.mindpalace.render.PerfGuard.Decision.NONE;
+            boolean cooling = com.mindpalace.render.PerfGuard.decide(H, 50.0, 1_000L, 33.0, 15_000L, true)
+                == com.mindpalace.render.PerfGuard.Decision.NONE;
+            boolean offStays = com.mindpalace.render.PerfGuard.decide(O, 50.0, 60_000L, 33.0, 15_000L, true)
+                == com.mindpalace.render.PerfGuard.Decision.NONE;
+
+            // window + cooldown bookkeeping on the instance (120 samples, 15s cooldown)
+            com.mindpalace.render.PerfGuard g = new com.mindpalace.render.PerfGuard();
+            boolean filled = false;
+            for (int i = 0; i < 120; i++) filled = g.sample(40.0);
+            boolean avgOk = Math.abs(g.averageMs() - 40.0) < 0.01;
+            boolean first = g.evaluate(H, 1_000_000L)
+                == com.mindpalace.render.PerfGuard.Decision.DOWNGRADE;
+            boolean second = g.evaluate(H, 1_000_000L + 5_000L)
+                == com.mindpalace.render.PerfGuard.Decision.NONE;   // cooldown
+            boolean third = g.evaluate(H, 1_000_000L + 20_000L)
+                == com.mindpalace.render.PerfGuard.Decision.DOWNGRADE;
+            boolean logLine = com.mindpalace.render.PerfGuard.describe(H, M, 41.2, 120)
+                .contains("HIGH -> MEDIUM");
+
+            perfOk = ladder && fast && slow && notFull && cooling && offStays
+                && filled && avgOk && first && second && third && logLine;
+        } catch (Throwable t2) {
+            System.out.println("  perf guard check threw: " + t2);
+            perfOk = false;
+        }
+        System.out.println((perfOk ? "PASS" : "FAIL")
+            + " (#182) perf guard: slow-window downgrade, full-window/cooldown/OFF guards, ladder HIGH->MEDIUM->LOW->OFF");
+        if (perfOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
