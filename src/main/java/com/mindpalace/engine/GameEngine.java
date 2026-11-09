@@ -176,7 +176,7 @@ public class GameEngine {
     private int teleportSel;        // selected destination index
     private boolean padDismissed;   // ESC pressed while still standing on the pad
     private final List<String> teleportLabels = new ArrayList<>();
-    private final List<Integer> teleportTargets = new ArrayList<>(); // >=0 floor, -1 outside, -2 cancel
+    private final List<Integer> teleportTargets = new ArrayList<>(); // >=0 floor, -1 outside, -2 cancel, -3 Einstein Campus
     private int menuSel;            // selected option in the ESC menu
     private int menuPage;           // 0=main, 1=video, 2=controls, 3=audio, 4=music, 5=agents
     private int moodIdx;            // Beats StudioLab mood preset cursor
@@ -1972,6 +1972,8 @@ public class GameEngine {
         }
         teleportLabels.add("Outside");
         teleportTargets.add(-1);
+        teleportLabels.add("Einstein Campus");
+        teleportTargets.add(-3);
         teleportLabels.add("Cancel");
         teleportTargets.add(-2);
     }
@@ -2002,6 +2004,8 @@ public class GameEngine {
                 player.teleportToFloor(target, world);
             } else if (target == -1) {
                 player.teleportOutside(world);
+            } else if (target == -3) {
+                player.teleportToCampus(world);
             } else {
                 padDismissed = true;   // Cancel — don't reopen until we step off
             }
@@ -2125,7 +2129,11 @@ public class GameEngine {
                 if (sel == 0) player.getCamera().setFov(clamp(player.getCamera().getFov() + dir * 5f, 50f, 120f));
                 if (sel == 1) player.getCamera().setSensitivity(clamp(player.getCamera().getSensitivity() + dir * 0.02f, 0.02f, 0.6f));
                 if (sel == 2) toggleFullscreen();
-                if (sel == 3 && bloom != null) bloom.setIntensity(clamp(bloom.getIntensity() + dir * 0.1f, 0f, 2f));
+                if (sel == 3 && bloom != null) {
+                    float eff = clamp(bloom.getIntensity() + dir * 0.1f, 0f, 2f);
+                    bloom.setIntensity(eff);
+                    if (bloomCurrent > 0.05f) bloomUserScale = clamp(eff / bloomCurrent, 0.1f, 4f);   // survives the per-frame region rewrite
+                }
                 if (sel == 4 && bloom != null) bloom.setThreshold(clamp(bloom.getThreshold() + dir * 0.05f, 0f, 1f));
                 break;
             case 2: // controls
@@ -2349,7 +2357,11 @@ public class GameEngine {
     private static final float BLOOM_HALL = 0.55f;
     private static final float BLOOM_COURTYARD = 0.95f;
     private static final float BLOOM_FOREST = 0.75f;
+    private static final float BLOOM_CAMPUS = com.mindpalace.world.EinsteinCampus.BLOOM_CAMPUS;   // the Einstein Campus: bloom at its strongest
     private float bloomCurrent = BLOOM_HALL;
+    /** The ESC > Video "Bloom" slider. updateRegionBloom() rewrites the intensity every frame from the region preset, so a value
+     *  set directly on the BloomEffect lasted one frame (the slider did nothing). The slider now sets this multiplier instead. */
+    private float bloomUserScale = 1f;
     private String bloomRegion = "hall";
     private float bloomRegionFade = 0f; // >0 while the region name shows (step 68)
     // H21: quorum flare — +1.0 gold .. -1.0 ice, decays to 0 over ~1.5s
@@ -2374,10 +2386,13 @@ public class GameEngine {
         String region;
         if (inMansion) region = "courtyard";
         else if (world.isInOpenWorld(player.getPosition().x, player.getPosition().z)
+                 && com.mindpalace.world.EinsteinCampus.nearCampus(player.getPosition().x, player.getPosition().z, 6f)) region = "campus";
+        else if (world.isInOpenWorld(player.getPosition().x, player.getPosition().z)
                  && player.getPosition().z < -60f) region = "forest";
         else if (world.isInOpenWorld(player.getPosition().x, player.getPosition().z)) region = "courtyard";
         else region = "hall";
-        float target = region.equals("forest") ? BLOOM_FOREST
+        float target = region.equals("campus") ? BLOOM_CAMPUS
+                     : region.equals("forest") ? BLOOM_FOREST
                      : region.equals("courtyard") ? BLOOM_COURTYARD : BLOOM_HALL;
         // H41 (#132): degraded days clamp the preset to the lowest tier.
         if (energyBudget.degraded()) target = Math.min(target, BLOOM_HALL);
@@ -2399,7 +2414,7 @@ public class GameEngine {
         }
         blocks.updateAll((float) dt, player.getPosition().x, player.getPosition().z, target);
         bloomCurrent = blocks.applyLuma(bloomCurrent);
-        bloom.setIntensity(bloomCurrent);
+        bloom.setIntensity(clamp(bloomCurrent * bloomUserScale, 0f, 2f));
         // H22 (step 72): weather-music coupling — rain slows the score
         // (soaked-world feel), snow/clear restore. Cheap: only writes tempo
         // when it would change (MusicEngine.setTempo is an AtomicInt).
@@ -3194,7 +3209,7 @@ public class GameEngine {
             bloomRegionFade -= 0.008f; // ~2s at 60fps
             float a = Math.min(1f, Math.max(0f, bloomRegionFade));
             Vector3f regionPos = hudAnchor(HudLayout.REGION);
-            fontRenderer.renderBillboard(bloomRegion.toUpperCase(), regionPos, 0.05f,
+            fontRenderer.renderBillboard(bloomRegion.toUpperCase() + (bloom != null ? String.format("  BLOOM %.2f", bloom.getIntensity()) : ""), regionPos, 0.05f,
                 new Vector3f(0.4f * a, 0.8f * a, 1.0f * a), proj, view, camPos);
         }
 
@@ -3964,7 +3979,7 @@ public class GameEngine {
                     "FOV: " + (int) player.getCamera().getFov(),
                     "Sensitivity: " + String.format("%.2f", player.getCamera().getSensitivity()),
                     "Fullscreen: " + (fullscreen ? "ON" : "OFF"),
-                    "Bloom: " + (bloom != null ? String.format("%.1f", bloom.getIntensity()) : "n/a"),
+                    "Bloom: " + (bloom != null ? String.format("%.1f (x%.1f of the %s preset)", bloom.getIntensity(), bloomUserScale, bloomRegion) : "n/a"),
                     "Bloom Threshold: " + (bloom != null ? String.format("%.2f", bloom.getThreshold()) : "n/a"),
                     "(Enter to go back)"
                 };
@@ -5118,6 +5133,7 @@ public class GameEngine {
             adjustMenuValue(3, 1);
             if (Math.abs(bloom.getIntensity() - (bi + 0.1f)) > 0.001f) menuOk = false;
             bloom.setIntensity(bi);
+            bloomUserScale = 1f;
         }
         state = GameState.PLAYING; menuPage = 0;
         System.out.println((menuOk ? "PASS" : "FAIL") + " ESC menu (pages + live settings)");

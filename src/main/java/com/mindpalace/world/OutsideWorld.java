@@ -213,6 +213,7 @@ public class OutsideWorld {
         renderTowns(r, floorY, night, time);
         renderModelShops(r, floorY, night);
         renderInventions(r, floorY, time, night);
+        EinsteinCampus.render(r, floorY, time, camX, camZ);   // the Einstein Campus district
     }
 
     private boolean isNight() {
@@ -549,6 +550,7 @@ public class OutsideWorld {
             if (near(tx, tz, hospitalPos, 12f)) continue;
             if (near(tx, tz, factoryPos, 16f)) continue;
             if (near(tx, tz, tocTreePos, 20f)) continue;
+            if (EinsteinCampus.nearCampus(tx, tz, 3f)) continue;   // keep the campus clear
             if (!chunkVisible(tx, tz)) continue;
 
             // Distance-based LOD: near trees get full detail (branches + 34

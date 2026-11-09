@@ -166,6 +166,63 @@ public final class SimsHardening100 {
             return "NO_QUORUM".equals(smallBoxBallot(WeightedQuorumVote.Vote.APPROVE, WeightedQuorumVote.Vote.ABSTAIN, WeightedQuorumVote.Vote.ABSTAIN))
                 && "NO_QUORUM".equals(smallBoxBallot(WeightedQuorumVote.Vote.ABSTAIN, WeightedQuorumVote.Vote.ABSTAIN, WeightedQuorumVote.Vote.ABSTAIN));
         }));
+        cs.add(new Case("campus.deterministicForFixedTime", () -> {
+            var a = com.mindpalace.world.EinsteinCampus.build(0f, 12.5f, true);
+            var b = com.mindpalace.world.EinsteinCampus.build(0f, 12.5f, true);
+            return a.size() == b.size() && a.equals(b) && a.size() > 150;
+        }));
+        cs.add(new Case("campus.allSixExhibitsPresentAndFinite", () -> {
+            var pcs = com.mindpalace.world.EinsteinCampus.build(0f, 3.7f, true);
+            for (String ex : com.mindpalace.world.EinsteinCampus.EXHIBITS) {
+                if (pcs.stream().noneMatch(x -> ex.equals(x.exhibit()))) return false;
+            }
+            for (var x : pcs) {
+                if (!Float.isFinite(x.x() + x.y() + x.z() + x.sx() + x.sy() + x.sz() + x.yaw() + x.r() + x.g() + x.b())) return false;
+                if (x.sx() <= 0f || x.sy() <= 0f || x.sz() <= 0f) return false;
+            }
+            return true;
+        }));
+        cs.add(new Case("campus.insideItsRadiusAndAboveGround", () -> {
+            float R = com.mindpalace.world.EinsteinCampus.RADIUS;
+            for (float t : new float[]{0f, 1.3f, 9.9f, 47f}) {
+                for (var x : com.mindpalace.world.EinsteinCampus.build(0f, t, true)) {
+                    float dx = x.x() - com.mindpalace.world.EinsteinCampus.CX, dz = x.z() - com.mindpalace.world.EinsteinCampus.CZ;
+                    if (dx * dx + dz * dz > (R + 2f) * (R + 2f)) return false;
+                    if (x.y() - x.sy() / 2f < -0.1f) return false;
+                }
+            }
+            return true;
+        }));
+        cs.add(new Case("campus.bloomHasBrightPieces", () -> {
+            // the bloom bright-pass starts at luminance 0.6 and is full at 0.9: enough emissive pieces must clear it, or the bloom has nothing to show
+            long bright = com.mindpalace.world.EinsteinCampus.build(0f, 2.2f, true).stream().filter(x -> x.emissive() && x.luminance() >= 0.9f).count();
+            long all = com.mindpalace.world.EinsteinCampus.build(0f, 2.2f, true).stream().filter(x -> x.emissive()).count();
+            return bright >= 40 && all >= 60;
+        }));
+        cs.add(new Case("campus.movingClockRunsAtOneOverGamma", () -> {
+            float g = com.mindpalace.world.EinsteinCampus.GAMMA;
+            float v2 = 1f - 1f / (g * g);                        // v^2/c^2 from gamma
+            boolean sqrt3over2 = Math.abs(v2 - 0.75f) < 1e-5f;   // v = sqrt(3)/2 c
+            float t = 10f;
+            return sqrt3over2 && Math.abs(com.mindpalace.world.EinsteinCampus.movingHand(t) * g - com.mindpalace.world.EinsteinCampus.restHand(t)) < 1e-4f;
+        }));
+        cs.add(new Case("campus.farLodKeepsRingAndDropsDetail", () -> {
+            var near = com.mindpalace.world.EinsteinCampus.build(0f, 1f, true);
+            var far = com.mindpalace.world.EinsteinCampus.build(0f, 1f, false);
+            boolean ringFar = far.stream().anyMatch(x -> "collider".equals(x.exhibit()));
+            boolean noLatticeFar = far.stream().noneMatch(x -> "spacetime lattice".equals(x.exhibit()));
+            return ringFar && noLatticeFar && far.size() < near.size() / 2;
+        }));
+        cs.add(new Case("campus.clearOfOtherDistricts", () -> {
+            float cx = com.mindpalace.world.EinsteinCampus.CX, cz = com.mindpalace.world.EinsteinCampus.CZ, R = com.mindpalace.world.EinsteinCampus.RADIUS;
+            float[][] others = {{20f, -180f, 14f}, {-60f, -120f, 12f}, {80f, -150f, 18f}, {0f, -250f, 20f}, {40f, -210f, 30f}};
+            for (float[] o : others) {
+                float dx = cx - o[0], dz = cz - o[1];
+                if (Math.sqrt(dx * dx + dz * dz) < R + o[2]) return false;
+            }
+            return Math.abs(cx) + R < com.mindpalace.world.OutsideWorld.HALF_W
+                && cz - R > com.mindpalace.world.OutsideWorld.MIN_Z && cz + R < com.mindpalace.world.OutsideWorld.MAX_Z;
+        }));
         cs.add(new Case("quorum.realVotesFloorNeedsTwo", () -> {
             // REAL_VOTE_MIN=2: one lone real vote can never clear quorum, even
             // with quorumMin=1 — and blind-majority labels BLINDED first.

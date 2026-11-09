@@ -573,6 +573,20 @@ public class Player {
         System.out.println("[TELEPORT] -> Mansion");
     }
 
+    /** Teleport to the Einstein Campus: 36 m before its centre, looking at it (yaw 0 faces +Z, as at the mansion). */
+    public void teleportToCampus(WorldBuilder world) {
+        currentRoom = null;
+        mansionInterior = false;
+        camera.setPosition(com.mindpalace.world.EinsteinCampus.CX, EYE_HEIGHT, com.mindpalace.world.EinsteinCampus.CZ - 36f);
+        camera.setYaw(0);
+        camera.setPitch(0);
+        velocity.set(0, 0, 0);
+        onGround = true;
+        teleportCooldown = 1.0;
+        if (audio != null) audio.playDoorOpen();
+        System.out.println("[TELEPORT] -> Einstein Campus");
+    }
+
     /** Teleport to the outside area (floor 0, in front of the palace). */
     public void teleportOutside(WorldBuilder world) {
         if (world.getHallways().isEmpty()) return;
