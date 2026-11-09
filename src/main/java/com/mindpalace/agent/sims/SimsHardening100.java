@@ -77,6 +77,34 @@ public final class SimsHardening100 {
         return new java.util.LinkedHashMap<>(q.calculateQuorum(id).voteMap);
     }
 
+    // ── small-box roster (step 156) ─────────────────────────────────────────
+
+    /**
+     * The production quorum for the 3-voter small-box roster: the same
+     * constructor and the same hex table AgentManager.initSimsParity uses.
+     */
+    private static WeightedQuorumVote smallBoxQuorum() {
+        int[][] hexes = {{0, 0}, {1, 0}, {0, 0}, {0, 1}, {1, 0}};
+        WeightedQuorumVote q = new WeightedQuorumVote();
+        List<String> roster = com.mindpalace.agent.ModelConfig.SMALL_BOX_VOTERS;
+        for (int i = 0; i < roster.size(); i++) {
+            q.setModelPosition(roster.get(i), hexes[i][0], hexes[i][1]);
+        }
+        q.registerProposal("p1", "t", 0, 0);
+        return q;
+    }
+
+    /** Cast one ballot on the small roster: {@code seats[i]} is APPROVE, REJECT or ABSTAIN (a cold model that timed out). */
+    private static String smallBoxBallot(WeightedQuorumVote.Vote... seats) {
+        WeightedQuorumVote q = smallBoxQuorum();
+        List<String> roster = com.mindpalace.agent.ModelConfig.SMALL_BOX_VOTERS;
+        for (int i = 0; i < seats.length; i++) {
+            q.castVote("p1", roster.get(i), seats[i], seats[i] == WeightedQuorumVote.Vote.ABSTAIN
+                ? VoteQualityLedger.ABSTAIN_TIMEOUT : VoteQualityLedger.SCRIPTED);
+        }
+        return q.calculateQuorum("p1").status;
+    }
+
     // ── the 100 cases ───────────────────────────────────────────────────────
 
     private static final List<Case> CASES = build();
@@ -108,6 +136,35 @@ public final class SimsHardening100 {
             q.castVote("p1", "b", WeightedQuorumVote.Vote.ABSTAIN, VoteQualityLedger.ABSTAIN_EMPTY);
             q.castVote("p1", "c", WeightedQuorumVote.Vote.ABSTAIN, VoteQualityLedger.ABSTAIN_TIMEOUT);
             return "NO_QUORUM".equals(p.status(q.allModelsMap(), 3, 2));
+        }));
+        cs.add(new Case("quorum.smallBoxRosterIsThreeAndVisible", () -> {
+            // all three small-box seats sit within FOW hop 1 of the proposal: no ballot is ever BLIND
+            WeightedQuorumVote q = smallBoxQuorum();
+            List<String> roster = com.mindpalace.agent.ModelConfig.SMALL_BOX_VOTERS;
+            if (roster.size() != 3) return false;
+            for (String m : roster) {
+                if (q.castVote("p1", m, WeightedQuorumVote.Vote.APPROVE, VoteQualityLedger.SCRIPTED) == WeightedQuorumVote.Vote.BLIND) return false;
+            }
+            return "APPROVED".equals(q.calculateQuorum("p1").status);
+        }));
+        cs.add(new Case("quorum.smallBoxColdVoterInAnySeatStillApproves", () -> {
+            // MP-014 for 3 voters: one cold-loaded model that times out must not starve the ballot
+            return "APPROVED".equals(smallBoxBallot(WeightedQuorumVote.Vote.ABSTAIN, WeightedQuorumVote.Vote.APPROVE, WeightedQuorumVote.Vote.APPROVE))
+                && "APPROVED".equals(smallBoxBallot(WeightedQuorumVote.Vote.APPROVE, WeightedQuorumVote.Vote.ABSTAIN, WeightedQuorumVote.Vote.APPROVE))
+                && "APPROVED".equals(smallBoxBallot(WeightedQuorumVote.Vote.APPROVE, WeightedQuorumVote.Vote.APPROVE, WeightedQuorumVote.Vote.ABSTAIN));
+        }));
+        cs.add(new Case("quorum.smallBoxColdVoterStillRejects", () -> {
+            return "REJECTED".equals(smallBoxBallot(WeightedQuorumVote.Vote.REJECT, WeightedQuorumVote.Vote.REJECT, WeightedQuorumVote.Vote.ABSTAIN))
+                && "REJECTED".equals(smallBoxBallot(WeightedQuorumVote.Vote.ABSTAIN, WeightedQuorumVote.Vote.REJECT, WeightedQuorumVote.Vote.REJECT));
+        }));
+        cs.add(new Case("quorum.smallBoxSplitWithColdVoterRejects", () -> {
+            // one approve + one reject + one cold: two real votes reach the floor, one approve is below approveMin=2 -> REJECTED (nothing spawns)
+            return "REJECTED".equals(smallBoxBallot(WeightedQuorumVote.Vote.APPROVE, WeightedQuorumVote.Vote.REJECT, WeightedQuorumVote.Vote.ABSTAIN));
+        }));
+        cs.add(new Case("quorum.smallBoxTwoColdVotersIsNoQuorum", () -> {
+            // the limit of the 3-voter roster: two cold models leave one real vote, below REAL_VOTE_MIN
+            return "NO_QUORUM".equals(smallBoxBallot(WeightedQuorumVote.Vote.APPROVE, WeightedQuorumVote.Vote.ABSTAIN, WeightedQuorumVote.Vote.ABSTAIN))
+                && "NO_QUORUM".equals(smallBoxBallot(WeightedQuorumVote.Vote.ABSTAIN, WeightedQuorumVote.Vote.ABSTAIN, WeightedQuorumVote.Vote.ABSTAIN));
         }));
         cs.add(new Case("quorum.realVotesFloorNeedsTwo", () -> {
             // REAL_VOTE_MIN=2: one lone real vote can never clear quorum, even
