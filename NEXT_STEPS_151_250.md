@@ -13,11 +13,11 @@
 
 ## PHASE H — Small-box hardening (151–165)
 - [x] **151** (A) Merge #347 (automatic small roster under 16 GB)
-- [ ] **152** (C) Pass `-Dmindpalace.voters` through `mindpalace-sync.sh`, `release_phase.sh` and Hermes' copy, from one shared `GAME_JAVA_FLAGS` (belt and braces with #347)
+- [x] **152** (#351, 2026-11-08) (C) Pass `-Dmindpalace.voters` through `mindpalace-sync.sh`, `release_phase.sh` and Hermes' copy, from one shared `GAME_JAVA_FLAGS` (belt and braces with #347)
 - [x] **153** (C) Tasks re-registered at Priority 4 and `install()` now sets it (2026-11-08); the in-code raise in `normal_priority()` stays as a backup
 - [x] **154** (C) `Aria-Ollama-Serve` now runs `watchdog.py start-ollama` (idempotent, no PowerShell, priority 4); the old serve.cmd launcher is retired but kept on disk (2026-11-08). Also: `Unify-Ollama-Orchestrator` (gateway :11435) was hung at priority 7; now priority 4 and restarted
 - [x] **155** (C) Loopback `urlopen` → `http.client` in `system_maintenance.py` and both `monitor_mindpalace.py` copies (AIGEN_SYS, Hermes), 2026-11-08. Open: the AIGEN_SYS copy polls port 11435, where nothing listens; confirm the intended port
-- [ ] **156** (C) Selftest: a ballot on the small roster reaches quorum with one voter cold-loaded (MP-014 guarantee re-proved for 3 voters)
+- [x] **156** (#364, 2026-11-08) (C) Selftest: a ballot on the small roster reaches quorum with one voter cold-loaded (MP-014 guarantee re-proved for 3 voters)
 - [ ] **157** (C) Telemetry: model-load count per hour in the weekly report; alert above 30/h (disk thrash signature)
 - [ ] **158** (C) `check_ollama_capacity.py` also reads `/api/ps` and flags distinct-models-per-hour above the cap
 - [x] **159** (C) Disk-queue probe in `ops_health.py` (in-process PDH read, a few ms; typeperf took 32 s). Queue > 8 for 2 cycles raises violation L5 `disk_queue` (investigate, never auto-kill). Tested with simulated samples; first live read 2026-11-08 was 11-13 during a model load
@@ -120,6 +120,33 @@
 - [ ] **248** (C) Public release checklist run (full checklist, public)
 - [ ] **249** (H) Announce the release on the step-log issue + gist
 - [ ] **250** (A) Phase review: what to keep, what to cut
+
+## PHASE M — More worlds & advanced labs (251-280, added 2026-11-08 at the Architect's request)
+> "Start adding more worlds. I've never seen the bloom in action. The labs should be stupid advanced, a developer's and
+> engineer's dream meeting Einstein." Each district is a pure-geometry class (`world/<Name>.java`: `build(floorY, time, near)`
+> returns pieces, `render(...)` draws them) so its layout is unit-testable; emissive pieces must clear the bloom bright-pass
+> (luminance >= 0.9); a bloom region preset per district; teleporter entry; LOD near/far; clear of the other districts.
+- [~] **251** (C) Einstein Campus (PR #366): collider ring, spacetime lattice, Tesla coil, interferometer, relativity clocks, cryostat; campus bloom region 1.4; teleporter entry. Not yet seen on screen
+- [ ] **252** (C) Screenshot the campus: add an E2E waypoint (does not renumber the tour) and read the PNG; tune colours/proportions from the picture
+- [ ] **253** (C) Bloom showcase: ESC > Video preset "Showcase" (intensity 1.4, threshold 0.5) and a visible HUD line of the current bloom value, so the effect is never invisible again
+- [ ] **254** (A) Decide whether the daily energy budget (bloom clamps to 0.55 after 20 min full-fat) should exempt the campus; today it does not
+- [ ] **255** (C) Walk-in lab hall for the campus: real colliders, a door, interior exhibits you can stand inside
+- [ ] **256** (C) Dev-lab world: a CI pipeline you can walk along (stages as gates, test lab devices as live status, red/green flows)
+- [ ] **257** (C) Engineering world: a bridge/gear-train yard where load and stress are drawn as colour (finite-element look)
+- [ ] **258** (C) Observatory world: telescope dome, orbit lines, a light-cone floor (past/future cone from the player's position)
+- [ ] **259** (C) Cryptography vault world (links the Enigma plugboard): rotors you can set, a live Banburismus score
+- [ ] **260** (C) Quantum garden world: superposed flowers that collapse when looked at (visibility-driven state)
+- [ ] **261** (C) Per-exhibit info plaques via the font renderer (what the exhibit shows and which law it illustrates)
+- [ ] **262** (C) Exhibits reflect the repo: collider beam brightness = commit rate, lattice sag = repo size, clocks = CI time vs wall time
+- [ ] **263** (C) Sound per exhibit (Tesla crackle, collider hum pitched by bunch speed) on the existing audio engine
+- [ ] **264** (C) Time dilation you can feel: stepping on the carousel slows the player's own HUD clock by 1/gamma
+- [ ] **265** (C) A teleporter pad on the campus plaza back to the palace
+- [ ] **266-275** (C/H) Ten more districts, one per engineering discipline (Hermes preps each card: layout sketch, exhibits, bloom colour, test list)
+- [ ] **276** (C) Draw-call budget: campus <= 330 pieces near, <= 130 far; measure FPS on the 12 GB box with the live roster
+- [ ] **277** (C) World map screen lists the districts with their bloom colour
+- [ ] **278** (C) Day/night variants (beacons and tubes brighter at night)
+- [ ] **279** (C) Selftest: every district passes the same contract (finite, bounded, bright enough, clear of the others)
+- [ ] **280** (A) Phase review: which worlds to keep
 
 ## Order
 H (stability) → I (voice) → J (data/LoRA) with K (Hermes) running alongside → L.

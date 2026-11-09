@@ -4,7 +4,7 @@ Read `docs/KNOWLEDGE_BASE.md` first, then `NEXT_STEPS_151_250.md`. Take steps
 in order and one heavy job at a time. Every model run goes through `budget.py`.
 
 ## State at handoff
-- main = f50e415. Merged today: #342, #344, #345, #346, #347, #348.
+- Merged 2026-11-07..08: #342, #344-#348, #350 (status), #351 (shared GAME_JAVA_FLAGS), #364 (3-voter quorum cases).
 - #347 (automatic small roster under 16 GB) is merged.
 - Live game: `--demo` with `-Dmindpalace.voters=llama3.2:1b,qwen2.5:0.5b,deepseek-r1:1.5b`,
   built from 8d18aaa. Previous jars: `mindpalace-live.jar.bak-20261104/-20261107`.
