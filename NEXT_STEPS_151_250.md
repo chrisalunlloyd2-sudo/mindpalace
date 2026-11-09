@@ -13,11 +13,11 @@
 
 ## PHASE H — Small-box hardening (151–165)
 - [x] **151** (A) Merge #347 (automatic small roster under 16 GB)
-- [ ] **152** (C) Pass `-Dmindpalace.voters` through `mindpalace-sync.sh`, `release_phase.sh` and Hermes' copy, from one shared `GAME_JAVA_FLAGS` (belt and braces with #347)
+- [x] **152** (#351, 2026-11-08) (C) Pass `-Dmindpalace.voters` through `mindpalace-sync.sh`, `release_phase.sh` and Hermes' copy, from one shared `GAME_JAVA_FLAGS` (belt and braces with #347)
 - [x] **153** (C) Tasks re-registered at Priority 4 and `install()` now sets it (2026-11-08); the in-code raise in `normal_priority()` stays as a backup
 - [x] **154** (C) `Aria-Ollama-Serve` now runs `watchdog.py start-ollama` (idempotent, no PowerShell, priority 4); the old serve.cmd launcher is retired but kept on disk (2026-11-08). Also: `Unify-Ollama-Orchestrator` (gateway :11435) was hung at priority 7; now priority 4 and restarted
 - [x] **155** (C) Loopback `urlopen` → `http.client` in `system_maintenance.py` and both `monitor_mindpalace.py` copies (AIGEN_SYS, Hermes), 2026-11-08. Open: the AIGEN_SYS copy polls port 11435, where nothing listens; confirm the intended port
-- [ ] **156** (C) Selftest: a ballot on the small roster reaches quorum with one voter cold-loaded (MP-014 guarantee re-proved for 3 voters)
+- [x] **156** (#364, 2026-11-08) (C) Selftest: a ballot on the small roster reaches quorum with one voter cold-loaded (MP-014 guarantee re-proved for 3 voters)
 - [ ] **157** (C) Telemetry: model-load count per hour in the weekly report; alert above 30/h (disk thrash signature)
 - [ ] **158** (C) `check_ollama_capacity.py` also reads `/api/ps` and flags distinct-models-per-hour above the cap
 - [x] **159** (C) Disk-queue probe in `ops_health.py` (in-process PDH read, a few ms; typeperf took 32 s). Queue > 8 for 2 cycles raises violation L5 `disk_queue` (investigate, never auto-kill). Tested with simulated samples; first live read 2026-11-08 was 11-13 during a model load
