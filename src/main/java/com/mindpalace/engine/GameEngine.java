@@ -176,7 +176,7 @@ public class GameEngine {
     private int teleportSel;        // selected destination index
     private boolean padDismissed;   // ESC pressed while still standing on the pad
     private final List<String> teleportLabels = new ArrayList<>();
-    private final List<Integer> teleportTargets = new ArrayList<>(); // >=0 floor, -1 outside, -2 cancel
+    private final List<Integer> teleportTargets = new ArrayList<>(); // >=0 floor, -1 outside, -2 cancel, -3 Einstein Campus
     private int menuSel;            // selected option in the ESC menu
     private int menuPage;           // 0=main, 1=video, 2=controls, 3=audio, 4=music, 5=agents
     private int moodIdx;            // Beats StudioLab mood preset cursor
@@ -1932,6 +1932,8 @@ public class GameEngine {
         }
         teleportLabels.add("Outside");
         teleportTargets.add(-1);
+        teleportLabels.add("Einstein Campus");
+        teleportTargets.add(-3);
         teleportLabels.add("Cancel");
         teleportTargets.add(-2);
     }
@@ -1962,6 +1964,8 @@ public class GameEngine {
                 player.teleportToFloor(target, world);
             } else if (target == -1) {
                 player.teleportOutside(world);
+            } else if (target == -3) {
+                player.teleportToCampus(world);
             } else {
                 padDismissed = true;   // Cancel — don't reopen until we step off
             }
@@ -2309,6 +2313,7 @@ public class GameEngine {
     private static final float BLOOM_HALL = 0.55f;
     private static final float BLOOM_COURTYARD = 0.95f;
     private static final float BLOOM_FOREST = 0.75f;
+    private static final float BLOOM_CAMPUS = com.mindpalace.world.EinsteinCampus.BLOOM_CAMPUS;   // the Einstein Campus: bloom at its strongest
     private float bloomCurrent = BLOOM_HALL;
     private String bloomRegion = "hall";
     private float bloomRegionFade = 0f; // >0 while the region name shows (step 68)
@@ -2334,10 +2339,13 @@ public class GameEngine {
         String region;
         if (inMansion) region = "courtyard";
         else if (world.isInOpenWorld(player.getPosition().x, player.getPosition().z)
+                 && com.mindpalace.world.EinsteinCampus.nearCampus(player.getPosition().x, player.getPosition().z, 6f)) region = "campus";
+        else if (world.isInOpenWorld(player.getPosition().x, player.getPosition().z)
                  && player.getPosition().z < -60f) region = "forest";
         else if (world.isInOpenWorld(player.getPosition().x, player.getPosition().z)) region = "courtyard";
         else region = "hall";
-        float target = region.equals("forest") ? BLOOM_FOREST
+        float target = region.equals("campus") ? BLOOM_CAMPUS
+                     : region.equals("forest") ? BLOOM_FOREST
                      : region.equals("courtyard") ? BLOOM_COURTYARD : BLOOM_HALL;
         // H41 (#132): degraded days clamp the preset to the lowest tier.
         if (energyBudget.degraded()) target = Math.min(target, BLOOM_HALL);
