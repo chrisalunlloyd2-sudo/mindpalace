@@ -4,8 +4,8 @@ Read `docs/KNOWLEDGE_BASE.md` first, then `NEXT_STEPS_151_250.md`. Take steps
 in order and one heavy job at a time. Every model run goes through `budget.py`.
 
 ## State at handoff
-- main = 8d18aaa. Merged today: #342, #344, #345, #346.
-- **#347 is open with CI green** (automatic small roster). It needs the Architect's merge.
+- main = f50e415. Merged today: #342, #344, #345, #346, #347, #348.
+- #347 (automatic small roster under 16 GB) is merged.
 - Live game: `--demo` with `-Dmindpalace.voters=llama3.2:1b,qwen2.5:0.5b,deepseek-r1:1.5b`,
   built from 8d18aaa. Previous jars: `mindpalace-live.jar.bak-20261104/-20261107`.
 - Watchdog heartbeats every 5 min since 16:42. If they stop, read

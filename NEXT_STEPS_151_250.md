@@ -6,27 +6,27 @@
 > **Owner** tags: (C) Claude/Sonnet, (H) Hermes, (A) Architect decision.
 
 ## Where we are (2026-11-07)
-- Small-box stability: [x] #342 capacity profile, [x] #344 voter roster flag, [~] #347 automatic roster (CI green, awaiting merge)
+- Small-box stability: [x] #342 capacity profile, [x] #344 voter roster flag, [x] #347 automatic roster
 - Chat voice: [x] #346 plain-words kit (qwen 0.5b breaks 15→0 of 20; 3b no refusals either way)
 - Watchdog: heartbeats restored 16:42 after a 6 h gap (outside the repo, `~/.aria/engine`)
 - Docs: [x] #345 (closes #343), this file + `docs/KNOWLEDGE_BASE.md` + `docs/HANDOFF_SONNET.md`
 
 ## PHASE H — Small-box hardening (151–165)
-- [ ] **151** (A) Merge #347 (automatic small roster under 16 GB)
+- [x] **151** (A) Merge #347 (automatic small roster under 16 GB)
 - [ ] **152** (C) Pass `-Dmindpalace.voters` through `mindpalace-sync.sh`, `release_phase.sh` and Hermes' copy, from one shared `GAME_JAVA_FLAGS` (belt and braces with #347)
-- [ ] **153** (C) Watchdog `install()` registers tasks at Priority 4 (normal), not 7; remove the in-code raise once the tasks are re-registered
-- [ ] **154** (C) Replace the Aria-Ollama-Serve PowerShell launcher with `watchdog.py start-ollama` (that launcher hung 20+ min)
-- [ ] **155** (C) Port the loopback `urlopen` → `http.client` fix to `scripts/monitor_mindpalace.py` and `scripts/system_maintenance.py` (same SSL-context stall)
+- [x] **153** (C) Tasks re-registered at Priority 4 and `install()` now sets it (2026-11-08); the in-code raise in `normal_priority()` stays as a backup
+- [x] **154** (C) `Aria-Ollama-Serve` now runs `watchdog.py start-ollama` (idempotent, no PowerShell, priority 4); the old serve.cmd launcher is retired but kept on disk (2026-11-08). Also: `Unify-Ollama-Orchestrator` (gateway :11435) was hung at priority 7; now priority 4 and restarted
+- [x] **155** (C) Loopback `urlopen` → `http.client` in `system_maintenance.py` and both `monitor_mindpalace.py` copies (AIGEN_SYS, Hermes), 2026-11-08. Open: the AIGEN_SYS copy polls port 11435, where nothing listens; confirm the intended port
 - [ ] **156** (C) Selftest: a ballot on the small roster reaches quorum with one voter cold-loaded (MP-014 guarantee re-proved for 3 voters)
 - [ ] **157** (C) Telemetry: model-load count per hour in the weekly report; alert above 30/h (disk thrash signature)
 - [ ] **158** (C) `check_ollama_capacity.py` also reads `/api/ps` and flags distinct-models-per-hour above the cap
-- [ ] **159** (C) Disk-queue probe in `ops_health.py` (PerfDisk queue > 8 for 2 cycles = WARN card)
-- [ ] **160** (C) Boot recorder pattern (faulthandler on line 1) in every scheduled Python job
-- [ ] **161** (C) `budget.py` refuses heavy jobs while the disk queue is high (new gate 6)
+- [x] **159** (C) Disk-queue probe in `ops_health.py` (in-process PDH read, a few ms; typeperf took 32 s). Queue > 8 for 2 cycles raises violation L5 `disk_queue` (investigate, never auto-kill). Tested with simulated samples; first live read 2026-11-08 was 11-13 during a model load
+- [x] **160** (C) Boot recorder (`~/.aria/engine/bootrec.py`: `arm(name, s)` / `disarm()`) in the watchdog, `damage_scan_cell.py` and `node_poller.py` (disarmed after its first poll). Long-lived servers (Sophia bots, the :11435 gateway) are skipped on purpose. Open: `Unify-NodePoller` and `Aria-DamageScan` still run at priority 7, and the poller uses the `binpythonw.exe` shim (2026-11-08)
+- [x] **161** (C) `budget.py` gate 6: class "heavy" is refused (exit 75, wait 120 s) while the disk queue is above `ops.disk_queue_ceiling` (default 8); unknown never blocks; the reading is logged on START (2026-11-08, 35/35 selftest)
 - [ ] **162** (H) Hermes card template "slow box" with law lines 1–5 pre-filled
 - [ ] **163** (C) Startup log line printing the active Ollama profile (from `/api/ps` context lengths)
 - [ ] **164** (C) Doc-drift sentinel learns the small-box section (no false DRIFT on 12 GB)
-- [ ] **165** (A) Decide: keep gemma2/phi3 for big boxes only, or retire them
+- [x] **165** (A→C, delegated 2026-11-08) gemma2:2b and phi3:mini stay installed and are the extra voters of the full 5-roster (`-Dmindpalace.voters=all`, or `GAME_VOTERS`). They are NOT in the default roster below 16 GB: 5 voters through 2 slots gave a disk queue of 33. First governed load test (`budget.py run --job phi-gemma-check --class heavy`) was refused 4 times by the CPU gate (game at 100%); rerun it when the box is calm, script: `warm_check.py` (load time, tok/s, one reply per model)
 
 ## PHASE I — Character & voice (166–185)
 - [ ] **166** (C) Confirmation A/B on llama3.2:3b with 3 seeds × 10 prompts (today: 1 seed)
