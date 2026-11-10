@@ -29,6 +29,26 @@ public class LoRASwitcher {
     }
 
     /** Switch to a specific adapter. Returns timing info. */
+    /** #354: whoever owns telemetry can hear about adapter state changes. */
+    private static volatile java.util.function.Consumer<String> notifier;
+
+    /** #354: set the sink that records adapter changes (telemetry/log). */
+    public static void setNotifier(java.util.function.Consumer<String> sink) { notifier = sink; }
+
+    /** #354: the honest description of what an "adapter switch" currently does. */
+    public static String simulationNote(AdapterType type, String detail) {
+        return "[LoRA] adapter " + type + " " + detail
+            + " (simulation only — no live Ollama model swap yet)";
+    }
+
+    private static void announce(String line) {
+        System.out.println(line);
+        java.util.function.Consumer<String> sink = notifier;
+        if (sink != null) {
+            try { sink.accept(line); } catch (RuntimeException ignored) { /* telemetry must never break a switch */ }
+        }
+    }
+
     public SwitchResult switchAdapter(AdapterType type) {
         long start = System.nanoTime();
         LoRAAdapter next = adapters.get(type);
@@ -43,6 +63,7 @@ public class LoRASwitcher {
 
         long ms = (System.nanoTime() - start) / 1_000_000;
         totalSwitchTimeMs += ms;
+        announce(simulationNote(type, "switch " + old + " -> " + type));
         return new SwitchResult(true, ms, old + " → " + type);
     }
 
@@ -67,6 +88,7 @@ public class LoRASwitcher {
         a.weights = w;
         weightApplies++;
         if (a == current) { a.unload(); a.load(); }
+        announce(simulationNote(type, "weights=" + (id == null ? "base" : id)));
         return true;
     }
 

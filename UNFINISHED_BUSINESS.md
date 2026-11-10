@@ -44,6 +44,13 @@ correlate → email suggestions + code-mind log).
        commit 432271e — a winning election now applies live via
        LoRASwitcher.applyWeights; selftest "adapter election -> live switcher
        weights" green, issue #288).
+       [#354 2026-11-10] "applies live" = the SIMULATION layer only: weights
+       never reach an Ollama request yet (the wire always hits the base model
+       tag). Now honest and hooked: switchAdapter/applyWeights log
+       "[LoRA] adapter … (simulation only — no live Ollama model swap yet)" via
+       LoRASwitcher.setNotifier, and OllamaClient.chat(..., modelOverride)
+       resolves a real adapter tag through the local-only firewall, so steps
+       190-193 only need to import the tag and pass it.
 [DONE] WeightedQuorumVote — FOW-gated quorum voting with 4D time pulse, exercised
        at AgentManager quorum call sites; 100-case parity gate in SimsHardening100
        (selftest aggregate check).

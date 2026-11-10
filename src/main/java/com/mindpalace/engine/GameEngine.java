@@ -8235,6 +8235,33 @@ public class GameEngine {
             + " (#355) ollama options: flash lane sends num_predict=FLASH_BUDGET, only on flash; num_ctx everywhere");
         if (optOk) pass++; else fail++;
 
+        // #354: adapter elections can now reach the wire (override validated by
+        // the same local-only firewall) and the simulation-only state is logged.
+        boolean adapterOk;
+        try {
+            String base = com.mindpalace.agent.ModelConfig.CHAT_MODEL;
+            boolean identity = com.mindpalace.agent.OllamaClient.resolveWireModel(base, null).equals(base)
+                && com.mindpalace.agent.OllamaClient.resolveWireModel(base, "  ").equals(base);
+            boolean override = com.mindpalace.agent.OllamaClient
+                .resolveWireModel(base, "mindpalace-book-lora:v1").equals("mindpalace-book-lora:v1");
+            boolean remoteRejected = false;
+            try {
+                com.mindpalace.agent.OllamaClient.resolveWireModel(base, "ollama.com/evil:latest");
+            } catch (RuntimeException expected) {
+                remoteRejected = true;
+            }
+            String note = com.mindpalace.agent.sims.LoRASwitcher.simulationNote(null, "switch X -> Y");
+            boolean noteSaysSimulated = note.contains("simulation only")
+                && note.contains("no live Ollama model swap");
+            adapterOk = identity && override && remoteRejected && noteSaysSimulated;
+        } catch (Throwable t4) {
+            System.out.println("  adapter check threw: " + t4);
+            adapterOk = false;
+        }
+        System.out.println((adapterOk ? "PASS" : "FAIL")
+            + " (#354) adapter hook: wire-model override resolves + remote rejected; switch logged as simulation-only");
+        if (adapterOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains

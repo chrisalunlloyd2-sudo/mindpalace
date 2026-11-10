@@ -301,15 +301,34 @@ public class OllamaClient {
      * @param tools  optional tool definitions (JSON schema)
      * @return  assistant's reply text, or null on failure
      */
+    /**
+     * #354: the model tag a call actually targets. Once a real LoRA is imported
+     * as an Ollama tag (NEXT_STEPS_151_250 steps 190-193), the caller passes it
+     * as {@code modelOverride} and the wire call follows the election. The
+     * override is validated by the same local-only firewall as the base model —
+     * an adapter can never smuggle a remote endpoint in.
+     */
+    public static String resolveWireModel(String model, String modelOverride) {
+        String wire = (modelOverride == null || modelOverride.isBlank()) ? model : modelOverride.trim();
+        assertLocalModel(wire);
+        return wire;
+    }
+
     public String chat(String model, List<Map<String, String>> messages, List<JsonObject> tools) {
-        assertLocalModel(model); // #135 H44: quota firewall on every call path
+        return chat(model, messages, tools, null);
+    }
+
+    /** #354: chat with an optional real adapter tag (null/blank = base model). */
+    public String chat(String model, List<Map<String, String>> messages, List<JsonObject> tools,
+                       String modelOverride) {
+        String wireModel = resolveWireModel(model, modelOverride);
         JsonObject body = new JsonObject();
-        body.addProperty("model", model);
+        body.addProperty("model", wireModel);
         body.addProperty("stream", false);
         // ONE-HOT: the model stays resident for KEEP_ALIVE (default 5m); a different
         // model evicts it (see evictPreviousModelLocked). "0" = old cold-shot policy.
         applyKeepAlive(body);
-        applyOptions(body, model);
+        applyOptions(body, wireModel);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -328,7 +347,7 @@ public class OllamaClient {
 
         try {
             return withGate(() -> {
-                evictPreviousModelLocked(model);
+                evictPreviousModelLocked(wireModel);
                 Request r = new Request.Builder()
                     .url(BASE + "/chat")
                     .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
@@ -343,7 +362,7 @@ public class OllamaClient {
                     JsonObject msg = result.getAsJsonObject("message");
                     if (msg.has("content") && !msg.get("content").isJsonNull()) {
                         String out = msg.get("content").getAsString();
-                        recordQuota(model, out.length()); // #136 H46: ledger metering
+                        recordQuota(wireModel, out.length()); // #136 H46: ledger metering
                         return out;
                     }
                     return "";
