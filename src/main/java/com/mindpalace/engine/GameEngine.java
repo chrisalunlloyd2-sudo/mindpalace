@@ -8214,6 +8214,27 @@ public class GameEngine {
             + " (#182) perf guard: slow-window downgrade, full-window/cooldown/OFF guards, ladder HIGH->MEDIUM->LOW->OFF");
         if (perfOk) pass++; else fail++;
 
+        // #355: the request options the flash lane actually sends (FLASH_BUDGET
+        // used to be a dead constant — num_predict was never sent at all).
+        boolean optOk;
+        try {
+            com.google.gson.JsonObject flash =
+                com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.FLASH_MODEL);
+            com.google.gson.JsonObject normal =
+                com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.CHAT_MODEL);
+            optOk = flash.has("num_predict")
+                && flash.get("num_predict").getAsInt() == com.mindpalace.agent.ModelConfig.FLASH_BUDGET
+                && flash.has("num_ctx") && normal.has("num_ctx")
+                && !normal.has("num_predict")                      // budget is flash-only
+                && !flash.has("temperature");                      // unset by default
+        } catch (Throwable t3) {
+            System.out.println("  options check threw: " + t3);
+            optOk = false;
+        }
+        System.out.println((optOk ? "PASS" : "FAIL")
+            + " (#355) ollama options: flash lane sends num_predict=FLASH_BUDGET, only on flash; num_ctx everywhere");
+        if (optOk) pass++; else fail++;
+
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
         // Clean exit after a PASSING selftest so `dev.sh selftest` / CI chains

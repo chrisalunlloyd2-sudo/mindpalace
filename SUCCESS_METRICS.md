@@ -14,7 +14,7 @@
 | Loop ratio (near-dup replies) | 42.9% | scout_bot.py --metrics |
 | Critic reviewing real work | 0% (blind) | console grep critic-skipped vs [Critic] |
 | E2E waypoints | 13 (11 OK + 2 known artifacts) | test_bot.py --verify-shots |
-| Selftest checks | 96 (must stay green; static pass++ count — +splash #304, +gist config #160, +roster #347, +perf guard #182) | --selftest RESULT line |
+| Selftest checks | 97 (must stay green; static pass++ count — +splash #304, +gist #160, +roster #347, +perf guard #182, +ollama options #355) | --selftest RESULT line |
 | Quorum events per boot | ~2,500 and climbing | telemetry ledger |
 | GitHub rate budget | unprotected (agents hit API freely) | rate-limit headers |
 
@@ -25,7 +25,7 @@
 | Metric | Target | Command | Result |
 |--------|--------|---------|--------|
 | Zero-auth boot | game reaches World built with no PAT, no network | --demo --selftest, grep Demo fixtures loaded: 12 rooms | OK 12 rooms |
-| Selftest in demo mode | green (0 failed) | --demo --selftest RESULT | OK (last verified run 87/0 at dd470f6; 96 expected (+perf guard #182; last CI-verified 95/0 at 9d7b10a)) |
+| Selftest in demo mode | green (0 failed) | --demo --selftest RESULT | OK (last verified run 87/0 at dd470f6; 97 expected (+perf guard #182, +ollama options #355)) |
 | README conversion | pitch + quick start + installer under 60s read | manual review (docs complete) | OK |
 | New-contributor setup | docs answer a setup question without chat | issue templates route to DEV_SETUP | OK shipped |
 | Installer | v1.x on Releases, under 100 MB | Releases API asset check | OK v1.1.0-beta1 |
@@ -40,7 +40,7 @@ M1 done = a stranger runs the palace in 5 minutes with no GitHub account. MET.
 | API call reduction | repeat reads served from cache 80%+ in 10-min window | telemetry grep contents/ vs cache hits | wiring live, measure next scout cycle |
 | FPS visibility | in-game rolling FPS readable on demand | F8 overlay present; window-title FPS unchanged | OK F8 wired |
 | Frame stability | E2E unchanged post-refactor | test_bot.py --verify-shots, 11+ OK | OK 11 OK + 2 known |
-| Regression guard | corridor port bit-identical | selftest green + E2E luminance deltas at baseline | OK (87/0 last verified run; 96 static count (HEAD with #182)) |
+| Regression guard | corridor port bit-identical | selftest green + E2E luminance deltas at baseline | OK (87/0 last verified run; 97 static count (HEAD with #182/#355)) |
 
 M2 done = layout is a swappable strategy with a determinism test; agent API reads stop hitting the rate limit; FPS is measurable in-game. MET (determinism selftest check shipped — GameEngine check 41).
 
@@ -52,7 +52,7 @@ M2 done = layout is a swappable strategy with a determinism test; agent API read
 | Time slider depth | 50+ commits scrubable per room | git log -50 load test | OK TimeMachine caps at 50 |
 | Slider content fidelity | book at rev X == git show X:path | selftest check 40 (SHIPPED) + manual A/B | hook wired; check 40 ships it |
 | Heatmap coverage | every scanned repo gets an activity tier | 1 bounded git call per repo at scan | OK wired at scan |
-| Selftest | stays green (0 failed) with all M3 features | RESULT line | OK (87/0 last verified run; 96 static count (HEAD with #182)) |
+| Selftest | stays green (0 failed) with all M3 features | RESULT line | OK (87/0 last verified run; 97 static count (HEAD with #182/#355)) |
 
 M3 done = history visible in-world (slider), activity visible at a glance (door colors), navigation instant. MET (both formerly-queued selftest checks shipped: slider fidelity check 40, layout determinism check 41).
 

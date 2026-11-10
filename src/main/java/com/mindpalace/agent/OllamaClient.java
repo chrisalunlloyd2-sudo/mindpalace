@@ -150,9 +150,40 @@ public class OllamaClient {
         }
     }
 
-    private static void applyOptions(JsonObject body) {
-        JsonObject opts = body.has("options") && body.get("options").isJsonObject() ? body.getAsJsonObject("options") : new JsonObject();
+    /** Optional sampling temperature: -Dmindpalace.ollama.temperature / MP_OLLAMA_TEMPERATURE.
+     *  Unset = not sent (Ollama's own default), so nothing changes unless asked. */
+    private static final Double TEMPERATURE = resolveTemperature();
+
+    private static Double resolveTemperature() {
+        String v = System.getProperty("mindpalace.ollama.temperature", System.getenv("MP_OLLAMA_TEMPERATURE"));
+        if (v == null || v.isBlank()) return null;
+        try {
+            double d = Double.parseDouble(v.trim());
+            return (d >= 0.0 && d <= 2.0) ? d : null;      // Ollama's accepted range
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * #355: the request options, built as a pure function so the selftest can
+     * assert the payload without a server. num_ctx always; num_predict only on
+     * the flash lane (ModelConfig.FLASH_BUDGET was a dead constant — it now
+     * actually caps trivial answers); temperature only when configured.
+     */
+    public static JsonObject optionsFor(String model) {
+        JsonObject opts = new JsonObject();
         opts.addProperty("num_ctx", NUM_CTX);
+        if (ModelConfig.FLASH_MODEL.equals(model)) opts.addProperty("num_predict", ModelConfig.FLASH_BUDGET);
+        if (TEMPERATURE != null) opts.addProperty("temperature", TEMPERATURE.doubleValue());
+        return opts;
+    }
+
+    private static void applyOptions(JsonObject body, String model) {
+        JsonObject opts = body.has("options") && body.get("options").isJsonObject()
+            ? body.getAsJsonObject("options") : new JsonObject();
+        JsonObject fresh = optionsFor(model);
+        for (String k : fresh.keySet()) opts.add(k, fresh.get(k));
         body.add("options", opts);
     }
 
@@ -278,7 +309,7 @@ public class OllamaClient {
         // ONE-HOT: the model stays resident for KEEP_ALIVE (default 5m); a different
         // model evicts it (see evictPreviousModelLocked). "0" = old cold-shot policy.
         applyKeepAlive(body);
-        applyOptions(body);
+        applyOptions(body, model);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -349,7 +380,7 @@ public class OllamaClient {
         body.addProperty("stream", false);
         // Same one-hot keep-alive policy as chat().
         applyKeepAlive(body);
-        applyOptions(body);
+        applyOptions(body, model);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
