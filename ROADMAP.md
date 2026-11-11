@@ -135,6 +135,7 @@ phase (v1.1.0-beta1 is live).
 - [ ] Local weather sync (real weather → in-game weather) — reconciled 2026-10-06: only a deterministic day-of-year pseudo-weather ships (`OutsideWorld.weather()`, no network); a real weather source is still open
 
 ### 5.2 Block Building
+> **Not built, and not the `blocks/` package** (#375). `com.mindpalace.blocks` (`Block`, `BlockRegistry`, `FireBlock`, `FireflyBlock`, `FrostBlock`, `WeatherBlock`) is the MP-20 ambient visual-effect layers composed at the bloom-apply seam; one `Block` is one visual sector, not a player-placeable object. Phase 5.2 needs its own package (e.g. `com.mindpalace.build`). Until a TASK card asks for it, these three items are **DEFERRED**.
 - [ ] Build with blocks (Lego-like), assign attributes → blocks morph into materials
 - [ ] Load textures, BMPs, everything
 - [ ] All other nodes/agents/services live here as places
@@ -171,6 +172,8 @@ phase (v1.1.0-beta1 is live).
 
 ## Phase 9 — Code Mining Engine (the core loop)
 
+> **Unbuilt and too large for one card** (#376). Only the Tree-of-Knowledge line below is tracked (#192, MP-048). Split at the next planning pass into separate issues (candidate-cycling UI, genetic fitness ranking for generated code, per-turn LoRA/KV updates on tool-round completion) the way Phases 3/4 were split. Do not attempt "the core loop" in one pass.
+
 - [ ] Endless agent conversations about repo files (in programming languages)
 - [ ] Capture code + conversation → ship to dev editor
 - [ ] Up/Down keys cycle working, tested code candidates (genetic fitness ranking)
@@ -194,7 +197,7 @@ phase (v1.1.0-beta1 is live).
 ## Phase 11 — Polish, Release & Beautiful GitHub
 
 - [x] Windows installer (Inno Setup / jpackage), auto-updater — SHIPPED: build-installer.sh (jpackage) + build-warm-installer.sh (Inno Setup), UpdateChecker auto-updater (#139, a8e11ce; Phase H above + #300)
-- [ ] Real textures, VR mode (OpenXR), gamepad support
+- [ ] Real textures, VR mode (OpenXR), gamepad support — **two different "VR"s** (#377): the F4 3D-tunnel/2D-readable-text toggle is SHIPPED (a flat-screen text-readability feature, see BLACKBOARD.md); headset VR via OpenXR is **NOT PLANNED** (no OpenXR code; the Intel HD 510 / GeForce 945M target, AGENTS.md hard rule #5, cannot drive stereoscopic rendering) unless split into its own explicitly-deferred line. Gamepad is tracked in #362.
 - [ ] GitHub: embedded CSS, visuals, graphs, benchmarks, TODOs, thoughts
 - [x] Binary releases on GitHub — SHIPPED: scripts/release_phase.sh --cut runs gh release create (step 89, H33)
 - [x] CI/CD, test suite, performance benchmarks — SHIPPED: .github/workflows/ci.yml (headless --demo --selftest under Xvfb) + e2e.sh/cascade_dev.sh perf gate (MP-004 worst-frame)
