@@ -223,6 +223,16 @@ public final class SimsHardening100 {
             return Math.abs(cx) + R < com.mindpalace.world.OutsideWorld.HALF_W
                 && cz - R > com.mindpalace.world.OutsideWorld.MIN_Z && cz + R < com.mindpalace.world.OutsideWorld.MAX_Z;
         }));
+        cs.add(new Case("telemetry.usesWalSoStartupDoesNotFsyncStall", () -> {
+            try {
+                java.nio.file.Path d = java.nio.file.Files.createTempDirectory("mp-tel");
+                new com.mindpalace.backup.Telemetry(d).record(com.mindpalace.backup.Telemetry.SYSTEM, "boot", "t");
+                try (java.sql.Connection c = java.sql.DriverManager.getConnection("jdbc:sqlite:" + d.resolve("telemetry.db"));
+                     java.sql.Statement st = c.createStatement(); java.sql.ResultSet rs = st.executeQuery("PRAGMA journal_mode")) {
+                    return rs.next() && "wal".equalsIgnoreCase(rs.getString(1));
+                }
+            } catch (java.io.IOException | java.sql.SQLException e) { return false; }
+        }));
         cs.add(new Case("quorum.realVotesFloorNeedsTwo", () -> {
             // REAL_VOTE_MIN=2: one lone real vote can never clear quorum, even
             // with quorumMin=1 — and blind-majority labels BLINDED first.
