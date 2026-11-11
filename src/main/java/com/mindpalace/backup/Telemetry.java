@@ -53,6 +53,13 @@ public final class Telemetry {
             Files.createDirectories(dataDir);
             c = DriverManager.getConnection("jdbc:sqlite:" + dataDir.resolve("telemetry.db"));
             try (Statement st = c.createStatement()) {
+                // Freeze fix (2026-11-10): the default rollback journal fsyncs twice per commit, and every record() is an INSERT plus a
+                // prune DELETE. On the spinning HDD under a disk queue of ~16 that stalled startup in Telemetry.<init> for minutes (the
+                // window went "Not Responding"). WAL + synchronous=NORMAL cuts the fsyncs to a checkpoint; busy_timeout stops a second
+                // writer (a bot, a Hermes script) from failing instantly or blocking forever.
+                st.execute("PRAGMA busy_timeout=5000");
+                try (java.sql.ResultSet rs = st.executeQuery("PRAGMA journal_mode=WAL")) { /* result ignored: stays on the default if the FS refuses WAL */ }
+                st.execute("PRAGMA synchronous=NORMAL");
                 st.execute("CREATE TABLE IF NOT EXISTS events ("
                     + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                     + "ts INTEGER NOT NULL,"
