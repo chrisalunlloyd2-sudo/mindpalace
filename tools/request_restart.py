@@ -12,6 +12,7 @@ import sys
 import time
 
 def main() -> int:
+    """Main (function)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--seconds", type=int, default=30)
     ap.add_argument("--reason", default="update ready")
