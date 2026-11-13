@@ -2,7 +2,7 @@
 # local_ci.sh -- the merge gate, run on this machine instead of GitHub Actions (Actions was locked for billing 2026-11-10,
 # and a runner that cannot start tells nobody anything). Same checks as .github/workflows/ci.yml, deterministic, no network.
 #
-#   bash scripts/local_ci.sh            fast tier  (~1-2 min): instruction inventory, compile, 139-case hardening suite (headless)
+#   bash scripts/local_ci.sh            fast tier  (~1-2 min): instruction inventory, compile, 138-case hardening suite (headless)
 #   bash scripts/local_ci.sh --full     + the demo selftest (needs a window; software GL; one JVM; refuses when RAM is short)
 #   bash scripts/local_ci.sh --post     after the run, post the result as the "local-ci" commit status on HEAD (what a bot or the
 #                                       merger reads instead of the Actions check)
