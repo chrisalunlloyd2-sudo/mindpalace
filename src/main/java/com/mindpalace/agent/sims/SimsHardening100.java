@@ -242,6 +242,14 @@ public final class SimsHardening100 {
                 }
             } catch (java.io.IOException | java.sql.SQLException e) { return false; }
         }));
+        cs.add(new Case("ollama.flashBudgetDoesNotLeakOntoCriticOrCodeLane", () -> {
+            // #371/#380: FLASH_MODEL, CRITIC_MODEL and CODE_MODEL share one tag, so a tag test cannot tell the lanes apart
+            return com.mindpalace.agent.ModelConfig.CRITIC_MODEL.equals(com.mindpalace.agent.ModelConfig.FLASH_MODEL)
+                && !com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.CRITIC_MODEL).has("num_predict")
+                && !com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.CODE_MODEL).has("num_predict")
+                && com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.FLASH_MODEL, true).get("num_predict").getAsInt()
+                   == com.mindpalace.agent.ModelConfig.FLASH_BUDGET;
+        }));
         cs.add(new Case("quorum.realVotesFloorNeedsTwo", () -> {
             // REAL_VOTE_MIN=2: one lone real vote can never clear quorum, even
             // with quorumMin=1 — and blind-majority labels BLINDED first.
