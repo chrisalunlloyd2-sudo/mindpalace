@@ -115,8 +115,13 @@ npc.consumeReason() ──▶ agentChat.addMessage("[Explorer] ...")
 
 ## 3. Diagnosis — Model Chat Problems + Proposed Fixes
 
-### Problem 1: User chat still waits behind autonomous calls
-**Evidence:** `ModelScheduler.drainLoop()` is a SINGLE worker thread. Even
+### Problem 1: User chat still waits behind autonomous calls — FIXED
+**Resolved 2026-11-10 (#356):** `ModelScheduler.java:37-38` has a dedicated
+`userWorker`/`userQueue` separate from the autonomous `worker`/`queue` — user
+chat no longer serializes behind agent calls. Independently confirmed in
+`CROSS_CORRELATED_ROADMAP.md:151-152` (landing commit `340dd2e`). Original
+proposed fix below kept for history.
+**Evidence (original):** `ModelScheduler.drainLoop()` is a SINGLE worker thread. Even
 `submitImmediate()` (which skips the 5-min *spacing sleep*) still serializes
 behind whatever call is currently running. If the tool agent is mid-call on
 `llama3.2:1b` (10–30s on CPU), the user's chat reply waits for it to finish.
@@ -136,8 +141,11 @@ read anywhere. Dead field.
 **Fix (proposed):** Either remove it, or use it to seed the next autonomous
 cycle's context (so the agents "remember" what the player last asked).
 
-### Problem 3: Chat reply routed through `onToolMessage` callback
-**Evidence:** `onUserChat()` emits the guide reply via `emit(onToolMessage,
+### Problem 3: Chat reply routed through `onToolMessage` callback — FIXED
+**Resolved 2026-11-10 (#356):** `AgentManager.java` has a dedicated
+`onChatMessage` callback (issued via `#290`; 6 references at HEAD) — the guide
+reply no longer masquerades as a tool message. Original below kept for history.
+**Evidence (original):** `onUserChat()` emits the guide reply via `emit(onToolMessage,
 "[Guide] " + resp)`. Both `onToolMessage` and `onCriticMessage` are wired to
 the same `agentChat.addMessage()` in GameEngine, so it *works*, but the
 semantic is wrong — the guide reply is not a "tool" message.
@@ -154,8 +162,12 @@ delay and 5-min period. The guard is belt-and-suspenders; fine, but the
 **Fix (proposed):** Leave as-is (works), but note the 10s tolerance is
 intentional to avoid clock-skew double-fires.
 
-### Problem 5: Book content bloat in chat context
-**Evidence:** `buildContext()` includes up to 2000 chars of book content in
+### Problem 5: Book content bloat in chat context — FIXED
+**Resolved 2026-11-10 (#356):** `AgentManager.buildContext()` truncates book
+content to 500 chars ("Truncate hard — a 2000-char excerpt ate ~25% of the
+small model's token budget before it even saw the question") before it enters
+any prompt. Original below kept for history.
+**Evidence (original):** `buildContext()` includes up to 2000 chars of book content in
 EVERY prompt (chat + autonomous). For `llama3.2:1b` (2000-token budget), a
 2000-char book excerpt ≈ 500 tokens, eating 25% of the budget before the
 model even sees the question.
