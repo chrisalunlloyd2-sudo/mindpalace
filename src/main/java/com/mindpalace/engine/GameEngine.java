@@ -318,8 +318,14 @@ public class GameEngine {
             // a relauncher can restart the game.
             System.err.println("[FATAL] game loop crashed: " + t);
             t.printStackTrace();
-            try { cleanup(); } catch (Throwable ignored) { /* exiting anyway */ }
-            System.exit(1);
+            // 2026-11-10: a jar swapped under the running JVM made cleanup() throw/hang on the same missing class, and System.exit
+            // waits for shutdown hooks, so the JVM stayed up as a window frozen at its last FPS label ("109 fps" but dead).
+            // Cleanup gets 5 s on a daemon thread, then halt() - no hooks, no waiting - so the watchdog sees a dark game and relaunches.
+            Thread cl = new Thread(() -> { try { cleanup(); } catch (Throwable ignored) { /* exiting anyway */ } }, "fatal-cleanup");
+            cl.setDaemon(true);
+            cl.start();
+            try { cl.join(5000); } catch (InterruptedException ignored) { /* exiting anyway */ }
+            Runtime.getRuntime().halt(1);
         }
         cleanup();
         if (restartOnExit) {

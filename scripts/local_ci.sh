@@ -39,6 +39,7 @@ step() { # step <name> <cmd...>   runs, logs, records a failure but keeps going 
 
 # 1. documented keys == handled keys (strict)
 step "instruction-inventory" python3 tools/instruction_inventory.py --strict
+git checkout -q -- reports/instruction_inventory.md 2>/dev/null   # the tool rewrites its tracked report on every run; a gate must not dirty the tree
 
 # 2. compile
 if [ "$BUILD" = 1 ]; then step "compile" mvn -B -q -o -DskipTests compile; fi
