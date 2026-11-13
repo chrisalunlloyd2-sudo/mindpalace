@@ -167,14 +167,19 @@ public class OllamaClient {
 
     /**
      * #355: the request options, built as a pure function so the selftest can
-     * assert the payload without a server. num_ctx always; num_predict only on
-     * the flash lane (ModelConfig.FLASH_BUDGET was a dead constant — it now
-     * actually caps trivial answers); temperature only when configured.
+     * assert the payload without a server. num_ctx always; num_predict only when
+     * the CALLER says this is the flash lane (#371/#380: it used to be keyed on
+     * the model tag, but FLASH_MODEL == CRITIC_MODEL == CODE_MODEL == qwen2.5:0.5b,
+     * so the 500-token flash cap also truncated the critic (budget 1000) and code
+     * lanes); temperature only when configured. No request path passes
+     * flashLane=true yet, so nothing is capped until the flash cycle is plumbed.
      */
-    public static JsonObject optionsFor(String model) {
+    public static JsonObject optionsFor(String model) { return optionsFor(model, false); }
+
+    public static JsonObject optionsFor(String model, boolean flashLane) {
         JsonObject opts = new JsonObject();
         opts.addProperty("num_ctx", NUM_CTX);
-        if (ModelConfig.FLASH_MODEL.equals(model)) opts.addProperty("num_predict", ModelConfig.FLASH_BUDGET);
+        if (flashLane) opts.addProperty("num_predict", ModelConfig.FLASH_BUDGET);
         if (TEMPERATURE != null) opts.addProperty("temperature", TEMPERATURE.doubleValue());
         return opts;
     }

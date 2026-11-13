@@ -8219,13 +8219,15 @@ public class GameEngine {
         boolean optOk;
         try {
             com.google.gson.JsonObject flash =
-                com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.FLASH_MODEL);
+                com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.FLASH_MODEL, true);
             com.google.gson.JsonObject normal =
                 com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.CHAT_MODEL);
             optOk = flash.has("num_predict")
                 && flash.get("num_predict").getAsInt() == com.mindpalace.agent.ModelConfig.FLASH_BUDGET
                 && flash.has("num_ctx") && normal.has("num_ctx")
                 && !normal.has("num_predict")                      // budget is flash-only
+                && !com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.CRITIC_MODEL).has("num_predict")   // #371: same tag as flash, still uncapped
+                && !com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.CODE_MODEL).has("num_predict")
                 && !flash.has("temperature");                      // unset by default
         } catch (Throwable t3) {
             System.out.println("  options check threw: " + t3);
