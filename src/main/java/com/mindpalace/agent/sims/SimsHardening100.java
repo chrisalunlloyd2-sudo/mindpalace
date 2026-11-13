@@ -45,6 +45,15 @@ public final class SimsHardening100 {
         return failures;
     }
 
+    /** Headless entry for the local CI gate (scripts/local_ci.sh): no window, no GL, no network. Run from the repo root (some cases read repo files).
+     *  Exit 0 = every case passed; 1 = at least one failed (each printed as "FAIL name: detail"). */
+    public static void main(String[] args) {
+        List<String> failures = runAll();
+        for (String f : failures) System.out.println("FAIL " + f);
+        System.out.println("HARDENING " + summary(failures));
+        System.exit(failures.isEmpty() ? 0 : 1);
+    }
+
     /** One-line summary for the selftest log: "100 cases, 0 failed". */
     public static String summary(List<String> failures) {
         return (CASES.size() - failures.size()) + "/" + CASES.size() + " cases PASS";
