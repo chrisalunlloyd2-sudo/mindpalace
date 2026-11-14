@@ -15,7 +15,7 @@ public class LoRASwitcher {
 
     private final Map<AdapterType, LoRAAdapter> adapters = new HashMap<>();
     private final Queue<AdapterType> circular = new ArrayDeque<>();
-    private LoRAAdapter current;
+    private volatile LoRAAdapter current;   // read by the agent cycle and by team turns on the scheduler worker
     private long switchCount;
     private long totalSwitchTimeMs;
     private long weightApplies;
@@ -49,7 +49,7 @@ public class LoRASwitcher {
         }
     }
 
-    public SwitchResult switchAdapter(AdapterType type) {
+    public synchronized SwitchResult switchAdapter(AdapterType type) {
         long start = System.nanoTime();
         LoRAAdapter next = adapters.get(type);
         if (next == null) return new SwitchResult(false, -1, "unknown adapter");
@@ -68,7 +68,7 @@ public class LoRASwitcher {
     }
 
     /** Rotate to the next adapter in the circular buffer. */
-    public SwitchResult switchToNext() {
+    public synchronized SwitchResult switchToNext() {
         circular.offer(circular.poll());
         return switchAdapter(circular.peek());
     }
