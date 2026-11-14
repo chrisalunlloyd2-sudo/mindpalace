@@ -49,6 +49,9 @@ you → silent freeze. Always:
 
 ```bash
 JAR="$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)"
+# #386: the JVM must be DARK before the copy — overwriting a jar the running
+# game still has open wedges its classloader (silent freeze, #385/#386).
+tasklist | grep -iE "^java(w)?\.exe" && echo "stop the game first!" || true
 cp "$JAR" mindpalace-live.jar
 java -jar mindpalace-live.jar   # run this
 ```

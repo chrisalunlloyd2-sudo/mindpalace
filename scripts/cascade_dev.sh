@@ -56,6 +56,13 @@ log "selftest: running (test_bot --run-selftest)"
 # the old hardcoded -1.1.0-beta1-shaded.jar name was a fossil.
 LIVE_JAR=$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE 'original-|-shaded' | head -1)
 [ -n "$LIVE_JAR" ] || { log "no built jar in target/ — build failed?"; exit 1; }
+# 386: never cp over a LIVE jar — the running JVM wedges (NoClassDefFoundError
+# #385; classloader freeze 2026-11-10). sweep again right before the copy and
+# verify dark, mirroring release_phase.sh 6b / deploy guard.
+ORPHAN=$(tasklist | grep -iE "^java(w)?\.exe" | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//')
+[ -n "$ORPHAN" ] && { log "re-sweep before jar copy: killing $ORPHAN"; for pid in $ORPHAN; do taskkill /PID "$pid" /F >/dev/null 2>&1 || true; done; sleep 2; }
+STILL=$(tasklist | grep -icE "^java(w)?\.exe" || true)
+[ "$STILL" = "0" ] || { log "java still alive after sweep ($STILL) — NOT copying jar over a live JVM"; exit 1; }
 cp -f "$LIVE_JAR" mindpalace-live.jar
 if ! timeout 110 python scripts/test_bot.py --run-selftest; then
   log "SELFTEST FAILED — JSON evidence in target/selftest_result.json"

@@ -13,6 +13,14 @@ FLAGS="-Dprism.order=sw -Dprism.vsync=false -XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
 echo "[dev] building..."
 JAVA_HOME="$JAVA_HOME" "$MVN" -q -DskipTests package
+# 386: never cp over a LIVE jar — the running JVM wedges (classloader freeze).
+# If a game is up, stop here: the operator decides (kill it first, or skip deploy).
+JAVA_UP=$(tasklist | grep -icE "^java(w)?\.exe" || true)
+if [ "$JAVA_UP" != "0" ]; then
+  echo "[dev] java process(es) alive ($JAVA_UP) — NOT copying mindpalace-live.jar over a live JVM."
+  echo "[dev] stop the game first (or run dev.sh from an idle box); relaunch flags: see AGENTS.md deploy notes."
+  exit 1
+fi
 cp -f "$(ls target/mindpalace-*.jar 2>/dev/null | grep -vE "original-|-shaded" | head -1)" mindpalace-live.jar   # frozen-jar rule
 
 case "${1:-run}" in
