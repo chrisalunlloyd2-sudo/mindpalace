@@ -250,6 +250,46 @@ public final class SimsHardening100 {
                 && com.mindpalace.agent.OllamaClient.optionsFor(com.mindpalace.agent.ModelConfig.FLASH_MODEL, true).get("num_predict").getAsInt()
                    == com.mindpalace.agent.ModelConfig.FLASH_BUDGET;
         }));
+        // Agent teams: fake local model, no network; every case is deterministic.
+        cs.add(new Case("team.llmPlusBotRetriesUntilTheBotPasses", () -> {
+            int[] calls = {0};
+            com.mindpalace.agent.team.Member.Llm fake = (m, sys, user) -> "draft " + (++calls[0]);
+            var t = com.mindpalace.agent.team.Team.llmPlusBot(
+                com.mindpalace.agent.team.Member.llm("coder", "qwen2.5-coder:1.5b", AdapterType.CODE, "write", fake),
+                com.mindpalace.agent.team.Member.bot("checker", b -> b.last().text().endsWith("3") ? "PASS" : "FIX: not yet"), 5);
+            var r = new com.mindpalace.agent.team.TeamRunner(new LoRASwitcher()).run(t, "make it 3");
+            return r.success() && r.answer().equals("draft 3") && r.turns() == 6 && r.board().log().get(1).text().startsWith("FIX");
+        }));
+        cs.add(new Case("team.loraSwapsOnlyWhenTheAdapterChanges", () -> {
+            com.mindpalace.agent.team.Member.Llm fake = (m, sys, user) -> "ok";
+            LoRASwitcher lora = new LoRASwitcher();   // starts on CHAT
+            var t = new com.mindpalace.agent.team.Team("pipe", com.mindpalace.agent.team.Team.Pattern.PIPELINE, java.util.List.of(
+                com.mindpalace.agent.team.Member.llm("a", "m", AdapterType.CODE, "", fake),
+                com.mindpalace.agent.team.Member.llm("b", "m", AdapterType.CODE, "", fake),
+                com.mindpalace.agent.team.Member.bot("bot", b -> "seen"),
+                com.mindpalace.agent.team.Member.llm("c", "m", AdapterType.ANALYSIS, "", fake)), 1);
+            var r = new com.mindpalace.agent.team.TeamRunner(lora).run(t, "x");
+            return r.success() && r.adapterSwaps() == 2 && lora.currentType() == AdapterType.ANALYSIS && r.answer().equals("ok");
+        }));
+        cs.add(new Case("team.toolLinesRunDeterministically", () -> {
+            String out = com.mindpalace.agent.team.Member.runToolLines("plan\n? add 2 3\n? nope x",
+                java.util.Map.of("add", a -> { String[] p = a.split(" "); return String.valueOf(Integer.parseInt(p[0]) + Integer.parseInt(p[1])); }));
+            return out.equals("plan\n? add 2 3\n= 5\n? nope x\n= ERR unknown tool");
+        }));
+        cs.add(new Case("team.aMemberCrashFailsTheTeamNotTheGame", () -> {
+            var t = com.mindpalace.agent.team.Team.twoLlms(
+                com.mindpalace.agent.team.Member.llm("w", "m", AdapterType.CODE, "", (m, s, u) -> { throw new IllegalStateException("model gone"); }),
+                com.mindpalace.agent.team.Member.bot("c", b -> "PASS"), 3);
+            var r = new com.mindpalace.agent.team.TeamRunner(new LoRASwitcher()).run(t, "x");
+            return !r.success() && r.why().contains("model gone");
+        }));
+        cs.add(new Case("team.endlessCriticHitsTheRoundCap", () -> {
+            var t = com.mindpalace.agent.team.Team.twoLlms(
+                com.mindpalace.agent.team.Member.llm("w", "m", AdapterType.CODE, "", (m, s, u) -> "d"),
+                com.mindpalace.agent.team.Member.llm("c", "m", AdapterType.ANALYSIS, "", (m, s, u) -> "no"), 4);
+            var r = new com.mindpalace.agent.team.TeamRunner(new LoRASwitcher()).run(t, "x");
+            return !r.success() && r.turns() == 8 && r.why().contains("4 rounds");
+        }));
         cs.add(new Case("quorum.realVotesFloorNeedsTwo", () -> {
             // REAL_VOTE_MIN=2: one lone real vote can never clear quorum, even
             // with quorumMin=1 — and blind-majority labels BLINDED first.
