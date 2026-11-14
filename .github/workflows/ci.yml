@@ -1,9 +1,6 @@
 name: CI smoke
+# Manual only: the merge gate runs locally (scripts/local_ci.sh via the pr_gate_bot) so no Actions minutes are spent.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 concurrency:
   group: ci-smoke-${{ github.ref }}
