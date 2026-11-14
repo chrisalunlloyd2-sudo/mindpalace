@@ -290,6 +290,75 @@ public final class SimsHardening100 {
             var r = new com.mindpalace.agent.team.TeamRunner(new LoRASwitcher()).run(t, "x");
             return !r.success() && r.turns() == 8 && r.why().contains("4 rounds");
         }));
+        cs.add(new Case("team.arenaPicksTheHigherScoreAndRecordsIt", () -> {
+            var sb = new com.mindpalace.agent.team.Scoreboard();
+            var fast = com.mindpalace.agent.team.Team.llmPlusBot(com.mindpalace.agent.team.Member.llm("a", "m", AdapterType.CODE, "", (m, s, u) -> "1. do it\n2. test it"), com.mindpalace.agent.team.PlanCheck.bot("a"), 2);
+            int[] n = {0};
+            var slow = com.mindpalace.agent.team.Team.llmPlusBot(com.mindpalace.agent.team.Member.llm("b", "m", AdapterType.CODE, "", (m, s, u) -> ++n[0] == 1 ? "no steps" : "1. do it\n2. test it"), com.mindpalace.agent.team.PlanCheck.bot("b"), 2);
+            var broken = com.mindpalace.agent.team.Team.llmPlusBot(com.mindpalace.agent.team.Member.llm("c", "m", AdapterType.CODE, "", (m, s, u) -> { throw new IllegalStateException("gone"); }), com.mindpalace.agent.team.PlanCheck.bot("c"), 2);
+            var out = new com.mindpalace.agent.team.Arena(new com.mindpalace.agent.team.TeamRunner(new LoRASwitcher()), sb).compete(java.util.List.of(slow, broken, fast), "t", com.mindpalace.agent.team.PlanCheck::score);
+            return out.winner().team() == fast && out.entries().get(1).score() == -1 && out.entries().get(0).score() < out.winner().score()
+                && sb.wins(fast.name()) == 1 && sb.runs(slow.name()) == 1 && sb.wins(slow.name()) == 0 && sb.runs(broken.name()) == 1;
+        }));
+        cs.add(new Case("team.arenaHasNoWinnerWhenEveryTeamFails", () -> {
+            var t = com.mindpalace.agent.team.Team.llmPlusBot(com.mindpalace.agent.team.Member.llm("a", "m", AdapterType.CODE, "", (m, s, u) -> "nope"), com.mindpalace.agent.team.PlanCheck.bot("a"), 2);
+            var out = new com.mindpalace.agent.team.Arena(new com.mindpalace.agent.team.TeamRunner(new LoRASwitcher()), null).compete(java.util.List.of(t), "t", com.mindpalace.agent.team.PlanCheck::score);
+            return out.winner() == null && out.entries().size() == 1 && !out.entries().get(0).result().success();
+        }));
+        cs.add(new Case("team.planCheckIsDeterministicAndLocalOnly", () -> {
+            return com.mindpalace.agent.team.PlanCheck.check("1. read the file\n2. fix the bug").equals("PASS")
+                && com.mindpalace.agent.team.PlanCheck.check("just do it").startsWith("FIX")
+                && com.mindpalace.agent.team.PlanCheck.check("1. call https://api.example.com\n2. done").contains("local only")
+                && com.mindpalace.agent.team.PlanCheck.check("1. a\n2. b\nWould you like more?").contains("meta-talk")
+                && com.mindpalace.agent.team.PlanCheck.check(null).startsWith("FIX")
+                && com.mindpalace.agent.team.PlanCheck.check("1. a\n2. b\n3. c\n4. d\n5. e\n6. f").contains("five");
+        }));
+        cs.add(new Case("team.scoreboardPicksBestPlusLeastTriedAndSurvivesRestart", () -> {
+            try {
+                com.mindpalace.agent.team.Member.Llm f = (m, s, u) -> "x";
+                var a = com.mindpalace.agent.team.Team.llmPlusBot(com.mindpalace.agent.team.Member.llm("a", "m", AdapterType.CODE, "", f), com.mindpalace.agent.team.PlanCheck.bot("a"), 1);
+                var b = com.mindpalace.agent.team.Team.llmPlusBot(com.mindpalace.agent.team.Member.llm("b", "m", AdapterType.CODE, "", f), com.mindpalace.agent.team.PlanCheck.bot("b"), 1);
+                var c = com.mindpalace.agent.team.Team.llmPlusBot(com.mindpalace.agent.team.Member.llm("c", "m", AdapterType.CODE, "", f), com.mindpalace.agent.team.PlanCheck.bot("c"), 1);
+                var sb = new com.mindpalace.agent.team.Scoreboard();
+                sb.record(a.name(), false); sb.record(a.name(), false); sb.record(b.name(), true); sb.record(b.name(), false);
+                java.nio.file.Path tmp = java.nio.file.Files.createTempFile("team_scores", ".tsv");
+                sb.save(tmp);
+                var re = com.mindpalace.agent.team.Scoreboard.load(tmp);
+                java.nio.file.Files.deleteIfExists(tmp);
+                var pick = re.pick(java.util.List.of(a, b, c), 2);
+                return pick.size() == 2 && pick.get(0) == b && pick.get(1) == c && re.runs(a.name()) == 2 && re.wins(b.name()) == 1
+                    && com.mindpalace.agent.team.Scoreboard.load(tmp).runs(a.name()) == 0;
+            } catch (Exception e) { return false; }
+        }));
+        cs.add(new Case("team.dispatchWritesTheWinnersPlanAndRefusesASecondJob", () -> {
+            try {
+                java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("team_dispatch");
+                java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1), release = new java.util.concurrent.CountDownLatch(1);
+                com.mindpalace.agent.team.Member.Llm fake = (m, s, u) -> {
+                    entered.countDown();
+                    try { release.await(20, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    return s.contains("review") ? "PASS" : "1. open the room\n2. fix the door";
+                };
+                var d = new com.mindpalace.agent.team.TeamDispatch(new com.mindpalace.agent.team.TeamRunner(new LoRASwitcher()), com.mindpalace.agent.team.TeamDispatch.defaultRoster(fake), dir, x -> { });
+                boolean first = d.offer("cyc-1", "REFACTOR", "tidy the door code");
+                boolean inside = entered.await(20, java.util.concurrent.TimeUnit.SECONDS);
+                boolean second = d.offer("cyc-2", "REFACTOR", "another");
+                release.countDown();
+                for (int i = 0; i < 200 && d.busy(); i++) Thread.sleep(50);
+                String ledger = java.nio.file.Files.readString(dir.resolve("team_ledger.jsonl"));
+                boolean scores = java.nio.file.Files.isRegularFile(dir.resolve("team_scores.tsv"));
+                try (var w = java.nio.file.Files.walk(dir)) { w.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete()); }
+                return first && inside && !second && !d.busy() && scores && ledger.lines().count() == 1
+                    && ledger.contains("\"cycle_id\":\"cyc-1\"") && ledger.contains("\"winner\":\"planner+bot\"")
+                    && ledger.contains("fix the door") && !ledger.contains("cyc-2");
+            } catch (Exception e) { return false; }
+        }));
+        cs.add(new Case("team.aTurnTheLaneGivesUpOnFailsTheTeamAndTeamsAreOffByDefault", () -> {
+            com.mindpalace.agent.team.TeamRunner.Lane boom = turn -> { throw new IllegalStateException("turn timed out after 1 ms"); };
+            var t = com.mindpalace.agent.team.Team.llmPlusBot(com.mindpalace.agent.team.Member.llm("a", "m", AdapterType.CODE, "", (m, s, u) -> "x"), com.mindpalace.agent.team.Member.bot("b", b -> "PASS"), 1);
+            var r = new com.mindpalace.agent.team.TeamRunner(new LoRASwitcher(), boom).run(t, "x");
+            return !r.success() && r.why().contains("timed out") && !com.mindpalace.agent.team.TeamDispatch.enabled();
+        }));
         cs.add(new Case("quorum.realVotesFloorNeedsTwo", () -> {
             // REAL_VOTE_MIN=2: one lone real vote can never clear quorum, even
             // with quorumMin=1 — and blind-majority labels BLINDED first.

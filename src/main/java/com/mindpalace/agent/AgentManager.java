@@ -83,6 +83,8 @@ public class AgentManager {
     //   FOWGate           — fog-of-war visibility (agent→hex, model→agent)
     private final ModelRouter router = new ModelRouter();
     private final LoRASwitcher lora = new LoRASwitcher();
+    // Agent teams: null unless -Dmindpalace.teams=true. One team job at a time; every model turn goes through modelScheduler.
+    private com.mindpalace.agent.team.TeamDispatch teamDispatch;
     // #71: voted LoRA weight-sets; each quorum cycle's winners are installed on `lora` (electAdapters).
     private final AdapterRegistry adapterRegistry = new AdapterRegistry();
     private final WeightedQuorumVote quorum = new WeightedQuorumVote();
@@ -156,6 +158,8 @@ public class AgentManager {
     public AgentManager() {
         this.ollama = new OllamaClient();
         this.modelScheduler = new ModelScheduler(ollama);
+        if (com.mindpalace.agent.team.TeamDispatch.enabled())
+            this.teamDispatch = com.mindpalace.agent.team.TeamDispatch.forGame(modelScheduler, ollama, lora, this::log);
         // Budgets below each model's context ceiling (see ModelConfig)
         this.toolLifespan = new ModelLifespan(ollama, TOOL_MODEL, ModelConfig.TOOL_BUDGET, ModelConfig.DRIFT_THRESHOLD);
         this.criticLifespan = new ModelLifespan(ollama, CRITIC_MODEL, ModelConfig.CRITIC_BUDGET, ModelConfig.DRIFT_THRESHOLD);
@@ -879,6 +883,8 @@ public class AgentManager {
                     try {
                         com.mindpalace.agent.sims.QuorumTaskSpawner.handleApprovedProposal(r);
                         log("[AgentManager] TASK spawn handled: " + r.proposalId);
+                        if (teamDispatch != null && !teamDispatch.offer(r.proposalId, r.proposalType, r.text))
+                            log("[AgentManager] team lane busy, proposal not given to a team: " + r.proposalId);
                     } catch (Exception e) {
                         log("[AgentManager] TASK spawn FAILED: " + e);
                     }

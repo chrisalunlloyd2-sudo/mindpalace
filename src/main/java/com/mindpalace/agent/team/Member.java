@@ -27,9 +27,11 @@ public interface Member {
     /** Take one turn: read the board, return one message. */
     String act(Board board);
 
-    /** The real call: local Ollama only (assertLocalModel refuses a cloud tag before any request). */
-    static Llm ollama() {
-        com.mindpalace.agent.OllamaClient c = new com.mindpalace.agent.OllamaClient();
+    /**
+     * The real call: local Ollama only (assertLocalModel refuses a cloud tag before any request). It does not gate itself:
+     * run the team on {@link TeamRunner#scheduled}, so every turn goes through the ModelScheduler like any other call.
+     */
+    static Llm local(com.mindpalace.agent.OllamaClient c) {
         return (model, system, user) -> {
             com.mindpalace.agent.OllamaClient.assertLocalModel(model);
             return c.chat(model, system, user);
