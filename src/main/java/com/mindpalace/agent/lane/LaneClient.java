@@ -45,12 +45,25 @@ public final class LaneClient {
     @FunctionalInterface
     public interface Transport { String send(String path, String body) throws Exception; }
 
+    /** After this many answers in a row that failed, the lane is left alone for COOLDOWN_MS so a dead server costs one error, not a timeout per turn. */
+    static final int BREAKER_FAILS = 3;
+    static final long COOLDOWN_MS = 60_000;
+
     private final Transport wire;
+    private final java.util.function.LongSupplier clock;
+    private int fails;
+    private long openUntil;
 
     public LaneClient(String baseUrl) { this(http(baseUrl)); }
 
     /** Tests pass a fake wire; the game uses {@link #LaneClient(String)}. */
-    public LaneClient(Transport wire) { this.wire = wire; }
+    public LaneClient(Transport wire) { this(wire, System::currentTimeMillis); }
+
+    /** Tests pass a clock they move by hand. */
+    public LaneClient(Transport wire, java.util.function.LongSupplier clock) { this.wire = wire; this.clock = clock; }
+
+    /** True while the breaker is open: the next chat is refused at once. */
+    public synchronized boolean breakerOpen() { return clock.getAsLong() < openUntil; }
 
     /** Throws unless url is plain http on this machine. */
     public static void assertLoopback(String url) {
@@ -119,10 +132,23 @@ public final class LaneClient {
             lora.add(a);
         }
         b.add("lora", lora);
+        if (breakerOpen()) throw new IllegalStateException("lane breaker open: " + fails + " failures in a row, waiting");
         long t0 = System.nanoTime();
-        JsonObject resp = JsonParser.parseString(call("/v1/chat/completions", b.toString())).getAsJsonObject();
-        String text = resp.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message").get("content").getAsString();
-        return new Reply(text, (System.nanoTime() - t0) / 1_000_000);
+        try {
+            JsonObject resp = JsonParser.parseString(call("/v1/chat/completions", b.toString())).getAsJsonObject();
+            String text = resp.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message").get("content").getAsString();
+            succeeded();
+            return new Reply(text, (System.nanoTime() - t0) / 1_000_000);
+        } catch (RuntimeException e) {   // unreachable, a non-2xx, or an answer that is not a chat reply
+            failed();
+            throw e;
+        }
+    }
+
+    private synchronized void succeeded() { fails = 0; }
+
+    private synchronized void failed() {
+        if (++fails >= BREAKER_FAILS) openUntil = clock.getAsLong() + COOLDOWN_MS;   // one probe call after the cooldown; a second failure reopens at once
     }
 
     private static JsonObject message(String role, String content) {
