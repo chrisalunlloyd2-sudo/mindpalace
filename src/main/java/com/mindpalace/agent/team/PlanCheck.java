@@ -43,8 +43,21 @@ public final class PlanCheck {
         });
     }
 
-    /** Judge for the Arena: fewer turns and a tighter plan score higher. 0..95. */
+    private static final Pattern WORD = Pattern.compile("[a-z]{5,}");
+    // words of the dispatch boilerplate, not of the proposal
+    private static final java.util.Set<String> BOILERPLATE = java.util.Set.of("proposal", "write", "numbered", "steps", "carry");
+
+    /** How many different long words of the task the plan uses (0..4): a plan about the task, not about anything. */
+    static int taskWordsUsed(String task, String plan) {
+        String p = plan == null ? "" : plan.toLowerCase(java.util.Locale.ROOT);
+        java.util.Set<String> hit = new java.util.HashSet<>();
+        Matcher m = WORD.matcher(task == null ? "" : task.toLowerCase(java.util.Locale.ROOT));
+        while (m.find()) if (!BOILERPLATE.contains(m.group()) && p.contains(m.group())) hit.add(m.group());
+        return Math.min(4, hit.size());
+    }
+
+    /** Judge for the Arena: fewer turns and a tighter plan score higher, and so does a plan that uses the task's own words. 0..115. */
     public static int score(String task, TeamRunner.Result r) {
-        return Math.max(0, 100 - 5 * r.turns() - Math.min(24, r.answer().length() / 50));
+        return Math.max(0, 100 - 5 * r.turns() - Math.min(24, r.answer().length() / 50) + 5 * taskWordsUsed(task, r.answer()));
     }
 }

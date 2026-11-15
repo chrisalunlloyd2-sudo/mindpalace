@@ -33,9 +33,13 @@ public final class TeamDispatch {
     public static final String FLAG = "mindpalace.teams";
     private static final long TURN_TIMEOUT_MS = Long.getLong("mindpalace.teams.turnTimeoutMs", 20 * 60 * 1000L);
     private static final int TEAMS_PER_TASK = 2;
+    private static final int MAX_PROPOSAL_CHARS = 2000;
+    private static final int LANE_MAX_TOKENS = 220;
 
     private static final String PLAN_SYSTEM = "You plan work on a codebase. Reply with 2 to 5 numbered steps (1. 2. 3.) and nothing else. "
         + "Each step names one concrete action. If the log shows a FIX line, apply it.";
+    private static final String SCOUT_SYSTEM = "You plan work on a codebase. First look: write up to three lines like '? ls src' or "
+        + "'? read README.md' or '? grep word file'. When you are shown the results, reply with 2 to 5 numbered steps (1. 2. 3.) and nothing else.";
     private static final String CRITIC_SYSTEM = "You review a plan. If every step is a concrete action, reply with the single word PASS. "
         + "Otherwise reply with one line saying what to fix.";
 
@@ -67,7 +71,45 @@ public final class TeamDispatch {
         String home = System.getProperty("aigen.home", System.getenv("AIGEN_HOME"));
         if (home == null) home = System.getProperty("user.home") + "/AIGEN_SYS";
         TeamRunner runner = new TeamRunner(lora, TeamRunner.scheduled(scheduler, TURN_TIMEOUT_MS));
-        return new TeamDispatch(runner, defaultRoster(Member.local(ollama)), Paths.get(home), log);
+        Consumer<String> say = log == null ? s -> { } : log;
+        List<Team> roster = new java.util.ArrayList<>(defaultRoster(Member.local(ollama)));
+        Path root = Paths.get(System.getProperty("mindpalace.teams.root", System.getProperty("user.dir")));
+        roster.add(scoutTeam(Member.local(ollama), ModelConfig.TOOL_MODEL, root));
+        String url = System.getProperty(com.mindpalace.agent.lane.LaneClient.URL_PROP);
+        if (url != null && !url.isBlank()) {
+            // the lane is optional: a bad url, a bad bank file or a server that is not up leaves the Ollama teams running
+            try {
+                var lane = new com.mindpalace.agent.lane.LaneClient(url);
+                var bank = com.mindpalace.agent.lane.AdapterBank.load(Paths.get(home, "lora", "bank.json"));
+                if (lane.healthy()) roster.addAll(laneRoster(lane, bank, say));
+                else say.accept("[Teams] the lane at " + url + " is not up: lane seats left out");
+            } catch (Exception e) {
+                say.accept("[Teams] lane seats left out: " + e.getMessage());
+            }
+        }
+        return new TeamDispatch(runner, roster, Paths.get(home), log);
+    }
+
+    /** LLM + toolset + bot: the scout looks at the repo (read-only, inside root) before it plans. */
+    public static Team scoutTeam(Member.Llm llm, String model, Path root) {
+        Member scout = Member.tools("scout", model, AdapterType.ANALYSIS, SCOUT_SYSTEM, llm, RepoTools.toolset(root));
+        return new Team("scout+bot", Team.Pattern.DRAFT_CHECK, List.of(scout, PlanCheck.bot("scout")), 2);
+    }
+
+    /**
+     * The lane teams: the same seat and the same base model, differing ONLY in the adapter recipe. When two of them
+     * compete, the scoreboard is an A/B of the recipes themselves.
+     */
+    public static List<Team> laneRoster(com.mindpalace.agent.lane.LaneClient lane, com.mindpalace.agent.lane.AdapterBank bank, Consumer<String> packets) {
+        List<Team> out = new java.util.ArrayList<>();
+        for (AdapterType t : List.of(AdapterType.CODE, AdapterType.ANALYSIS, AdapterType.CHAT)) {
+            String who = "lane-" + t.name().toLowerCase(java.util.Locale.ROOT);
+            // adapter null: the seat carries its recipe inside its own request, so the runner's bookkeeping switch
+            // (still a simulation for the Ollama seats) stays out of it
+            Member m = Member.llm(who, "lane", null, PLAN_SYSTEM, Member.onLane(lane, bank, t, LANE_MAX_TOKENS, packets));
+            out.add(new Team(who + "[" + bank.describe(t) + "]+bot", Team.Pattern.DRAFT_CHECK, List.of(m, PlanCheck.bot(who)), 2));
+        }
+        return out;
     }
 
     /** The combos the game starts with: LLM + bot (two different models) and LLM + bot + LLM critic. */
@@ -100,6 +142,7 @@ public final class TeamDispatch {
 
     /** Runs the competition on the calling thread and returns the ledger row it wrote. */
     public JsonObject runOnce(String cycleId, String proposalType, String text) {
+        if (text != null && text.length() > MAX_PROPOSAL_CHARS) text = text.substring(0, MAX_PROPOSAL_CHARS);
         String task = "Proposal (" + proposalType + "): " + text + "\nWrite a plan of 2 to 5 numbered steps to carry it out.";
         Arena.Outcome out = arena.compete(scoreboard.pick(roster, TEAMS_PER_TASK), task, PlanCheck::score);
 

@@ -32,12 +32,15 @@ public final class Scoreboard {
     /** Wins per run; a team that has never run counts as 0. */
     public synchronized double winRate(String team) { int n = runs(team); return n == 0 ? 0 : (double) wins(team) / n; }
 
-    /** k teams from the roster: the k-1 best win rates, then the least-run team not already chosen. Ties keep roster order. */
+    /** What pick() sorts by: (wins + 1) / (runs + 2), so one lucky win does not outrank a long good record. */
+    private double steadyRate(String team) { return (wins(team) + 1.0) / (runs(team) + 2.0); }
+
+    /** k teams from the roster: the k-1 best steady win rates, then the least-run team not already chosen. Ties keep roster order. */
     public synchronized List<Team> pick(List<Team> roster, int k) {
         if (k >= roster.size()) return List.copyOf(roster);
         if (k <= 0) return List.of();
         List<Team> byRate = new ArrayList<>(roster);
-        byRate.sort(Comparator.comparingDouble((Team t) -> -winRate(t.name())));   // stable: ties keep roster order
+        byRate.sort(Comparator.comparingDouble((Team t) -> -steadyRate(t.name())));   // stable: ties keep roster order
         List<Team> out = new ArrayList<>(byRate.subList(0, k - 1));
         Team explore = null;
         for (Team t : roster) {
