@@ -467,7 +467,7 @@ public class QuorumProposalSource {
             ProcessBuilder pb = new ProcessBuilder(argv);
             pb.redirectErrorStream(false);
             Process p = pb.start();
-            boolean finished = p.waitFor(60, TimeUnit.SECONDS);
+            boolean finished = p.waitFor(QuorumTaskSpawner.hermesTimeoutSec(), TimeUnit.SECONDS);
             if (!finished) {
                 p.destroyForcibly();
                 System.err.println("[QuorumProposalSource] " + action + " timed out: " + item);
@@ -585,7 +585,7 @@ public class QuorumProposalSource {
             ProcessBuilder pb = new ProcessBuilder(argv);
             pb.redirectErrorStream(false);
             Process p = pb.start();
-            boolean finished = p.waitFor(60, TimeUnit.SECONDS);
+            boolean finished = p.waitFor(QuorumTaskSpawner.hermesTimeoutSec(), TimeUnit.SECONDS);
             if (!finished) { p.destroyForcibly(); return null; }
             if (p.exitValue() != 0) return null;
             return readAll(p.getInputStream());
