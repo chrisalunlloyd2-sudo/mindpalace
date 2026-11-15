@@ -24,6 +24,9 @@
             <manifest>
               <mainClass>${main.class}</mainClass>
             </manifest>
+            <manifestEntries>
+              <Implementation-Version>${project.version}</Implementation-Version>
+            </manifestEntries>
           </archive>
         </configuration>
       </plugin>
