@@ -15,5 +15,5 @@ export GAME_JAVA_FLAGS
 # (llama.cpp LoRA lane on 127.0.0.1:18080, `bash scripts/lane.sh start`; seats join only after a passing `lane.sh probe` from the last 24 h).
 # The lane is a resident model: with it up Ollama keeps ONE model (law: 2 resident in total).
 if [ "${GAME_TEAMS:-0}" = 1 ]; then GAME_JAVA_FLAGS="$GAME_JAVA_FLAGS -Dmindpalace.teams=true"; fi
-if [ "${GAME_LANE:-0}" = 1 ]; then GAME_JAVA_FLAGS="$GAME_JAVA_FLAGS -Dmindpalace.teams=true -Dmindpalace.lane.url=http://127.0.0.1:${LANE_PORT:-18080}"; fi
+if [ "${GAME_LANE:-0}" = 1 ]; then GAME_JAVA_FLAGS="$GAME_JAVA_FLAGS -Dmindpalace.teams=true -Dmindpalace.lane.url=http://127.0.0.1:${LANE_PORT:-18080} -Dmindpalace.lane.wake=$(cygpath -m "$HOME/.aria/engine/lane_tick.cmd" 2>/dev/null || echo "$HOME/.aria/engine/lane_tick.cmd")"; fi
 export GAME_JAVA_FLAGS
