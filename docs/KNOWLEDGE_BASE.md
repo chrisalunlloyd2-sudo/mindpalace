@@ -17,6 +17,8 @@ entries get a dated correction under them).
 | Watchdog (outside the repo) | `~/.aria/engine/watchdog.py`, `ops_health.py`; reports in `AIGEN_SYS/reports/` |
 | Heavy-job governor | `~/.aria/engine/budget.py run --job NAME --class heavy -- argv` (exit 75 = wait) |
 | Hermes law | `~/AppData/Local/hermes/SOUL.md` (MACHINE LAW block) |
+| LoRA lane (real adapter swap) | `scripts/lane.sh`, `agent/lane/` (`LaneClient`, `AdapterBank`, `LaneProbe`); recipes in `AIGEN_SYS/lora/bank.json`, adapters in `AIGEN_SYS/lora/adapters/` |
+| Agent teams | `agent/team/` (`TeamDispatch`, `-Dmindpalace.teams=true`); lane seats join when `-Dmindpalace.lane.url=http://127.0.0.1:18080` is set and the lane is up |
 
 ## Machine laws (12 GB RAM, spinning HDD, CPU-only Ollama)
 1. At most **2 resident models**. The settings live only in the user environment (HKCU):
@@ -50,6 +52,28 @@ entries get a dated correction under them).
   - Plain words (#346) helps small models a lot and the 3b model slightly.
 - **Hermes followed the docs.** It hand-started the heavy serve because `DEV_SETUP.md`
   called anything lighter DRIFT. Docs are instructions to agents, so write them per machine (#342).
+
+## Lessons 2026-11-14: the LoRA lane (measured, not guessed)
+- **Ollama 0.40.3 refuses adapters**, so a real swap runs on the lane: one llama.cpp `llama-server`
+  (build b12385) with Ollama's own `qwen2.5:0.5b` blob as the base and every adapter loaded at start.
+- **The swap travels in the request.** `"lora":[{"id":0,"scale":0.0},{"id":1,"scale":1.0}]` on
+  `/v1/chat/completions` sets the adapters for that one call. Nothing is shared, so nothing races.
+  Scale 0 gives the base answer back byte for byte; a scale between 0 and 1 is a mix.
+- **Send a scale for every adapter, every time.** `--lora-init-without-apply` did not start them at 0
+  on this build: they list at 1.0.
+- **Numbers on this PC:** load 2.5 to 3 min from the HDD; the first answer about 60 s cold, then 5 to 14 s
+  per 48 tokens; about 500 MB resident with two adapters (about 13 MB per 8.8 MB adapter);
+  a global scale change takes 1 to 130 ms.
+- **`bash scripts/lane.sh probe` is the proof**: base twice (same text), each bank recipe (different
+  text), base again (first text). It passed on 2026-11-14 through `LaneClient`. No lane seat goes
+  live on a machine where it has not passed.
+- **The lane is a resident model.** With it up, Ollama may keep one model, not two (law 1).
+- **The server does not listen while it reads the model.** An open port cannot tell a loading lane
+  from none; `lane.sh` finds its server by the port in the process command line.
+- **`logit_bias` works per request on the chat endpoint**, as `[[tokenId, false]]` or `{"tokenId": -100}`.
+- `LoRASwitcher` is still bookkeeping for the Ollama seats. Its "simulation only" note stays true.
+- The probe adapters (`probe_a`, `probe_b`) are noise that proves the swap. They teach nothing;
+  a trained adapter replaces them.
 
 ## Correction log
 - 2026-11-07: "the shim hangs the watchdog" was incomplete; see the lessons above.

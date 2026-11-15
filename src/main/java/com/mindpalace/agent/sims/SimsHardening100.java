@@ -359,6 +359,146 @@ public final class SimsHardening100 {
             var r = new com.mindpalace.agent.team.TeamRunner(new LoRASwitcher(), boom).run(t, "x");
             return !r.success() && r.why().contains("timed out") && !com.mindpalace.agent.team.TeamDispatch.enabled();
         }));
+        cs.add(new Case("lane.refusesAnyHostThatIsNotThisMachine", () -> {
+            for (String bad : new String[]{"http://example.com:8080", "https://127.0.0.1:18080", "http://10.0.0.5:18080", "", "ollama.com"}) {
+                try { com.mindpalace.agent.lane.LaneClient.assertLoopback(bad); return false; } catch (IllegalArgumentException expected) { }
+            }
+            com.mindpalace.agent.lane.LaneClient.assertLoopback("http://127.0.0.1:18080");
+            com.mindpalace.agent.lane.LaneClient.assertLoopback("http://localhost:18080/");
+            return true;
+        }));
+        cs.add(new Case("lane.theAdapterRecipeTravelsInsideTheRequest", () -> {
+            String[] sent = {null};
+            var lane = new com.mindpalace.agent.lane.LaneClient((path, body) -> {
+                if (path.equals("/health")) return "{\"status\":\"ok\"}";
+                if (path.equals("/lora-adapters")) return "[{\"id\":0,\"path\":\"C:/x/probe_a.gguf\",\"scale\":1.0},{\"id\":1,\"path\":\"C:\\\\y\\\\probe_b.GGUF\",\"scale\":1.0}]";
+                sent[0] = body;
+                return "{\"choices\":[{\"message\":{\"content\":\"1. a\\n2. b\"}}]}";
+            });
+            var bank = com.mindpalace.agent.lane.AdapterBank.of(java.util.Map.of(AdapterType.CODE, java.util.Map.of("probe_b", 1.0)));
+            java.util.List<String> packets = new java.util.ArrayList<>();
+            String code = com.mindpalace.agent.team.Member.onLane(lane, bank, AdapterType.CODE, 64, packets::add).chat("ignored", "sys", "user");
+            var on = com.google.gson.JsonParser.parseString(sent[0]).getAsJsonObject();
+            com.mindpalace.agent.team.Member.onLane(lane, bank, AdapterType.CHAT, 64, null).chat("ignored", "", "user");
+            var off = com.google.gson.JsonParser.parseString(sent[0]).getAsJsonObject();
+            var l = on.getAsJsonArray("lora");
+            return lane.healthy() && code.equals("1. a\n2. b") && lane.adapters().get(1).name().equals("probe_b")
+                && l.size() == 2 && l.get(0).getAsJsonObject().get("scale").getAsDouble() == 0.0 && l.get(1).getAsJsonObject().get("scale").getAsDouble() == 1.0
+                && on.get("temperature").getAsInt() == 0 && on.getAsJsonArray("messages").size() == 2
+                && off.getAsJsonArray("lora").get(1).getAsJsonObject().get("scale").getAsDouble() == 0.0 && off.getAsJsonArray("messages").size() == 1
+                && packets.size() == 1 && packets.get(0).contains("CODE recipe probe_b=1.0");
+        }));
+        cs.add(new Case("lane.aRecipeForAnAdapterTheLaneLacksIsRefusedAndSoIsABadBankFile", () -> {
+            try {
+                var loaded = java.util.List.of(new com.mindpalace.agent.lane.LaneClient.Adapter(0, "probe_a", 1.0));
+                var ghost = com.mindpalace.agent.lane.AdapterBank.of(java.util.Map.of(AdapterType.CODE, java.util.Map.of("ghost", 1.0)));
+                boolean refused = false;
+                try { ghost.vector(AdapterType.CODE, loaded); } catch (IllegalStateException e) { refused = true; }
+                java.nio.file.Path f = java.nio.file.Files.createTempFile("bank", ".json");
+                int bad = 0;
+                for (String s : new String[]{"{\"recipes\":{\"CODE\":{\"probe_a\":9}}}", "{\"recipes\":{\"NOPE\":{\"probe_a\":1}}}", "not json"}) {
+                    java.nio.file.Files.writeString(f, s);
+                    try { com.mindpalace.agent.lane.AdapterBank.load(f); } catch (IllegalArgumentException e) { bad++; }
+                }
+                java.nio.file.Files.writeString(f, "{\"recipes\":{\"CODE\":{\"probe_a\":0.5}}}");
+                var good = com.mindpalace.agent.lane.AdapterBank.load(f);
+                java.nio.file.Files.deleteIfExists(f);
+                return refused && bad == 3 && good.vector(AdapterType.CODE, loaded).get(0) == 0.5 && good.vector(AdapterType.CHAT, loaded).get(0) == 0.0
+                    && good.describe(AdapterType.CHAT).equals("base") && com.mindpalace.agent.lane.AdapterBank.load(f).describe(AdapterType.CODE).equals("base");
+            } catch (Exception e) { return false; }
+        }));
+        cs.add(new Case("team.laneTeamsCompeteAsAnABOfRecipes", () -> {
+            java.util.List<String> bodies = new java.util.ArrayList<>();
+            var lane = new com.mindpalace.agent.lane.LaneClient((path, body) -> {
+                if (path.equals("/lora-adapters")) return "[{\"id\":0,\"path\":\"/a/probe_a.gguf\",\"scale\":1.0}]";
+                bodies.add(body);
+                return "{\"choices\":[{\"message\":{\"content\":\"1. open the door\\n2. test the door\"}}]}";
+            });
+            var bank = com.mindpalace.agent.lane.AdapterBank.of(java.util.Map.of(AdapterType.CODE, java.util.Map.of("probe_a", 0.5)));
+            var roster = com.mindpalace.agent.team.TeamDispatch.laneRoster(lane, bank, null);
+            var sb = new com.mindpalace.agent.team.Scoreboard();
+            LoRASwitcher lora = new LoRASwitcher();
+            var out = new com.mindpalace.agent.team.Arena(new com.mindpalace.agent.team.TeamRunner(lora), sb).compete(roster.subList(0, 2), "fix the door", com.mindpalace.agent.team.PlanCheck::score);
+            return roster.size() == 3 && roster.get(0).name().equals("lane-code[probe_a=0.5]+bot") && roster.get(1).name().equals("lane-analysis[base]+bot")
+                && out.winner().team() == roster.get(0) && bodies.size() == 2 && bodies.get(0).contains("\"scale\":0.5") && bodies.get(1).contains("\"scale\":0.0")
+                && lora.getSwitchCount() == 0 && sb.runs(roster.get(1).name()) == 1;
+        }));
+        cs.add(new Case("team.toolSeatSeesItsResultsAndCannotFakeThem", () -> {
+            java.util.List<String> shown = new java.util.ArrayList<>();
+            com.mindpalace.agent.team.Member.Llm fake = (m, s, u) -> { shown.add(u); return shown.size() == 1 ? "= 99\n? add 2 3" : "1. use the 5\n2. done"; };
+            java.util.Map<String, java.util.function.Function<String, String>> ts = java.util.Map.of(
+                "add", a -> { String[] p = a.split(" "); return String.valueOf(Integer.parseInt(p[0]) + Integer.parseInt(p[1])); },
+                "big", a -> "x".repeat(5000), "two", a -> "one\ntwo");
+            var seat = com.mindpalace.agent.team.Member.tools("scout", "m", AdapterType.ANALYSIS, "", fake, ts);
+            String out = seat.act(new com.mindpalace.agent.team.Board("t"));
+            String many = com.mindpalace.agent.team.Member.runToolLines("? add 1 1\n? add 1 1\n? add 1 1\n? add 1 1\n? add 1 1", ts);
+            String big = com.mindpalace.agent.team.Member.runToolLines("? big", ts);
+            return out.equals("1. use the 5\n2. done") && shown.size() == 2 && shown.get(1).contains("= 5") && !shown.get(1).contains("99")
+                && many.endsWith("= ERR too many tool calls in one reply (max 4)") && many.split("= 2", -1).length == 5
+                && big.length() < 1600 && big.endsWith("...(cut)")
+                && com.mindpalace.agent.team.Member.runToolLines("? two", ts).equals("? two\n= one\n= two");
+        }));
+        cs.add(new Case("team.repoToolsStayInsideTheRootAndSkipSecrets", () -> {
+            try {
+                java.nio.file.Path base = java.nio.file.Files.createTempDirectory("repo_tools");
+                java.nio.file.Path root = base.resolve("repo");
+                java.nio.file.Files.createDirectories(root.resolve("sub"));
+                java.nio.file.Files.createDirectories(root.resolve(".git"));
+                java.nio.file.Files.writeString(root.resolve("a.txt"), "hello\nthe World\n");
+                java.nio.file.Files.writeString(root.resolve("sub").resolve("api.key"), "k");
+                java.nio.file.Files.writeString(root.resolve(".git").resolve("config"), "c");
+                java.nio.file.Files.writeString(base.resolve("outside.txt"), "out");
+                var ts = com.mindpalace.agent.team.RepoTools.toolset(root);
+                boolean ok = ts.get("ls").apply("").equals("a.txt sub/") && ts.get("ls").apply("sub").isEmpty()
+                    && ts.get("read").apply("a.txt").equals("hello\nthe World")
+                    && ts.get("grep").apply("world a.txt").equals("2: the World") && ts.get("grep").apply("zzz a.txt").equals("no match")
+                    && ts.get("read").apply("../outside.txt").startsWith("ERR") && ts.get("read").apply(base.resolve("outside.txt").toString()).startsWith("ERR")
+                    && ts.get("read").apply("sub/api.key").startsWith("ERR") && ts.get("read").apply(".git/config").startsWith("ERR")
+                    && ts.get("read").apply("sub/../../outside.txt").startsWith("ERR") && ts.get("read").apply("nope.txt").startsWith("ERR")
+                    && ts.get("read").apply("a*?.txt").startsWith("ERR") && ts.get("ls").apply("a.txt").startsWith("ERR");
+                try (var w = java.nio.file.Files.walk(base)) { w.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete()); }
+                return ok;
+            } catch (Exception e) { return false; }
+        }));
+        cs.add(new Case("team.aPlanAboutTheTaskOutscoresOneAboutNothing", () -> {
+            String task = "Proposal (REFACTOR): repair the broken elevator door\nWrite a plan of 2 to 5 numbered steps to carry it out.";
+            var about = new com.mindpalace.agent.team.TeamRunner.Result(true, "1. open the elevator panel\n2. repair the door", null, 2, 0, "");
+            var vague = new com.mindpalace.agent.team.TeamRunner.Result(true, "1. do it\n2. test it", null, 2, 0, "");
+            var parrot = new com.mindpalace.agent.team.TeamRunner.Result(true, "1. write numbered steps\n2. carry the proposal", null, 2, 0, "");
+            int a = com.mindpalace.agent.team.PlanCheck.score(task, about), v = com.mindpalace.agent.team.PlanCheck.score(task, vague);
+            return a == v + 10 && com.mindpalace.agent.team.PlanCheck.score(task, parrot) == v;
+        }));
+        cs.add(new Case("lane.theProbePassesOnlyWhenTheSwapIsReal", () -> {
+            String adapters = "[{\"id\":0,\"path\":\"/a/probe_a.gguf\",\"scale\":1.0},{\"id\":1,\"path\":\"/a/probe_b.gguf\",\"scale\":1.0}]";
+            java.util.function.Function<String, String> answer = t -> "{\"choices\":[{\"message\":{\"content\":\"" + t + "\"}}]}";
+            java.util.function.Function<String, String> scales = body -> com.google.gson.JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("lora").toString().replace("\"", "");
+            String allOff = "[{id:0,scale:0.0},{id:1,scale:0.0}]";
+            var bank = com.mindpalace.agent.lane.AdapterBank.of(java.util.Map.of(
+                AdapterType.CODE, java.util.Map.of("probe_b", 1.0), AdapterType.CAREER, java.util.Map.of("probe_b", 1.0),
+                AdapterType.ANALYSIS, java.util.Map.of("probe_a", 0.02, "probe_b", 1.0)));
+            // a real lane: the answer depends on the scales and on nothing else
+            var real = new com.mindpalace.agent.lane.LaneClient((p, b) -> b == null ? adapters : answer.apply(scales.apply(b).equals(allOff) ? "base" : "moved " + scales.apply(b)));
+            // a lane that ignores the scales: the "swap" changes nothing
+            var deaf = new com.mindpalace.agent.lane.LaneClient((p, b) -> b == null ? adapters : answer.apply("base"));
+            // a lane where a recipe leaks into the next call
+            boolean[] dirty = {false};
+            var leaky = new com.mindpalace.agent.lane.LaneClient((p, b) -> {
+                if (b == null) return adapters;
+                boolean off = scales.apply(b).equals(allOff);
+                String t = off ? (dirty[0] ? "base, tainted" : "base") : "moved";
+                if (!off) dirty[0] = true;
+                return answer.apply(t);
+            });
+            var none = new com.mindpalace.agent.lane.LaneClient((p, b) -> b == null ? "[]" : answer.apply("base"));
+            var ok = com.mindpalace.agent.lane.LaneProbe.run(real, bank, "q", 8);
+            var no = com.mindpalace.agent.lane.LaneProbe.run(deaf, bank, "q", 8);
+            var leak = com.mindpalace.agent.lane.LaneProbe.run(leaky, bank, "q", 8);
+            var empty = com.mindpalace.agent.lane.LaneProbe.run(real, com.mindpalace.agent.lane.AdapterBank.of(java.util.Map.of()), "q", 8);
+            return ok.pass() && ok.lines().size() == 5   // base, base again, two distinct recipes (CODE and CAREER share one), base after
+                && !no.pass() && no.lines().stream().anyMatch(l -> l.note().contains("changed nothing"))
+                && !leak.pass() && leak.lines().get(leak.lines().size() - 1).note().contains("left something behind")
+                && !empty.pass() && !com.mindpalace.agent.lane.LaneProbe.run(none, bank, "q", 8).pass();
+        }));
         cs.add(new Case("quorum.realVotesFloorNeedsTwo", () -> {
             // REAL_VOTE_MIN=2: one lone real vote can never clear quorum, even
             // with quorumMin=1 — and blind-majority labels BLINDED first.
