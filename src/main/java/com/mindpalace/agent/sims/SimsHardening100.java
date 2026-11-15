@@ -538,6 +538,39 @@ public final class SimsHardening100 {
                 return none && failed && fresh && stale && newerFails && garbage;
             } catch (Exception e) { return false; }
         }));
+        cs.add(new Case("lane.theLaneLivesForARoundAndIsWokenOnDemand", () -> {
+            try {
+                java.nio.file.Path want = java.nio.file.Files.createTempDirectory("lane_life").resolve("lane.want");
+                long[] now = {0};
+                java.util.concurrent.atomic.AtomicInteger ticks = new java.util.concurrent.atomic.AtomicInteger();
+                int[] polls = {0};
+                boolean[] up = {false};
+                var lane = new com.mindpalace.agent.lane.LaneClient((p, b) -> {
+                    if (p.equals("/health")) { if (up[0]) return "{\"status\":\"ok\"}"; throw new java.io.IOException("loading"); }
+                    return "{\"choices\":[{\"message\":{\"content\":\"hi\"}}]}";
+                });
+                var life = new com.mindpalace.agent.lane.LaneLifecycle(want, ticks::incrementAndGet, 60_000, 1500, () -> now[0],
+                    ms -> { now[0] += ms; if (++polls[0] == 3) up[0] = true; });   // the model finishes loading on the third poll
+                lane.withLifecycle(life);
+                String text = lane.chat("", "q", java.util.Map.of(0, 0.0), 8).text();
+                boolean woke = text.equals("hi") && java.nio.file.Files.exists(want) && ticks.get() == 1 && polls[0] == 3 && now[0] == 15_000;
+                int before = ticks.get();
+                lane.chat("", "q", java.util.Map.of(0, 0.0), 8);                 // already up: no wake, only the want file is touched
+                boolean noWake = ticks.get() == before;
+                long give = System.currentTimeMillis() + 15_000;                 // the release pass fires once the idle tail has passed
+                while (ticks.get() == before && System.currentTimeMillis() < give) Thread.sleep(50);
+                Thread.sleep(300);
+                boolean released = ticks.get() == before + 1;                     // exactly one: the first round's timer was cancelled by the second
+                // a lane that never loads: the turn fails with a clear reason, after the deadline, and counts toward the breaker
+                long[] t2 = {0};
+                var dead = new com.mindpalace.agent.lane.LaneClient((p, b) -> { throw new java.io.IOException("down"); });
+                dead.withLifecycle(new com.mindpalace.agent.lane.LaneLifecycle(want, () -> { }, 30_000, 50, () -> t2[0], ms -> t2[0] += ms));
+                String why = "";
+                try { dead.chat("", "q", java.util.Map.of(0, 0.0), 8); } catch (IllegalStateException e) { why = e.getMessage(); }
+                java.nio.file.Files.deleteIfExists(want);
+                return woke && noWake && released && why.contains("did not come up within 30 s") && t2[0] == 30_000;
+            } catch (Exception e) { return false; }
+        }));
         cs.add(new Case("quorum.realVotesFloorNeedsTwo", () -> {
             // REAL_VOTE_MIN=2: one lone real vote can never clear quorum, even
             // with quorumMin=1 — and blind-majority labels BLINDED first.

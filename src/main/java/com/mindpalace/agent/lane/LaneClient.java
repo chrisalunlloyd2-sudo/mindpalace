@@ -49,7 +49,14 @@ public final class LaneClient {
     static final int BREAKER_FAILS = 3;
     static final long COOLDOWN_MS = 60_000;
 
+    /** Called around every chat: a place to wake the lane before a call and let it go after (see {@link LaneLifecycle}). */
+    public interface Lifecycle {
+        void before(LaneClient lane);
+        void after();
+    }
+
     private final Transport wire;
+    private volatile Lifecycle life;
     private final java.util.function.LongSupplier clock;
     private int fails;
     private long openUntil;
@@ -61,6 +68,9 @@ public final class LaneClient {
 
     /** Tests pass a clock they move by hand. */
     public LaneClient(Transport wire, java.util.function.LongSupplier clock) { this.wire = wire; this.clock = clock; }
+
+    /** The lane then lives for a round: woken before a chat, released after it. */
+    public LaneClient withLifecycle(Lifecycle life) { this.life = life; return this; }
 
     /** True while the breaker is open: the next chat is refused at once. */
     public synchronized boolean breakerOpen() { return clock.getAsLong() < openUntil; }
@@ -135,13 +145,16 @@ public final class LaneClient {
         if (breakerOpen()) throw new IllegalStateException("lane breaker open: " + fails + " failures in a row, waiting");
         long t0 = System.nanoTime();
         try {
+            if (life != null) life.before(this);
             JsonObject resp = JsonParser.parseString(call("/v1/chat/completions", b.toString())).getAsJsonObject();
             String text = resp.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message").get("content").getAsString();
             succeeded();
             return new Reply(text, (System.nanoTime() - t0) / 1_000_000);
-        } catch (RuntimeException e) {   // unreachable, a non-2xx, or an answer that is not a chat reply
+        } catch (RuntimeException e) {   // unreachable, a non-2xx, a lane that would not wake, or an answer that is not a chat reply
             failed();
             throw e;
+        } finally {
+            if (life != null) life.after();
         }
     }
 

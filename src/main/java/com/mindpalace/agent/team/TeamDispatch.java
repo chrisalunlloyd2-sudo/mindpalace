@@ -82,11 +82,15 @@ public final class TeamDispatch {
             // the lane is optional: a bad url, a bad bank file or a server that is not up leaves the Ollama teams running
             try {
                 var lane = new com.mindpalace.agent.lane.LaneClient(url);
+                String wake = System.getProperty(com.mindpalace.agent.lane.LaneLifecycle.WAKE_PROP);
+                boolean onDemand = wake != null && !wake.isBlank();
+                if (onDemand) lane.withLifecycle(com.mindpalace.agent.lane.LaneLifecycle.forCommand(
+                    Paths.get(home, "lora", "lane.want"), List.of(wake.trim().split("\s+"))));
                 var bank = com.mindpalace.agent.lane.AdapterBank.load(Paths.get(home, "lora", "bank.json"));
                 Path loraDir = Paths.get(home, "lora");
                 if (!com.mindpalace.agent.lane.LaneProbe.freshProof(loraDir, LANE_PROOF_MAX_AGE_MS, System.currentTimeMillis()))
                     say.accept("[Teams] no passing lane probe in the last 24 h (bash scripts/lane.sh probe): lane seats left out");
-                else if (lane.healthy()) roster.addAll(laneRoster(lane, bank, say));
+                else if (onDemand || lane.healthy()) roster.addAll(laneRoster(lane, bank, say));   // on demand: the lane is down between rounds by design
                 else say.accept("[Teams] the lane at " + url + " is not up: lane seats left out");
             } catch (Exception e) {
                 say.accept("[Teams] lane seats left out: " + e.getMessage());
