@@ -10,3 +10,10 @@ GAME_VOTE_TIMEOUT_MS="${GAME_VOTE_TIMEOUT_MS:-180000}"
 GAME_JAVA_FLAGS="-Dprism.order=sw -Dprism.vsync=false -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m -Dmindpalace.vote.timeoutMs=${GAME_VOTE_TIMEOUT_MS}"
 [ -n "${GAME_VOTERS:-}" ] && GAME_JAVA_FLAGS="$GAME_JAVA_FLAGS -Dmindpalace.voters=${GAME_VOTERS}"
 export GAME_JAVA_FLAGS
+
+# Agent teams (off unless asked): GAME_TEAMS=1 turns the Ollama teams on; GAME_LANE=1 adds the lane seats
+# (llama.cpp LoRA lane on 127.0.0.1:18080, `bash scripts/lane.sh start`; seats join only after a passing `lane.sh probe` from the last 24 h).
+# The lane is a resident model: with it up Ollama keeps ONE model (law: 2 resident in total).
+if [ "${GAME_TEAMS:-0}" = 1 ]; then GAME_JAVA_FLAGS="$GAME_JAVA_FLAGS -Dmindpalace.teams=true"; fi
+if [ "${GAME_LANE:-0}" = 1 ]; then GAME_JAVA_FLAGS="$GAME_JAVA_FLAGS -Dmindpalace.teams=true -Dmindpalace.lane.url=http://127.0.0.1:${LANE_PORT:-18080}"; fi
+export GAME_JAVA_FLAGS

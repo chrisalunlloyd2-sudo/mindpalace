@@ -34,6 +34,8 @@ public final class TeamDispatch {
     private static final long TURN_TIMEOUT_MS = Long.getLong("mindpalace.teams.turnTimeoutMs", 20 * 60 * 1000L);
     private static final int TEAMS_PER_TASK = 2;
     private static final int MAX_PROPOSAL_CHARS = 2000;
+    /** A lane seat goes live only on a machine whose swap was proven today. */
+    static final long LANE_PROOF_MAX_AGE_MS = 24L * 3600_000;
     private static final int LANE_MAX_TOKENS = 220;
 
     private static final String PLAN_SYSTEM = "You plan work on a codebase. Reply with 2 to 5 numbered steps (1. 2. 3.) and nothing else. "
@@ -81,7 +83,10 @@ public final class TeamDispatch {
             try {
                 var lane = new com.mindpalace.agent.lane.LaneClient(url);
                 var bank = com.mindpalace.agent.lane.AdapterBank.load(Paths.get(home, "lora", "bank.json"));
-                if (lane.healthy()) roster.addAll(laneRoster(lane, bank, say));
+                Path loraDir = Paths.get(home, "lora");
+                if (!com.mindpalace.agent.lane.LaneProbe.freshProof(loraDir, LANE_PROOF_MAX_AGE_MS, System.currentTimeMillis()))
+                    say.accept("[Teams] no passing lane probe in the last 24 h (bash scripts/lane.sh probe): lane seats left out");
+                else if (lane.healthy()) roster.addAll(laneRoster(lane, bank, say));
                 else say.accept("[Teams] the lane at " + url + " is not up: lane seats left out");
             } catch (Exception e) {
                 say.accept("[Teams] lane seats left out: " + e.getMessage());

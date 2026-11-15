@@ -36,6 +36,18 @@ public final class LaneProbe {
 
     private LaneProbe() {}
 
+    /** True when the newest lane_probe_*.json in dir says pass and is no older than maxAgeMs. No proof, a failed one or a stale one = false. */
+    public static boolean freshProof(Path dir, long maxAgeMs, long nowMs) {
+        try (java.util.stream.Stream<Path> s = Files.list(dir)) {
+            Path newest = s.filter(p -> p.getFileName().toString().matches("lane_probe_\\d{8}_\\d{6}\\.json"))
+                .max(java.util.Comparator.comparing(p -> p.getFileName().toString())).orElse(null);
+            if (newest == null || nowMs - Files.getLastModifiedTime(newest).toMillis() > maxAgeMs) return false;
+            return com.google.gson.JsonParser.parseString(Files.readString(newest, StandardCharsets.UTF_8)).getAsJsonObject().get("pass").getAsBoolean();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public static Report run(LaneClient lane, AdapterBank bank, String prompt, int maxTokens) {
         List<Line> lines = new ArrayList<>();
         List<LaneClient.Adapter> loaded = lane.adapters();

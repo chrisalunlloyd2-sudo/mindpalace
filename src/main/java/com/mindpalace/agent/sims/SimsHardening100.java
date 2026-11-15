@@ -499,6 +499,45 @@ public final class SimsHardening100 {
                 && !leak.pass() && leak.lines().get(leak.lines().size() - 1).note().contains("left something behind")
                 && !empty.pass() && !com.mindpalace.agent.lane.LaneProbe.run(none, bank, "q", 8).pass();
         }));
+        cs.add(new Case("lane.aDeadLaneCostsOneErrorNotATimeoutPerTurn", () -> {
+            long[] now = {1000};
+            int[] calls = {0};
+            boolean[] up = {false};
+            var lane = new com.mindpalace.agent.lane.LaneClient((p, b) -> {
+                calls[0]++;
+                if (!up[0]) throw new java.io.IOException("refused");
+                return "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}";
+            }, () -> now[0]);
+            java.util.Map<Integer, Double> off = java.util.Map.of(0, 0.0);
+            int refused = 0;
+            for (int i = 0; i < 6; i++) {
+                try { lane.chat("", "q", off, 8); } catch (IllegalStateException e) { if (e.getMessage().startsWith("lane breaker open")) refused++; }
+            }
+            boolean quiet = calls[0] == 3 && refused == 3 && lane.breakerOpen();   // 3 real failures, then the wire is left alone
+            now[0] += 61_000; up[0] = true;
+            boolean back = lane.chat("", "q", off, 8).text().equals("ok") && !lane.breakerOpen() && calls[0] == 4;
+            return quiet && back;
+        }));
+        cs.add(new Case("lane.seatsNeedAPassingProbeFromToday", () -> {
+            try {
+                java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("probe_proof");
+                long now = System.currentTimeMillis(), day = 24L * 3600_000;
+                boolean none = !com.mindpalace.agent.lane.LaneProbe.freshProof(dir, day, now);
+                java.nio.file.Path f = dir.resolve("lane_probe_20261114_162823.json");
+                java.nio.file.Files.writeString(f, "{\"pass\":false,\"lines\":[]}");
+                boolean failed = !com.mindpalace.agent.lane.LaneProbe.freshProof(dir, day, now);
+                java.nio.file.Files.writeString(f, "{\"pass\":true,\"lines\":[]}");
+                boolean fresh = com.mindpalace.agent.lane.LaneProbe.freshProof(dir, day, now);
+                boolean stale = !com.mindpalace.agent.lane.LaneProbe.freshProof(dir, day, now + 2 * day);
+                java.nio.file.Files.writeString(dir.resolve("lane_probe_20261115_000000.json"), "{\"pass\":false}");   // a newer failing proof wins
+                boolean newerFails = !com.mindpalace.agent.lane.LaneProbe.freshProof(dir, day, now);
+                java.nio.file.Files.writeString(f, "not json");
+                java.nio.file.Files.delete(dir.resolve("lane_probe_20261115_000000.json"));
+                boolean garbage = !com.mindpalace.agent.lane.LaneProbe.freshProof(dir, day, now);
+                try (var w = java.nio.file.Files.walk(dir)) { w.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete()); }
+                return none && failed && fresh && stale && newerFails && garbage;
+            } catch (Exception e) { return false; }
+        }));
         cs.add(new Case("quorum.realVotesFloorNeedsTwo", () -> {
             // REAL_VOTE_MIN=2: one lone real vote can never clear quorum, even
             // with quorumMin=1 — and blind-majority labels BLINDED first.
