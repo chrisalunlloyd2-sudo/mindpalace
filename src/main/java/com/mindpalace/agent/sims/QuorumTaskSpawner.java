@@ -74,6 +74,11 @@ public class QuorumTaskSpawner {
      * regardless of outcome, so per-type approval rates are measurable
      * (an APPROVED-only ledger always reads 100%). Returns the record.
      */
+    /** Seconds a hermes CLI call may take: a loaded box answers slowly, and a killed create is a lost card. -Dmindpalace.hermes.timeoutSec (default 180, min 10). */
+    public static long hermesTimeoutSec() {
+        return Math.max(10L, Long.getLong("mindpalace.hermes.timeoutSec", 180L));
+    }
+
     public static Map<String, Object> ledgerRecord(WeightedQuorumVote.QuorumResult result) {
         try {
             Map<String, Object> record = new LinkedHashMap<>();
@@ -264,10 +269,10 @@ sb.append("---\n");
             ProcessBuilder pb = new ProcessBuilder(argv);
             pb.redirectErrorStream(false);
             Process p = pb.start();
-            boolean finished = p.waitFor(60, TimeUnit.SECONDS);
+            boolean finished = p.waitFor(hermesTimeoutSec(), TimeUnit.SECONDS);
             if (!finished) {
                 p.destroyForcibly();
-                return SpawnOutcome.of(argv, null, "hermes kanban create timed out after 60s");
+                return SpawnOutcome.of(argv, null, "hermes kanban create timed out after " + hermesTimeoutSec() + "s");
             }
             String stdout = readAll(p.getInputStream());
             String stderr = readAll(p.getErrorStream());
