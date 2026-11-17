@@ -14,7 +14,7 @@
 | Loop ratio (near-dup replies) | 42.9% | scout_bot.py --metrics |
 | Critic reviewing real work | 0% (blind) | console grep critic-skipped vs [Critic] |
 | E2E waypoints | 13 (11 OK + 2 known artifacts) | test_bot.py --verify-shots |
-| Selftest checks | 98 (must stay green; static pass++ count — +splash #304, +gist #160, +roster #347, +perf #182, +options #355, +adapter hook #354) | --selftest RESULT line |
+| Selftest checks | 99 (static pass++ count at #400; CI billing-locked since 11-11 — local mvn selftest is the gate in the meantime) | --selftest RESULT line |
 | Quorum events per boot | ~2,500 and climbing | telemetry ledger |
 | GitHub rate budget | unprotected (agents hit API freely) | rate-limit headers |
 

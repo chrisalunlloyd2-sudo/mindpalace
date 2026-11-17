@@ -89,7 +89,9 @@ public class AgentManager {
     private final AdapterRegistry adapterRegistry = new AdapterRegistry();
     private final WeightedQuorumVote quorum = new WeightedQuorumVote();
     private final FOWGate fow = new FOWGate();
-    private volatile String routedModel = TOOL_MODEL; // set by the router each cycle
+    private volatile String routedModel = TOOL_MODEL;
+    /** #400/#401: the routed round is on the flash lane (num_predict cap). */
+    private volatile boolean flashLaneActive; // set by the router each cycle
 
     // ── Reddit → Quorum feedback loop ──────────────────────────────────
     // Community suggestions → OAuth → Reddit polling → quorum proposals
@@ -657,6 +659,10 @@ public class AgentManager {
         // never escalated above flash); real work keeps its normal tier.
         Complexity cx = Complexity.estimate(context);
         routedModel = router.selectFlash(cx);
+        // #400/#401: remember WHY the router picked flash — the lane cap
+        // (num_predict=FLASH_BUDGET) rides this flag to the wire, so a trivial
+        // round is capped even though critic/code share the same model tag.
+        flashLaneActive = router.isFlashLane(cx);
         lora.switchAdapter(AdapterType.CODE);
         log("[AgentManager] routed " + cx + " → " + routedModel + " (" + router.reason(cx) + ")");
 
@@ -1389,9 +1395,15 @@ public class AgentManager {
     private String toolRoundModel() {
         String m = routedModel;
         if (ollama.supportsTools(m)) return m;
+        // Falling back to TOOL_MODEL also leaves the flash lane (that model is not
+        // the flash tag) — the cap must not chase a round that was re-modelled (#371).
+        flashLaneActive = false;
         log("[AgentManager] " + m + " has no native tool calling; tool round uses " + TOOL_MODEL + " (#144)");
         return TOOL_MODEL;
     }
+
+    /** #400/#401: is the current routed round on the flash lane? */
+    boolean flashLaneActive() { return flashLaneActive; }
 
     /**
      * #102: one tool round-trip; writes (edit/create/delete) only when the
@@ -1417,7 +1429,8 @@ public class AgentManager {
             msgs.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT + "\n" + ctx(toolModel)));
             msgs.add(Map.of("role", "user", "content", context + "\n\nTake ONE concrete action using your tools."));
 
-            OllamaClient.ToolResult tr = ollama.chatWithTools(toolModel, msgs, roundTools);
+            // #400/#401: the lane flag rides with the round — trivial rounds are capped.
+            OllamaClient.ToolResult tr = ollama.chatWithTools(toolModel, msgs, roundTools, flashLaneActive);
             // #130: the round just burned real GPU time — tax it (Explorer's
             // wallet, the same participant #97 awards tool rounds to).
             if (tr != null) {

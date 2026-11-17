@@ -185,9 +185,16 @@ public class OllamaClient {
     }
 
     private static void applyOptions(JsonObject body, String model) {
+        applyOptions(body, model, false);
+    }
+
+    /** #400/#401: the flash lane is a CALL property — lane=true caps the reply
+     *  at FLASH_BUDGET regardless of the model tag (critic/code share the flash
+     *  tag, so capping by tag would wrongly shorten critic reviews too). */
+    private static void applyOptions(JsonObject body, String model, boolean flashLane) {
         JsonObject opts = body.has("options") && body.get("options").isJsonObject()
             ? body.getAsJsonObject("options") : new JsonObject();
-        JsonObject fresh = optionsFor(model);
+        JsonObject fresh = optionsFor(model, flashLane);
         for (String k : fresh.keySet()) opts.add(k, fresh.get(k));
         body.add("options", opts);
     }
@@ -326,6 +333,12 @@ public class OllamaClient {
     /** #354: chat with an optional real adapter tag (null/blank = base model). */
     public String chat(String model, List<Map<String, String>> messages, List<JsonObject> tools,
                        String modelOverride) {
+        return chat(model, messages, tools, modelOverride, false);
+    }
+
+    /** #400/#401: chat with adapter tag AND flash lane (lane=true → num_predict cap). */
+    public String chat(String model, List<Map<String, String>> messages, List<JsonObject> tools,
+                       String modelOverride, boolean flashLane) {
         String wireModel = resolveWireModel(model, modelOverride);
         JsonObject body = new JsonObject();
         body.addProperty("model", wireModel);
@@ -333,7 +346,7 @@ public class OllamaClient {
         // ONE-HOT: the model stays resident for KEEP_ALIVE (default 5m); a different
         // model evicts it (see evictPreviousModelLocked). "0" = old cold-shot policy.
         applyKeepAlive(body);
-        applyOptions(body, wireModel);
+        applyOptions(body, wireModel, flashLane);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {
@@ -398,13 +411,19 @@ public class OllamaClient {
      * but never actually invoke read_file/edit_file/create_file/delete_file.
      */
     public ToolResult chatWithTools(String model, List<Map<String, String>> messages, List<JsonObject> tools) {
+        return chatWithTools(model, messages, tools, false);
+    }
+
+    /** #400/#401: tool round with the flash-lane flag (caps the round at FLASH_BUDGET). */
+    public ToolResult chatWithTools(String model, List<Map<String, String>> messages, List<JsonObject> tools,
+                                    boolean flashLane) {
         assertLocalModel(model); // #135 H44: quota firewall on every call path
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", false);
         // Same one-hot keep-alive policy as chat().
         applyKeepAlive(body);
-        applyOptions(body, model);
+        applyOptions(body, model, flashLane);
 
         JsonArray msgs = new JsonArray();
         for (Map<String, String> m : messages) {

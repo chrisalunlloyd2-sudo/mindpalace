@@ -48,6 +48,11 @@ public class ModelRouter {
         return select(c);
     }
 
+    /** #400/#401: true when selectFlash routes this complexity to the flash lane. */
+    public boolean isFlashLane(Complexity c) {
+        return c == Complexity.VERY_LOW || c == Complexity.LOW;
+    }
+
     /** Estimate latency (ms) for a complexity level on its routed tier. */
     public long estimateLatency(Complexity c) {
         long base;

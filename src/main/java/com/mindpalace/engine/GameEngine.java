@@ -8243,6 +8243,29 @@ public class GameEngine {
             + " (#355) ollama options: flash lane sends num_predict=FLASH_BUDGET, only on flash; num_ctx everywhere");
         if (optOk) pass++; else fail++;
 
+        // #400/#401: the flash lane is a CALL property — routed tool rounds pass
+        // flashLane=true to chatWithTools, and critic/code (same tag, no lane) stay uncapped.
+        boolean flashLaneOk;
+        try {
+            com.mindpalace.agent.sims.ModelRouter router = new com.mindpalace.agent.sims.ModelRouter();
+            boolean trivial = router.isFlashLane(com.mindpalace.agent.sims.Complexity.VERY_LOW)
+                && router.isFlashLane(com.mindpalace.agent.sims.Complexity.LOW);
+            boolean notTrivial = !router.isFlashLane(com.mindpalace.agent.sims.Complexity.MEDIUM)
+                && !router.isFlashLane(com.mindpalace.agent.sims.Complexity.HIGH);
+            // the wire options the lane produces (num_predict present with lane=true)
+            boolean capOnLane = com.mindpalace.agent.OllamaClient
+                .optionsFor(com.mindpalace.agent.ModelConfig.FLASH_MODEL, true).has("num_predict");
+            boolean noCapOffLane = !com.mindpalace.agent.OllamaClient
+                .optionsFor(com.mindpalace.agent.ModelConfig.CRITIC_MODEL, false).has("num_predict");
+            flashLaneOk = trivial && notTrivial && capOnLane && noCapOffLane;
+        } catch (Throwable t5) {
+            System.out.println("  flash lane check threw: " + t5);
+            flashLaneOk = false;
+        }
+        System.out.println((flashLaneOk ? "PASS" : "FAIL")
+            + " (#400) flash lane: router flags trivial rounds; lane=true caps, lane=false never does");
+        if (flashLaneOk) pass++; else fail++;
+
         // #354: adapter elections can now reach the wire (override validated by
         // the same local-only firewall) and the simulation-only state is logged.
         boolean adapterOk;
