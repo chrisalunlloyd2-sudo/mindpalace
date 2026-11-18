@@ -499,6 +499,46 @@ public final class SimsHardening100 {
                 && !leak.pass() && leak.lines().get(leak.lines().size() - 1).note().contains("left something behind")
                 && !empty.pass() && !com.mindpalace.agent.lane.LaneProbe.run(none, bank, "q", 8).pass();
         }));
+        cs.add(new Case("lane.memberScalesAreReadAfterTheWakeSoTheBreakerOpens", () -> {
+          try {
+            // FINDING-K (#405): the adapter read must happen INSIDE the call, after
+            // the wake — an adapters() probe evaluated before chat() on a down lane
+            // escaped outside chat()'s try, failed() never ran, and the breaker
+            // could never open. Now: when the wake cannot bring the lane up, the
+            // turn still fails THROUGH chat(), every failure is recorded, and the
+            // breaker opens after 3 (quiet afterwards). When the wake succeeds, the
+            // scales are read from the live lane and the turn goes through.
+            long[] now = {1000};
+            int[] calls = {0};
+            var neverUp = new com.mindpalace.agent.lane.LaneClient((p, b) -> { calls[0]++; throw new java.io.IOException("down"); }, () -> now[0]);
+            neverUp.withLifecycle(new com.mindpalace.agent.lane.LaneLifecycle(
+                java.nio.file.Files.createTempDirectory("fk_life").resolve("lane.want"),
+                () -> { }, 5_000, 50, () -> now[0], ms -> now[0] += ms));
+            var bank = com.mindpalace.agent.lane.AdapterBank.of(java.util.Map.of(AdapterType.CODE, java.util.Map.of("probe_a", 1.0)));
+            var turn = com.mindpalace.agent.team.Member.onLane(neverUp, bank, AdapterType.CODE, 8, null);
+            int failed = 0;
+            String firstWhy = "";
+            for (int i = 0; i < 5; i++) {
+                try { turn.chat("m", "", "q"); }
+                catch (RuntimeException e) { failed++; if (firstWhy.isBlank()) firstWhy = e.getMessage(); }
+            }
+            // three real failures open the breaker; calls 4-5 are refused at once (quiet)
+            boolean recorded = failed == 5 && neverUp.breakerOpen() && firstWhy.contains("did not come up") && calls[0] >= 3;
+            // wake succeeds -> scales are read AFTER the wake from the live lane
+            boolean[] up2 = {false};
+            var wakes = new com.mindpalace.agent.lane.LaneClient((p, b) -> {
+                if (p.equals("/health")) { if (up2[0]) return "{\"status\":\"ok\"}"; throw new java.io.IOException("loading"); }
+                if (p.equals("/lora-adapters")) return "[{\"id\":0,\"path\":\"C:/x/probe_a.gguf\",\"scale\":1.0}]";
+                return "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}";
+            }, () -> now[0]);
+            wakes.withLifecycle(new com.mindpalace.agent.lane.LaneLifecycle(
+                java.nio.file.Files.createTempDirectory("fk_life2").resolve("lane.want"),
+                () -> up2[0] = true, 60_000, 1_500, () -> now[0], ms -> { }));
+            var turn2 = com.mindpalace.agent.team.Member.onLane(wakes, bank, AdapterType.CODE, 8, null);
+            boolean woke = turn2.chat("m", "", "q").equals("ok");   // would have thrown 'unreachable' pre-fix: the read ran before the wake
+            return recorded && woke && !wakes.breakerOpen();
+          } catch (Exception e) { return false; }
+        }));
         cs.add(new Case("lane.aDeadLaneCostsOneErrorNotATimeoutPerTurn", () -> {
             long[] now = {1000};
             int[] calls = {0};

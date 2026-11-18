@@ -269,13 +269,26 @@ sb.append("---\n");
             ProcessBuilder pb = new ProcessBuilder(argv);
             pb.redirectErrorStream(false);
             Process p = pb.start();
+            // FINDING-L (#404): drain BOTH pipes while waitFor runs â a child that
+            // fills its 4KB Windows pipe blocks forever, waitFor times out, and
+            // the card dies as SPAWN_FAILED. Same class DeployManager.runBuild
+            // fixed for issue #1.
+            java.util.concurrent.Future<String> out = drainAsync(p.getInputStream());
+            java.util.concurrent.Future<String> err = drainAsync(p.getErrorStream());
             boolean finished = p.waitFor(hermesTimeoutSec(), TimeUnit.SECONDS);
             if (!finished) {
                 p.destroyForcibly();
                 return SpawnOutcome.of(argv, null, "hermes kanban create timed out after " + hermesTimeoutSec() + "s");
             }
-            String stdout = readAll(p.getInputStream());
-            String stderr = readAll(p.getErrorStream());
+            String stdout;
+            String stderr;
+            try {
+                stdout = out.get(5, TimeUnit.SECONDS);
+                stderr = err.get(5, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e2) {
+                stdout = "";
+                stderr = "";
+            }
             if (p.exitValue() != 0) {
                 return SpawnOutcome.of(argv, null,
                     "hermes kanban create exit=" + p.exitValue() + tail(stderr, 400));
@@ -285,6 +298,17 @@ sb.append("---\n");
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return SpawnOutcome.of(argv, null, "spawn failed: " + e);
         }
+    }
+
+    /** Drain a pipe to a string on a daemon thread so the child never blocks on a full pipe (FINDING-L, #404). */
+    private static java.util.concurrent.Future<String> drainAsync(java.io.InputStream in) {
+        java.util.concurrent.CompletableFuture<String> f = new java.util.concurrent.CompletableFuture<>();
+        Thread t = new Thread(() -> {
+            try { f.complete(readAll(in)); } catch (Exception e) { f.complete(""); }
+        }, "quorum-pipe-drain");
+        t.setDaemon(true);
+        t.start();
+        return f;
     }
 
     /** Pull the card id out of `hermes kanban create --json` stdout. */
