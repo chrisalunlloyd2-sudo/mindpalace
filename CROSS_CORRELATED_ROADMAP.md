@@ -207,12 +207,15 @@ repo; priority-order line ✅ since #69).
 **Ask:** working email + a daily "suggestions + code-mind log" digest.
 
 **Status:** `NOT-BROKEN — PARTIAL` ([RECONCILED 2026-10-23, mirroring
-UNFINISHED_BUSINESS.md §1 / #294]): himalaya IS installed (`~/bin/himalaya`)
+UNFINISHED_BUSINESS.md §1 / #294]; sent_emails line re-reconciled
+2026-11-18 per #403): himalaya IS installed (`~/bin/himalaya`)
 and `config.toml` has an imap/smtp account block — the "not installed / no
-config / no creds" lines were stale. Real remaining gaps: `~/sent_emails/`
-is empty (nothing to harvest) and the `dream_job.py` → digest-correlation
-job was never built. Wiring a live digest still needs the Architect's
-send-go — flagged, not auto-buildable.
+config / no creds" lines were stale. `~/sent_emails/` is NO LONGER empty —
+a harvest corpus exists on disk (399 messages, per UNFINISHED_BUSINESS.md
+§1's 2026-11-05 reconciliation). Real remaining gaps: the `dream_job.py` →
+digest-correlation pipeline itself was never built, and wiring a live
+digest still needs the Architect's send-go — flagged, not auto-buildable
+(stays parked under #306).
 
 ---
 

@@ -133,6 +133,17 @@ prove the full pipeline is green without shipping, then `--cut` to publish.
     (100-case parity gate, runs in selftest as one aggregate check),
     `AdapterRegistry` (#71 — voted LoRA weight-set election).
   - **agent/sprites/** — `SpriteProposalService`.
+  - **agent/team/** — agent teams on the rotating LoRA: `Team`, `Member`,
+    `Arena` (teams compete on approved proposals), `Board`, `Scoreboard`,
+    `TeamDispatch`, `TeamRunner`, `PlanCheck`, `RepoTools` (TOOLS-seat
+    read-only, repo-confined size-capped reads). Off by default
+    (`-Dmindpalace.teams=true`, e.g. `GAME_TEAMS=1` via
+    `scripts/game_flags.sh`); not yet wired into the main game loop
+    (#389/#391/#392).
+  - **agent/lane/** — the LoRA lane: `AdapterBank` (adapter→lane assignment),
+    `LaneClient` (talks to the local lane process), `LaneLifecycle`,
+    `LaneProbe` (health/breaker probe with 24h proof gate #394). Gated by
+    the `GAME_LANE` flag in `scripts/game_flags.sh` (#392/#394/#398).
 - **github/** — `GitHubClient`, `RepoScanner`, `GistWall`
   (`GistWallConfig` #160 config-driven sources + `GistWallCache` offline
   cache with age label),

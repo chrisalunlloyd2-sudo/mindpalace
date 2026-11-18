@@ -73,7 +73,7 @@ Each step: `mvn -q compile` + new JUnit test + commit. Proof is the test, not a 
 - B6. Installer polish (9): jpackage, auto-updater (reuse LiveUpdateManager), settings persistence (R7's settings.json), gamepad, OpenXR later.
 - B7. Multiplayer gateway (5.2) then full multiplayer (8).
 - B8. Curie the cat (Phase 6) — separate repo `chrisalunlloyd2-sudo/Curie`.
-- B9. Tech debt: GitHub Actions CI (compile + JUnit on push), checkpoint releases.
+- B9. ~~Tech debt: GitHub Actions CI (compile + JUnit on push), checkpoint releases.~~ **DECIDED 2026-10 (#387):** the merge gate runs locally via `local_ci.sh` (#383); `.github/workflows` stays manual-trigger-only by design, not an oversight. Checkpoint releases are covered separately by `scripts/release_phase.sh` (H33/H33a).
 
 ## PHASE C — Auto-drive + screenshot testing (AFTER Phase A prototypes)
 

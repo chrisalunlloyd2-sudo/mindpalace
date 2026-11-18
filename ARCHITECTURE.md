@@ -46,6 +46,10 @@ body the player actually sees and touches.
 | `entity` | bodies that move | `Player` (FPS controller, collision + resolveAxis), NPC avatars, `ScoutNPC` |
 | `agent` | minds | `AgentManager` (5-min autonomous cycle), `OllamaClient` (chat + tools), `ModelLifespan` (context budget, drift + repetition), `ContextKit` (LoRA+KG+KV per turn), `ModelScheduler` (one-model cold-shot gate), `BdiBridge` (BDI_FSM webui bridge, step 81) |
 | `agent.sims` | governance | `ModelRouter` (complexity→model), `WeightedQuorumVote` (FOW-gated votes), `LoRASwitcher`, `FOWGate` |
+
+| `agent.team` | agent teams on the rotating LoRA | `Team`, `Member`, `Arena` (compete on approved proposals), `Board`, `Scoreboard`, `TeamDispatch`, `TeamRunner`, `PlanCheck`, `RepoTools` (TOOLS-seat read-only, repo-confined reads) — off by default (`-Dmindpalace.teams=true`, e.g. via `GAME_TEAMS=1` in `scripts/game_flags.sh`), not yet wired into the main game loop (#389/#391/#392) |
+
+| `agent.lane` | the LoRA lane | `AdapterBank` (adapter→lane assignment), `LaneClient` (talks to the local lane process), `LaneLifecycle`, `LaneProbe` (health/breaker probe with 24h proof gate #394) — gated by the `GAME_LANE` flag in `scripts/game_flags.sh` (#392/#394/#398) |
 | `github` | the world's data source | `GitHubClient` (repo/file CRUD, `MIND_PALACE_AGENT_TOKEN`-only since #333/`9a1b04c` — the Credential-Manager PAT path is gone; unauthenticated if unset; autonomous writes open `agent/yyyyMMdd` branches per #321), `GitHubIssueStream` (add-only), `RepoScanner`, `GistWall`, `DedupeSentinel`, `RepoSweepData` (KG ingest of `reports/` sweeps), `ClaudeLessonData` (claude-code lesson ingest) |
 | `economy` | DePIN rewards + energy | `DePIN`, `Wallet`, `Blackboard`, `EconomyLedger`, `Escrow`, `Treasury`, `EnergyBudget` (daily spawn/worker energy drip) |
 | `network` | LAN multiplayer contract | `MultiplayerHub` (JDK ServerSocket + hand-rolled RFC6455 WS server, off by default via `enabled()`), `MultiplayerClient` (#138) |
@@ -92,8 +96,13 @@ body the player actually sees and touches.
 
 ```bash
 mvn -DskipTests package                          # BUILD SUCCESS gate
-java -jar mindpalace-live.jar --selftest         # 88 checks / 0 failed (serial run)
-java -jar mindpalace-live.jar --e2e <dir>        # labeled waypoint tour (32 at last count)
-python scripts/test_bot.py --verify-shots <dir>  # non-black PNG proof
+java -jar mindpalace-live.jar --selftest         # 99 checks / 0 failed (serial run)
+java -jar mindpalace-live.jar --e2e <dir>        # labeled waypoint tour (34 at last count)
+```
+These two numbers are point-in-time counts and keep growing as checks/waypoints
+ship — re-grep the source instead of trusting this block: `pass++` sites
+(`grep -c "pass++" src/main/java/com/mindpalace/engine/GameEngine.java`) and
+numbered `captureLabeled` labels (`grep -oP 'captureLabeled\("\K[0-9]+'
+…GameEngine.java | sort -n | uniq`).
 bash scripts/cascade_dev.sh Hxx                  # all of it + commit/push/step-log
 ```

@@ -53,7 +53,7 @@ SUCCESS_METRICS — objective tracking becomes fully self-contained.
 
 
 **Moves metric:** selftest check count 40 → 42 (both queued checks land); SUCCESS_METRICS 'Slider content fidelity' row closes.
-### 2. Release hygiene + installer QA — score 8.0 — [#11](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/11)
+### 2. ~Release hygiene + installer QA — score 8.0~ ✅ SHIPPED 2026-10-21 — [#11](https://github.com/chrisalunlloyd2-sudo/mindpalace/issues/11) (closed completed; commit b738c7f — coldshot retired, fresh install verified, INSTALLER.md updated)
 **Why (user value):** A new contributor's first 5 minutes are the
 installer. Right now we can't prove the exe on Releases matches the code
 in main — a stale binary would send every newcomer into bugs we already
