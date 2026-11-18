@@ -237,9 +237,9 @@ sb.append("");
 
 sb.append("## Action\n");
 sb.append("This proposal was approved by quorum with strong consensus.\n");
-sb.append("1. Review agent suggestions above");
-sb.append("2. Execute applicable actions");
-sb.append("3. Log result: \"QUORUM_TASK_").append(result.proposalId).append(": ACTION COMPLETED / SKIPPED\"\n");
+sb.append("1. Review agent suggestions above\n");
+sb.append("2. Execute applicable actions\n");
+sb.append("3. Log result: 'QUORUM_TASK_").append(result.proposalId).append(": ACTION COMPLETED / SKIPPED'\n");
 sb.append("---\n");
         sb.append(String.format("Spawned by QuorumTaskSpawner (t_66a35d3f, was TASK_0125) on %s via hermes kanban%n", Instant.now()));
 
@@ -253,7 +253,12 @@ sb.append("---\n");
         argv.add("kanban");
         argv.add("create");
         argv.add("--body");
-        argv.add(body);
+        // FINDING-M: java.lang.ProcessBuilder on Windows wraps a spaced arg in
+        // quotes but does NOT escape embedded '"' -- the body's
+        // "QUORUM_TASK_..: ACTION COMPLETED / SKIPPED" line split the command
+        // line, hermes exited 2 ("unrecognized arguments"), and every quorum
+        // spawn since the kanban switch died as SPAWN_FAILED (45 in a row).
+        argv.add(winSafeArg(body));
         argv.add("--assignee");
         argv.add("default");
         // Idempotent on the cycle id: a re-handled proposal returns the
@@ -263,19 +268,32 @@ sb.append("---\n");
         argv.add("--created-by");
         argv.add("mindpalace-quorum");
         argv.add("--json");
-        argv.add(title);
+        argv.add(winSafeArg(title));
 
         try {
             ProcessBuilder pb = new ProcessBuilder(argv);
             pb.redirectErrorStream(false);
             Process p = pb.start();
+            // FINDING-L (#404): drain BOTH pipes while waitFor runs — a child that
+            // fills its 4KB Windows pipe blocks forever, waitFor times out, and
+            // the card dies as SPAWN_FAILED. Same class DeployManager.runBuild
+            // fixed for issue #1.
+            java.util.concurrent.Future<String> out = drainAsync(p.getInputStream());
+            java.util.concurrent.Future<String> err = drainAsync(p.getErrorStream());
             boolean finished = p.waitFor(hermesTimeoutSec(), TimeUnit.SECONDS);
             if (!finished) {
                 p.destroyForcibly();
                 return SpawnOutcome.of(argv, null, "hermes kanban create timed out after " + hermesTimeoutSec() + "s");
             }
-            String stdout = readAll(p.getInputStream());
-            String stderr = readAll(p.getErrorStream());
+            String stdout;
+            String stderr;
+            try {
+                stdout = out.get(5, TimeUnit.SECONDS);
+                stderr = err.get(5, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e2) {
+                stdout = "";
+                stderr = "";
+            }
             if (p.exitValue() != 0) {
                 return SpawnOutcome.of(argv, null,
                     "hermes kanban create exit=" + p.exitValue() + tail(stderr, 400));
@@ -285,6 +303,25 @@ sb.append("---\n");
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return SpawnOutcome.of(argv, null, "spawn failed: " + e);
         }
+    }
+
+    /** Make a value survive Windows command-line splitting: no embedded double quotes, no trailing backslash (FINDING-M). */
+    static String winSafeArg(String v) {
+        if (v == null) return "";
+        String s = v.replace('"', '\'');
+        while (s.endsWith("\\")) s = s.substring(0, s.length() - 1);
+        return s;
+    }
+
+    /** Drain a pipe to a string on a daemon thread so the child never blocks on a full pipe (FINDING-L, #404). */
+    private static java.util.concurrent.Future<String> drainAsync(java.io.InputStream in) {
+        java.util.concurrent.CompletableFuture<String> f = new java.util.concurrent.CompletableFuture<>();
+        Thread t = new Thread(() -> {
+            try { f.complete(readAll(in)); } catch (Exception e) { f.complete(""); }
+        }, "quorum-pipe-drain");
+        t.setDaemon(true);
+        t.start();
+        return f;
     }
 
     /** Pull the card id out of `hermes kanban create --json` stdout. */

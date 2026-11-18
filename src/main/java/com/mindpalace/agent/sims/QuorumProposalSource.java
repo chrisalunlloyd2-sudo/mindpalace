@@ -467,24 +467,42 @@ public class QuorumProposalSource {
             ProcessBuilder pb = new ProcessBuilder(argv);
             pb.redirectErrorStream(false);
             Process p = pb.start();
+            // FINDING-L (#404): drain BOTH pipes while waitFor runs — a child that
+            // fills its 4KB Windows pipe blocks forever and waitFor times out
+            // (the card dies as SPAWN_FAILED). Same class DeployManager.runBuild
+            // fixed for issue #1.
+            java.util.concurrent.Future<String> err = drainAsync(p.getErrorStream());
             boolean finished = p.waitFor(QuorumTaskSpawner.hermesTimeoutSec(), TimeUnit.SECONDS);
             if (!finished) {
                 p.destroyForcibly();
                 System.err.println("[QuorumProposalSource] " + action + " timed out: " + item);
                 return false;
             }
+            err.get(5, TimeUnit.SECONDS);
             if (p.exitValue() != 0) {
                 System.err.println("[QuorumProposalSource] " + action + " exit=" + p.exitValue()
-                    + " for " + item + " stderr=" + tailChars(readAll(p.getErrorStream()), 200));
+                    + " for " + item + " stderr=" + tailChars(err.get(5, TimeUnit.SECONDS), 200));
                 return false;
             }
             System.out.println("[QuorumProposalSource] " + action + " ok: " + item);
             return true;
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException | java.util.concurrent.ExecutionException
+                 | java.util.concurrent.TimeoutException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             System.err.println("[QuorumProposalSource] " + action + " failed: " + e);
             return false;
         }
+    }
+
+    /** Drain a pipe to a string on a daemon thread so the child never blocks on a full pipe (FINDING-L, #404). */
+    private static java.util.concurrent.Future<String> drainAsync(java.io.InputStream in) {
+        java.util.concurrent.CompletableFuture<String> f = new java.util.concurrent.CompletableFuture<>();
+        Thread t = new Thread(() -> {
+            try { f.complete(readAll(in)); } catch (Exception e) { f.complete(""); }
+        }, "quorum-pipe-drain");
+        t.setDaemon(true);
+        t.start();
+        return f;
     }
 
     /** Capture-mode record: the argv a live run WOULD have executed. */
@@ -585,11 +603,18 @@ public class QuorumProposalSource {
             ProcessBuilder pb = new ProcessBuilder(argv);
             pb.redirectErrorStream(false);
             Process p = pb.start();
+            // FINDING-L (#404): drain both pipes while waitFor runs so the child
+            // never blocks on a full pipe and the 180s timeout is never burned
+            // on a wedged reader.
+            java.util.concurrent.Future<String> err = drainAsync(p.getErrorStream());
             boolean finished = p.waitFor(QuorumTaskSpawner.hermesTimeoutSec(), TimeUnit.SECONDS);
             if (!finished) { p.destroyForcibly(); return null; }
             if (p.exitValue() != 0) return null;
-            return readAll(p.getInputStream());
-        } catch (IOException | InterruptedException e) {
+            String out = readAll(p.getInputStream());
+            err.get(5, TimeUnit.SECONDS);
+            return out;
+        } catch (IOException | InterruptedException | java.util.concurrent.ExecutionException
+                 | java.util.concurrent.TimeoutException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return null;
         }
