@@ -53,7 +53,13 @@ public interface Member {
     static Llm onLane(com.mindpalace.agent.lane.LaneClient lane, com.mindpalace.agent.lane.AdapterBank bank, AdapterType adapter,
                       int maxTokens, java.util.function.Consumer<String> packets) {
         return (model, system, user) -> {
-            var reply = lane.chat(system, user, bank.vector(adapter, lane.adapters()), maxTokens);
+            // FINDING-K (#405): read the adapter list AFTER the wake. Java evaluates
+            // chat()'s arguments BEFORE the call, so an adapters() probe here used to
+            // hit a down lane outside chat()'s try — failed() never ran and the
+            // breaker could never open. chat() runs life.before (the wake) itself and
+            // computes the scales inside the call, after the lane is up; a failure
+            // then lands where it is recorded.
+            var reply = lane.chatWithRecipe(system, user, () -> bank.vector(adapter, lane.adapters()), maxTokens);
             if (packets != null) packets.accept("[Lane] " + adapter + " recipe " + bank.describe(adapter) + " " + reply.ms() + " ms");
             return reply.text();
         };

@@ -125,6 +125,16 @@ public final class LaneClient {
      * with {@link AdapterBank#vector}. system may be empty.
      */
     public Reply chat(String system, String user, Map<Integer, Double> scales, int maxTokens) {
+        return chatWithRecipe(system, user, () -> scales, maxTokens);
+    }
+
+    /**
+     * One chat turn whose scales are built INSIDE the call, after the wake. The {@code scales} supplier is only
+     * evaluated on the success path — after {@code life.before} has brought the lane up — so a read of
+     * {@link #adapters()} that fails on a down lane is recorded by {@code failed()} and feeds the breaker
+     * (FINDING-K, #405) instead of escaping before chat() even starts.
+     */
+    public Reply chatWithRecipe(String system, String user, java.util.function.Supplier<Map<Integer, Double>> scales, int maxTokens) {
         JsonObject b = new JsonObject();
         JsonArray msgs = new JsonArray();
         if (system != null && !system.isBlank()) msgs.add(message("system", system));
@@ -134,18 +144,18 @@ public final class LaneClient {
         b.addProperty("temperature", 0);
         b.addProperty("seed", SEED);
         b.addProperty("cache_prompt", false);
-        JsonArray lora = new JsonArray();
-        for (Map.Entry<Integer, Double> e : new TreeMap<>(scales).entrySet()) {
-            JsonObject a = new JsonObject();
-            a.addProperty("id", e.getKey());
-            a.addProperty("scale", e.getValue());
-            lora.add(a);
-        }
-        b.add("lora", lora);
         if (breakerOpen()) throw new IllegalStateException("lane breaker open: " + fails + " failures in a row, waiting");
         long t0 = System.nanoTime();
         try {
-            if (life != null) life.before(this);
+            if (life != null) life.before(this);   // the wake: bring the lane up BEFORE the scales are read
+            JsonArray lora = new JsonArray();
+            for (Map.Entry<Integer, Double> e : new TreeMap<>(scales.get()).entrySet()) {
+                JsonObject a = new JsonObject();
+                a.addProperty("id", e.getKey());
+                a.addProperty("scale", e.getValue());
+                lora.add(a);
+            }
+            b.add("lora", lora);
             JsonObject resp = JsonParser.parseString(call("/v1/chat/completions", b.toString())).getAsJsonObject();
             String text = resp.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message").get("content").getAsString();
             succeeded();
