@@ -29,7 +29,9 @@ JAR="$(ls target/mindpalace-*.jar | grep -vE 'original-|-shaded' | head -1)"
 "$JAVA_HOME/bin/java" -jar "$JAR" --selftest
 ```
 
-54 checks (run-report; the source organizes them under 49 numbered sections):
+Selftest checks live in `GameEngine.runSelfTest()`; the count moves as
+checks are added (~100 at time of writing — trust the printed
+`RESULT: N passed, 0 failed` line, not any number quoted here):
 world build, book raycast, teleporter pads, agents, crystals, KG,
 font, editor-open, teleporter destinations, ESC menu, bloom, map toggle,
 immediate chat — and more covering mouse turn radius, room personality,

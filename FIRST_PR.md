@@ -82,7 +82,8 @@ the step-log notes it.
 
 - `--demo` console: `Demo fixtures loaded: 13 rooms`
 - No GitHub token, no network calls in the boot log
-- Selftest still `74 passed, 0 failed` (demo mode must never break it)
+- Selftest still green: `RESULT: N passed, 0 failed` (count grows, ~100
+  in late 2026; demo mode must never break it)
 
 ## If something goes wrong
 

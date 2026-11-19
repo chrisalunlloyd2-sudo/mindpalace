@@ -7,7 +7,8 @@
 ## Day 1-2 — make the CI claim true
 
 - [ ] **#25 CI smoke workflow**: GitHub Action — JDK 17 → `mvn -DskipTests package`
-      → `--demo --selftest` → assert `74 passed, 0 failed` + `Demo fixtures loaded: 12 rooms`
+      → `--demo --selftest` → assert `RESULT: N passed, 0 failed` (zero
+      failures; count grows, ~100 in late 2026) + `Demo fixtures loaded: 12 rooms`
       *Proof: a PR touching data/demo_repos.json gets auto-verified.*
 - [ ] **#23** Quick Start `--demo` line — **DONE** (cba13f9, issue closed)
 - [ ] **README hero + GIF + How to help** — **DONE** (2749b8f/363c689)

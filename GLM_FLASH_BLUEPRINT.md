@@ -40,18 +40,29 @@ prompts (Phase A fixes) and tiny token budgets.
    lesson). 50 hypotheses ÷ ~1/hour with verification = the program
    completes in days, not weeks, at minimal quota.
 
-## Wiring plan (code)
-- ModelConfig gains `FLASH_MODEL = "qwen2.5:0.5b"` + `FLASH_BUDGET = 200`.
-- ModelRouter gains a FLASH complexity lane (trivial tasks never route
-  above flash).
-- OllamaClient.chat gains optional `max_tokens` + `temperature` params
-  (currently sends defaults) — flash calls send (200, 0.3), tool calls
-  (600, 0.7), burst calls (800, 0.5).
-- Cloud-burst: a `CloudBurstClient` (separate class, OFF by default via
-  `mindpalace.burst.enabled=false` in a game config file) — the only
-  class allowed to talk to ollama-cloud, so quota spend is auditable in
-  one file. NEVER hardcode cloud keys in the repo — read from Windows
-  the `MIND_PALACE_AGENT_TOKEN` env var, the way GitHubClient does (Credential-Manager path removed, #333).
+## Wiring plan (code) — status synced 2026-11-18 (issue #407)
+
+Shipped:
+- `ModelConfig.FLASH_MODEL = "qwen2.5:0.5b"` + `FLASH_BUDGET = 500`
+  (0f6545f, #134 — budget landed at 500, not the 200 first sketched).
+- `ModelRouter.selectFlash`: FLASH complexity lane, one-way clamp
+  (VERY_LOW/LOW route to flash, never escalate above it) — same commit.
+- Flash cap reaches the wire as a **lane flag**, not a model-tag test:
+  `OllamaClient.optionsFor(tag, flashLane)` sends
+  `num_predict = FLASH_BUDGET` only when the routed call is flash
+  (4bc471a #384 after the tag-test false positive, then 7fc0b2f
+  #400/#401 rides the lane cap through the routed tool call).
+- Temperature: global tuning via `-Dmindpalace.ollama.temperature` /
+  `MP_OLLAMA_TEMPERATURE` (no request path passes raw per-call
+  temperature — see OllamaClient.java optionsFor).
+
+Still open (intentionally unbuilt):
+- `CloudBurstClient` — remains unshipped by design (OFF by default,
+  the only quota-spending class, single auditable file). No cloud keys
+  in the repo; read from env (`MIND_PALACE_AGENT_TOKEN` env var, the
+  way GitHubClient does — Credential-Manager path removed, #333).
+- Per-call (max_tokens, temperature) tuples on `chat()` — superseded
+  by the lane-cap + global-property design above.
 
 ## Success metrics (scout_bot tracks, H12)
 - flash calls/min: expect 10–20 during active cycles.
