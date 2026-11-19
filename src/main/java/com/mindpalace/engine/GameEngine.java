@@ -1008,10 +1008,16 @@ public class GameEngine {
         // #304: intro splash — title + press-any-key before the world. Off in
         // demo/selftest so automated boots (and the E2E waypoint tour) never
         // block on it; boot goes straight to PLAYING there.
-        if (com.mindpalace.ui.SplashScreen.shouldShow(demoMode, selfTest)) {
+        // t_3d7b6095: the E2E TOUR also never presses a key — with the splash
+        // up, render() early-returns before the pendingShot flush and the tour
+        // wedges at waypoint 1 (two runs died exactly there). A tour boot
+        // therefore skips the splash like demo/selftest do.
+        boolean splashShown = com.mindpalace.ui.SplashScreen.shouldShow(demoMode, selfTest) && !e2eMode;
+        if (splashShown) {
             splash.show();
             state = GameState.SPLASH;
         } else {
+            splash.hideForAutomation();   // belt+braces: an automation boot never renders it
             state = GameState.PLAYING;
         }
         loading = false;
