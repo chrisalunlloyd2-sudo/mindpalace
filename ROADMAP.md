@@ -168,6 +168,24 @@ phase (v1.1.0-beta1 is live).
 - [ ] View-only access to granted private repos (no edit access either way)
 - [ ] Collaborative editing, voice chat, friends
 
+### Tailscale mesh epics (plan `2026-09-30_tailscale_mesh_and_depth_pass.md`, uses 1–20 in docs/TAILSCALE.md)
+
+Foundation shipped (`com.mindpalace.tailscale`, docs/TAILSCALE_FOUNDATION.md):
+tailnet bind, WhoIs identity, tag-based role gates, fail-closed — reuse it,
+never re-derive the invariants. Bind, never Funnel; no cloud inference.
+
+- [ ] **T2 — Quorum vote transport over the tailnet**: FOW votes carried on
+      authenticated mesh identity (votes attributable to real machines),
+      tailnet lock/device-approval as quorum anti-cheat (uses 3, 18)
+- [ ] **T3 — Remote admin API + read-only spectator pages**:
+      architect-tagged world control (spawn/weather/rooms) from phone/laptop,
+      LIVE-HUD page served read-only over the tailnet (uses 5, 9, 13)
+- [ ] **T4 — Mesh utility scripts (Architect-provided 2026-10-01)**:
+      `git-credential-tailscale` (zero-cleartext git creds),
+      `tailscale_todo_sync.py` (Taildrop triplet sync),
+      `ragnet_mesh.py` (P2P RAGNet vector gossip, core-0, memory-budgeted),
+      `aria-tailscale-mesh.service` (uses 8, 12, 15)
+
 ---
 
 ## Phase 9 — Code Mining Engine (the core loop)
