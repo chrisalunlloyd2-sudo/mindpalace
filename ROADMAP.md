@@ -100,9 +100,9 @@ phase (v1.1.0-beta1 is live).
 
 ### 2.2 Book Interaction
 - [x] Hover → neon glow highlight + tooltip (filename | language | size) (248e698 amber glow highlight, bb2a90c tooltip)
-- [ ] Hover → content preview (first lines, "a page of programming")
-- [ ] Click → sound + open editor (with the new live-add design)
-- [ ] Editor redesigned via live-add protocol, tested in a separate headless unit
+- [x] Hover → content preview (first line, lazily loaded+cached) (d38f8de, ancestor of HEAD — crosshair tooltip + HUD paths, previewLine)
+- [x] Click → sound + open editor (audio.playBookOpen + bookEditor.open, in-place editor; live-add sketch superseded)
+- [x] Tested headless (selftest #8 "editor opens on book click"; 99/0 @ f66dbf7)
 
 ### 2.3 GitHub Posters
 - [ ] Pull JPGs from GitHub repos → render on wall posters
