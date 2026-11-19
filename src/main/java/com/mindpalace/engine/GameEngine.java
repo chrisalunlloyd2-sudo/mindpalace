@@ -231,6 +231,8 @@ public class GameEngine {
     private float orbitTimer;           // dwell clock inside one bearing
     private int e2eWaypoint = 0;
     private double e2ePhaseTimer = 0;
+    /** Poster waypoint's deferred leave-room (flushed shot → then teleport out). */
+    private boolean e2eLeaveRoom = false;
     // #112: Screenshot.capture reads GL_BACK, but captureLabeled used to run
     // during update() — before the scene was drawn — so the read hit the
     // PREVIOUS frame (or driver-defined leftovers after a swap). The actual
@@ -8727,6 +8729,12 @@ public class GameEngine {
         // PNG would no longer match its label (see the per-case "mutate only in the shoot tick" notes below, which work around
         // this one case at a time). Wait for the flush before touching any waypoint state.
         if (pendingShotLabel != null) return;
+        // Deferred leave-room (poster waypoint): the shot flushed by now — see
+        // case 17 — so moving the house back to the hallway can't leak into it.
+        if (e2eLeaveRoom) {
+            e2eLeaveRoom = false;
+            player.teleportToFloor(0, world);
+        }
         Camera cam = player.getCamera();
         Vector3f p = cam.getPosition();
         float hallY = world.getHallways().isEmpty() ? 0f : world.getHallways().get(0).getStart().y;
@@ -9065,7 +9073,18 @@ public class GameEngine {
                     p.set(0f, hallY + 1.7f, hallZ0 + 12f);
                     cam.setYaw(-75); cam.setPitch(15f);
                 }
-                if (shoot) { captureLabeled("18_poster_wall"); player.teleportToFloor(0, world); /* leave the room again */ e2eWaypoint++; e2ePhaseTimer = 0; }
+                if (shoot) {
+                    // #152-class seam: captureLabeled only QUEUES the shot — it flushes at THIS
+                    // tick's render() tail. The old same-tick teleportToFloor(0) ran first, so
+                    // 18_poster_wall photographed the hallway (run-3 shot: all doors visible,
+                    // room never in frame). Defer the leave by one tick via e2eLeaveRoom:
+                    // the pending-shot guard above returns before any state now, the shot
+                    // flushes with the camera still inside the room, then this flag lands.
+                    captureLabeled("18_poster_wall");
+                    e2eLeaveRoom = true;
+                    e2eWaypoint++;
+                    e2ePhaseTimer = 0;
+                }
             }
             case 18 -> { // MP-011 (#157): gist wall — the PHYSICAL panel on the hallway START cap is now primary;
                          // pitch 14/ yaw 180 aims at the plate centre (y s.y+2.65, 4 m away). The flag-gated
