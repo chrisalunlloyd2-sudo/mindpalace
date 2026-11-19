@@ -5,10 +5,13 @@ import com.mindpalace.render.FontRenderer;
 import com.mindpalace.render.BloomEffect;
 import com.mindpalace.render.Camera;
 import com.mindpalace.render.Screenshot;
+import com.mindpalace.render.Texture;
 import com.mindpalace.world.WorldBuilder;
 import com.mindpalace.world.Book;
 import com.mindpalace.world.Room;
 import com.mindpalace.world.Hallway;
+import com.mindpalace.world.PosterFetcher;
+import com.mindpalace.world.RoomPopulator;
 import com.mindpalace.entity.Player;
 import com.mindpalace.entity.AgentNPC;
 import com.mindpalace.entity.ScoutNPC;
@@ -101,6 +104,11 @@ public class GameEngine {
     private com.mindpalace.ui.InteractionPromptSystem promptSystem;   // unified nearby-interactable prompt (TASK 0002)
     private BookEditor bookEditor;
     private GitHubClient github;
+    // P1 t_3d7b6095: remote poster fill (room queue + one-shot worker state).
+    private java.util.concurrent.ConcurrentLinkedQueue<Room> posterFetchQueue;
+    private final java.util.concurrent.atomic.AtomicBoolean posterWorkerRunning =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+    private volatile PosterFetcher posterFetcher;
     private AudioEngine audio;
     private MusicEngine music;
     private StepSequencer sequencer;   // 16-step drum/bass machine (StudioLab)
@@ -636,6 +644,23 @@ public class GameEngine {
         bookEditor = new BookEditor(github);
         gistWall = new GistWall();
         gistWall.setToken(github.getToken());
+
+        // P1 t_3d7b6095: repo images reach the walls. RoomPopulator assigned
+        // local images during the walk; this queue fills the remaining rooms
+        // from the tokenless GitHub social-preview CDN, one daemon thread,
+        // one small GET per uncovered repo, disk-cached under
+        // ~/.mindpalace/cache/posters so a re-boot re-reads instead of
+        // re-downloading. Same background pattern as the H37 commit-ledger
+        // fill: the poster appears when its image arrives; every failure
+        // keeps the language-diagram fallback (--demo/--selftest stay
+        // hermetic: zero network, the check runs on synthetic cache files).
+        posterFetchQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        for (Room room : world.getRooms()) {
+            if (room.getPosterImagePath() == null) posterFetchQueue.add(room);
+        }
+        System.out.println("[Posters] rooms wanting an image: " + posterFetchQueue.size()
+            + " (fetched from the social-preview CDN → ~/.mindpalace/cache/posters, once per machine)");
+        startPosterFillWorker();
 
         // Unified telemetry — append-only, paced, queryable swarm ledger.
         telemetry = new com.mindpalace.backup.Telemetry(
@@ -3350,6 +3375,54 @@ public class GameEngine {
         }
     }
 
+    // ── P1 t_3d7b6095: remote poster fill worker ──
+    // One daemon thread drains rooms that still have no poster image. Each
+    // gets ONE bounded GET against the tokenless social-preview CDN, cached
+    // on disk so future boots read local files (zero network). Rooms whose
+    // repos have no owner resolved stay diagram-fallback. Hermetic modes
+    // (--demo / --selftest) never build the worker: no network in tests.
+    void startPosterFillWorker() {
+        if (posterFetchQueue == null || posterFetchQueue.isEmpty()) return;
+        if (demoMode || selfTest) return;                     // hermetic gate
+        String owner = github != null ? githubOwner() : null;
+        if (owner == null || owner.isBlank()) {
+            System.out.println("[Posters] no repo owner — rooms keep the diagram fallback");
+            posterFetchQueue.clear();
+            return;
+        }
+        posterFetcher = new PosterFetcher(owner, PosterFetcher.defaultCacheDir());
+        if (!posterWorkerRunning.compareAndSet(false, true)) return;
+        Thread t = new Thread(() -> {
+            try {
+                Room r;
+                int filled = 0;
+                while ((r = posterFetchQueue.poll()) != null) {
+                    try {
+                        String img = posterFetcher.posterFor(r.getRepoName());
+                        if (img != null) { r.setPosterImagePath(img); filled++; }
+                    } catch (Exception e) {
+                        System.err.println("[Posters] fetch failed for " + r.getRepoName() + ": " + e.getMessage());
+                    }
+                }
+                System.out.println("[Posters] remote fill done: " + filled + " rooms got a poster image (cache "
+                    + PosterFetcher.defaultCacheDir() + ")");
+            } finally {
+                posterWorkerRunning.set(false);
+            }
+        }, "poster-fill");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** The GitHub owner for CDN URLs: the authenticated login if known, else the client default. */
+    private String githubOwner() {
+        try {
+            return github.defaultOwner();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** Repo poster board text — name, language, stars — above the door. */
     private void renderRoomPoster() {
         Camera cam = player.getCamera();
@@ -5370,6 +5443,92 @@ public class GameEngine {
         System.out.println((posterOk ? "PASS" : "FAIL") + " poster boards ("
             + roomsWithDiagram + " diagram rooms, " + roomsWithImages + " with repo images)");
         if (posterOk) pass++; else fail++;
+
+        // 18b. P1 t_3d7b6095: real images actually reach the walls.
+        //      (a) At least one populated room carries a poster image path AND
+        //          that file exists on disk and decodes through the real
+        //          off-thread decode path (Texture.decode, no GL context) at
+        //          poster-capped size — the exact contract getPosterTexture
+        //          relies on before upload. In demo mode the fixtures carry a
+        //          committed poster.png (data/demo_repos/hello-web/), which
+        //          exercises the identical path with zero network.
+        boolean posterImagesReachWalls = roomsWithImages > 0;
+        String posterImageNote = "";
+        if (posterImagesReachWalls) {
+            for (Room rm : world.getRooms()) {
+                String p = rm.getPosterImagePath();
+                if (p == null) continue;
+                try {
+                    if (!java.nio.file.Files.isRegularFile(java.nio.file.Path.of(p))) {
+                        posterImagesReachWalls = false; posterImageNote = " (missing file: " + p + ")"; break;
+                    }
+                    Texture.Pixels px = Texture.decode(p, 1024);
+                    try {
+                        if (px.width() <= 0 || px.height() <= 0) {
+                            posterImagesReachWalls = false; posterImageNote = " (undecodable: " + p + ")";
+                        }
+                    } finally { px.free(); }
+                } catch (Throwable t) {
+                    posterImagesReachWalls = false;
+                    posterImageNote = " (" + t.getClass().getSimpleName() + ": " + p + ")";
+                }
+                break;
+            }
+        } else {
+            posterImageNote = " (no room carries a poster image)";
+        }
+        System.out.println((posterImagesReachWalls ? "PASS" : "FAIL")
+            + " poster images reach the walls (decode round-trip on the assigned path)" + posterImageNote);
+        if (posterImagesReachWalls) pass++; else fail++;
+
+        // 18c. P1 t_3d7b6095: fetcher + cache contract — scoring picks the best
+        //      image, and the disk-cache store/accept/reject round-trip works
+        //      offline (a PNG is accepted, a text body is rejected as MISSING,
+        //      a cache hit re-reads from disk without re-downloading).
+        boolean posterFetchOk = true;
+        String fetchNote = "";
+        try {
+            // (a) Scoring: hero/docs beats a bare root image; fixtures/icons demote.
+            int hero = RoomPopulator.scorePosterPath("C:" + java.io.File.separator + "demo"
+                + java.io.File.separator + "docs" + java.io.File.separator + "hero.png");
+            int bare = RoomPopulator.scorePosterPath("C:" + java.io.File.separator + "demo"
+                + java.io.File.separator + "random.png");
+            int fixture = RoomPopulator.scorePosterPath("C:" + java.io.File.separator + "demo"
+                + java.io.File.separator + "test_fixture.png");
+            if (!(hero > bare && bare > fixture)) { posterFetchOk = false; fetchNote = " (scoring order wrong)"; }
+            // (b) PNG cache round-trip into a temp dir: write a real PNG file
+            //     into the cache the way PosterFetcher.fetch would, then
+            //     posterFor must read it back from disk WITHOUT any network
+            //     (the selftest is hermetic — no HTTP here).
+            java.nio.file.Path cacheDir = java.nio.file.Files.createTempDirectory("mp-poster-cache");
+            PosterFetcher pf = new PosterFetcher("architect", cacheDir);
+            byte[] png = { (byte)0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                           0, 0, 0, 13, 'I', 'H', 'D', 'R', 1, 0, 0, 0, 1, 0, 0, 0, 8, 0,0,0,0 };
+            java.nio.file.Path dest = cacheDir.resolve("demo.png");
+            java.nio.file.Files.write(dest, png);
+            if (!PosterFetcher.cacheFileLooksLikeImage(dest)) {
+                posterFetchOk = false; fetchNote = " (png cache write failed)"; }
+            if (!PosterFetcher.safeFileName("Demo Repo!").equals("demo_repo_")) {
+                posterFetchOk = false; fetchNote = " (safeFileName)"; }
+            // Safe-name round trip: posterFor must read the cached file back from disk.
+            String cachedPath = pf.posterFor("demo");
+            if (cachedPath == null || !cachedPath.contains(cacheDir.toAbsolutePath().toString())) {
+                posterFetchOk = false; fetchNote = " (cache read-back failed)"; }
+            // (c) A non-PNG body is rejected (Camo error page), and a text
+            //     cache file is not accepted as an image.
+            if (PosterFetcher.looksLikePng("<html>not an image</html>".getBytes()))
+                { posterFetchOk = false; fetchNote = " (text body passed as PNG)"; }
+            java.nio.file.Path bad = cacheDir.resolve("bad.png");
+            java.nio.file.Files.write(bad, "definitely not a png".getBytes());
+            if (PosterFetcher.cacheFileLooksLikeImage(bad)) {
+                posterFetchOk = false; fetchNote = " (text cache file accepted)"; }
+        } catch (Throwable t) {
+            posterFetchOk = false;
+            fetchNote = " (" + t.getClass().getSimpleName() + ")";
+        }
+        System.out.println((posterFetchOk ? "PASS" : "FAIL")
+            + " poster fetcher (scoring + disk cache round-trip + non-PNG rejection, offline)" + fetchNote);
+        if (posterFetchOk) pass++; else fail++;
 
         // 19. SIMS1337 parity — ModelRouter + LoRASwitcher + WeightedQuorumVote + FOWGate
         boolean simsOk = agentManager != null;
@@ -8864,14 +9023,25 @@ public class GameEngine {
             }
             case 17 -> { // MP-004: poster wall — the poster board faces INTO the room (and its text renders only for the
                          // room you are standing in), so look at it from inside the first room, aimed at the board.
+                         // P1 t_3d7b6095: prefer the first room that HAS a real poster image, so the
+                         // screenshot proves images reach the walls (the diagram fallback unchanged).
                 Room pr = null;
                 for (Room rm : world.getRooms()) {
-                    if (rm.getRoomCenter() != null) { pr = rm; break; }
+                    if (rm.getPosterImagePath() != null && rm.getRoomCenter() != null) { pr = rm; break; }
+                }
+                if (pr == null) {
+                    for (Room rm : world.getRooms()) {
+                        if (rm.getRoomCenter() != null) { pr = rm; break; }
+                    }
                 }
                 if (pr != null) {
                     // The poster TEXT is drawn only for player.getCurrentRoom(), which is set by entering the room (Enter at the
                     // door / teleportIntoRoom), never by camera position; the tour moves the camera directly, so enter properly.
                     if (player.getCurrentRoom() != pr) player.teleportIntoRoom(pr);
+                    // P1 t_3d7b6095: the tour log proves the poster pick — the reviewer
+                    // greps this line against the shot (image poster vs diagram).
+                    System.out.println("[E2E-NOTE] poster waypoint room=" + pr.getRepoName()
+                        + " image=" + (pr.getPosterImagePath() != null ? "yes" : "no (diagram)"));
                     Vector3f rc = pr.getRoomCenter();
                     int side = pr.getHallwaySide();
                     float fz = side == 0 ? rc.z - Room.ROOM_DEPTH / 2f : rc.z + Room.ROOM_DEPTH / 2f;

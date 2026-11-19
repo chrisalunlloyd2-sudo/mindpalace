@@ -56,6 +56,13 @@ public class GitHubClient {
     public boolean isAuthenticated() { return authenticated; }
     public String getToken() { return token; }
 
+    /**
+     * P1 t_3d7b6095: the owner used for repo-scoped CDN URLs (social-preview
+     * posters). This client's repo scoping is single-owner ("username");
+     * exposing it keeps PosterFetcher consistent with every API path here.
+     */
+    public String defaultOwner() { return username; }
+
     // ── TTL cache for the full repo list (same pattern as contentsCache/
     // fileCache below). The Evolve background loop calls fetchAllRepos()
     // every 2-3 generations with no gate, re-pulling all pages every time —

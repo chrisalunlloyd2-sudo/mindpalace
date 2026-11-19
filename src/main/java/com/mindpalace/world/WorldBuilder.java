@@ -227,7 +227,10 @@ public class WorldBuilder {
         }
 
         // Populate first so we can sort by book count
-        for (Room room : rooms) populator.populateRoom(room);
+        for (Room room : rooms) {
+            populator.populateRoom(room);
+            populator.finishPopulate(room);   // P1 t_3d7b6095: apply the best-scored local image
+        }
 
         // Deduplicate rooms by canonical repo name (local folders with the same
         // git remote collapse to one room — keeps doors showing one true name)
