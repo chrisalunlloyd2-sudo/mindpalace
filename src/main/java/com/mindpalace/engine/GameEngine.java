@@ -9027,11 +9027,15 @@ public class GameEngine {
                          // screenshot proves images reach the walls (the diagram fallback unchanged).
                 Room pr = null;
                 for (Room rm : world.getRooms()) {
+                    // No fogged rooms: a fogged room renders as a black slab and
+                    // the brightness gate would flag the shot (posters live inside
+                    // rooms; the diagram fallback stays for any unpicked room).
+                    if (rm.isFogged()) continue;
                     if (rm.getPosterImagePath() != null && rm.getRoomCenter() != null) { pr = rm; break; }
                 }
                 if (pr == null) {
                     for (Room rm : world.getRooms()) {
-                        if (rm.getRoomCenter() != null) { pr = rm; break; }
+                        if (!rm.isFogged() && rm.getRoomCenter() != null) { pr = rm; break; }
                     }
                 }
                 if (pr != null) {
