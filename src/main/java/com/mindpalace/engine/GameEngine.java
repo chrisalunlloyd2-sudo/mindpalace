@@ -9059,7 +9059,8 @@ public class GameEngine {
                     // P1 t_3d7b6095: the tour log proves the poster pick — the reviewer
                     // greps this line against the shot (image poster vs diagram).
                     System.out.println("[E2E-NOTE] poster waypoint room=" + pr.getRepoName()
-                        + " image=" + (pr.getPosterImagePath() != null ? "yes" : "no (diagram)"));
+                        + " image=" + (pr.getPosterImagePath() != null ? "yes" : "no (diagram)")
+                        + " path=" + pr.getPosterImagePath());
                     Vector3f rc = pr.getRoomCenter();
                     int side = pr.getHallwaySide();
                     float fz = side == 0 ? rc.z - Room.ROOM_DEPTH / 2f : rc.z + Room.ROOM_DEPTH / 2f;
