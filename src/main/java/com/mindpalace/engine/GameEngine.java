@@ -558,6 +558,28 @@ public class GameEngine {
         } else {
             dataRoot = java.nio.file.Path.of(System.getProperty("user.home"), "AIGEN_SYS").toString();
         }
+        // P1-B hermetic chat routing: --demo/--selftest route ALL chat JSONL
+        // persistence (and, via AgentChat.chatLogRoot, the lexical bridge's
+        // reads) into a per-run temp dir. The static CWD-relative path made
+        // every selftest run append its fixtures (check 36c thread-N fill,
+        // check 47 schema probe) straight into the PRODUCTION
+        // chat_logs/chat-<today>.jsonl — ~90 junk lines/day, and the lexical
+        // bridge then proposed/approved topics from them. Live runs are
+        // untouched (chatLogRoot defaults to CWD chat_logs).
+        if (demoMode || selfTest) {
+            try {
+                java.nio.file.Path chatRoot = java.nio.file.Files.createTempDirectory(
+                    "mindpalace-chat-selftest");
+                com.mindpalace.agent.AgentChat.setChatLogDir(chatRoot);
+                System.out.println("[Hermetic] chat log dir: " + chatRoot);
+            } catch (java.io.IOException e) {
+                // Fail-soft: if even the temp dir cannot be created, write
+                // nothing rather than pollute the production log.
+                com.mindpalace.agent.AgentChat.setPersistenceEnabled(false);
+                System.err.println("[Hermetic] temp chat dir failed ("
+                    + e.getMessage() + ") — chat persistence disabled for this run");
+            }
+        }
 
         input = new Input(window);
         renderer = new Renderer(width, height);
@@ -4978,7 +5000,21 @@ public class GameEngine {
 
     private void runSelfTest() {
         int pass = 0, fail = 0;
-        System.out.println("\n===== MIND PALACE SELF-TEST =====");
+        // P1-B: capture the production chat-log baseline BEFORE any check runs,
+        // used by the chat-log hermeticity check at the end of the suite.
+        final int selftestChatProdLinesBefore;
+        {
+            String dayBase = java.time.LocalDate.now().toString();
+            java.nio.file.Path prodLogBase = java.nio.file.Paths.get("chat_logs",
+                "chat-" + dayBase + ".jsonl");
+            int base = 0;
+            try {
+                base = java.nio.file.Files.isRegularFile(prodLogBase)
+                    ? java.nio.file.Files.readAllLines(prodLogBase).size() : 0;
+            } catch (Exception ignored) { /* probe only */ }
+            selftestChatProdLinesBefore = base;
+        }
+
 
         boolean contextOk = testContextBroadcaster();
         System.out.println((contextOk ? "PASS" : "FAIL")
@@ -6818,8 +6854,12 @@ public class GameEngine {
         try {
             if (agentChat != null) {
                 String day = java.time.LocalDate.now().toString();
-                java.nio.file.Path log80 = java.nio.file.Paths.get("chat_logs",
-                    "chat-" + day + ".jsonl");
+                // P1-B: the schema probe round-trips through the EFFECTIVE
+                // chat-log root (hermetic temp dir under --demo/--selftest,
+                // CWD chat_logs live) — the same root AgentChat.persist
+                // actually wrote to.
+                java.nio.file.Path log80 = com.mindpalace.agent.AgentChat.chatLogRoot()
+                    .resolve("chat-" + day + ".jsonl");
                 int linesBefore = java.nio.file.Files.isRegularFile(log80)
                     ? java.nio.file.Files.readAllLines(log80).size() : 0;
                 agentChat.addBotEvent("Scout", "VISIT", "schema round-trip probe");
@@ -6849,6 +6889,40 @@ public class GameEngine {
             System.out.println("FAIL unified schema: " + e.getClass().getSimpleName() + " " + e.getMessage());
         }
         if (schemaOk) pass++; else fail++;
+
+        // 47b. P1-B gibberish topic gate — the live console log on 2026-11-17
+        //      APPROVED keyboard mash ("q67 u36my7 rtmjuyujnb",
+        //      "hy ee ug usyuvnyhmjtc sh"); those must now be rejected, while
+        //      real language/code topics pass.
+        boolean gibberishGateOk = false;
+        try {
+            boolean mash1Rejected = !LexicalAnalyzer.looksLikeLanguage("q67 u36my7 rtmjuyujnb");
+            boolean mash2Rejected = !LexicalAnalyzer.looksLikeLanguage("hy ee ug usyuvnyhmjtc sh");
+            boolean mash3Rejected = !LexicalAnalyzer.looksLikeLanguage(
+                "78er04vtbts2wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww");
+            boolean mash4Rejected = !LexicalAnalyzer.looksLikeLanguage(
+                "xcd45vr lp 36yjmyjn7uzw yzjmuv flp0");
+            boolean codePasses = LexicalAnalyzer.looksLikeLanguage("code gcd python int function");
+            boolean roomsPasses = LexicalAnalyzer.looksLikeLanguage("room agent user rooms users");
+            boolean nullRejected = !LexicalAnalyzer.looksLikeLanguage(null);
+            String liveTopic = LexicalAnalyzer.dominantTopic(
+                List.of("fix the null pointer bug in the parser", "parser null bug again"), 5);
+            boolean dominantPasses = LexicalAnalyzer.looksLikeLanguage(liveTopic);
+            gibberishGateOk = mash1Rejected && mash2Rejected && mash3Rejected && mash4Rejected
+                && codePasses && roomsPasses && nullRejected && dominantPasses;
+            if (!gibberishGateOk) {
+                System.out.println("  gibberish-gate details: mash1=" + mash1Rejected
+                    + " mash2=" + mash2Rejected + " mash3=" + mash3Rejected + " mash4=" + mash4Rejected
+                    + " code=" + codePasses + " rooms=" + roomsPasses + " null=" + nullRejected
+                    + " dominant(" + liveTopic + ")=" + dominantPasses);
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL gibberish gate: " + e.getClass().getSimpleName() + " " + e.getMessage());
+            gibberishGateOk = false;
+        }
+        System.out.println((gibberishGateOk ? "PASS" : "FAIL")
+            + " gibberish topic gate (mash rejected, real language/code passes, P1-B)");
+        if (gibberishGateOk) pass++; else fail++;
 
         // 48. H30 scout economy (step 84) — awardUniqueVisit dedupe: first
         //     visit pays (true), repeat visit doesn't (false), and the DePIN
@@ -8292,6 +8366,34 @@ public class GameEngine {
         System.out.println((adapterOk ? "PASS" : "FAIL")
             + " (#354) adapter hook: wire-model override resolves + remote rejected; switch logged as simulation-only");
         if (adapterOk) pass++; else fail++;
+
+        // P1-B chat-log hermeticity — the LAST check of the suite. Every other
+        // check has now run (incl. the 36c thread-N fill + 47 schema probe,
+        // the only two chat-log writers), so: the real production
+        // chat_logs/chat-<today>.jsonl must have gained ZERO lines from this
+        // selftest run; the hermetic temp dir got them instead.
+        boolean chatHermeticOk;
+        try {
+            String day7 = java.time.LocalDate.now().toString();
+            java.nio.file.Path prodLog7 = java.nio.file.Paths.get("chat_logs",
+                "chat-" + day7 + ".jsonl");
+            int prodLines7 = java.nio.file.Files.isRegularFile(prodLog7)
+                ? java.nio.file.Files.readAllLines(prodLog7).size() : 0;
+            int delta7 = prodLines7 - selftestChatProdLinesBefore;
+            java.nio.file.Path hermeticLog7 = com.mindpalace.agent.AgentChat.chatLogRoot()
+                .resolve("chat-" + day7 + ".jsonl");
+            int hermeticLines7 = java.nio.file.Files.isRegularFile(hermeticLog7)
+                ? java.nio.file.Files.readAllLines(hermeticLog7).size() : 0;
+            chatHermeticOk = delta7 <= 0; // the live log must NOT grow during selftest
+            System.out.println((chatHermeticOk ? "PASS" : "FAIL")
+                + " chat log hermeticity (prod " + selftestChatProdLinesBefore + "->" + prodLines7
+                + " lines, hermetic dir has " + hermeticLines7 + " fixture lines, P1-B)");
+        } catch (Exception e) {
+            System.out.println("FAIL chat log hermeticity: "
+                + e.getClass().getSimpleName() + " " + e.getMessage());
+            chatHermeticOk = false;
+        }
+        if (chatHermeticOk) pass++; else fail++;
 
         System.out.println("===== RESULT: " + pass + " passed, " + fail + " failed ====");
         if (fail > 0) System.exit(1);
