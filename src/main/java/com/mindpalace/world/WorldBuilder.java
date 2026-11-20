@@ -227,7 +227,10 @@ public class WorldBuilder {
         }
 
         // Populate first so we can sort by book count
-        for (Room room : rooms) populator.populateRoom(room);
+        for (Room room : rooms) {
+            populator.populateRoom(room);
+            populator.finishPopulate(room);   // P1 t_3d7b6095: apply the best-scored local image
+        }
 
         // Deduplicate rooms by canonical repo name (local folders with the same
         // git remote collapse to one room — keeps doors showing one true name)
@@ -1207,7 +1210,14 @@ public class WorldBuilder {
         // If the repo ships a real image (screenshot/diagram/logo), render that
         // instead on the poster — the diagram is the fallback.
         Texture posterTex = getPosterTexture(room);
-        float posterFacingYaw = side == 0 ? (float) Math.PI : 0f;
+        // t_3d7b6095 run-4: the yaw was inverted — face culling (GL_BACK, Renderer
+        // ctor) then dropped the quad EVERY frame, so repo images never reached the
+        // walls (plate/text/diagram are cubes, all faces — only the image vanished).
+        // Geometry: a side-0 room's in-room camera (e2e 18_poster_wall, a player at
+        // the door) looks -Z at the fz = c.z - d/2 wall, so its visible face points
+        // +Z → yaw 0. Side 1 mirrors: looks +Z, visible face -Z → yaw PI. This is
+        // the same convention renderRoomPoster's text facing already uses.
+        float posterFacingYaw = side == 0 ? 0f : (float) Math.PI;
         if (posterTex != null) {
             r.drawImageQuad(posterTex, new Vector3f(c.x, posterY, side == 0 ? posterZ + 0.025f : posterZ - 0.025f),   // in FRONT of the plate
                 1.9f, 0.6f, posterFacingYaw);
@@ -1349,6 +1359,8 @@ public class WorldBuilder {
         if (posterLoadFailed.contains(path)) return null;
         java.util.concurrent.Future<Texture.Pixels> pending = posterDecodes.get(path);
         if (pending == null) {                        // first sight of this poster: start decoding, draw the diagram meanwhile
+            // t_3d7b6095: prove the decode SUBMISSION for the e2e log (selftest proves decode; ready-log proves upload).
+            System.out.println("[Poster] decode submitted: " + path);
             posterDecodes.put(path, posterDecoder.submit(() -> Texture.decode(path, 1024)));
             return null;
         }
@@ -1358,11 +1370,13 @@ public class WorldBuilder {
             tex = Texture.upload(pending.get());
             posterUploadsThisFrame++;
             posterTextures.put(path, tex);
+            System.out.println("[Poster] texture ready: " + path + " ("
+                + tex.getWidth() + "x" + tex.getHeight() + ")");
             return tex;
         } catch (Exception e) {
             posterLoadFailed.add(path);
             Throwable cause = e.getCause() != null ? e.getCause() : e;
-            System.err.println("[Poster] image load failed: " + path + " — " + cause.getMessage());
+            System.err.println("[Poster] image load failed: " + path + " — " + cause);
             return null;
         }
     }
