@@ -36,7 +36,33 @@ public class AgentChat {
     // day (chat_logs/chat-YYYY-MM-DD.jsonl). The per-day split is Architect's
     // spec: "save all chats in texts and new file for every day uploaded to
     // github". The legacy single chat.jsonl is kept for backward-compat reads.
-    private static final Path CHAT_LOG_DIR = Paths.get("chat_logs");
+    //
+    // P1-B hermetic routing: --demo/--selftest route ALL persistence into a
+    // per-run temp dir (#49 doctrine). The static CWD path made every selftest
+    // AgentChat (check 36c thread-N fixtures, check 47 schema probe) append
+    // ~90 junk lines/day into the PRODUCTION chat log — which the lexical
+    // bridge then read and approved as topics. chatLogDir == null means live
+    // default (CWD-relative chat_logs).
+    private static final Path DEFAULT_CHAT_LOG_DIR = Paths.get("chat_logs");
+    private static volatile Path chatLogDir = null;          // null = live default
+    private static volatile boolean persistenceEnabled = true;
+
+    /** Route all NEW chat persistence to a specific root (hermetic runs).
+     *  One file per day is still applied under that root. */
+    public static void setChatLogDir(Path dir) {
+        chatLogDir = (dir != null) ? dir : DEFAULT_CHAT_LOG_DIR;
+    }
+
+    /** Hard kill-switch for chat persistence (last-resort fail-soft for
+     *  hermetic runs: if even the temp dir cannot be created, write nothing
+     *  rather than pollute). */
+    public static void setPersistenceEnabled(boolean on) { persistenceEnabled = on; }
+
+    /** Effective chat-log root (live default is CWD-relative chat_logs). */
+    public static Path chatLogRoot() {
+        Path dir = chatLogDir;
+        return dir != null ? dir : DEFAULT_CHAT_LOG_DIR;
+    }
 
     public AgentChat() {}
 
@@ -92,8 +118,9 @@ public class AgentChat {
 
     /** Append the structured envelope line to today's JSONL (best-effort). */
     private void persistStructured(String bot, String kind, String text) {
+        if (!persistenceEnabled) return; // hermetic kill-switch
         try {
-            Files.createDirectories(CHAT_LOG_DIR);
+            Files.createDirectories(chatLogRoot());
             String ts = java.time.Instant.now().toString();
             StringBuilder esc = new StringBuilder(text.length() + 16);
             for (int i = 0; i < text.length(); i++) {
@@ -123,13 +150,14 @@ public class AgentChat {
     /** Per-day log file name, e.g. chat-2026-08-20.jsonl. */
     private static Path todayLog() {
         String day = java.time.LocalDate.now().toString();
-        return CHAT_LOG_DIR.resolve("chat-" + day + ".jsonl");
+        return chatLogRoot().resolve("chat-" + day + ".jsonl");
     }
 
     /** Append a message to the on-disk JSONL chat log (best-effort, never throws). */
     private void persist(String msg) {
+        if (!persistenceEnabled) return; // hermetic kill-switch
         try {
-            Files.createDirectories(CHAT_LOG_DIR);
+            Files.createDirectories(chatLogRoot());
             String ts = java.time.Instant.now().toString();
             // Full JSON string escaping — models emit literal newlines/tabs, so
             // escape every control char, not just backslash and quote.
