@@ -1,0 +1,2629 @@
+{
+  "generated": "2026-11-19T15:00:50",
+  "source": "C:\\Users\\viper\\AIGEN_SYS\\repos\\mindpalace\\chat_logs",
+  "days": {
+    "2026-08-20": {
+      "n": 5,
+      "unique_pct": 100.0,
+      "code_pct": 60.0,
+      "meta_pct": 0.0,
+      "median_len": 1979,
+      "by_bot": {
+        "(none)": 5
+      },
+      "by_kind": {
+        "(none)": 5
+      },
+      "msg": {
+        "n": 5,
+        "unique_pct": 100.0,
+        "code_pct": 60.0,
+        "meta_pct": 0.0,
+        "median_len": 1979,
+        "by_bot": {
+          "(none)": 5
+        },
+        "by_kind": {
+          "(none)": 5
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-21": {
+      "n": 91,
+      "unique_pct": 86.8,
+      "code_pct": 19.8,
+      "meta_pct": 0.0,
+      "median_len": 400,
+      "by_bot": {
+        "(none)": 91
+      },
+      "by_kind": {
+        "(none)": 91
+      },
+      "msg": {
+        "n": 91,
+        "unique_pct": 86.8,
+        "code_pct": 19.8,
+        "meta_pct": 0.0,
+        "median_len": 400,
+        "by_bot": {
+          "(none)": 91
+        },
+        "by_kind": {
+          "(none)": 91
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-22": {
+      "n": 8,
+      "unique_pct": 100.0,
+      "code_pct": 50.0,
+      "meta_pct": 0.0,
+      "median_len": 1691.0,
+      "by_bot": {
+        "(none)": 8
+      },
+      "by_kind": {
+        "(none)": 8
+      },
+      "msg": {
+        "n": 8,
+        "unique_pct": 100.0,
+        "code_pct": 50.0,
+        "meta_pct": 0.0,
+        "median_len": 1691.0,
+        "by_bot": {
+          "(none)": 8
+        },
+        "by_kind": {
+          "(none)": 8
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-23": {
+      "n": 38,
+      "unique_pct": 89.5,
+      "code_pct": 76.3,
+      "meta_pct": 0.0,
+      "median_len": 2475.5,
+      "by_bot": {
+        "(none)": 38
+      },
+      "by_kind": {
+        "(none)": 38
+      },
+      "msg": {
+        "n": 38,
+        "unique_pct": 89.5,
+        "code_pct": 76.3,
+        "meta_pct": 0.0,
+        "median_len": 2475.5,
+        "by_bot": {
+          "(none)": 38
+        },
+        "by_kind": {
+          "(none)": 38
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-24": {
+      "n": 84,
+      "unique_pct": 54.8,
+      "code_pct": 17.9,
+      "meta_pct": 0.0,
+      "median_len": 410.0,
+      "by_bot": {
+        "(none)": 84
+      },
+      "by_kind": {
+        "(none)": 84
+      },
+      "msg": {
+        "n": 84,
+        "unique_pct": 54.8,
+        "code_pct": 17.9,
+        "meta_pct": 0.0,
+        "median_len": 410.0,
+        "by_bot": {
+          "(none)": 84
+        },
+        "by_kind": {
+          "(none)": 84
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-25": {
+      "n": 84,
+      "unique_pct": 65.5,
+      "code_pct": 42.9,
+      "meta_pct": 0.0,
+      "median_len": 1342.0,
+      "by_bot": {
+        "(none)": 84
+      },
+      "by_kind": {
+        "(none)": 84
+      },
+      "msg": {
+        "n": 84,
+        "unique_pct": 65.5,
+        "code_pct": 42.9,
+        "meta_pct": 0.0,
+        "median_len": 1342.0,
+        "by_bot": {
+          "(none)": 84
+        },
+        "by_kind": {
+          "(none)": 84
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-26": {
+      "n": 82,
+      "unique_pct": 24.4,
+      "code_pct": 14.6,
+      "meta_pct": 0.0,
+      "median_len": 476.0,
+      "by_bot": {
+        "(none)": 82
+      },
+      "by_kind": {
+        "(none)": 82
+      },
+      "msg": {
+        "n": 82,
+        "unique_pct": 24.4,
+        "code_pct": 14.6,
+        "meta_pct": 0.0,
+        "median_len": 476.0,
+        "by_bot": {
+          "(none)": 82
+        },
+        "by_kind": {
+          "(none)": 82
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-27": {
+      "n": 83,
+      "unique_pct": 14.5,
+      "code_pct": 0.0,
+      "meta_pct": 0.0,
+      "median_len": 427,
+      "by_bot": {
+        "(none)": 83
+      },
+      "by_kind": {
+        "(none)": 83
+      },
+      "msg": {
+        "n": 83,
+        "unique_pct": 14.5,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 427,
+        "by_bot": {
+          "(none)": 83
+        },
+        "by_kind": {
+          "(none)": 83
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-28": {
+      "n": 83,
+      "unique_pct": 1.2,
+      "code_pct": 0.0,
+      "meta_pct": 0.0,
+      "median_len": 427,
+      "by_bot": {
+        "(none)": 83
+      },
+      "by_kind": {
+        "(none)": 83
+      },
+      "msg": {
+        "n": 83,
+        "unique_pct": 1.2,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 427,
+        "by_bot": {
+          "(none)": 83
+        },
+        "by_kind": {
+          "(none)": 83
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-29": {
+      "n": 62,
+      "unique_pct": 12.9,
+      "code_pct": 0.0,
+      "meta_pct": 0.0,
+      "median_len": 427.0,
+      "by_bot": {
+        "(none)": 62
+      },
+      "by_kind": {
+        "(none)": 62
+      },
+      "msg": {
+        "n": 62,
+        "unique_pct": 12.9,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 427.0,
+        "by_bot": {
+          "(none)": 62
+        },
+        "by_kind": {
+          "(none)": 62
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-30": {
+      "n": 96,
+      "unique_pct": 69.8,
+      "code_pct": 17.7,
+      "meta_pct": 0.0,
+      "median_len": 449.0,
+      "by_bot": {
+        "(none)": 96
+      },
+      "by_kind": {
+        "(none)": 96
+      },
+      "msg": {
+        "n": 96,
+        "unique_pct": 69.8,
+        "code_pct": 17.7,
+        "meta_pct": 0.0,
+        "median_len": 449.0,
+        "by_bot": {
+          "(none)": 96
+        },
+        "by_kind": {
+          "(none)": 96
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-08-31": {
+      "n": 80,
+      "unique_pct": 67.5,
+      "code_pct": 70.0,
+      "meta_pct": 0.0,
+      "median_len": 1570.0,
+      "by_bot": {
+        "(none)": 80
+      },
+      "by_kind": {
+        "(none)": 80
+      },
+      "msg": {
+        "n": 80,
+        "unique_pct": 67.5,
+        "code_pct": 70.0,
+        "meta_pct": 0.0,
+        "median_len": 1570.0,
+        "by_bot": {
+          "(none)": 80
+        },
+        "by_kind": {
+          "(none)": 80
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-01": {
+      "n": 117,
+      "unique_pct": 53.0,
+      "code_pct": 51.3,
+      "meta_pct": 0.0,
+      "median_len": 765,
+      "by_bot": {
+        "(none)": 117
+      },
+      "by_kind": {
+        "(none)": 117
+      },
+      "msg": {
+        "n": 117,
+        "unique_pct": 53.0,
+        "code_pct": 51.3,
+        "meta_pct": 0.0,
+        "median_len": 765,
+        "by_bot": {
+          "(none)": 117
+        },
+        "by_kind": {
+          "(none)": 117
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-02": {
+      "n": 155,
+      "unique_pct": 47.7,
+      "code_pct": 67.7,
+      "meta_pct": 0.0,
+      "median_len": 696,
+      "by_bot": {
+        "(none)": 155
+      },
+      "by_kind": {
+        "(none)": 155
+      },
+      "msg": {
+        "n": 155,
+        "unique_pct": 47.7,
+        "code_pct": 67.7,
+        "meta_pct": 0.0,
+        "median_len": 696,
+        "by_bot": {
+          "(none)": 155
+        },
+        "by_kind": {
+          "(none)": 155
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-03": {
+      "n": 265,
+      "unique_pct": 50.2,
+      "code_pct": 53.2,
+      "meta_pct": 0.0,
+      "median_len": 434,
+      "by_bot": {
+        "(none)": 265
+      },
+      "by_kind": {
+        "(none)": 265
+      },
+      "msg": {
+        "n": 265,
+        "unique_pct": 50.2,
+        "code_pct": 53.2,
+        "meta_pct": 0.0,
+        "median_len": 434,
+        "by_bot": {
+          "(none)": 265
+        },
+        "by_kind": {
+          "(none)": 265
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-04": {
+      "n": 316,
+      "unique_pct": 29.1,
+      "code_pct": 49.7,
+      "meta_pct": 0.0,
+      "median_len": 608.5,
+      "by_bot": {
+        "(none)": 316
+      },
+      "by_kind": {
+        "(none)": 316
+      },
+      "msg": {
+        "n": 316,
+        "unique_pct": 29.1,
+        "code_pct": 49.7,
+        "meta_pct": 0.0,
+        "median_len": 608.5,
+        "by_bot": {
+          "(none)": 316
+        },
+        "by_kind": {
+          "(none)": 316
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-05": {
+      "n": 164,
+      "unique_pct": 23.2,
+      "code_pct": 75.6,
+      "meta_pct": 0.0,
+      "median_len": 1065.0,
+      "by_bot": {
+        "(none)": 164
+      },
+      "by_kind": {
+        "(none)": 164
+      },
+      "msg": {
+        "n": 164,
+        "unique_pct": 23.2,
+        "code_pct": 75.6,
+        "meta_pct": 0.0,
+        "median_len": 1065.0,
+        "by_bot": {
+          "(none)": 164
+        },
+        "by_kind": {
+          "(none)": 164
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-06": {
+      "n": 23,
+      "unique_pct": 69.6,
+      "code_pct": 30.4,
+      "meta_pct": 0.0,
+      "median_len": 154,
+      "by_bot": {
+        "(none)": 23
+      },
+      "by_kind": {
+        "(none)": 23
+      },
+      "msg": {
+        "n": 23,
+        "unique_pct": 69.6,
+        "code_pct": 30.4,
+        "meta_pct": 0.0,
+        "median_len": 154,
+        "by_bot": {
+          "(none)": 23
+        },
+        "by_kind": {
+          "(none)": 23
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-08": {
+      "n": 1,
+      "unique_pct": 100.0,
+      "code_pct": 0.0,
+      "meta_pct": 0.0,
+      "median_len": 21,
+      "by_bot": {
+        "(none)": 1
+      },
+      "by_kind": {
+        "(none)": 1
+      },
+      "msg": {
+        "n": 1,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 21,
+        "by_bot": {
+          "(none)": 1
+        },
+        "by_kind": {
+          "(none)": 1
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-11": {
+      "n": 1,
+      "unique_pct": 100.0,
+      "code_pct": 0.0,
+      "meta_pct": 0.0,
+      "median_len": 21,
+      "by_bot": {
+        "(none)": 1
+      },
+      "by_kind": {
+        "(none)": 1
+      },
+      "msg": {
+        "n": 1,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 21,
+        "by_bot": {
+          "(none)": 1
+        },
+        "by_kind": {
+          "(none)": 1
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-21": {
+      "n": 37,
+      "unique_pct": 40.5,
+      "code_pct": 0.0,
+      "meta_pct": 0.0,
+      "median_len": 33,
+      "by_bot": {
+        "(none)": 37
+      },
+      "by_kind": {
+        "(none)": 37
+      },
+      "msg": {
+        "n": 37,
+        "unique_pct": 40.5,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 33,
+        "by_bot": {
+          "(none)": 37
+        },
+        "by_kind": {
+          "(none)": 37
+        }
+      },
+      "text": {
+        "n": 0
+      }
+    },
+    "2026-09-22": {
+      "n": 127,
+      "unique_pct": 37.0,
+      "code_pct": 0.0,
+      "meta_pct": 2.4,
+      "median_len": 35,
+      "by_bot": {
+        "(none)": 88,
+        "Scout": 20,
+        "Quorum": 17,
+        "Explorer": 1,
+        "Critic": 1
+      },
+      "by_kind": {
+        "(none)": 88,
+        "VISIT": 20,
+        "APPROVED": 17,
+        "REASONING": 2
+      },
+      "msg": {
+        "n": 88,
+        "unique_pct": 31.8,
+        "code_pct": 0.0,
+        "meta_pct": 1.1,
+        "median_len": 35.0,
+        "by_bot": {
+          "(none)": 88
+        },
+        "by_kind": {
+          "(none)": 88
+        }
+      },
+      "text": {
+        "n": 39,
+        "unique_pct": 48.7,
+        "code_pct": 0.0,
+        "meta_pct": 5.1,
+        "median_len": 27,
+        "by_bot": {
+          "Scout": 20,
+          "Quorum": 17,
+          "Explorer": 1,
+          "Critic": 1
+        },
+        "by_kind": {
+          "VISIT": 20,
+          "APPROVED": 17,
+          "REASONING": 2
+        }
+      }
+    },
+    "2026-09-23": {
+      "n": 25,
+      "unique_pct": 68.0,
+      "code_pct": 0.0,
+      "meta_pct": 12.0,
+      "median_len": 25,
+      "by_bot": {
+        "Scout": 14,
+        "Quorum": 9,
+        "Critic": 2
+      },
+      "by_kind": {
+        "VISIT": 14,
+        "APPROVED": 9,
+        "REASONING": 2
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 25,
+        "unique_pct": 68.0,
+        "code_pct": 0.0,
+        "meta_pct": 12.0,
+        "median_len": 25,
+        "by_bot": {
+          "Scout": 14,
+          "Quorum": 9,
+          "Critic": 2
+        },
+        "by_kind": {
+          "VISIT": 14,
+          "APPROVED": 9,
+          "REASONING": 2
+        }
+      }
+    },
+    "2026-09-24": {
+      "n": 226,
+      "unique_pct": 34.5,
+      "code_pct": 0.0,
+      "meta_pct": 3.1,
+      "median_len": 27.0,
+      "by_bot": {
+        "Scout": 135,
+        "Quorum": 84,
+        "Explorer": 4,
+        "Critic": 2,
+        "(none)": 1
+      },
+      "by_kind": {
+        "VISIT": 135,
+        "APPROVED": 84,
+        "REASONING": 6,
+        "(none)": 1
+      },
+      "msg": {
+        "n": 1,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 18,
+        "by_bot": {
+          "(none)": 1
+        },
+        "by_kind": {
+          "(none)": 1
+        }
+      },
+      "text": {
+        "n": 225,
+        "unique_pct": 34.7,
+        "code_pct": 0.0,
+        "meta_pct": 3.1,
+        "median_len": 27,
+        "by_bot": {
+          "Scout": 135,
+          "Quorum": 84,
+          "Explorer": 4,
+          "Critic": 2
+        },
+        "by_kind": {
+          "VISIT": 135,
+          "APPROVED": 84,
+          "REASONING": 6
+        }
+      }
+    },
+    "2026-09-25": {
+      "n": 6021,
+      "unique_pct": 6.7,
+      "code_pct": 0.6,
+      "meta_pct": 0.6,
+      "median_len": 24,
+      "by_bot": {
+        "Scout": 5940,
+        "Quorum": 47,
+        "(none)": 31,
+        "Explorer": 2,
+        "Critic": 1
+      },
+      "by_kind": {
+        "VISIT": 5744,
+        "RETIRED": 196,
+        "APPROVED": 47,
+        "(none)": 31,
+        "REASONING": 3
+      },
+      "msg": {
+        "n": 31,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 96.8,
+        "median_len": 39,
+        "by_bot": {
+          "(none)": 31
+        },
+        "by_kind": {
+          "(none)": 31
+        }
+      },
+      "text": {
+        "n": 5990,
+        "unique_pct": 6.2,
+        "code_pct": 0.6,
+        "meta_pct": 0.1,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 5940,
+          "Quorum": 47,
+          "Explorer": 2,
+          "Critic": 1
+        },
+        "by_kind": {
+          "VISIT": 5744,
+          "RETIRED": 196,
+          "APPROVED": 47,
+          "REASONING": 3
+        }
+      }
+    },
+    "2026-09-26": {
+      "n": 80,
+      "unique_pct": 56.2,
+      "code_pct": 0.0,
+      "meta_pct": 77.5,
+      "median_len": 39.0,
+      "by_bot": {
+        "(none)": 60,
+        "Scout": 11,
+        "Quorum": 9
+      },
+      "by_kind": {
+        "(none)": 60,
+        "VISIT": 11,
+        "APPROVED": 9
+      },
+      "msg": {
+        "n": 60,
+        "unique_pct": 50.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 60
+        },
+        "by_kind": {
+          "(none)": 60
+        }
+      },
+      "text": {
+        "n": 20,
+        "unique_pct": 75.0,
+        "code_pct": 0.0,
+        "meta_pct": 10.0,
+        "median_len": 37.0,
+        "by_bot": {
+          "Scout": 11,
+          "Quorum": 9
+        },
+        "by_kind": {
+          "VISIT": 11,
+          "APPROVED": 9
+        }
+      }
+    },
+    "2026-09-27": {
+      "n": 7461,
+      "unique_pct": 5.6,
+      "code_pct": 0.6,
+      "meta_pct": 2.9,
+      "median_len": 25,
+      "by_bot": {
+        "Scout": 7159,
+        "(none)": 210,
+        "Quorum": 82,
+        "Explorer": 6,
+        "Critic": 4
+      },
+      "by_kind": {
+        "VISIT": 6923,
+        "RETIRED": 236,
+        "(none)": 210,
+        "APPROVED": 82,
+        "REASONING": 10
+      },
+      "msg": {
+        "n": 210,
+        "unique_pct": 14.3,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 210
+        },
+        "by_kind": {
+          "(none)": 210
+        }
+      },
+      "text": {
+        "n": 7251,
+        "unique_pct": 5.4,
+        "code_pct": 0.6,
+        "meta_pct": 0.1,
+        "median_len": 24,
+        "by_bot": {
+          "Scout": 7159,
+          "Quorum": 82,
+          "Explorer": 6,
+          "Critic": 4
+        },
+        "by_kind": {
+          "VISIT": 6923,
+          "RETIRED": 236,
+          "APPROVED": 82,
+          "REASONING": 10
+        }
+      }
+    },
+    "2026-09-28": {
+      "n": 13779,
+      "unique_pct": 3.6,
+      "code_pct": 0.6,
+      "meta_pct": 1.1,
+      "median_len": 24,
+      "by_bot": {
+        "Scout": 13572,
+        "(none)": 150,
+        "Quorum": 52,
+        "Explorer": 4,
+        "Critic": 1
+      },
+      "by_kind": {
+        "VISIT": 13121,
+        "RETIRED": 451,
+        "(none)": 150,
+        "APPROVED": 52,
+        "REASONING": 5
+      },
+      "msg": {
+        "n": 150,
+        "unique_pct": 20.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 150
+        },
+        "by_kind": {
+          "(none)": 150
+        }
+      },
+      "text": {
+        "n": 13629,
+        "unique_pct": 3.4,
+        "code_pct": 0.7,
+        "meta_pct": 0.0,
+        "median_len": 24,
+        "by_bot": {
+          "Scout": 13572,
+          "Quorum": 52,
+          "Explorer": 4,
+          "Critic": 1
+        },
+        "by_kind": {
+          "VISIT": 13121,
+          "RETIRED": 451,
+          "APPROVED": 52,
+          "REASONING": 5
+        }
+      }
+    },
+    "2026-09-29": {
+      "n": 11067,
+      "unique_pct": 4.9,
+      "code_pct": 0.6,
+      "meta_pct": 1.7,
+      "median_len": 25,
+      "by_bot": {
+        "Scout": 10842,
+        "(none)": 181,
+        "Quorum": 38,
+        "Critic": 4,
+        "Explorer": 2
+      },
+      "by_kind": {
+        "VISIT": 10482,
+        "RETIRED": 360,
+        "(none)": 181,
+        "APPROVED": 38,
+        "REASONING": 6
+      },
+      "msg": {
+        "n": 181,
+        "unique_pct": 17.1,
+        "code_pct": 0.0,
+        "meta_pct": 99.4,
+        "median_len": 39,
+        "by_bot": {
+          "(none)": 181
+        },
+        "by_kind": {
+          "(none)": 181
+        }
+      },
+      "text": {
+        "n": 10886,
+        "unique_pct": 4.7,
+        "code_pct": 0.6,
+        "meta_pct": 0.1,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 10842,
+          "Quorum": 38,
+          "Critic": 4,
+          "Explorer": 2
+        },
+        "by_kind": {
+          "VISIT": 10482,
+          "RETIRED": 360,
+          "APPROVED": 38,
+          "REASONING": 6
+        }
+      }
+    },
+    "2026-09-30": {
+      "n": 13981,
+      "unique_pct": 4.1,
+      "code_pct": 0.6,
+      "meta_pct": 0.9,
+      "median_len": 25,
+      "by_bot": {
+        "Scout": 13831,
+        "(none)": 120,
+        "Quorum": 29,
+        "Explorer": 1
+      },
+      "by_kind": {
+        "VISIT": 13371,
+        "RETIRED": 460,
+        "(none)": 120,
+        "APPROVED": 29,
+        "REASONING": 1
+      },
+      "msg": {
+        "n": 120,
+        "unique_pct": 25.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 120
+        },
+        "by_kind": {
+          "(none)": 120
+        }
+      },
+      "text": {
+        "n": 13861,
+        "unique_pct": 4.0,
+        "code_pct": 0.6,
+        "meta_pct": 0.0,
+        "median_len": 24,
+        "by_bot": {
+          "Scout": 13831,
+          "Quorum": 29,
+          "Explorer": 1
+        },
+        "by_kind": {
+          "VISIT": 13371,
+          "RETIRED": 460,
+          "APPROVED": 29,
+          "REASONING": 1
+        }
+      }
+    },
+    "2026-10-01": {
+      "n": 9853,
+      "unique_pct": 4.4,
+      "code_pct": 0.6,
+      "meta_pct": 0.3,
+      "median_len": 24,
+      "by_bot": {
+        "Scout": 9788,
+        "Quorum": 33,
+        "(none)": 30,
+        "Explorer": 1,
+        "Critic": 1
+      },
+      "by_kind": {
+        "VISIT": 9463,
+        "RETIRED": 325,
+        "APPROVED": 33,
+        "(none)": 30,
+        "REASONING": 2
+      },
+      "msg": {
+        "n": 30,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 30
+        },
+        "by_kind": {
+          "(none)": 30
+        }
+      },
+      "text": {
+        "n": 9823,
+        "unique_pct": 4.1,
+        "code_pct": 0.6,
+        "meta_pct": 0.0,
+        "median_len": 24,
+        "by_bot": {
+          "Scout": 9788,
+          "Quorum": 33,
+          "Explorer": 1,
+          "Critic": 1
+        },
+        "by_kind": {
+          "VISIT": 9463,
+          "RETIRED": 325,
+          "APPROVED": 33,
+          "REASONING": 2
+        }
+      }
+    },
+    "2026-10-02": {
+      "n": 13795,
+      "unique_pct": 4.7,
+      "code_pct": 0.6,
+      "meta_pct": 0.2,
+      "median_len": 25,
+      "by_bot": {
+        "Scout": 13737,
+        "(none)": 30,
+        "Quorum": 25,
+        "Critic": 3
+      },
+      "by_kind": {
+        "VISIT": 13280,
+        "RETIRED": 457,
+        "(none)": 30,
+        "APPROVED": 25,
+        "REASONING": 3
+      },
+      "msg": {
+        "n": 30,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 30
+        },
+        "by_kind": {
+          "(none)": 30
+        }
+      },
+      "text": {
+        "n": 13765,
+        "unique_pct": 4.5,
+        "code_pct": 0.6,
+        "meta_pct": 0.0,
+        "median_len": 25,
+        "by_bot": {
+          "Scout": 13737,
+          "Quorum": 25,
+          "Critic": 3
+        },
+        "by_kind": {
+          "VISIT": 13280,
+          "RETIRED": 457,
+          "APPROVED": 25,
+          "REASONING": 3
+        }
+      }
+    },
+    "2026-10-03": {
+      "n": 9562,
+      "unique_pct": 4.2,
+      "code_pct": 0.6,
+      "meta_pct": 2.3,
+      "median_len": 24.0,
+      "by_bot": {
+        "Scout": 9280,
+        "(none)": 210,
+        "Quorum": 67,
+        "Explorer": 5
+      },
+      "by_kind": {
+        "VISIT": 8974,
+        "RETIRED": 306,
+        "(none)": 210,
+        "APPROVED": 67,
+        "REASONING": 5
+      },
+      "msg": {
+        "n": 210,
+        "unique_pct": 14.3,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 210
+        },
+        "by_kind": {
+          "(none)": 210
+        }
+      },
+      "text": {
+        "n": 9352,
+        "unique_pct": 3.9,
+        "code_pct": 0.6,
+        "meta_pct": 0.1,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 9280,
+          "Quorum": 67,
+          "Explorer": 5
+        },
+        "by_kind": {
+          "VISIT": 8974,
+          "RETIRED": 306,
+          "APPROVED": 67,
+          "REASONING": 5
+        }
+      }
+    },
+    "2026-10-06": {
+      "n": 10121,
+      "unique_pct": 3.5,
+      "code_pct": 0.6,
+      "meta_pct": 0.0,
+      "median_len": 24,
+      "by_bot": {
+        "Scout": 10043,
+        "Quorum": 71,
+        "Explorer": 7
+      },
+      "by_kind": {
+        "VISIT": 9711,
+        "RETIRED": 332,
+        "APPROVED": 71,
+        "REASONING": 7
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 10121,
+        "unique_pct": 3.5,
+        "code_pct": 0.6,
+        "meta_pct": 0.0,
+        "median_len": 24,
+        "by_bot": {
+          "Scout": 10043,
+          "Quorum": 71,
+          "Explorer": 7
+        },
+        "by_kind": {
+          "VISIT": 9711,
+          "RETIRED": 332,
+          "APPROVED": 71,
+          "REASONING": 7
+        }
+      }
+    },
+    "2026-10-07": {
+      "n": 12741,
+      "unique_pct": 3.6,
+      "code_pct": 0.5,
+      "meta_pct": 0.0,
+      "median_len": 24,
+      "by_bot": {
+        "Scout": 12719,
+        "Quorum": 20,
+        "Explorer": 2
+      },
+      "by_kind": {
+        "VISIT": 12296,
+        "RETIRED": 423,
+        "APPROVED": 20,
+        "REASONING": 2
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 12741,
+        "unique_pct": 3.6,
+        "code_pct": 0.5,
+        "meta_pct": 0.0,
+        "median_len": 24,
+        "by_bot": {
+          "Scout": 12719,
+          "Quorum": 20,
+          "Explorer": 2
+        },
+        "by_kind": {
+          "VISIT": 12296,
+          "RETIRED": 423,
+          "APPROVED": 20,
+          "REASONING": 2
+        }
+      }
+    },
+    "2026-10-08": {
+      "n": 12306,
+      "unique_pct": 4.5,
+      "code_pct": 0.5,
+      "meta_pct": 0.0,
+      "median_len": 24.0,
+      "by_bot": {
+        "Scout": 12294,
+        "Quorum": 10,
+        "(none)": 1,
+        "Explorer": 1
+      },
+      "by_kind": {
+        "VISIT": 11885,
+        "RETIRED": 409,
+        "APPROVED": 10,
+        "(none)": 1,
+        "REASONING": 1
+      },
+      "msg": {
+        "n": 1,
+        "unique_pct": 100.0,
+        "code_pct": 100.0,
+        "meta_pct": 0.0,
+        "median_len": 65,
+        "by_bot": {
+          "(none)": 1
+        },
+        "by_kind": {
+          "(none)": 1
+        }
+      },
+      "text": {
+        "n": 12305,
+        "unique_pct": 4.5,
+        "code_pct": 0.5,
+        "meta_pct": 0.0,
+        "median_len": 24,
+        "by_bot": {
+          "Scout": 12294,
+          "Quorum": 10,
+          "Explorer": 1
+        },
+        "by_kind": {
+          "VISIT": 11885,
+          "RETIRED": 409,
+          "APPROVED": 10,
+          "REASONING": 1
+        }
+      }
+    },
+    "2026-10-09": {
+      "n": 13164,
+      "unique_pct": 4.7,
+      "code_pct": 0.5,
+      "meta_pct": 1.4,
+      "median_len": 24.0,
+      "by_bot": {
+        "Scout": 12694,
+        "Quorum": 263,
+        "(none)": 180,
+        "Explorer": 19,
+        "Critic": 8
+      },
+      "by_kind": {
+        "VISIT": 12282,
+        "RETIRED": 412,
+        "APPROVED": 263,
+        "(none)": 180,
+        "REASONING": 27
+      },
+      "msg": {
+        "n": 180,
+        "unique_pct": 16.7,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 180
+        },
+        "by_kind": {
+          "(none)": 180
+        }
+      },
+      "text": {
+        "n": 12984,
+        "unique_pct": 4.6,
+        "code_pct": 0.5,
+        "meta_pct": 0.0,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 12694,
+          "Quorum": 263,
+          "Explorer": 19,
+          "Critic": 8
+        },
+        "by_kind": {
+          "VISIT": 12282,
+          "RETIRED": 412,
+          "APPROVED": 263,
+          "REASONING": 27
+        }
+      }
+    },
+    "2026-10-10": {
+      "n": 9724,
+      "unique_pct": 5.1,
+      "code_pct": 0.6,
+      "meta_pct": 0.0,
+      "median_len": 24.0,
+      "by_bot": {
+        "Scout": 9711,
+        "Quorum": 10,
+        "(none)": 2,
+        "Explorer": 1
+      },
+      "by_kind": {
+        "VISIT": 9388,
+        "RETIRED": 323,
+        "APPROVED": 10,
+        "(none)": 2,
+        "REASONING": 1
+      },
+      "msg": {
+        "n": 2,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 141.0,
+        "by_bot": {
+          "(none)": 2
+        },
+        "by_kind": {
+          "(none)": 2
+        }
+      },
+      "text": {
+        "n": 9722,
+        "unique_pct": 5.1,
+        "code_pct": 0.6,
+        "meta_pct": 0.0,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 9711,
+          "Quorum": 10,
+          "Explorer": 1
+        },
+        "by_kind": {
+          "VISIT": 9388,
+          "RETIRED": 323,
+          "APPROVED": 10,
+          "REASONING": 1
+        }
+      }
+    },
+    "2026-10-11": {
+      "n": 9888,
+      "unique_pct": 4.2,
+      "code_pct": 0.4,
+      "meta_pct": 5.6,
+      "median_len": 26.0,
+      "by_bot": {
+        "Scout": 9037,
+        "(none)": 540,
+        "Quorum": 301,
+        "Critic": 5,
+        "Explorer": 5
+      },
+      "by_kind": {
+        "VISIT": 8747,
+        "(none)": 540,
+        "APPROVED": 301,
+        "RETIRED": 290,
+        "REASONING": 10
+      },
+      "msg": {
+        "n": 540,
+        "unique_pct": 5.6,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 540
+        },
+        "by_kind": {
+          "(none)": 540
+        }
+      },
+      "text": {
+        "n": 9348,
+        "unique_pct": 4.2,
+        "code_pct": 0.5,
+        "meta_pct": 0.2,
+        "median_len": 25.0,
+        "by_bot": {
+          "Scout": 9037,
+          "Quorum": 301,
+          "Critic": 5,
+          "Explorer": 5
+        },
+        "by_kind": {
+          "VISIT": 8747,
+          "APPROVED": 301,
+          "RETIRED": 290,
+          "REASONING": 10
+        }
+      }
+    },
+    "2026-10-12": {
+      "n": 13976,
+      "unique_pct": 3.5,
+      "code_pct": 0.4,
+      "meta_pct": 0.9,
+      "median_len": 25.0,
+      "by_bot": {
+        "Scout": 13718,
+        "Quorum": 126,
+        "(none)": 120,
+        "Explorer": 8,
+        "Critic": 4
+      },
+      "by_kind": {
+        "VISIT": 13268,
+        "RETIRED": 450,
+        "APPROVED": 126,
+        "(none)": 120,
+        "REASONING": 12
+      },
+      "msg": {
+        "n": 120,
+        "unique_pct": 25.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 120
+        },
+        "by_kind": {
+          "(none)": 120
+        }
+      },
+      "text": {
+        "n": 13856,
+        "unique_pct": 3.4,
+        "code_pct": 0.4,
+        "meta_pct": 0.0,
+        "median_len": 25.0,
+        "by_bot": {
+          "Scout": 13718,
+          "Quorum": 126,
+          "Explorer": 8,
+          "Critic": 4
+        },
+        "by_kind": {
+          "VISIT": 13268,
+          "RETIRED": 450,
+          "APPROVED": 126,
+          "REASONING": 12
+        }
+      }
+    },
+    "2026-10-13": {
+      "n": 12266,
+      "unique_pct": 4.7,
+      "code_pct": 0.5,
+      "meta_pct": 0.0,
+      "median_len": 24.0,
+      "by_bot": {
+        "Scout": 12266
+      },
+      "by_kind": {
+        "VISIT": 11857,
+        "RETIRED": 409
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 12266,
+        "unique_pct": 4.7,
+        "code_pct": 0.5,
+        "meta_pct": 0.0,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 12266
+        },
+        "by_kind": {
+          "VISIT": 11857,
+          "RETIRED": 409
+        }
+      }
+    },
+    "2026-10-14": {
+      "n": 11420,
+      "unique_pct": 4.8,
+      "code_pct": 0.6,
+      "meta_pct": 0.0,
+      "median_len": 24.0,
+      "by_bot": {
+        "Scout": 11420
+      },
+      "by_kind": {
+        "VISIT": 11039,
+        "RETIRED": 381
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 11420,
+        "unique_pct": 4.8,
+        "code_pct": 0.6,
+        "meta_pct": 0.0,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 11420
+        },
+        "by_kind": {
+          "VISIT": 11039,
+          "RETIRED": 381
+        }
+      }
+    },
+    "2026-10-15": {
+      "n": 12362,
+      "unique_pct": 5.0,
+      "code_pct": 0.6,
+      "meta_pct": 0.3,
+      "median_len": 24.0,
+      "by_bot": {
+        "Scout": 12181,
+        "Quorum": 149,
+        "(none)": 30,
+        "Critic": 2
+      },
+      "by_kind": {
+        "VISIT": 11781,
+        "RETIRED": 400,
+        "APPROVED": 149,
+        "(none)": 30,
+        "REASONING": 2
+      },
+      "msg": {
+        "n": 30,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 30
+        },
+        "by_kind": {
+          "(none)": 30
+        }
+      },
+      "text": {
+        "n": 12332,
+        "unique_pct": 4.7,
+        "code_pct": 0.6,
+        "meta_pct": 0.0,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 12181,
+          "Quorum": 149,
+          "Critic": 2
+        },
+        "by_kind": {
+          "VISIT": 11781,
+          "RETIRED": 400,
+          "APPROVED": 149,
+          "REASONING": 2
+        }
+      }
+    },
+    "2026-10-16": {
+      "n": 12395,
+      "unique_pct": 5.0,
+      "code_pct": 0.6,
+      "meta_pct": 0.5,
+      "median_len": 24,
+      "by_bot": {
+        "Scout": 12307,
+        "(none)": 60,
+        "Quorum": 28
+      },
+      "by_kind": {
+        "VISIT": 11899,
+        "RETIRED": 408,
+        "(none)": 60,
+        "APPROVED": 28
+      },
+      "msg": {
+        "n": 60,
+        "unique_pct": 50.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 60
+        },
+        "by_kind": {
+          "(none)": 60
+        }
+      },
+      "text": {
+        "n": 12335,
+        "unique_pct": 4.7,
+        "code_pct": 0.6,
+        "meta_pct": 0.0,
+        "median_len": 24,
+        "by_bot": {
+          "Scout": 12307,
+          "Quorum": 28
+        },
+        "by_kind": {
+          "VISIT": 11899,
+          "RETIRED": 408,
+          "APPROVED": 28
+        }
+      }
+    },
+    "2026-10-17": {
+      "n": 12414,
+      "unique_pct": 4.6,
+      "code_pct": 0.5,
+      "meta_pct": 1.2,
+      "median_len": 25.0,
+      "by_bot": {
+        "Scout": 12228,
+        "(none)": 150,
+        "Quorum": 33,
+        "Explorer": 3
+      },
+      "by_kind": {
+        "VISIT": 11824,
+        "RETIRED": 404,
+        "(none)": 150,
+        "APPROVED": 33,
+        "REASONING": 3
+      },
+      "msg": {
+        "n": 150,
+        "unique_pct": 20.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 150
+        },
+        "by_kind": {
+          "(none)": 150
+        }
+      },
+      "text": {
+        "n": 12264,
+        "unique_pct": 4.4,
+        "code_pct": 0.5,
+        "meta_pct": 0.0,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 12228,
+          "Quorum": 33,
+          "Explorer": 3
+        },
+        "by_kind": {
+          "VISIT": 11824,
+          "RETIRED": 404,
+          "APPROVED": 33,
+          "REASONING": 3
+        }
+      }
+    },
+    "2026-10-18": {
+      "n": 9520,
+      "unique_pct": 5.1,
+      "code_pct": 0.5,
+      "meta_pct": 8.5,
+      "median_len": 26.0,
+      "by_bot": {
+        "Scout": 8688,
+        "(none)": 780,
+        "Quorum": 52
+      },
+      "by_kind": {
+        "VISIT": 8401,
+        "(none)": 780,
+        "RETIRED": 287,
+        "APPROVED": 52
+      },
+      "msg": {
+        "n": 780,
+        "unique_pct": 3.8,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 780
+        },
+        "by_kind": {
+          "(none)": 780
+        }
+      },
+      "text": {
+        "n": 8740,
+        "unique_pct": 5.2,
+        "code_pct": 0.5,
+        "meta_pct": 0.3,
+        "median_len": 24.0,
+        "by_bot": {
+          "Scout": 8688,
+          "Quorum": 52
+        },
+        "by_kind": {
+          "VISIT": 8401,
+          "RETIRED": 287,
+          "APPROVED": 52
+        }
+      }
+    },
+    "2026-10-19": {
+      "n": 469,
+      "unique_pct": 38.2,
+      "code_pct": 0.4,
+      "meta_pct": 6.6,
+      "median_len": 24,
+      "by_bot": {
+        "Scout": 425,
+        "(none)": 30,
+        "Quorum": 14
+      },
+      "by_kind": {
+        "VISIT": 411,
+        "(none)": 30,
+        "APPROVED": 14,
+        "RETIRED": 14
+      },
+      "msg": {
+        "n": 30,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 30
+        },
+        "by_kind": {
+          "(none)": 30
+        }
+      },
+      "text": {
+        "n": 439,
+        "unique_pct": 33.9,
+        "code_pct": 0.5,
+        "meta_pct": 0.2,
+        "median_len": 24,
+        "by_bot": {
+          "Scout": 425,
+          "Quorum": 14
+        },
+        "by_kind": {
+          "VISIT": 411,
+          "APPROVED": 14,
+          "RETIRED": 14
+        }
+      }
+    },
+    "2026-10-20": {
+      "n": 1199,
+      "unique_pct": 15.2,
+      "code_pct": 0.3,
+      "meta_pct": 41.4,
+      "median_len": 38,
+      "by_bot": {
+        "Scout": 662,
+        "(none)": 480,
+        "Quorum": 55,
+        "Critic": 2
+      },
+      "by_kind": {
+        "VISIT": 642,
+        "(none)": 480,
+        "APPROVED": 55,
+        "RETIRED": 20,
+        "REASONING": 2
+      },
+      "msg": {
+        "n": 480,
+        "unique_pct": 6.2,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 480
+        },
+        "by_kind": {
+          "(none)": 480
+        }
+      },
+      "text": {
+        "n": 719,
+        "unique_pct": 21.1,
+        "code_pct": 0.4,
+        "meta_pct": 2.2,
+        "median_len": 23,
+        "by_bot": {
+          "Scout": 662,
+          "Quorum": 55,
+          "Critic": 2
+        },
+        "by_kind": {
+          "VISIT": 642,
+          "APPROVED": 55,
+          "RETIRED": 20,
+          "REASONING": 2
+        }
+      }
+    },
+    "2026-10-21": {
+      "n": 526,
+      "unique_pct": 16.7,
+      "code_pct": 2.5,
+      "meta_pct": 53.0,
+      "median_len": 39.0,
+      "by_bot": {
+        "(none)": 270,
+        "Scout": 145,
+        "Quorum": 110,
+        "Critic": 1
+      },
+      "by_kind": {
+        "(none)": 270,
+        "VISIT": 143,
+        "APPROVED": 110,
+        "RETIRED": 2,
+        "REASONING": 1
+      },
+      "msg": {
+        "n": 270,
+        "unique_pct": 11.1,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 270
+        },
+        "by_kind": {
+          "(none)": 270
+        }
+      },
+      "text": {
+        "n": 256,
+        "unique_pct": 22.7,
+        "code_pct": 5.1,
+        "meta_pct": 3.5,
+        "median_len": 40.0,
+        "by_bot": {
+          "Scout": 145,
+          "Quorum": 110,
+          "Critic": 1
+        },
+        "by_kind": {
+          "VISIT": 143,
+          "APPROVED": 110,
+          "RETIRED": 2,
+          "REASONING": 1
+        }
+      }
+    },
+    "2026-10-23": {
+      "n": 1179,
+      "unique_pct": 10.3,
+      "code_pct": 0.0,
+      "meta_pct": 47.3,
+      "median_len": 39,
+      "by_bot": {
+        "(none)": 540,
+        "Scout": 419,
+        "Quorum": 220
+      },
+      "by_kind": {
+        "(none)": 540,
+        "VISIT": 414,
+        "APPROVED": 220,
+        "RETIRED": 5
+      },
+      "msg": {
+        "n": 540,
+        "unique_pct": 5.6,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 540
+        },
+        "by_kind": {
+          "(none)": 540
+        }
+      },
+      "text": {
+        "n": 639,
+        "unique_pct": 14.2,
+        "code_pct": 0.0,
+        "meta_pct": 2.8,
+        "median_len": 41,
+        "by_bot": {
+          "Scout": 419,
+          "Quorum": 220
+        },
+        "by_kind": {
+          "VISIT": 414,
+          "APPROVED": 220,
+          "RETIRED": 5
+        }
+      }
+    },
+    "2026-10-25": {
+      "n": 703,
+      "unique_pct": 9.4,
+      "code_pct": 0.0,
+      "meta_pct": 57.3,
+      "median_len": 39,
+      "by_bot": {
+        "(none)": 390,
+        "Scout": 167,
+        "Quorum": 146
+      },
+      "by_kind": {
+        "(none)": 390,
+        "VISIT": 167,
+        "APPROVED": 146
+      },
+      "msg": {
+        "n": 390,
+        "unique_pct": 7.7,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 390
+        },
+        "by_kind": {
+          "(none)": 390
+        }
+      },
+      "text": {
+        "n": 313,
+        "unique_pct": 11.5,
+        "code_pct": 0.0,
+        "meta_pct": 4.2,
+        "median_len": 40,
+        "by_bot": {
+          "Scout": 167,
+          "Quorum": 146
+        },
+        "by_kind": {
+          "VISIT": 167,
+          "APPROVED": 146
+        }
+      }
+    },
+    "2026-10-27": {
+      "n": 380,
+      "unique_pct": 18.4,
+      "code_pct": 0.0,
+      "meta_pct": 65.3,
+      "median_len": 39.0,
+      "by_bot": {
+        "(none)": 240,
+        "Scout": 72,
+        "Quorum": 61,
+        "Critic": 5,
+        "Explorer": 2
+      },
+      "by_kind": {
+        "(none)": 240,
+        "VISIT": 72,
+        "APPROVED": 61,
+        "REASONING": 7
+      },
+      "msg": {
+        "n": 240,
+        "unique_pct": 12.5,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 240
+        },
+        "by_kind": {
+          "(none)": 240
+        }
+      },
+      "text": {
+        "n": 140,
+        "unique_pct": 28.6,
+        "code_pct": 0.0,
+        "meta_pct": 5.7,
+        "median_len": 38.0,
+        "by_bot": {
+          "Scout": 72,
+          "Quorum": 61,
+          "Critic": 5,
+          "Explorer": 2
+        },
+        "by_kind": {
+          "VISIT": 72,
+          "APPROVED": 61,
+          "REASONING": 7
+        }
+      }
+    },
+    "2026-10-29": {
+      "n": 266,
+      "unique_pct": 12.4,
+      "code_pct": 12.0,
+      "meta_pct": 0.0,
+      "median_len": 25.0,
+      "by_bot": {
+        "Scout": 210,
+        "Quorum": 56
+      },
+      "by_kind": {
+        "VISIT": 203,
+        "APPROVED": 56,
+        "RETIRED": 7
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 266,
+        "unique_pct": 12.4,
+        "code_pct": 12.0,
+        "meta_pct": 0.0,
+        "median_len": 25.0,
+        "by_bot": {
+          "Scout": 210,
+          "Quorum": 56
+        },
+        "by_kind": {
+          "VISIT": 203,
+          "APPROVED": 56,
+          "RETIRED": 7
+        }
+      }
+    },
+    "2026-11-01": {
+      "n": 266,
+      "unique_pct": 12.4,
+      "code_pct": 12.4,
+      "meta_pct": 0.0,
+      "median_len": 25.0,
+      "by_bot": {
+        "Scout": 210,
+        "Quorum": 56
+      },
+      "by_kind": {
+        "VISIT": 203,
+        "APPROVED": 56,
+        "RETIRED": 7
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 266,
+        "unique_pct": 12.4,
+        "code_pct": 12.4,
+        "meta_pct": 0.0,
+        "median_len": 25.0,
+        "by_bot": {
+          "Scout": 210,
+          "Quorum": 56
+        },
+        "by_kind": {
+          "VISIT": 203,
+          "APPROVED": 56,
+          "RETIRED": 7
+        }
+      }
+    },
+    "2026-11-03": {
+      "n": 267,
+      "unique_pct": 12.7,
+      "code_pct": 12.4,
+      "meta_pct": 0.0,
+      "median_len": 25,
+      "by_bot": {
+        "Scout": 210,
+        "Quorum": 56,
+        "Critic": 1
+      },
+      "by_kind": {
+        "VISIT": 203,
+        "APPROVED": 56,
+        "RETIRED": 7,
+        "REASONING": 1
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 267,
+        "unique_pct": 12.7,
+        "code_pct": 12.4,
+        "meta_pct": 0.0,
+        "median_len": 25,
+        "by_bot": {
+          "Scout": 210,
+          "Quorum": 56,
+          "Critic": 1
+        },
+        "by_kind": {
+          "VISIT": 203,
+          "APPROVED": 56,
+          "RETIRED": 7,
+          "REASONING": 1
+        }
+      }
+    },
+    "2026-11-04": {
+      "n": 266,
+      "unique_pct": 12.4,
+      "code_pct": 12.4,
+      "meta_pct": 0.0,
+      "median_len": 25.0,
+      "by_bot": {
+        "Scout": 210,
+        "Quorum": 56
+      },
+      "by_kind": {
+        "VISIT": 203,
+        "APPROVED": 56,
+        "RETIRED": 7
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 266,
+        "unique_pct": 12.4,
+        "code_pct": 12.4,
+        "meta_pct": 0.0,
+        "median_len": 25.0,
+        "by_bot": {
+          "Scout": 210,
+          "Quorum": 56
+        },
+        "by_kind": {
+          "VISIT": 203,
+          "APPROVED": 56,
+          "RETIRED": 7
+        }
+      }
+    },
+    "2026-11-06": {
+      "n": 271,
+      "unique_pct": 12.5,
+      "code_pct": 12.2,
+      "meta_pct": 0.0,
+      "median_len": 25,
+      "by_bot": {
+        "Scout": 212,
+        "Quorum": 58,
+        "Explorer": 1
+      },
+      "by_kind": {
+        "VISIT": 205,
+        "APPROVED": 58,
+        "RETIRED": 7,
+        "REASONING": 1
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 271,
+        "unique_pct": 12.5,
+        "code_pct": 12.2,
+        "meta_pct": 0.0,
+        "median_len": 25,
+        "by_bot": {
+          "Scout": 212,
+          "Quorum": 58,
+          "Explorer": 1
+        },
+        "by_kind": {
+          "VISIT": 205,
+          "APPROVED": 58,
+          "RETIRED": 7,
+          "REASONING": 1
+        }
+      }
+    },
+    "2026-11-07": {
+      "n": 534,
+      "unique_pct": 6.6,
+      "code_pct": 12.0,
+      "meta_pct": 0.0,
+      "median_len": 25.0,
+      "by_bot": {
+        "Scout": 420,
+        "Quorum": 112,
+        "Critic": 1,
+        "Explorer": 1
+      },
+      "by_kind": {
+        "VISIT": 406,
+        "APPROVED": 112,
+        "RETIRED": 14,
+        "REASONING": 2
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 534,
+        "unique_pct": 6.6,
+        "code_pct": 12.0,
+        "meta_pct": 0.0,
+        "median_len": 25.0,
+        "by_bot": {
+          "Scout": 420,
+          "Quorum": 112,
+          "Critic": 1,
+          "Explorer": 1
+        },
+        "by_kind": {
+          "VISIT": 406,
+          "APPROVED": 112,
+          "RETIRED": 14,
+          "REASONING": 2
+        }
+      }
+    },
+    "2026-11-08": {
+      "n": 534,
+      "unique_pct": 6.6,
+      "code_pct": 12.0,
+      "meta_pct": 0.0,
+      "median_len": 25.0,
+      "by_bot": {
+        "Scout": 420,
+        "Quorum": 112,
+        "Explorer": 2
+      },
+      "by_kind": {
+        "VISIT": 406,
+        "APPROVED": 112,
+        "RETIRED": 14,
+        "REASONING": 2
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 534,
+        "unique_pct": 6.6,
+        "code_pct": 12.0,
+        "meta_pct": 0.0,
+        "median_len": 25.0,
+        "by_bot": {
+          "Scout": 420,
+          "Quorum": 112,
+          "Explorer": 2
+        },
+        "by_kind": {
+          "VISIT": 406,
+          "APPROVED": 112,
+          "RETIRED": 14,
+          "REASONING": 2
+        }
+      }
+    },
+    "2026-11-09": {
+      "n": 226,
+      "unique_pct": 35.8,
+      "code_pct": 0.0,
+      "meta_pct": 0.0,
+      "median_len": 32.0,
+      "by_bot": {
+        "Scout": 210,
+        "Quorum": 16
+      },
+      "by_kind": {
+        "VISIT": 203,
+        "APPROVED": 16,
+        "RETIRED": 7
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 226,
+        "unique_pct": 35.8,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 32.0,
+        "by_bot": {
+          "Scout": 210,
+          "Quorum": 16
+        },
+        "by_kind": {
+          "VISIT": 203,
+          "APPROVED": 16,
+          "RETIRED": 7
+        }
+      }
+    },
+    "2026-11-10": {
+      "n": 267,
+      "unique_pct": 12.7,
+      "code_pct": 12.0,
+      "meta_pct": 0.0,
+      "median_len": 25,
+      "by_bot": {
+        "Scout": 210,
+        "Quorum": 56,
+        "Critic": 1
+      },
+      "by_kind": {
+        "VISIT": 203,
+        "APPROVED": 56,
+        "RETIRED": 7,
+        "REASONING": 1
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 267,
+        "unique_pct": 12.7,
+        "code_pct": 12.0,
+        "meta_pct": 0.0,
+        "median_len": 25,
+        "by_bot": {
+          "Scout": 210,
+          "Quorum": 56,
+          "Critic": 1
+        },
+        "by_kind": {
+          "VISIT": 203,
+          "APPROVED": 56,
+          "RETIRED": 7,
+          "REASONING": 1
+        }
+      }
+    },
+    "2026-11-13": {
+      "n": 48,
+      "unique_pct": 100.0,
+      "code_pct": 0.0,
+      "meta_pct": 0.0,
+      "median_len": 39.0,
+      "by_bot": {
+        "Scout": 30,
+        "Quorum": 16,
+        "(none)": 2
+      },
+      "by_kind": {
+        "VISIT": 29,
+        "APPROVED": 16,
+        "(none)": 2,
+        "RETIRED": 1
+      },
+      "msg": {
+        "n": 2,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 56.0,
+        "by_bot": {
+          "(none)": 2
+        },
+        "by_kind": {
+          "(none)": 2
+        }
+      },
+      "text": {
+        "n": 46,
+        "unique_pct": 100.0,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "Scout": 30,
+          "Quorum": 16
+        },
+        "by_kind": {
+          "VISIT": 29,
+          "APPROVED": 16,
+          "RETIRED": 1
+        }
+      }
+    },
+    "2026-11-15": {
+      "n": 272,
+      "unique_pct": 29.8,
+      "code_pct": 0.0,
+      "meta_pct": 0.0,
+      "median_len": 35.0,
+      "by_bot": {
+        "Scout": 240,
+        "Quorum": 32
+      },
+      "by_kind": {
+        "VISIT": 232,
+        "APPROVED": 32,
+        "RETIRED": 8
+      },
+      "msg": {
+        "n": 0
+      },
+      "text": {
+        "n": 272,
+        "unique_pct": 29.8,
+        "code_pct": 0.0,
+        "meta_pct": 0.0,
+        "median_len": 35.0,
+        "by_bot": {
+          "Scout": 240,
+          "Quorum": 32
+        },
+        "by_kind": {
+          "VISIT": 232,
+          "APPROVED": 32,
+          "RETIRED": 8
+        }
+      }
+    },
+    "2026-11-16": {
+      "n": 101,
+      "unique_pct": 65.3,
+      "code_pct": 0.0,
+      "meta_pct": 61.4,
+      "median_len": 39,
+      "by_bot": {
+        "(none)": 60,
+        "Scout": 36,
+        "Quorum": 4,
+        "Critic": 1
+      },
+      "by_kind": {
+        "(none)": 60,
+        "VISIT": 35,
+        "APPROVED": 4,
+        "RETIRED": 1,
+        "REASONING": 1
+      },
+      "msg": {
+        "n": 60,
+        "unique_pct": 50.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 60
+        },
+        "by_kind": {
+          "(none)": 60
+        }
+      },
+      "text": {
+        "n": 41,
+        "unique_pct": 87.8,
+        "code_pct": 0.0,
+        "meta_pct": 4.9,
+        "median_len": 31,
+        "by_bot": {
+          "Scout": 36,
+          "Quorum": 4,
+          "Critic": 1
+        },
+        "by_kind": {
+          "VISIT": 35,
+          "APPROVED": 4,
+          "RETIRED": 1,
+          "REASONING": 1
+        }
+      }
+    },
+    "2026-11-18": {
+      "n": 284,
+      "unique_pct": 36.3,
+      "code_pct": 0.0,
+      "meta_pct": 54.6,
+      "median_len": 39.0,
+      "by_bot": {
+        "(none)": 150,
+        "Scout": 105,
+        "Quorum": 26,
+        "Explorer": 2,
+        "Critic": 1
+      },
+      "by_kind": {
+        "(none)": 150,
+        "VISIT": 102,
+        "APPROVED": 26,
+        "RETIRED": 3,
+        "REASONING": 3
+      },
+      "msg": {
+        "n": 150,
+        "unique_pct": 20.0,
+        "code_pct": 0.0,
+        "meta_pct": 100.0,
+        "median_len": 39.0,
+        "by_bot": {
+          "(none)": 150
+        },
+        "by_kind": {
+          "(none)": 150
+        }
+      },
+      "text": {
+        "n": 134,
+        "unique_pct": 54.5,
+        "code_pct": 0.0,
+        "meta_pct": 3.7,
+        "median_len": 35.0,
+        "by_bot": {
+          "Scout": 105,
+          "Quorum": 26,
+          "Explorer": 2,
+          "Critic": 1
+        },
+        "by_kind": {
+          "VISIT": 102,
+          "APPROVED": 26,
+          "RETIRED": 3,
+          "REASONING": 3
+        }
+      }
+    }
+  }
+}
