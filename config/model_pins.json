@@ -1,6 +1,6 @@
 {
   "_comment": "MP-042 model-pin manifest. Single source of truth for 'which Ollama model drives which job', so a job fails loud on drift instead of silently skipping (the problem MP-042/#187 describes). Validate with scripts/check_model_pins.py.",
-  "_scope": "The in_game block below is READ-ONLY documentation — ModelConfig.java (src/main/java/com/mindpalace/agent/ModelConfig.java) is the actual source of truth for those roles; this file only mirrors it so the validator can catch the two drifting apart. The cron_jobs block is the part this file actually governs, but it's a PROPOSED CONTRACT, not yet wired into any local cron/Task Scheduler entry outside this repo -- Hermes' own scheduler needs to be pointed at it for the pin to take effect. See docs/MODEL_PINS.md.",
+  "_scope": "The in_game block below is READ-ONLY documentation — ModelConfig.java (src/main/java/com/mindpalace/agent/ModelConfig.java) is the actual source of truth for those roles; this file only mirrors it so the validator can catch the two drifting apart. The cron_jobs block is the part this file actually governs, but it's a PROPOSED CONTRACT, not yet wired into any local cron/Task Scheduler entry outside this repo -- Hermes' own scheduler needs to be pointed at it for the pin to take effect. See docs/MODEL_PINS.md. LIVE-4 UPDATE (2026-11-20, t_9bc9210e): Hermes cron jobs now carry per-job pinned provider/model in the Hermes scheduler itself (hermes cron job model/provider fields) and are audited every 15 min by the cron_status_watchdog (AIGEN_SYS/reports/cron_status.json, noncompliant_model must stay 0); the authorized pair for enabled Hermes LLM jobs is ollama-cloud/glm-5.3-flash per the Architect's 2026-10-11 scope ruling. The cron_jobs block below is superseded for Hermes-side jobs — it stays for the in-repo contract shape; see docs/CRON_PROVIDER_REGISTRY.md for the real per-job list.",
   "in_game": {
     "tool": "llama3.2:1b",
     "critic": "qwen2.5:0.5b",
@@ -13,7 +13,13 @@
     "hermes_task_executor": {
       "model": "codellama:7b",
       "role": "picks up the single in-flight TASK_*.md/.json card and writes the actual code change",
-      "status": "proposed default — Architect/Hermes maintainer to confirm against what Hermes is really invoking today"
+      "status": "superseded 2026-11-20 (LIVE-4): Hermes-side jobs are pinned in the scheduler itself; this entry is no longer the operative pin. See docs/CRON_PROVIDER_REGISTRY.md."
+    },
+    "hermes_cron_llm_jobs": {
+      "model": "glm-5.3-flash",
+      "provider": "ollama-cloud",
+      "role": "authorized Hermes-own reasoning model for enabled Hermes cron LLM jobs (scope ruling 2026-10-11)",
+      "status": "confirmed 2026-11-20: per-job pins set for all LLM cron jobs; watchdog audits them"
     }
   },
   "installed_models_reference": [

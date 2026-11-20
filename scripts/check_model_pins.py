@@ -65,23 +65,48 @@ class OllamaCheckFailed(Exception):
     """ollama IS present but the listing call itself failed — that's a real problem, not something to wave through."""
 
 
+def _job_provider(spec):
+    """A cron_jobs entry may carry its own provider (LIVE-4). Provider
+    'ollama-cloud' = Hermes' own reasoning model, intentionally NOT a local
+    ollama install, so the installed-model check does not apply to it."""
+    return str(spec.get("provider") or "").strip().lower()
+
+
+def _job_is_nonlocal(spec):
+    return _job_provider(spec) in ("ollama-cloud", "cloud", "hermes-own")
+
+
 def ollama_list():
-    """Returns (names, warning). Raises OllamaUnavailable/OllamaCheckFailed on the two different failure modes."""
+    """Returns (names, warning). Raises OllamaUnavailable/OllamaCheckFailed on the two different failure modes.
+
+    Tries `ollama list` first (matches the docstring contract), then falls
+    back to the local HTTP API GET /api/tags (LIVE-4 2026-11-20: on this
+    host the CLI can hang >60s under load while the API answers instantly;
+    loopback-only, no network egress).
+    """
     try:
-        result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=15)
+        result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=20)
     except FileNotFoundError:
-        raise OllamaUnavailable("ollama binary not on PATH — skipping installed-model check")
+        result = None
+    except Exception:
+        result = None
+    if result is not None and result.returncode == 0:
+        names = set()
+        for line in result.stdout.splitlines()[1:]:
+            parts = line.split()
+            if parts:
+                names.add(parts[0])
+        return names
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=15) as resp:
+            data = json.load(resp)
+        return {m.get("name", "") for m in data.get("models", [])}
     except Exception as e:
-        raise OllamaCheckFailed(f"could not run `ollama list`: {e}")
-    if result.returncode != 0:
-        raise OllamaCheckFailed(f"`ollama list` exited {result.returncode}: {result.stderr.strip()}")
-    # First column of each non-header line is the model name (tag included).
-    names = set()
-    for line in result.stdout.splitlines()[1:]:
-        parts = line.split()
-        if parts:
-            names.add(parts[0])
-    return names
+        if result is None:
+            raise OllamaUnavailable(f"ollama not on PATH and API probe failed: {e}")
+        raise OllamaCheckFailed(f"could not list ollama models (CLI + API): {e}")
 
 
 def _model_installed(model, installed):
@@ -134,7 +159,9 @@ def main():
     # 2. every pinned model actually installed
     all_pins = dict(pins.get("in_game", {}))
     for job, spec in pins.get("cron_jobs", {}).items():
-        all_pins[f"cron_jobs.{job}"] = spec.get("model")
+        if isinstance(spec, dict) and _job_is_nonlocal(spec):
+            continue  # Hermes-own cloud-provider pin (LIVE-4): verified by the scheduler, not `ollama list`
+        all_pins[f"cron_jobs.{job}"] = spec.get("model") if isinstance(spec, dict) else spec
 
     # A job with no model configured at all is not "nothing to check against
     # ollama" — it's an incomplete pin, and must fail regardless of whether
