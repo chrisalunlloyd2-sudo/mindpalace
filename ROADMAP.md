@@ -105,7 +105,11 @@ phase (v1.1.0-beta1 is live).
 - [x] Tested headless (selftest #8 "editor opens on book click"; 99/0 @ f66dbf7)
 
 ### 2.3 GitHub Posters
-- [ ] Pull JPGs from GitHub repos → render on wall posters
+- [x] Repo images reach the wall posters (RoomPopulator.java:83-84 picks the repo's
+      first image file → WorldBuilder.getPosterTexture lazy async decode + cache,
+      language-diagram fallback — #349)
+- [ ] Pull directly from the remote (network download) — current path reads the
+      working copy of the GitHub clone when RepoMapper localPath exists
 - [ ] Advanced 3D texture mapping (avoid the usual 3D texture distortion)
 
 ---
