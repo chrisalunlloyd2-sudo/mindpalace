@@ -25,6 +25,24 @@ import com.mindpalace.agent.ModelScheduler;
  * A model that gives no usable answer ABSTAINS with a labeled reason
  * (abstain_timeout / abstain_empty / abstain_unparseable / abstain_error) —
  * the old Math.random() fallback is gone.
+ *
+ * ── SIMS1337 parity record (t_0b2c73c9; wire contract in VoteSchemaCodec) ──
+ * 1:1 with SIMS1337 com/aigen/sims/voting/WeightedQuorumVote.java:
+ *   field names (id/text/hex/timeSlot/votes/pulsePhase/quorumMin/approveMin),
+ *   Vote enum core APPROVE|REJECT|BLIND, weight curve
+ *   1.0 + 0.5*(1 − 2*phaseDist) = 1.0–1.5×, default thresholds (1,3,2), and
+ *   the BLINDED gate (blind > visible && total >= quorumMin).
+ * Documented deltas:
+ *   1) ABSTAIN is a 4th ballot value (t_deed6566) — SIMS1337 has 3.
+ *   2) real-vote floor REAL_VOTE_MIN=2 + NO_QUORUM replaces SIMS1337's
+ *      PENDING when the floor is unmet (blind votes never decide).
+ *   3) 2D HexCoord (q,r) — SIMS1337 carries an unused-in-voting z layer;
+ *      read side tolerates "q,r,z" so SIMS1337 wire payloads parse.
+ *   4) autoVoteAll deterministic (seeded hash) — SIMS1337 uses Math.random().
+ *   5) MP evolutions kept (never-delete): VoteQualityLedger outcomes,
+ *      suggestedActions, proposalType, telemetry sink, actualVoteAll.
+ *   Serialization wire format lives in VoteSchemaCodec (schema 1.0, Gson);
+ *   quorum_ledger.jsonl vocabulary matches QuorumTaskSpawner.ledgerRecord.
  */
 public class WeightedQuorumVote {
     public enum Vote { APPROVE, REJECT, BLIND, ABSTAIN }

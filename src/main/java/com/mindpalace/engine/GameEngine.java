@@ -4457,6 +4457,20 @@ public class GameEngine {
                 : " (skipped - earlier stage failed)") : ""));
         if (simsOk) pass++; else fail++;
 
+        // 19c. Voting schema (t_0b2c73c9) — VoteSchemaCodec round-trip +
+        //      malformed-vote validation, mirroring the SIMS1337
+        //      WeightedQuorumVote schema fields exactly (schema v1.0).
+        boolean voteSchemaOk = false;
+        String voteSchemaWhy = "";
+        try {
+            voteSchemaOk = runVotingSchemaProbe();
+        } catch (Throwable t) {
+            voteSchemaWhy = t.getClass().getSimpleName() + " " + t.getMessage();
+        }
+        System.out.println((voteSchemaOk ? "PASS" : "FAIL") + " voting schema codec"
+            + (voteSchemaOk ? "" : " (" + voteSchemaWhy + ")"));
+        if (voteSchemaOk) pass++; else fail++;
+
         // 20. Code editor language toggle — ~20-language registry + LoRA switch
         boolean langOk = LanguageRegistry.count() >= 20;
         if (langOk) {
@@ -6235,6 +6249,86 @@ public class GameEngine {
         System.out.println("[selftest] all green — exiting.");
         cleanup();
         System.exit(0);
+    }
+
+    /**
+     * Voting-schema probe (t_0b2c73c9) — the 19c check body, extracted so its
+     * locals cannot collide with the other ~50 checks' names in runSelfTest.
+     * Proves, against the SAME WeightedQuorumVote the live agent loop uses:
+     *   1) proposal → JSON → typed ballot round-trip (all field names/values),
+     *   2) QuorumResult envelope (tally with real-vote count),
+     *   3) six malformed payloads each REJECTED (unknown vote / missing votes
+     *      / bad schema / bad hex / time_slot out of range / not JSON),
+     *   4) SIMS1337 "q,r,z" hex tolerated on read (z dropped — 2D world).
+     */
+    private boolean runVotingSchemaProbe() {
+        // Round-trip: register real proposals, cast through the engine,
+        // serialize, parse back, compare typed fields.
+        com.mindpalace.agent.sims.WeightedQuorumVote wqv =
+            new com.mindpalace.agent.sims.WeightedQuorumVote(1, 3, 2);
+        wqv.setModelPosition("qwen2.5:0.5b", 0, 0);
+        wqv.setModelPosition("llama3.2:1b", 0, 0);
+        wqv.setModelPosition("deepseek-r1:1.5b", 5, 5);
+        String pid = "schema-rt";
+        wqv.registerProposal(pid, "round trip", new HexCoord(0, 0));
+        wqv.castVote(pid, "qwen2.5:0.5b",
+            com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE);
+        wqv.castVote(pid, "llama3.2:1b",
+            com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT);
+        wqv.castVote(pid, "deepseek-r1:1.5b",
+            com.mindpalace.agent.sims.WeightedQuorumVote.Vote.BLIND);
+        com.mindpalace.agent.sims.VoteSchemaCodec.VoteBallot rt =
+            com.mindpalace.agent.sims.VoteSchemaCodec.parseProposal(
+                com.mindpalace.agent.sims.VoteSchemaCodec.proposalToJson(
+                    wqv.getProposal(pid)));
+        boolean roundTrip = rt.proposalId.equals(pid)
+            && rt.hex.equals(new HexCoord(0, 0))
+            && rt.votes.size() == 3
+            && rt.votes.get("qwen2.5:0.5b")
+                == com.mindpalace.agent.sims.WeightedQuorumVote.Vote.APPROVE
+            && rt.votes.get("llama3.2:1b")
+                == com.mindpalace.agent.sims.WeightedQuorumVote.Vote.REJECT
+            && rt.votes.get("deepseek-r1:1.5b")
+                == com.mindpalace.agent.sims.WeightedQuorumVote.Vote.BLIND
+            && rt.toJson().contains("\"proposal_id\":\"schema-rt\"");
+        // Result envelope round-trips too (tally present, real votes = 2).
+        com.mindpalace.agent.sims.WeightedQuorumVote.QuorumResult qr =
+            wqv.calculateQuorum(pid);
+        String resultJson =
+            com.mindpalace.agent.sims.VoteSchemaCodec.resultToJson(qr);
+        boolean resultEnvelope = resultJson.contains("\"tally\"")
+            && resultJson.contains("\"real\":2");
+        // Validation: each malformed payload must be REJECTED with a throw.
+        String[][] malformed = {
+            {"unknown vote", "{\"schema\":\"1.0\",\"proposal_id\":\"x\",\"text\":\"t\",\"hex\":\"0,0\",\"time_slot\":0.5,\"quorum_min\":3,\"approve_min\":2,\"votes\":{\"m\":\"MAYBE\"}}"},
+            {"missing votes", "{\"schema\":\"1.0\",\"proposal_id\":\"x\",\"text\":\"t\",\"hex\":\"0,0\",\"time_slot\":0.5,\"quorum_min\":3,\"approve_min\":2}"},
+            {"bad schema", "{\"schema\":\"9.9\",\"proposal_id\":\"x\",\"text\":\"t\",\"hex\":\"0,0\",\"time_slot\":0.5,\"quorum_min\":3,\"approve_min\":2,\"votes\":{}}"},
+            {"bad hex", "{\"schema\":\"1.0\",\"proposal_id\":\"x\",\"text\":\"t\",\"hex\":\"oops\",\"time_slot\":0.5,\"quorum_min\":3,\"approve_min\":2,\"votes\":{}}"},
+            {"slot range", "{\"schema\":\"1.0\",\"proposal_id\":\"x\",\"text\":\"t\",\"hex\":\"0,0\",\"time_slot\":1.5,\"quorum_min\":3,\"approve_min\":2,\"votes\":{}}"},
+            {"not json", "not json at all"}
+        };
+        boolean rejectedAll = true;
+        for (String[] bad : malformed) {
+            try {
+                com.mindpalace.agent.sims.VoteSchemaCodec.parseProposal(bad[1]);
+                rejectedAll = false;
+                System.out.println("  schema probe: malformed NOT rejected: " + bad[0]);
+                break;
+            } catch (com.mindpalace.agent.sims.VoteSchemaCodec.VoteSchemaException expected) {
+                // correct: malformed must throw
+            }
+        }
+        // SIMS1337 tolerance: "q,r,z" hex parses on read (z ignored).
+        boolean zTolerated;
+        try {
+            zTolerated = com.mindpalace.agent.sims.VoteSchemaCodec.parseHex("1,2,3")
+                .equals(new HexCoord(1, 2));
+        } catch (Exception e) { zTolerated = false; }
+        System.out.println("  schema probe: roundtrip=" + roundTrip
+            + " envelope=" + resultEnvelope
+            + " malformed-rejected=" + rejectedAll
+            + " hexZ-tolerated=" + zTolerated);
+        return roundTrip && resultEnvelope && rejectedAll && zTolerated;
     }
 
     /**
