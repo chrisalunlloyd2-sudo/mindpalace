@@ -78,10 +78,15 @@ public class AgentManager {
     // ── SIMS1337 parity ────────────────────────────────────────────────
     // The four pillars of the SIMS1337 headless architecture, ported in:
     //   ModelRouter        — complexity-based model tier selection
+    //   ModelPool          — the 4-tier registry + availability fallback ladder
     //   LoRASwitcher      — <100ms LoRA adapter weight switching
     //   WeightedQuorumVote — FOW-gated quorum voting with time pulse
     //   FOWGate           — fog-of-war visibility (agent→hex, model→agent)
-    private final ModelRouter router = new ModelRouter();
+    // The pool is the pool-backed router's availability source (t_8452f017);
+    // select() on the router stays the pure 1:1 mapping (selftest check 19).
+    private final com.mindpalace.agent.sims.ModelPool modelPool =
+        new com.mindpalace.agent.sims.ModelPool();
+    private final ModelRouter router = new ModelRouter(modelPool);
     private final LoRASwitcher lora = new LoRASwitcher();
     private final WeightedQuorumVote quorum = new WeightedQuorumVote();
     private final FOWGate fow = new FOWGate();
@@ -222,7 +227,30 @@ public class AgentManager {
         // LoRA: start on CODE (the tool agent's primary domain).
         lora.switchAdapter(AdapterType.CODE);
 
-        log("[AgentManager] SIMS1337 parity wired — router + LoRA + quorum + FOW + tie-breaker " + TIE_MODEL);
+        // ModelPool (t_8452f017): snapshot installed tiers once so the router's
+        // fallback ladder knows which primaries exist. One listModels() HTTP
+        // call, zero inference — no load, no spacing-gate cost. Never probes in
+        // selftest (hermetic pattern: the selftest drives the pool itself
+        // deterministically and offline).
+        if (!selfTest) {
+            try {
+                Set<String> installed = modelPool.probeAvailable(ollama);
+                if (modelPool.allPrimariesAvailable()) {
+                    log("[ModelPool] all 4 tier primaries installed");
+                } else if (modelPool.anyPrimaryAvailable()) {
+                    log("[ModelPool] partial pool — fallback ladders active: "
+                        + installed);
+                } else {
+                    log("[ModelPool] no tier primaries found (Ollama offline or "
+                        + "models missing) — router stays on pure mapping");
+                }
+            } catch (RuntimeException e) {
+                // Probe failure must never block parity wiring (CI has no Ollama).
+                log("[ModelPool] probe failed, pure mapping retained: " + e.getMessage());
+            }
+        }
+
+        log("[AgentManager] SIMS1337 parity wired — router + pool + LoRA + quorum + FOW + tie-breaker " + TIE_MODEL);
     }
 
     public void stop() {
@@ -408,8 +436,19 @@ public class AgentManager {
             "cycle", proposalTargetName(currentRoom));
 
         // Route the tool agent's model by task complexity (SIMS1337 ModelRouter).
+        // T_8452f017: when the pool has probed availability, degrade along the
+        // tier's fallback ladder if the primary isn't installed (SIMS1337
+        // tryModel semantics — final fallback qwen2.5:0.5b). Unprobed (null
+        // snapshot) → pure 1:1 mapping, identical to the pre-pool behavior.
         Complexity cx = Complexity.estimate(context);
-        routedModel = router.select(cx);
+        String routed = router.select(cx);
+        String degraded = router.selectAvailable(cx);
+        if (!degraded.equals(routed)) {
+            log("[AgentManager] pool fallback: " + routed + " unavailable → "
+                + degraded + " (" + router.fallbackReason(cx, degraded) + ")");
+            routed = degraded;
+        }
+        routedModel = routed;
         lora.switchAdapter(AdapterType.CODE);
         log("[AgentManager] routed " + cx + " → " + routedModel + " (" + router.reason(cx) + ")");
 
@@ -1433,6 +1472,7 @@ public class AgentManager {
 
     // ── SIMS1337 parity getters (for self-test + telemetry) ──
     public ModelRouter getRouter() { return router; }
+    public com.mindpalace.agent.sims.ModelPool getModelPool() { return modelPool; }
     public LoRASwitcher getLora() { return lora; }
     public WeightedQuorumVote getQuorum() { return quorum; }
     public FOWGate getFow() { return fow; }

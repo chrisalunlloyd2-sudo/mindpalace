@@ -4457,6 +4457,117 @@ public class GameEngine {
                 : " (skipped - earlier stage failed)") : ""));
         if (simsOk) pass++; else fail++;
 
+        // 19b. SIMS1337 ModelPool (t_8452f017) — 4-tier registry + fallback
+        // ladder. Fully deterministic: drives the pool's availability snapshot
+        // DIRECTLY (the pool exposes it for exactly this), no Ollama, no HTTP.
+        // Ports SIMS1337 ModelRouterTest + ModelPoolTest coverage that does not
+        // need inference; the SIMS source's own getters-broken key mismatch is
+        // flagged in ModelPool's header, not replicated.
+        boolean poolOk = agentManager != null;
+        String poolDetail = "";
+        String poolStage = "init";
+        if (poolOk) {
+            try {
+                com.mindpalace.agent.sims.ModelPool pool = agentManager.getModelPool();
+                ModelRouter pr = agentManager.getRouter();
+                // (a) 4 tiers with the SIMS1337 membership.
+                poolStage = "a";
+                poolOk = pool.getTierCount() == 4
+                    && ModelRouter.FAST.equals(pool.getModel("fast"))
+                    && ModelRouter.BALANCED.equals(pool.getModel("balanced"))
+                    && ModelRouter.REASONING.equals(pool.getModel("reasoning"))
+                    && ModelRouter.DEEP.equals(pool.getModel("deep"));
+                // (b) tierFor mirrors the router's 1:1 mapping at every level.
+                poolStage = "b";
+                if (poolOk) {
+                    for (Complexity c : Complexity.values()) {
+                        String viaPool = pool.tierFor(c).primary;
+                        String viaRouter = pr.select(c);
+                        if (!viaPool.equals(viaRouter)) { poolOk = false; break; }
+                    }
+                }
+                // (c) Unprobed pool → pure mapping passthrough (SIMS1337 base).
+                poolStage = "c";
+                if (poolOk) {
+                    if (pool.getAvailable() == null) {
+                        poolOk = pr.selectAvailable(Complexity.CRITICAL).equals(ModelRouter.DEEP)
+                              && pr.selectAvailableWithLatency(Complexity.HIGH, 199).equals(ModelRouter.FAST);
+                    }
+                }
+                // (d) Full pool → every tier resolves to its primary.
+                poolStage = "d";
+                if (poolOk) {
+                    pool.probeAvailableSnapshotForSelfTest(java.util.Set.of(
+                        ModelRouter.FAST, ModelRouter.BALANCED,
+                        ModelRouter.REASONING, ModelRouter.DEEP));
+                    poolOk = pr.selectAvailable(Complexity.VERY_LOW).equals(ModelRouter.FAST)
+                          && pr.selectAvailable(Complexity.MEDIUM).equals(ModelRouter.BALANCED)
+                          && pr.selectAvailable(Complexity.HIGH).equals(ModelRouter.REASONING)
+                          && pr.selectAvailable(Complexity.CRITICAL).equals(ModelRouter.DEEP)
+                          && pool.allPrimariesAvailable();
+                }
+                // (e) Degradation ladder: reasoning gone → balanced → deep→ladder→FAST.
+                poolStage = "e";
+                if (poolOk) {
+                    pool.probeAvailableSnapshotForSelfTest(java.util.Set.of(ModelRouter.FAST));
+                    poolOk = pr.selectAvailable(Complexity.MEDIUM).equals(ModelRouter.FAST)      // balanced→fast
+                          && pr.selectAvailable(Complexity.HIGH).equals(ModelRouter.FAST)        // reasoning→…→fast
+                          && pr.selectAvailable(Complexity.CRITICAL).equals(ModelRouter.FAST)    // deep→…→fast
+                          && pr.selectAvailable(Complexity.LOW).equals(ModelRouter.FAST)         // fast itself
+                          && pool.anyPrimaryAvailable()
+                          && !pool.allPrimariesAvailable();
+                }
+                // (f) Empty pool (Ollama down after probe) → SIMS1337's final
+                // fallback: the smallest known model, for EVERY complexity.
+                poolStage = "f";
+                if (poolOk) {
+                    pool.probeAvailableSnapshotForSelfTest(java.util.Set.of());
+                    poolOk = pr.selectAvailable(Complexity.LOW).equals(ModelRouter.FAST)
+                          && pr.selectAvailable(Complexity.MEDIUM).equals(ModelRouter.FAST)
+                          && pr.selectAvailable(Complexity.HIGH).equals(ModelRouter.FAST)
+                          && pr.selectAvailable(Complexity.CRITICAL).equals(ModelRouter.FAST)
+                          && !pool.anyPrimaryAvailable();
+                }
+                // (g) Latency caps win BEFORE the ladder (SIMS1337 order), and
+                // the fallback reason names both sides of the degrade. Three
+                // sub-predicates reported individually when they fail.
+                poolStage = "g";
+                if (poolOk) {
+                    pool.probeAvailableSnapshotForSelfTest(java.util.Set.of(ModelRouter.FAST, ModelRouter.BALANCED));
+                    // SPEC CONFLICT FLAG (t_8452f017): SIMS1337's
+                    // selectModelWithLatency uses strict `maxLatencyMs < 200`
+                    // but its own test calls it WITH 200 and asserts the fast
+                    // model — 200 < 200 is false, so that test can never pass
+                    // against its own source. The port keeps the normative
+                    // strict `<` semantics and the check uses unambiguous
+                    // boundary values (199 = genuinely under the cap).
+                    boolean g1 = pr.selectAvailableWithLatency(Complexity.CRITICAL, 199).equals(ModelRouter.FAST)
+                          && pr.selectAvailableWithLatency(Complexity.CRITICAL, 1000).equals(ModelRouter.BALANCED);
+                    String fr = pr.fallbackReason(Complexity.HIGH, ModelRouter.BALANCED);
+                    boolean g2 = fr.contains("phi:latest") && fr.contains(ModelRouter.BALANCED);
+                    boolean g3 = pr.fallbackReason(Complexity.LOW, ModelRouter.FAST).equals(pr.reason(Complexity.LOW));
+                    if (!g1 || !g2 || !g3) {
+                        poolOk = false;
+                        poolDetail = " (failed at stage g: latency=" + g1
+                            + " reason=" + g2 + " passthrough=" + g3
+                            + " / reason=[" + fr + "])";
+                    }
+                }
+                if (poolOk && poolDetail.isEmpty()) {
+                    poolDetail = " (ladder primary→ladder→FAST verified)";
+                } else if (!poolOk && poolDetail.isEmpty()) {
+                    poolDetail = " (failed at stage " + poolStage + ")";
+                }
+            } catch (Exception e) {
+                poolOk = false;
+                poolDetail = " (exception at stage " + poolStage + ": "
+                    + e.getClass().getSimpleName() + " " + e.getMessage() + ")";
+            }
+        }
+        System.out.println((poolOk ? "PASS" : "FAIL")
+            + " SIMS1337 ModelPool (4 tiers + tierFor parity + fallback ladder)" + poolDetail);
+        if (poolOk) pass++; else fail++;
+
         // 20. Code editor language toggle — ~20-language registry + LoRA switch
         boolean langOk = LanguageRegistry.count() >= 20;
         if (langOk) {
