@@ -3,6 +3,7 @@ package com.mindpalace.agent.sims;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -1478,6 +1479,35 @@ public final class SimsHardening100 {
                 if (!hadMarker) {
                     try { java.nio.file.Files.deleteIfExists(mp); } catch (Exception ignored) { }
                 }
+            }
+        }));
+
+        // ── #419 (FINDING-N): hermes CLI child writing >64KB to BOTH pipes is
+        // drained fully — runHermesList/runVerdict never wedge on stdout ──
+        cs.add(new Case("pipe.childOver64KOnBothPipesReturnsFullOutput", () -> {
+            try {
+                // Spawn a child that bursts 70KB to BOTH stdout and stderr in a
+                // single process, then waits. Pre-#404/#419 code (read after
+                // waitFor, stderr-only drain) wedges this child on a full pipe
+                // and the timeout burns. The gate asserts DATA, not exit codes.
+                java.util.List<String> ps = java.util.List.of("cmd.exe", "/c",
+                    "powershell -NoProfile -Command "
+                    + "\"[Console]::Out.Write(('O' * 70000)); [Console]::Error.Write(('E' * 70000))\"");
+                ProcessBuilder pb = new ProcessBuilder(ps);
+                pb.redirectErrorStream(false);
+                Process p = pb.start();
+                java.util.concurrent.Future<String> out = QuorumProposalSource.drainAsync(p.getInputStream());
+                java.util.concurrent.Future<String> err = QuorumProposalSource.drainAsync(p.getErrorStream());
+                boolean finished = p.waitFor(QuorumTaskSpawner.hermesTimeoutSec(), TimeUnit.SECONDS);
+                if (!finished) { p.destroyForcibly(); return false; }
+                if (p.exitValue() != 0) return false;
+                String sout = out.get(10, TimeUnit.SECONDS);
+                String serr = err.get(10, TimeUnit.SECONDS);
+                // GATE: FULL output from BOTH pipes — 70000 'O' and 70000 'E'.
+                return sout.length() >= 70000 && serr.length() >= 70000
+                    && sout.charAt(69999) == 'O' && serr.charAt(69999) == 'E';
+            } catch (Exception e) {
+                return false;
             }
         }));
 

@@ -471,6 +471,10 @@ public class QuorumProposalSource {
             // fills its 4KB Windows pipe blocks forever and waitFor times out
             // (the card dies as SPAWN_FAILED). Same class DeployManager.runBuild
             // fixed for issue #1.
+            // FINDING-N (#419): stdout is drained TOO — the #404 fix covered only
+            // stderr, but stdout is a separate pipe; a verbose verdict child
+            // wedged on stdout exactly the same way.
+            java.util.concurrent.Future<String> out = drainAsync(p.getInputStream());
             java.util.concurrent.Future<String> err = drainAsync(p.getErrorStream());
             boolean finished = p.waitFor(QuorumTaskSpawner.hermesTimeoutSec(), TimeUnit.SECONDS);
             if (!finished) {
@@ -478,13 +482,20 @@ public class QuorumProposalSource {
                 System.err.println("[QuorumProposalSource] " + action + " timed out: " + item);
                 return false;
             }
-            err.get(5, TimeUnit.SECONDS);
+            String stdout = "";
+            try {
+                stdout = out.get(5, TimeUnit.SECONDS);
+                err.get(5, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e2) {
+                stdout = "";
+            }
             if (p.exitValue() != 0) {
                 System.err.println("[QuorumProposalSource] " + action + " exit=" + p.exitValue()
                     + " for " + item + " stderr=" + tailChars(err.get(5, TimeUnit.SECONDS), 200));
                 return false;
             }
-            System.out.println("[QuorumProposalSource] " + action + " ok: " + item);
+            System.out.println("[QuorumProposalSource] " + action + " ok: " + item
+                + (stdout.isBlank() ? "" : " out=" + tailChars(stdout, 120)));
             return true;
         } catch (IOException | InterruptedException | java.util.concurrent.ExecutionException
                  | java.util.concurrent.TimeoutException e) {
@@ -494,8 +505,8 @@ public class QuorumProposalSource {
         }
     }
 
-    /** Drain a pipe to a string on a daemon thread so the child never blocks on a full pipe (FINDING-L, #404). */
-    private static java.util.concurrent.Future<String> drainAsync(java.io.InputStream in) {
+    /** Drain a pipe to a string on a daemon thread so the child never blocks on a full pipe (FINDING-L, #404; FINDING-N, #419). Package-visible: the selftest gate exercises it through a >64KB child. */
+    static java.util.concurrent.Future<String> drainAsync(java.io.InputStream in) {
         java.util.concurrent.CompletableFuture<String> f = new java.util.concurrent.CompletableFuture<>();
         Thread t = new Thread(() -> {
             try { f.complete(readAll(in)); } catch (Exception e) { f.complete(""); }
@@ -603,18 +614,25 @@ public class QuorumProposalSource {
             ProcessBuilder pb = new ProcessBuilder(argv);
             pb.redirectErrorStream(false);
             Process p = pb.start();
-            // FINDING-L (#404): drain both pipes while waitFor runs so the child
-            // never blocks on a full pipe and the 180s timeout is never burned
-            // on a wedged reader.
+            // FINDING-N (#419): drain BOTH pipes while waitFor runs — stdout is a
+            // separate pipe from stderr; `hermes kanban list --json` over 4KB
+            // still blocks the child, waitFor burns the whole timeout, and the
+            // quorum's real-work source goes silently empty. Same class as the
+            // FINDING-L (#404) fix in runVerdict below.
+            java.util.concurrent.Future<String> out = drainAsync(p.getInputStream());
             java.util.concurrent.Future<String> err = drainAsync(p.getErrorStream());
             boolean finished = p.waitFor(QuorumTaskSpawner.hermesTimeoutSec(), TimeUnit.SECONDS);
             if (!finished) { p.destroyForcibly(); return null; }
             if (p.exitValue() != 0) return null;
-            String out = readAll(p.getInputStream());
-            err.get(5, TimeUnit.SECONDS);
-            return out;
-        } catch (IOException | InterruptedException | java.util.concurrent.ExecutionException
-                 | java.util.concurrent.TimeoutException e) {
+            String stdout;
+            try {
+                stdout = out.get(5, TimeUnit.SECONDS);
+                err.get(5, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e2) {
+                stdout = "";
+            }
+            return stdout;
+        } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return null;
         }

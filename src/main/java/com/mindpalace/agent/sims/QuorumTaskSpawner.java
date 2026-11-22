@@ -69,11 +69,6 @@ public class QuorumTaskSpawner {
 
     private QuorumTaskSpawner() {}
 
-    /**
-     * TASK_0128 redo: log EVERY finished quorum cycle to the ledger,
-     * regardless of outcome, so per-type approval rates are measurable
-     * (an APPROVED-only ledger always reads 100%). Returns the record.
-     */
     /** Seconds a hermes CLI call may take: a loaded box answers slowly, and a killed create is a lost card. -Dmindpalace.hermes.timeoutSec (default 180, min 10). */
     public static long hermesTimeoutSec() {
         return Math.max(10L, Long.getLong("mindpalace.hermes.timeoutSec", 180L));
@@ -101,7 +96,11 @@ public class QuorumTaskSpawner {
         }
     }
 
-    /** TASK_0128 redo: append a ledger record for any cycle outcome. */
+    /**
+     * TASK_0128 redo: log EVERY finished quorum cycle to the ledger,
+     * regardless of outcome, so per-type approval rates are measurable
+     * (an APPROVED-only ledger always reads 100%).
+     */
     public static void ledgerAppendAny(WeightedQuorumVote.QuorumResult result) {
         Map<String, Object> record = ledgerRecord(result);
         if (record == null) return;

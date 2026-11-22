@@ -62,7 +62,7 @@ stage() {
     log "$label: robocopy → $dst"
     MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" "$ROBO" \
         "$(cygpath -w "$src")" "$(cygpath -w "$dst")" \
-        /XO /NFL /NDL /NJH /R:0 /W:0 "$@" >/dev/null 2>&1
+        /S /XO /NFL /NDL /NJH /R:0 /W:0 "$@" >/dev/null 2>&1
     local rc=$?
     local t1=$(date +%s)
     log "$label: $(rc_report $rc) in $((t1-t0))s"
@@ -91,7 +91,7 @@ fi
 #    push-based GitHub copy is the real backup for git history.
 if [ -d "$AIG_SRC/repos" ]; then
     stage "repos (content)" "$AIG_SRC/repos" "$AIG_DST/repos" \
-        /S /XD .git node_modules __pycache__ target worktrees \
+        /XD .git node_modules __pycache__ target worktrees \
             dist venv .venv site-packages .gradle build \
         /XF "*.pyc" "*.tmp" "*.db-wal" "*.db-shm"
 fi
