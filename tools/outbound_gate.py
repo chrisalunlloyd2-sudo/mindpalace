@@ -79,6 +79,21 @@ HIGH_ENTROPY_PATTERNS = [
     ("null-byte", r"\\x00"),
 ]
 
+# Network-recon solicitation (#418, FINDING channel: public GitHub issues).
+# An agent must not ASK FOR or publish internal network topology / access
+# material in a public channel: Tailscale hostnames, SSH login users, mesh
+# node identifiers. This is the same failure class as #316 (rule 10) through
+# the GitHub-comment channel — #397 auto-bumped 7x over 4 days asking for a
+# node's HostName + SSH User before the Architect shut it down by hand.
+NETWORK_SOLICITATION_PATTERNS = [
+    ("ssh-config-solicit", r"(?i)\b(?:ssh|sshd)[^\n]{0,80}\b(?:user|login|config|hostname|host_name|host name|unblock|values?)\b"),
+    ("ssh-key-identity-ask", r"(?i)\b(?:HostName|ssh user|login user|authorized[_ ]?keys?|id_rsa|id_ed25519)\b"),
+    ("tailscale-node-solicit", r"(?i)\btailscale[^\n]{0,80}\b(?:hostname|ip|node|unblock|hostname \+ user|host_name)\b"),
+    ("mesh-node-solicit", r"(?i)\b(?:mesh|tailnet|vpn)[^\n]{0,60}\b(?:node name|node names|internal (?:ip|address|dns))\b"),
+    ("internal-network-probe", r"(?i)\b(?:100\.(?:64|65|66|67)\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b"),
+    ("solicit-for-agent", r"(?i)\b(?:values?|credentials?|config)\b[^\n]{0,40}\bfor\b[^\n]{0,40}\b(?:alice|agent|bot|sandbox)\b"),
+]
+
 OVERRIDE_PATTERNS = [
     ("ignore-previous", r"(?i)\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|rules?|directions?)"),
     ("disregard-system-prompt", r"(?i)\bdisregard\s+(?:your|the)\s+(?:system\s+)?(?:prompt|instructions|guidelines)"),
@@ -173,6 +188,7 @@ def scan_body(body: str, subject: str = "", to: str = ""):
     findings += _findings_for_patterns(body, CREDENTIAL_PATTERNS, "credential", "blocker")
     findings += _findings_for_patterns(body, HIGH_ENTROPY_PATTERNS, "high_entropy", "blocker")
     findings += _findings_for_patterns(body, OVERRIDE_PATTERNS, "override", "blocker")
+    findings += _findings_for_patterns(body, NETWORK_SOLICITATION_PATTERNS, "network_recon", "blocker")
     findings += _entropy_tokens(body)
     findings += _findings_for_patterns(body, WARNING_PATTERNS, "advisory", "warning")
 
@@ -258,6 +274,95 @@ def verdict(findings, approved=False):
         "categories": sorted({f["category"] for f in blockers}),
         "hold_reasons": hold,
     }
+
+
+# ---------------------------------------------------------------- bump-rate
+# (#418) repeat-post guard: the same unresolved ask re-posted on a cadence is
+# the #397 signature (7 auto-bumps over 4 days). An agent may not re-post the
+# same ask to the same channel without a human in the loop after N repeats.
+# Deterministic + offline: a small JSON journal at repo default (env
+# overridable so tests never touch the real file), fail-closed like
+# load_approvals — a missing/broken journal lets the count start at 1, but a
+# REAL journal accumulates and gates. Never deletes entries.
+BUMP_JOURNAL_ENV = "MINDPALACE_BUMP_JOURNAL"
+DEFAULT_BUMP_JOURNAL = Path("config/bump_journal.json")
+BUMP_MAX_REPEATS = 3
+
+
+def bump_journal_path():
+    """Journal file: env override, else the repo default."""
+    return Path(os.environ.get(BUMP_JOURNAL_ENV) or DEFAULT_BUMP_JOURNAL)
+
+
+def load_bump_journal(path=None):
+    """{"posts": [{"key": <sha>, "when": <iso8601>}, ...]; missing/broken = {"posts": []}."""
+    p = Path(path) if path else bump_journal_path()
+    if not p.is_file():
+        return {"posts": []}
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+        posts = doc.get("posts")
+        return {"posts": posts if isinstance(posts, list) else []}
+    except (OSError, ValueError):
+        return {"posts": []}
+
+
+def bump_key(channel: str, target: str, ask: str):
+    """Stable key: sha256 over channel+target+normalised ask text."""
+    norm = "\n".join([
+        (channel or "").strip().lower(),
+        (target or "").strip(),
+        " ".join((ask or "").split()),
+    ])
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
+
+
+def bump_repeats(key: str, path=None):
+    """How many times this key was already posted (0 for a first post)."""
+    journal = load_bump_journal(path)
+    return sum(1 for p in journal["posts"] if isinstance(p, dict) and p.get("key") == key)
+
+
+def bump_blocker_if_over(key: str, path=None, max_repeats=BUMP_MAX_REPEATS):
+    """Blocker finding when the ask was already posted >= max_repeats times.
+
+    Fail-closed direction: repeat #4+ of the same unresolved ask needs the
+    channel to change or a human to intervene — re-posting is exactly what
+    made #397 run unattended for 4 days.
+    """
+    seen = bump_repeats(key, path)
+    if seen < max_repeats:
+        return None
+    return {
+        "category": "bump_rate",
+        "severity": "blocker",
+        "rule": "repeat-post-over-limit",
+        "line": 1,
+        "preview": _redact(key),
+        "length": len(key),
+        "previous_posts": seen,
+        "limit": max_repeats,
+    }
+
+
+def bump_journal_append(key: str, path=None, when_iso=None):
+    """Record one post in the journal (create-if-absent), never blocking."""
+    p = Path(path) if path else bump_journal_path()
+    journal = load_bump_journal(p)
+    journal["posts"].append({
+        "key": key,
+        "when": when_iso or datetime_iso(),
+    })
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(journal, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError:
+        pass  # journal write failure must never crash the agent loop
+
+
+def datetime_iso():
+    import datetime
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ---------------------------------------------------------------- drafts

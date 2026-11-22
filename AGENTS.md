@@ -70,6 +70,14 @@ system — the world is running right now, most hours of most days.
    --print-digests`; tests: `scripts/test_outbound_gate.py`. (2026-10-26
    incident: three cold-outreach drafts signed "Alice, Chris's business AI
    partner" were sent to strangers under the Architect's address — #316.)
+   **GitHub public channel (2026-11-22, #418):** the same gate covers
+   agent-authored GitHub issue/comment bodies — network-recon solicitation
+   (Tailscale hostnames, SSH users, internal IPs, mesh node ids, "config
+   values for <agent>") is a `network_recon` blocker, and a deterministic
+   bump-rate journal (`config/bump_journal.json`, env
+   `MINDPALACE_BUMP_JOURNAL`) blocks the 4th+ repeat of the same
+   channel+target+ask sha256 (`repeat-post-over-limit`) — the #397
+   signature (7 auto-bumps over 4 days). Fail-closed like the email lane.
 
 ## Build & verify
 ```

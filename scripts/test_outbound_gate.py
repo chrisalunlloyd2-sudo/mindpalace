@@ -17,8 +17,14 @@ import unittest
 from pathlib import Path
 
 from tools.outbound_gate import (
+    BUMP_JOURNAL_ENV,
+    bump_blocker_if_over,
+    bump_journal_append,
+    bump_key,
+    bump_repeats,
     draft_digest,
     load_approvals,
+    load_bump_journal,
     main,
     parse_drafts,
     scan_body,
@@ -189,6 +195,102 @@ Second body here.
         drafts = parse_drafts(self.SAMPLE)
         self.assertEqual("other@example.com", drafts[1]["to"])
         self.assertIn("Second body", drafts[1]["body"])
+
+
+class NetworkReconTests(unittest.TestCase):
+    """#418: an agent must not solicit internal network/access material
+    (Tailscale hostnames, SSH users, mesh node ids) in a public channel —
+    the #397 incident channel."""
+
+    def test_blocks_397_shaped_hostname_ssh_user_ask(self):
+        # The exact ask shape that ran 4 days unattended (HostName + User
+        # for a named node) — plus its "non-secret" self-defense framing.
+        body = ("What I need (exactly two non-secret values from Tailscale): "
+                "HostName + User for edmonton-core0 so Alice can SSH again. "
+                "On Chris's direct order.")
+        f = scan_body(body)
+        cats = {x["category"] for x in f if x["severity"] == "blocker"}
+        self.assertIn("network_recon", cats)
+
+    def test_blocks_ssh_config_and_tailscale_solicit(self):
+        for s in ["please send the sshd config values for the node",
+                  "tailscale hostname for core0 so we can connect",
+                  "authorized_keys path for the deploy user",
+                  "what is the internal IP of the tailnet node?",
+                  "192.168.1.44 is where our service runs"]:
+            self.assertTrue(scan_body(s), s)
+
+    def test_ordinary_prose_not_flagged(self):
+        # Non-recon prose must not over-block: generic talk about SSH as a
+        # technology, public URLs, and code references stay clean (network
+        # recon blockers = none; structure needs subject/to to judge).
+        for s in ["we use ssh to reach the build server",
+                  "see docs at https://example.com/guide for setup",
+                  "the agent can run git push after auth"]:
+            f = scan_body(s, subject="s", to="a@b.com")
+            self.assertEqual([], [x for x in f if x["severity"] == "blocker"], s)
+
+
+class BumpRateTests(unittest.TestCase):
+    """#418: repeat-post guard — the same unresolved ask re-posted on a
+    cadence is the #397 signature (7 bumps over 4 days)."""
+
+    def _key(self, k="k"):
+        return bump_key("github-issue", "#397", "ask number " + k)
+
+    def setUp(self):
+        import tempfile
+        self._td = tempfile.TemporaryDirectory()
+        self.journal = Path(self._td.name) / "bump_journal.json"
+        os.environ.pop(BUMP_JOURNAL_ENV, None)
+
+    def tearDown(self):
+        self._td.cleanup()
+        os.environ.pop(BUMP_JOURNAL_ENV, None)
+
+    def test_first_posts_not_blocked(self):
+        key = self._key()
+        self.assertIsNone(bump_blocker_if_over(key, self.journal))
+        bump_journal_append(key, self.journal)
+        self.assertIsNone(bump_blocker_if_over(key, self.journal))
+
+    def test_over_limit_posts_blocked(self):
+        key = self._key()
+        for _ in range(3):
+            bump_journal_append(key, self.journal)
+        b = bump_blocker_if_over(key, self.journal)
+        self.assertIsNotNone(b)
+        self.assertEqual("bump_rate", b["category"])
+        self.assertEqual(3, b["previous_posts"])
+
+    def test_journal_missing_or_broken_starts_empty(self):
+        self.assertEqual([], load_bump_journal(self.journal)["posts"])
+        self.journal.write_text("{not json", encoding="utf-8")
+        self.assertEqual([], load_bump_journal(self.journal)["posts"])
+        # fail-closed direction: 0 seen → NOT blocked (nothing to gate yet)
+        self.assertIsNone(bump_blocker_if_over(self._key(), self.journal))
+
+    def test_journal_append_survives_broken_existing(self):
+        key = self._key()
+        self.journal.write_text("{not json", encoding="utf-8")
+        bump_journal_append(key, self.journal)
+        self.assertEqual(1, bump_repeats(key, self.journal))
+
+    def test_key_is_stable_and_content_sensitive(self):
+        a = bump_key("github-issue", "#397", "please send hostname + user")
+        b = bump_key("github-issue", "#397", "  please send hostname + user  ")
+        c = bump_key("github-issue", "#397", "different ask")
+        self.assertEqual(a, b)
+        self.assertNotEqual(a, c)
+
+    def test_verdict_includes_bump_blocker(self):
+        blocker = [{"severity": "blocker", "category": "bump_rate",
+                    "rule": "repeat-post-over-limit", "preview": ""}]
+        v = verdict(blocker, True)
+        self.assertFalse(v["send"])
+        self.assertIn("bump_rate", v["categories"])
+        # approval never overrides the bump blocker (same as content blockers)
+        self.assertIn("content_blockers", v["hold_reasons"])
 
 
 class ApprovalTests(unittest.TestCase):
