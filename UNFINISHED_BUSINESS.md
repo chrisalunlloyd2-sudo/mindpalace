@@ -6,31 +6,37 @@ reading the actual source (SIMS1337 + MindPalace), not assumption. Grouped by se
 Legend: [BROKEN] = doesn't work at all · [STUB] = defined but not wired · [MISSING] = not built
 
 ═══════════════════════════════════════════════════════════════════════
-1. EMAIL — PARTIAL (himalaya live; morning digest not wired)
+1. EMAIL — SHIPPED (digest pipeline landed; outreach gate standing)
 ═══════════════════════════════════════════════════════════════════════
 [RECONCILED 2026-10-21 (#294)] himalaya IS installed (`~/bin/himalaya`) and
           config.toml exists with an imap/smtp account block — the "not
           installed / empty config / no creds" lines below-became-stale; creds
-          live in the credential store. Sending needs Architect's send-go.
+          live in the credential store.
 [RECONCILED 2026-11-05] `~/sent_emails/` is no longer empty — 399 sent
       messages on disk (oldest 2026-10-25, newest 2026-11-04), so harvest input
-      EXISTS. What's still open is the dream_job/digest pipeline itself (see
-      [PLANNED] below + #306).
-[INCIDENT 2026-10-26, #316] Three cold-outreach emails signed "Alice, Chris's
-      business AI partner" were SENT from the Architect's address to three
-      strangers (sent_emails 6161/6162/6163, 06:41-06:42Z). The content gate
-      (`tools/outbound_gate.py`) had pronounced them "clear to send" because it
-      only judged content. GUARD NOW IN PLACE: the gate requires a per-draft
-      human approval (sha256 in `config/outreach_approvals.json`, currently
-      EMPTY) — no record = held; AGENTS.md hard rule 10. The outreach campaign
-      itself remains UNAPPROVED: scope/remediation is the Architect's call.
-[PLANNED] dream_job.py / dream_correlation_job were spec'd but never landed
-          in-repo (no git history; absent from AIGEN_SYS/scripts/ — only the
-          unrelated KG dream_loop.py exists [ACTIVE]). The digest pipeline
-          below is designed, not started.
+      EXISTS.
+[RECONCILED 2026-11-19 (#306 CLOSED)] The digest pipeline is BUILT and was
+      signed off: Architect sign-off 2026-10-25, `~/.aria/engine/mail_digest.py`
+      built and run the same day (14 tests passing; read-only himalaya sent-mail
+      harvest -> correlate -> digest; NO sending). Its capped Hermes cron ran
+      all 28 scheduled runs (last digest 2026-11-04), and #306 was closed
+      completed 2026-11-19 with that evidence in the comment thread.
+      dream_job.py / dream_correlation_job as originally spec'd were never
+      landed in-repo — mail_digest.py is the shipped successor. Do NOT
+      re-litigate or rebuild this (same doc-drift class as AGENTS.md hard rule
+      #7 / scripts/doc_drift_sentinel.py #89; filed as #425).
+[INCIDENT 2026-10-26, #316 — STILL RELEVANT] Three cold-outreach emails signed
+      "Alice, Chris's business AI partner" were SENT from the Architect's
+      address to three strangers (sent_emails 6161/6162/6163, 06:41-06:42Z).
+      The content gate (`tools/outbound_gate.py`) had pronounced them "clear to
+      send" because it only judged content. GUARD NOW IN PLACE: the gate
+      requires a per-draft human approval (sha256 in
+      `config/outreach_approvals.json`, currently EMPTY) — no record = held;
+      AGENTS.md hard rule 10. The outreach campaign itself remains UNAPPROVED:
+      scope/remediation is the Architect's call.
 
-Fix path: wire a real morning-digest job (harvest himalaya sent mail →
-correlate → email suggestions + code-mind log).
+Open remainder: harvest mail_digest output into code-mind correlation (weekly
+variant: scripts/feedback_digest.py). No action owed for the morning digest.
 
 ═══════════════════════════════════════════════════════════════════════
 2. LOCAL MODELS — SHIPPED (was "only 2 wired"; SIMS1337 parity layer landed)
