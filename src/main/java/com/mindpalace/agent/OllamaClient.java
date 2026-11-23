@@ -87,7 +87,12 @@ public class OllamaClient {
         return (v == null || v.isBlank()) ? "15m" : v.trim();
     }
 
-    private static final String EFFECTIVE_KEEP_ALIVE = MULTI_RESIDENT ? PIN_KEEP_ALIVE : KEEP_ALIVE;
+    private static final String EFFECTIVE_KEEP_ALIVE = keepAliveValue(MULTI_RESIDENT, PIN_KEEP_ALIVE, KEEP_ALIVE);
+
+    /** Pure: the keep_alive a chat request carries in the given mode (tested in OllamaClientKeepAliveTest). */
+    static String keepAliveValue(boolean multiResident, String pinKeepAlive, String oneHotKeepAlive) {
+        return multiResident ? pinKeepAlive : oneHotKeepAlive;
+    }
 
     // model -> does Ollama report native tool-calling for it (cached; #144)
     private final java.util.concurrent.ConcurrentHashMap<String, Boolean> toolSupport = new java.util.concurrent.ConcurrentHashMap<>();
@@ -214,12 +219,18 @@ public class OllamaClient {
     }
 
     private static void applyKeepAlive(JsonObject body) {
-        // t_e29e1f81 layer 3: bare "-1" STRING → Ollama 0.40 400 "time: missing unit
-        // in duration \"-1\"" in MULTI_RESIDENT mode → every ballot's chat() returned
-        // null → abstain_empty. Accept the negative-numeric form too so "keep_alive":
-        // -1 (JSON number, pin-forever) goes out as designed.
-        if (EFFECTIVE_KEEP_ALIVE.matches("-?\\d+")) body.addProperty("keep_alive", Long.parseLong(EFFECTIVE_KEEP_ALIVE));
-        else body.addProperty("keep_alive", EFFECTIVE_KEEP_ALIVE);
+        putKeepAlive(body, EFFECTIVE_KEEP_ALIVE);
+    }
+
+    /**
+     * t_e29e1f81 layer 3: bare "-1" STRING → Ollama 0.40 400 "time: missing unit
+     * in duration \"-1\"" in MULTI_RESIDENT mode → every ballot's chat() returned
+     * null → abstain_empty. Numeric values go out as JSON numbers, durations
+     * ("15m") as strings.
+     */
+    static void putKeepAlive(JsonObject body, String value) {
+        if (value.matches("-?\\d+")) body.addProperty("keep_alive", Long.parseLong(value));
+        else body.addProperty("keep_alive", value);
     }
 
     /**
