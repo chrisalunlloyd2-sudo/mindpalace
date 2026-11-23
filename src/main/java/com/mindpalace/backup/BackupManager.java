@@ -36,6 +36,15 @@ public class BackupManager {
     private static final long HASH_PAUSE_MS = 2;
     private volatile boolean destOk = true;
     private int consecutiveCopyFailures;
+    // #381: the game's OWN Telemetry (same JVM). Registered by GameEngine at
+    // startup; snapshotTo() on it replaces the torn-copy-prone file-by-file
+    // mirror of telemetry.db. Null when no live telemetry (tests, bots).
+    private volatile com.mindpalace.backup.Telemetry liveTelemetry;
+
+    /** #381: register the live Telemetry so WAL telemetry.db backs up as ONE consistent file. */
+    public void setLiveTelemetry(com.mindpalace.backup.Telemetry telemetry) {
+        this.liveTelemetry = telemetry;
+    }
 
     private volatile long filesBackedUp;
     private volatile long bytesBackedUp;
@@ -125,6 +134,31 @@ public class BackupManager {
 
     /** Mirror a single file to D:, deduped by content hash. */
     private void mirror(Path src) {
+        // #381 (FINDING-I): a WAL-mode sqlite db is a 3-file unit (db, -wal,
+        // -shm) whose pieces change at different moments — a file-by-file copy
+        // can pair a NEWER db with an OLDER -wal, and restore-time replay
+        // corrupts the ledger. Telemetry.snapshotTo() collapses the live unit
+        // into ONE consistent file which then rides the ordinary path below.
+        // Only the game's own telemetry (the one this process may hold open)
+        // is snapshotted; other .db files keep the old copy semantics.
+        String name = src.getFileName() == null ? "" : src.getFileName().toString();
+        if (name.equals("telemetry.db") && liveTelemetry != null) {
+            Path rel = relativize(src);
+            Path dest = backupRoot.resolve(rel);
+            try {
+                if (liveTelemetry.snapshotTo(dest)) {
+                    statKey.put(src.toString(), Files.size(src) + ":" + Files.getLastModifiedTime(src).toMillis());
+                    consecutiveCopyFailures = 0;
+                    filesBackedUp++;
+                    bytesBackedUp += Files.size(dest);
+                } else {
+                    backupErrors++; // fail-skip, never a torn copy
+                }
+            } catch (IOException snapshotStatFailed) {
+                backupErrors++;
+            }
+            return;
+        }
         try {
             long size = Files.size(src);
             if (size > 50_000_000) return; // skip >50MB blobs

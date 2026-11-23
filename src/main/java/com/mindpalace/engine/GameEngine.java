@@ -930,6 +930,10 @@ public class GameEngine {
                 backupDir = "D:/mindpalace_backup";
             }
             backupManager = new BackupManager(backupDir.trim());
+            // #381: the live Telemetry rides this JVM — BackupManager must
+            // snapshot telemetry.db as ONE consistent file, never file-by-file
+            // (a NEWER db paired with an OLDER -wal corrupts at restore).
+            backupManager.setLiveTelemetry(telemetry);
             backupManager.start();
         } else {
             System.out.println("[Backup] demo mode - cold backup suppressed (hermetic selftest, refs #47)");

@@ -234,15 +234,72 @@ public final class SimsHardening100 {
                 && cz - R > com.mindpalace.world.OutsideWorld.MIN_Z && cz + R < com.mindpalace.world.OutsideWorld.MAX_Z;
         }));
         cs.add(new Case("telemetry.usesWalSoStartupDoesNotFsyncStall", () -> {
+            // #382 (FINDING-H): assert on the TELEMETRY's own connection, not a
+            // second one — journal_mode is persistent in the DB header (a fresh
+            // connection sees WAL even if the connection-scoped half of the fix
+            // is reverted), but synchronous and busy_timeout are per-connection
+            // and INVISIBLE to a second handle. This case fails when
+            // synchronous=NORMAL or busy_timeout is dropped from Telemetry.<init>.
             try {
                 java.nio.file.Path d = java.nio.file.Files.createTempDirectory("mp-tel");
-                new com.mindpalace.backup.Telemetry(d).record(com.mindpalace.backup.Telemetry.SYSTEM, "boot", "t");
-                try (java.sql.Connection c = java.sql.DriverManager.getConnection("jdbc:sqlite:" + d.resolve("telemetry.db"));
-                     java.sql.Statement st = c.createStatement(); java.sql.ResultSet rs = st.executeQuery("PRAGMA journal_mode")) {
-                    return rs.next() && "wal".equalsIgnoreCase(rs.getString(1));
+                com.mindpalace.backup.Telemetry tel = new com.mindpalace.backup.Telemetry(d);
+                java.sql.Connection c = tel.dbHandle();
+                if (c == null) return false;
+                boolean wal, syncNormal, busySet;
+                try (java.sql.Statement st = c.createStatement()) {
+                    try (java.sql.ResultSet rs = st.executeQuery("PRAGMA journal_mode")) {
+                        wal = rs.next() && "wal".equalsIgnoreCase(rs.getString(1));
+                    }
+                    try (java.sql.ResultSet rs = st.executeQuery("PRAGMA synchronous")) {
+                        // 1 = NORMAL (0=OFF, 2=FULL, 3=EXTRA)
+                        syncNormal = rs.next() && rs.getInt(1) == 1;
+                    }
+                    try (java.sql.ResultSet rs = st.executeQuery("PRAGMA busy_timeout")) {
+                        busySet = rs.next() && rs.getInt(1) >= 5000;
+                    }
                 }
+                // The recorded event proves the handle is live end-to-end.
+                boolean wrote = tel.record(com.mindpalace.backup.Telemetry.SYSTEM, "gate", "#382");
+                tel.stop();
+                return wal && syncNormal && busySet && wrote;
             } catch (java.io.IOException | java.sql.SQLException e) { return false; }
         }));
+        // ── #381 (FINDING-I): backup of a WAL db is ATOMIC — snapshotTo()
+        // produces ONE self-contained file that restores intact under
+        // concurrent writes; a file-by-file copy of the 3-file WAL unit
+        // can pair a newer db with an older -wal and corrupts on replay ──
+        cs.add(new Case("backup.telemetryWalSnapshotRestoresIntactUnderWrites", () -> {
+            try {
+                java.nio.file.Path d = java.nio.file.Files.createTempDirectory("mp-bak");
+                java.nio.file.Path snap = d.resolve("snap").resolve("telemetry.db");
+                com.mindpalace.backup.Telemetry tel = new com.mindpalace.backup.Telemetry(d);
+                // Seed rows, then keep WRITING while the snapshot is taken
+                // (concurrent-writes half of the gate).
+                for (int i = 0; i < 50; i++)
+                    tel.record(com.mindpalace.backup.Telemetry.SYSTEM, "seed", "row-" + i);
+                long before = tel.count();
+                boolean snapOk = tel.snapshotTo(snap);
+                for (int i = 0; i < 50; i++)
+                    tel.record(com.mindpalace.backup.Telemetry.SYSTEM, "concurrent", "row-" + i); // mid-copy churn
+                // The snapshot is ONE file; no -wal/-shm sidecars ride it.
+                java.nio.file.Path snapWal = d.resolve("snap").resolve("telemetry.db-wal");
+                // Restore: open the snapshot FRESH (its own connection) and read it.
+                long restored;
+                try (java.sql.Connection c = java.sql.DriverManager.getConnection(
+                        "jdbc:sqlite:" + snap);
+                     java.sql.Statement st = c.createStatement();
+                     java.sql.ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM events")) {
+                    restored = rs.next() ? rs.getLong(1) : -1;
+                }
+                long afterLive = tel.count();
+                tel.stop();
+                return snapOk && java.nio.file.Files.exists(snap)
+                    && !java.nio.file.Files.exists(snapWal)   // single-file unit
+                    && restored >= before                     // every seeded row is in
+                    && afterLive >= restored;                 // live db kept advancing
+            } catch (Exception e) { return false; }
+        }));
+
         cs.add(new Case("ollama.flashBudgetDoesNotLeakOntoCriticOrCodeLane", () -> {
             // #371/#380: FLASH_MODEL, CRITIC_MODEL and CODE_MODEL share one tag, so a tag test cannot tell the lanes apart
             return com.mindpalace.agent.ModelConfig.CRITIC_MODEL.equals(com.mindpalace.agent.ModelConfig.FLASH_MODEL)

@@ -1,5 +1,6 @@
 package com.mindpalace.backup;
 
+import java.io.IOException;
 import java.nio.file.*;
 import java.sql.*;
 import java.util.*;
@@ -41,6 +42,14 @@ public final class Telemetry {
 
     // Theta curve: soft cap on rows; oldest pruned beyond it.
     private static final int THETA_ROWS = 200_000;
+
+    /** The live JDBC connection (null when DB init failed). PUBLIC: #382's
+     *  gate (in the sims package) asserts the connection-scoped pragmas
+     *  (journal_mode WAL, synchronous=NORMAL, busy_timeout) on THIS handle —
+     *  a second connection only proves the header, it cannot see the
+     *  per-connection settings. Read-only accessor; the connection itself
+     *  stays encapsulated. */
+    public Connection dbHandle() { return db; }
 
     public Telemetry(Path dataDir) {
         this(dataDir, 0L); // 0 = no pacing by default (callers pace explicitly)
@@ -273,5 +282,35 @@ public final class Telemetry {
 
     public void stop() {
         if (db != null) { try { db.close(); } catch (SQLException ignored) {} }
+    }
+
+    /**
+     * #381 (FINDING-I): backup-safe single-file snapshot. journal_mode=WAL makes
+     * telemetry.db a 3-file unit (db, -wal, -shm) whose pieces change at
+     * different moments; a file-by-file copy can pair a NEWER db with an OLDER
+     * -wal and restore-time replay corrupts the ledger. VACUUM INTO collapses
+     * the live unit (including all WAL content) into one fresh, consistent,
+     * self-contained file — safe to copy with the ordinary file-by-file path.
+     * Returns true on success; false when offline or the VACUUM failed (the
+     * caller falls back to skipping this db this crawl — never to a torn copy).
+     */
+    public synchronized boolean snapshotTo(Path dest) {
+        if (db == null) return false;
+        try {
+            Files.createDirectories(dest.getParent());
+            // VACUUM INTO fails if the target exists; remove our own dest
+            // (never the live db) first.
+            Files.deleteIfExists(dest);
+            try (Statement st = db.createStatement()) {
+                // sqlite-jdbc: VACUUM INTO returns NO result set — executeQuery()
+                // throws "query does not return ResultSet"; Statement.execute()
+                // is the correct form (selftest #381 caught exactly this).
+                st.execute("VACUUM INTO '" + dest.toString().replace("'", "''") + "'");
+            }
+            return Files.size(dest) > 0;
+        } catch (SQLException | IOException e) {
+            System.err.println("[Telemetry] snapshot " + dest + " failed: " + e.getMessage());
+            return false;
+        }
     }
 }
