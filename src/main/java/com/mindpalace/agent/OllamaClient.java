@@ -68,12 +68,26 @@ public class OllamaClient {
         return !(v.equals("false") || v.equals("0") || v.equals("off"));
     }
 
-    // While multi-resident, pin every used model (keep_alive=-1 = never
-    // idle-unloaded) so a vote roster assembled minutes apart stays hot.
-    // Ollama still frees the LRU model when a new load exceeds
-    // MAX_LOADED_MODELS, so RAM stays bounded. One-hot keeps its own
-    // KEEP_ALIVE (default 5m).
-    private static final String EFFECTIVE_KEEP_ALIVE = MULTI_RESIDENT ? "-1" : KEEP_ALIVE;
+    // While multi-resident, pin every used model for a bounded idle window so
+    // a vote roster assembled minutes apart stays hot. Ollama still frees the
+    // LRU model when a new load exceeds MAX_LOADED_MODELS. One-hot keeps its
+    // own KEEP_ALIVE (default 5m).
+    //
+    // 2026-11-22: the pin used to be keep_alive=-1 (never idle-unloaded). One
+    // tie-break ballot then left deepseek-r1:1.5b (1.4 GB) resident "Forever"
+    // with the game idle, on a PC already squeezed for RAM; background jobs
+    // were being killed for low memory. Default is now 15m: every ballot
+    // refreshes the window, so an active vote roster never cools, and an idle
+    // game hands the RAM back. Override with -Dmindpalace.ollama.pinKeepAlive=...
+    // or env MP_OLLAMA_PIN_KEEP_ALIVE (e.g. "30m"; "-1" restores pin-forever).
+    private static final String PIN_KEEP_ALIVE = resolvePinKeepAlive();
+
+    static String resolvePinKeepAlive() {
+        String v = System.getProperty("mindpalace.ollama.pinKeepAlive", System.getenv("MP_OLLAMA_PIN_KEEP_ALIVE"));
+        return (v == null || v.isBlank()) ? "15m" : v.trim();
+    }
+
+    private static final String EFFECTIVE_KEEP_ALIVE = MULTI_RESIDENT ? PIN_KEEP_ALIVE : KEEP_ALIVE;
 
     // model -> does Ollama report native tool-calling for it (cached; #144)
     private final java.util.concurrent.ConcurrentHashMap<String, Boolean> toolSupport = new java.util.concurrent.ConcurrentHashMap<>();
