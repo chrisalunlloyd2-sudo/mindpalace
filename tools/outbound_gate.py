@@ -394,11 +394,25 @@ def parse_drafts(text: str):
             "to": to,
             "subject": subject,
             "body": m.group("body").strip(),
+            # #429 (FINDING-R): channel/target for the bump-rate journal —
+            # "email" drafts use the recipient as the target; the CLI --channel
+            # / --target options (below) let a GitHub-comment caller identify
+            # the channel and issue it is about to post to.
+            "channel": os.environ.get("MINDPALACE_BUMP_CHANNEL", "email"),
+            "target": to or os.environ.get("MINDPALACE_BUMP_TARGET", ""),
         })
     return drafts
 
 
 # ---------------------------------------------------------------- cli
+
+def _opt_value(opts, name):
+    """Value of a `--name value` option from the opts list, or None."""
+    for i, a in enumerate(opts):
+        if a == name and i + 1 < len(opts):
+            return opts[i + 1]
+    return None
+
 
 def _report(draft, findings, verbose):
     v = verdict(findings)
@@ -424,6 +438,12 @@ def main(argv):
     path = args[0] if args else "-"
     only = None
     as_json = "--json" in opts
+    # #429 (FINDING-R): channel+target identify WHAT is about to be posted —
+    # the bump-rate journal keys on (channel, target, ask-body) and blocks the
+    # 4th+ repeat. The email path derives them from the draft; external
+    # callers (GitHub-comment posters per #428) pass them explicitly.
+    channel = _opt_value(opts, "--channel") or "email"
+    target_opt = _opt_value(opts, "--target")
     for i, a in enumerate(argv):
         if a == "--draft" and i + 1 < len(argv):
             only = int(argv[i + 1])
@@ -439,11 +459,20 @@ def main(argv):
 
     if only is not None:
         # single draft mode: treat the whole input as one body
-        drafts = [{"num": only, "title": "", "to": "", "subject": "", "body": text.strip()}]
+        drafts = [{"num": only, "title": "", "to": "", "subject": "", "body": text.strip(),
+                   "channel": channel, "target": target_opt or ""}]
     else:
         drafts = parse_drafts(text)
         if not drafts:
-            drafts = [{"num": 1, "title": "", "to": "", "subject": "", "body": text.strip()}]
+            drafts = [{"num": 1, "title": "", "to": "", "subject": "", "body": text.strip(),
+                       "channel": channel, "target": target_opt or ""}]
+        # CLI channel/target override the per-draft defaults (per-draft env
+        # values already fill in when the caller passed none).
+        if target_opt or channel != "email":
+            for d in drafts:
+                d["channel"] = channel
+                if target_opt:
+                    d["target"] = target_opt
 
     if "--print-digests" in opts:
         for d in drafts:
@@ -456,8 +485,16 @@ def main(argv):
         findings = scan_body(d["body"], d["subject"], d["to"])
         digest = draft_digest(d)
         approved = digest in approvals
+        # #429 (FINDING-R): the bump-rate guard is LIVE here — a repeat ask to
+        # the same channel+target adds its blocker to the same list content
+        # blockers go to, so approval cannot override it (verdict counts it).
+        bump = bump_blocker_if_over(
+            bump_key(d.get("channel", channel), d.get("target", ""), d["body"]))
+        if bump:
+            findings.append(bump)
         results.append({"draft": d, "findings": findings, "digest": digest,
-                        "approved": approved, "verdict": verdict(findings, approved)})
+                        "approved": approved, "verdict": verdict(findings, approved),
+                        "bump_key": bump and bump_key(d.get("channel", channel), d.get("target", ""), d["body"])})
 
     if as_json:
         print(json.dumps([{
@@ -479,6 +516,13 @@ def main(argv):
         print()
         print(f"{len(results) - len(blocked)}/{len(results)} drafts clear to send, {len(blocked)} held"
               f" ({content_held} content, {unapproved} awaiting human approval)")
+    # #429 (FINDING-R): journal-append the posts that CLEARED the gate (never
+    # the held ones — a held draft is not a post). This is what makes the
+    # bump-rate guard real: repeats land in the journal and the 4th is blocked.
+    for r in results:
+        if r["verdict"]["send"]:
+            d = r["draft"]
+            bump_journal_append(bump_key(d.get("channel", channel), d.get("target", ""), d["body"]))
     return 1 if blocked else 0
 
 

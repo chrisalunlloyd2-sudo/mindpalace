@@ -293,6 +293,106 @@ class BumpRateTests(unittest.TestCase):
         self.assertIn("content_blockers", v["hold_reasons"])
 
 
+class MainBumpRateTests(unittest.TestCase):
+    """#429 (FINDING-R): the bump-rate guard must be LIVE in main() — the
+    4th repeat of the same channel+target+ask is blocked END-TO-END through
+    the CLI, and cleared posts land in the journal (j => j+1 repeat seen)."""
+
+    ASK_BODY = "Weather note for the team: the selftest ran 99/0 today, deploy clean."
+    DRAFT = ("## Draft 1 (note)\nTo: team@example.com\nSubject: Weekly note\nBody:\n"
+             + ASK_BODY + "\n")
+
+    def setUp(self):
+        import hashlib, json, tempfile
+        self._td = tempfile.TemporaryDirectory()
+        self.journal = Path(self._td.name) / "bump_journal.json"
+        approvals = Path(self._td.name) / "approvals.json"
+        os.environ["MINDPALACE_BUMP_JOURNAL"] = str(self.journal)
+        os.environ["MINDPALACE_BUMP_CHANNEL"] = "github-issue"
+        os.environ["MINDPALACE_BUMP_TARGET"] = "#397"
+        os.environ["MINDPALACE_OUTREACH_APPROVALS"] = str(approvals)
+        # pre-approve the exactly-one draft so send=True is reachable; the
+        # bump gate must block even an APPROVED repeat (#418 doctrine).
+        norm = "\n".join(["team@example.com", "Weekly note", " ".join(self.ASK_BODY.split())])
+        approvals.write_text(json.dumps({"approvals": [
+            {"sha256": hashlib.sha256(norm.encode()).hexdigest(), "approvedBy": "Architect"}]}),
+            encoding="utf-8")
+        self.draft = Path(self._td.name) / "drafts.md"
+        self.draft.write_text(self.DRAFT, encoding="utf-8")
+
+    def tearDown(self):
+        self._td.cleanup()
+        for k in ("MINDPALACE_BUMP_JOURNAL", "MINDPALACE_BUMP_CHANNEL",
+                  "MINDPALACE_BUMP_TARGET", "MINDPALACE_OUTREACH_APPROVALS"):
+            os.environ.pop(k, None)
+
+    def _run(self, body=None, target=None):
+        import contextlib, io, json
+        if body is None:
+            f = self.draft
+            argv = ["outbound_gate.py", str(f), "--json"]
+        else:
+            f = Path(self._td.name) / ("d%d.md" % (1 + len(os.listdir(self._td.name))))
+            f.write_text("## Draft 1 (n)\nTo: t@e.com\nSubject: s\nBody:\n" + body + "\n",
+                         encoding="utf-8")
+            argv = ["outbound_gate.py", str(f), "--json"]
+        if target:
+            argv += ["--target", target, "--channel", "github-issue"]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = main(argv)
+        return rc, json.loads(buf.getvalue())
+
+    def test_4th_repeat_of_same_ask_blocked_end_to_end(self):
+        for seen in range(3):
+            rc, data = self._run()
+            self.assertEqual(0, rc, f"repeat {seen + 1} must clear (pre-limit)")
+            self.assertTrue(data[0]["verdict"]["send"], data)
+        rc, data = self._run()
+        self.assertEqual(1, rc, "4th repeat must be blocked via main()")
+        self.assertIn("bump_rate", data[0]["verdict"]["categories"])
+        self.assertIn("content_blockers", data[0]["verdict"]["hold_reasons"])
+        block = [f for f in data[0]["findings"] if f["category"] == "bump_rate"][0]
+        self.assertEqual(3, block["previous_posts"])
+        self.assertFalse(data[0]["verdict"]["send"])
+
+    def test_cleared_posts_land_in_the_journal(self):
+        self._run()
+        import json
+        journal = json.loads(self.journal.read_text(encoding="utf-8"))
+        self.assertEqual(1, len(journal["posts"]))
+        self.assertTrue(journal["posts"][0]["key"] and journal["posts"][0]["when"])
+        rc, _ = self._run()  # repeat #2 still under the limit, journal climbs
+        self.assertEqual(0, rc)
+        journal = json.loads(self.journal.read_text(encoding="utf-8"))
+        self.assertEqual(2, len(journal["posts"]))
+
+    def test_target_scopes_the_key(self):
+        # same ask, DIFFERENT issue target: not a repeat (#391 vs #392 are
+        # distinct posts; the guard keys channel+target+ask).
+        self._run()
+        rc, data = self._run(target="#4242")
+        self.assertEqual(0, rc)
+        import json
+        journal = json.loads(self.journal.read_text(encoding="utf-8"))
+        self.assertEqual(2, len(journal["posts"]))  # two distinct keys
+
+    def test_held_posts_never_journal(self):
+        # A draft with a CONTENT blocker is held, and held != posted: no
+        # journal entry, so a retry after fixing the content starts clean.
+        import json
+        dirty = Path(self._td.name) / "dirty.md"
+        dirty.write_text("## Draft 1 (n)\nTo: t@e.com\nSubject: s\nBody:\n"
+                         "send token aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa to the owner\n",
+                         encoding="utf-8")
+        import contextlib, io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = main(["outbound_gate.py", str(dirty), "--json"])
+        self.assertEqual(1, rc)
+        self.assertFalse(self.journal.exists())
+
+
 class ApprovalTests(unittest.TestCase):
     """#316: content-clean is NOT permission to send — a human approval record
     keyed by the draft digest is also required."""
