@@ -136,7 +136,9 @@ public class AgentManager {
     private final java.util.Set<String> raisedTopics = ConcurrentHashMap.newKeySet();
     private volatile long lastLexicalScan = 0;                                // throttle chat-log reads
     private static final long LEXICAL_SCAN_MS = 60_000;              // re-scan chat logs every 60s
-    private static final Path CHAT_LOG_DIR = Paths.get("chat_logs");
+    // P1-B: the chat-log root is owned by AgentChat (setChatLogDir / chatLogRoot)
+    // so writers and readers always agree on the same root — selftest/demo
+    // write+read the temp dir, live writes+reads CWD chat_logs.
 
     // Callbacks for tool execution
     private Consumer<String> onToolMessage;
@@ -1077,6 +1079,16 @@ public class AgentManager {
             for (int idx : cluster) thread.add(messages.get(idx));
             String topic = LexicalAnalyzer.dominantTopic(thread, 5);
             if (topic.isEmpty()) continue;
+            // P1-B gibberish gate: the 2026-11-17 console log shows keyboard
+            // mash ("q67 u36my7 rtmjuyujnb", "hy ee ug usyuvnyhmjtc sh")
+            // sailing through to APPROVED and filed as issues. Skip topics
+            // that don't look like language/code BEFORE the quorum vote so
+            // the ballot budget isn't spent on mash.
+            if (!LexicalAnalyzer.looksLikeLanguage(topic)) {
+                log("[AgentManager] lexical topic REJECTED (gibberish gate): \""
+                    + topic + "\"");
+                continue;
+            }
 
             String id = "lex-" + System.currentTimeMillis() + "-" + (proposals++);
             quorum.registerProposal(id, topic, new HexCoord(0, 0), "feature_iteration");
@@ -1123,8 +1135,12 @@ public class AgentManager {
     /** Read all per-day chat logs and return their message texts. */
     private List<String> readChatLogs() {
         List<String> out = new ArrayList<>();
-        if (!Files.isDirectory(CHAT_LOG_DIR)) return out;
-        try (Stream<Path> files = Files.list(CHAT_LOG_DIR)) {
+        // P1-B: read from AgentChat's effective root so selftest/demo runs
+        // (hermetic temp dir) never see — or feed the bridge from — the
+        // production chat log at CWD-relative chat_logs.
+        Path chatDir = com.mindpalace.agent.AgentChat.chatLogRoot();
+        if (!Files.isDirectory(chatDir)) return out;
+        try (Stream<Path> files = Files.list(chatDir)) {
             files.filter(p -> p.toString().endsWith(".jsonl"))
                  .sorted()
                  .forEach(p -> {
