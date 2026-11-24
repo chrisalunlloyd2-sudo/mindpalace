@@ -298,18 +298,32 @@ public final class Telemetry {
         if (db == null) return false;
         try {
             Files.createDirectories(dest.getParent());
-            // VACUUM INTO fails if the target exists; remove our own dest
-            // (never the live db) first.
-            Files.deleteIfExists(dest);
+            // #426 (FINDING-Q): VACUUM INTO a TEMP sibling, then ATOMIC move
+            // over the dest. delete-then-vacuum left a window where the dest
+            // did not exist (and a mid-vacuum crash left it truncated) — the
+            // swapped-in file, by contrast, is always COMPLETE-or-absent,
+            // and REPLACE_EXISTING move is atomic on the same volume.
+            Path tmp = dest.resolveSibling(dest.getFileName().toString() + ".tmp");
+            Files.deleteIfExists(tmp);
             try (Statement st = db.createStatement()) {
                 // sqlite-jdbc: VACUUM INTO returns NO result set — executeQuery()
                 // throws "query does not return ResultSet"; Statement.execute()
                 // is the correct form (selftest #381 caught exactly this).
-                st.execute("VACUUM INTO '" + dest.toString().replace("'", "''") + "'");
+                st.execute("VACUUM INTO '" + tmp.toString().replace("'", "''") + "'");
             }
-            return Files.size(dest) > 0;
+            if (Files.size(tmp) <= 0) return false; // never swap in an empty shell
+            Files.move(tmp, dest, StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE);
+            return true;
         } catch (SQLException | IOException e) {
+            // AtomicMoveNotSupportedException falls back to a plain move via
+            // the catch below too; any failure leaves the PREVIOUS dest
+            // intact (better an older consistent snapshot than a torn one).
             System.err.println("[Telemetry] snapshot " + dest + " failed: " + e.getMessage());
+            try {
+                Path tmp = dest.resolveSibling(dest.getFileName().toString() + ".tmp");
+                Files.deleteIfExists(tmp);
+            } catch (IOException cleanupIgnored) { }
             return false;
         }
     }

@@ -46,6 +46,15 @@ public class BackupManager {
         this.liveTelemetry = telemetry;
     }
 
+    /** #426 selftest seam: exercise mirror() from another package without
+     *  spinning the scheduler (mirror is private; the crawler calls it via
+     *  walkFileTree, the gate calls it through this thin public bridge).
+     *  Takes the src as a STRING — the constructor + BackupManager(String)
+     *  convention. */
+    public static void mirrorForTest(BackupManager bm, java.nio.file.Path src) {
+        bm.mirror(src);
+    }
+
     private volatile long filesBackedUp;
     private volatile long bytesBackedUp;
     private volatile boolean running;
@@ -142,6 +151,18 @@ public class BackupManager {
         // Only the game's own telemetry (the one this process may hold open)
         // is snapshotted; other .db files keep the old copy semantics.
         String name = src.getFileName() == null ? "" : src.getFileName().toString();
+        // #426 (FINDING-Q): the -wal/-shm SIDECARS must never ride the plain
+        // copy path — they change on a different cadence than the snapshot,
+        // so pairing a fresh snapshot with a stale/newer sidecar reintroduces
+        // exactly the torn-pair corruption #381 fixes. The snapshot IS the
+        // sidecar content; on restore SQLite opens the snapshot and recreates
+        // its own fresh sidecars. A sidecar without its db has nothing to
+        // replay against, so copying it is dead weight at best, corruption
+        // at worst. Foreign telemetry.dbs (no live telemetry registered) keep
+        // db+sidecars together below via the paired-group path.
+        if (name.equals("telemetry.db-wal") || name.equals("telemetry.db-shm")) {
+            return; // sidecar of a WAL db: never copied independently
+        }
         if (name.equals("telemetry.db") && liveTelemetry != null) {
             Path rel = relativize(src);
             Path dest = backupRoot.resolve(rel);

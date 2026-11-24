@@ -300,6 +300,38 @@ public final class SimsHardening100 {
             } catch (Exception e) { return false; }
         }));
 
+        cs.add(new Case("backup.noWalSidecarRidesThePlainCopyPath", () -> {
+            // #426 (FINDING-Q): the -wal/-shm sidecars are never copied
+            // independently — after mirroring BOTH sidecars AND the db
+            // through the same seam the crawler uses, the backup root holds
+            // the snapshot db and NO sidecar files beside it. (Dest tree is
+            // walked rather than hand-computed so the assertion cannot
+            // disagree with mirror()'s own relativize.)
+            try {
+                java.nio.file.Path d = java.nio.file.Files.createTempDirectory("mp-bakq");
+                com.mindpalace.backup.Telemetry tel = new com.mindpalace.backup.Telemetry(d.resolve("mindpalace_memory"));
+                tel.record(com.mindpalace.backup.Telemetry.SYSTEM, "boot", "x");
+                com.mindpalace.backup.BackupManager bm =
+                    new com.mindpalace.backup.BackupManager(d.resolve("bk").toString());
+                bm.setLiveTelemetry(tel);
+                java.nio.file.Path memory = d.resolve("mindpalace_memory");
+                com.mindpalace.backup.BackupManager.mirrorForTest(bm, memory.resolve("telemetry.db-wal"));
+                com.mindpalace.backup.BackupManager.mirrorForTest(bm, memory.resolve("telemetry.db-shm"));
+                com.mindpalace.backup.BackupManager.mirrorForTest(bm, memory.resolve("telemetry.db"));
+                tel.stop();
+                boolean snapShotted = false, sidecarCopied = false;
+                try (var walk = java.nio.file.Files.walk(d.resolve("bk"))) {
+                    for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) walk::iterator) {
+                        String n = p.getFileName() == null ? "" : p.getFileName().toString();
+                        if (n.equals("telemetry.db") && java.nio.file.Files.isRegularFile(p)
+                            && java.nio.file.Files.size(p) > 0) snapShotted = true;
+                        if (n.endsWith(".db-wal") || n.endsWith(".db-shm")) sidecarCopied = true;
+                    }
+                }
+                return snapShotted && !sidecarCopied;
+            } catch (Exception e) { return false; }
+        }));
+
         cs.add(new Case("ollama.flashBudgetDoesNotLeakOntoCriticOrCodeLane", () -> {
             // #371/#380: FLASH_MODEL, CRITIC_MODEL and CODE_MODEL share one tag, so a tag test cannot tell the lanes apart
             return com.mindpalace.agent.ModelConfig.CRITIC_MODEL.equals(com.mindpalace.agent.ModelConfig.FLASH_MODEL)
