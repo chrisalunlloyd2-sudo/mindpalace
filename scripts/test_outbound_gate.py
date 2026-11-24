@@ -377,6 +377,38 @@ class MainBumpRateTests(unittest.TestCase):
         journal = json.loads(self.journal.read_text(encoding="utf-8"))
         self.assertEqual(2, len(journal["posts"]))  # two distinct keys
 
+    def test_cli_channel_target_parse_as_real_values(self):
+        # #432/#438 (FINDING-T): --channel/--target values must parse from the
+        # raw argv even when the value is NOT a flag-looking token. The old
+        # opts-split yielded channel='--target' (the next flag) and dropped
+        # the value entirely; assert the parsed values hit the journal key.
+        import json
+        rc, _ = self._run(target="#397")
+        self.assertEqual(0, rc)
+        journal = json.loads(self.journal.read_text(encoding="utf-8"))
+        self.assertEqual(1, len(journal["posts"]))
+        # journal key must equal bump_key(github-issue, "#397", body) — not a
+        # channel of "--target" and not an empty target
+        import hashlib
+        expected = hashlib.sha256("\n".join([
+            "github-issue", "#397", " ".join(self.ASK_BODY.split())
+        ]).encode("utf-8")).hexdigest()
+        self.assertEqual(expected, journal["posts"][0]["key"])
+
+    def test_flag_shaped_values_also_parse(self):
+        # pathological but legal: a target that LOOKS like a flag. The raw-argv
+        # scan takes the literal next token regardless of its shape.
+        import json
+        env_target = "#--weird"
+        rc, _ = self._run(target=env_target)
+        self.assertEqual(0, rc)
+        journal = json.loads(self.journal.read_text(encoding="utf-8"))
+        import hashlib
+        expected = hashlib.sha256("\n".join([
+            "github-issue", env_target, " ".join(self.ASK_BODY.split())
+        ]).encode("utf-8")).hexdigest()
+        self.assertEqual(expected, journal["posts"][0]["key"])
+
     def test_held_posts_never_journal(self):
         # A draft with a CONTENT blocker is held, and held != posted: no
         # journal entry, so a retry after fixing the content starts clean.
@@ -444,6 +476,13 @@ class ApprovalTests(unittest.TestCase):
             f = Path(td) / "drafts.md"
             f.write_text(draft, encoding="utf-8")
             os.environ.pop("MINDPALACE_OUTREACH_APPROVALS", None)
+            # #432 follow-up: a cleared draft is journal-appended by main() —
+            # this test shares the temp dir so the append cannot touch the
+            # repo's real config/bump_journal.json (that leak ran this test's
+            # draft to the 4th-repeat block on a later run).
+            os.environ["MINDPALACE_BUMP_JOURNAL"] = str(Path(td) / "bump_journal.json")
+            os.environ.pop("MINDPALACE_BUMP_CHANNEL", None)
+            os.environ.pop("MINDPALACE_BUMP_TARGET", None)
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(1, main(["outbound_gate.py", str(f)]), "unapproved must be held")
             d = parse_drafts(draft)[0]
@@ -456,6 +495,7 @@ class ApprovalTests(unittest.TestCase):
                     self.assertEqual(0, main(["outbound_gate.py", str(f)]), "approved+clean must pass")
             finally:
                 os.environ.pop("MINDPALACE_OUTREACH_APPROVALS", None)
+                os.environ.pop("MINDPALACE_BUMP_JOURNAL", None)
 
 
 if __name__ == "__main__":

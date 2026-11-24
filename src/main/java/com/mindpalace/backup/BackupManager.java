@@ -40,10 +40,19 @@ public class BackupManager {
     // startup; snapshotTo() on it replaces the torn-copy-prone file-by-file
     // mirror of telemetry.db. Null when no live telemetry (tests, bots).
     private volatile com.mindpalace.backup.Telemetry liveTelemetry;
+    // Path of the live telemetry's db file (null when unregistered) — #433
+    // (#436 FINDING-V): the telemetry.db branch keys on PATH, not filename;
+    // a foreign telemetry.db (same name, other dir) must ride the plain
+    // pair-copy path, never be overwritten with the game's snapshot.
+    private volatile java.nio.file.Path liveTelemetryDbPath;
 
     /** #381: register the live Telemetry so WAL telemetry.db backs up as ONE consistent file. */
     public void setLiveTelemetry(com.mindpalace.backup.Telemetry telemetry) {
         this.liveTelemetry = telemetry;
+        // The live db file: Telemetry roots its SQLite at <dataDir>/telemetry.db
+        // (Telemetry.java:63). The data dir rides with the JVM's own dataRoot —
+        // exposed from the Telemetry itself to avoid re-deriving it here.
+        this.liveTelemetryDbPath = telemetry != null ? telemetry.dbPath() : null;
     }
 
     /** #426 selftest seam: exercise mirror() from another package without
@@ -143,27 +152,22 @@ public class BackupManager {
 
     /** Mirror a single file to D:, deduped by content hash. */
     private void mirror(Path src) {
-        // #381 (FINDING-I): a WAL-mode sqlite db is a 3-file unit (db, -wal,
-        // -shm) whose pieces change at different moments — a file-by-file copy
-        // can pair a NEWER db with an OLDER -wal, and restore-time replay
-        // corrupts the ledger. Telemetry.snapshotTo() collapses the live unit
-        // into ONE consistent file which then rides the ordinary path below.
-        // Only the game's own telemetry (the one this process may hold open)
-        // is snapshotted; other .db files keep the old copy semantics.
+        // #381 (FINDING-I) + #426 (FINDING-Q) + #433 (FINDING-V, #436): the
+        // WAL-unit doctrine, keyed on PATH:
+        //   live db        → VACUUM-INTO snapshot (one consistent file)
+        //   live sidecars  → never copied independently (snapshot covers them)
+        //   foreign db     → plain copy + its sidecars paired right after
+        //   foreign sidecar→ plain copy (kept with foreign db, no silent loss)
+        //   everything else→ plain copy (unchanged)
         String name = src.getFileName() == null ? "" : src.getFileName().toString();
-        // #426 (FINDING-Q): the -wal/-shm SIDECARS must never ride the plain
-        // copy path — they change on a different cadence than the snapshot,
-        // so pairing a fresh snapshot with a stale/newer sidecar reintroduces
-        // exactly the torn-pair corruption #381 fixes. The snapshot IS the
-        // sidecar content; on restore SQLite opens the snapshot and recreates
-        // its own fresh sidecars. A sidecar without its db has nothing to
-        // replay against, so copying it is dead weight at best, corruption
-        // at worst. Foreign telemetry.dbs (no live telemetry registered) keep
-        // db+sidecars together below via the paired-group path.
-        if (name.equals("telemetry.db-wal") || name.equals("telemetry.db-shm")) {
-            return; // sidecar of a WAL db: never copied independently
-        }
-        if (name.equals("telemetry.db") && liveTelemetry != null) {
+        boolean isSidecar = name.equals("telemetry.db-wal") || name.equals("telemetry.db-shm");
+        boolean isTelemetryDb = name.equals("telemetry.db");
+        boolean srcIsLiveDb = isTelemetryDb && liveTelemetryDbPath != null
+            && src.toAbsolutePath().normalize().equals(liveTelemetryDbPath.toAbsolutePath().normalize());
+        // #433 (#436 FINDING-V): the live-vs-foreign split keys on PATH.
+        if (srcIsLiveDb) {
+            // THE live db: VACUUM-INTO snapshot (one consistent file) — the
+            // sidecars are already collapsed into it (FINDING-Q).
             Path rel = relativize(src);
             Path dest = backupRoot.resolve(rel);
             try {
@@ -180,6 +184,40 @@ public class BackupManager {
             }
             return;
         }
+        if (isSidecar) {
+            // #426 (FINDING-Q): the LIVE db's sidecars never ride the plain
+            // path — the snapshot IS their content. #433: a FOREIGN db's
+            // sidecars (src next to a foreign telemetry.db) DO ride it — the
+            // pair below copies them right after their db visit in the same
+            // crawl order, so the backup keeps db+sidecars together.
+            if (liveTelemetryDbPath != null
+                && src.getParent() != null
+                && src.getParent().toAbsolutePath().normalize().equals(
+                    liveTelemetryDbPath.getParent().toAbsolutePath().normalize())) {
+                return; // sidecar of the LIVE db: never copied independently
+            }
+            // foreign sidecar: fall through to the plain copy (keeps its
+            // foreign db company instead of silently losing WAL-only events)
+        } else if (isTelemetryDb && liveTelemetry != null) {
+            // A NON-live telemetry.db with a live telemetry registered: the
+            // plain copy below WOULD be right for it, BUT the walk visits it
+            // BEFORE its sidecars — pair them by copying the sidecars
+            // immediately after the db in the same visit order.
+            try {
+                copyPlain(src); // the foreign db itself
+                copySidecarIfExists(src.resolveSibling("telemetry.db-wal"));
+                copySidecarIfExists(src.resolveSibling("telemetry.db-shm"));
+            } catch (Exception pairFailed) {
+                backupErrors++;
+            }
+            return;
+        }
+        copyPlainOrCount(src);
+    }
+
+    /** #433 helper: the plain dedupe+hash+copy path, shared by foreign dbs
+     *  and all non-telemetry files. */
+    private void copyPlainOrCount(Path src) {
         try {
             long size = Files.size(src);
             if (size > 50_000_000) return; // skip >50MB blobs
@@ -211,6 +249,20 @@ public class BackupManager {
             consecutiveCopyFailures++;
             backupErrors++;
             if (backupErrors <= 5) System.err.println("[Backup] mirror failed: " + src + ": " + e.getMessage());
+        }
+    }
+
+    /** #433 helper: the plain path under a different name (pair-copy calls). */
+    private void copyPlain(Path src) {
+        copyPlainOrCount(src);
+    }
+
+    /** #433 helper: copy a foreign sidecar RIGHT AFTER its db in the same
+     *  visit — a no-op when the sidecar is absent (rollback-journal dbs have
+     *  none; WAL dbs always do mid-flight). */
+    private void copySidecarIfExists(Path sidecar) {
+        if (java.nio.file.Files.isRegularFile(sidecar)) {
+            copyPlainOrCount(sidecar);
         }
     }
 

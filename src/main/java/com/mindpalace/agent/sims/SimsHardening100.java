@@ -332,6 +332,50 @@ public final class SimsHardening100 {
             } catch (Exception e) { return false; }
         }));
 
+        cs.add(new Case("backup.foreignTelemetryDbKeepsDbAndSidecarsPaired", () -> {
+            // #433 (#436 FINDING-V): a FOREIGN telemetry.db (different dir,
+            // live telemetry registered elsewhere) rides the PLAIN pair path —
+            // the backup keeps db + -wal + -shm together, nothing is dropped,
+            // and the foreign slot is NOT overwritten with the game snapshot.
+            try {
+                java.nio.file.Path d = java.nio.file.Files.createTempDirectory("mp-bakv");
+                com.mindpalace.backup.Telemetry tel = new com.mindpalace.backup.Telemetry(d.resolve("mindpalace_memory"));
+                tel.record(com.mindpalace.backup.Telemetry.SYSTEM, "boot", "x");
+                com.mindpalace.backup.BackupManager bm =
+                    new com.mindpalace.backup.BackupManager(d.resolve("bk").toString());
+                bm.setLiveTelemetry(tel);
+                // FOREIGN unit in another dir (a bot's own data dir somewhere else)
+                java.nio.file.Path foreign = d.resolve("somebot_data").resolve("other_memory");
+                java.nio.file.Files.createDirectories(foreign);
+                java.nio.file.Files.writeString(foreign.resolve("telemetry.db"), "foreign-db-bytes");
+                java.nio.file.Files.writeString(foreign.resolve("telemetry.db-wal"), "foreign-wal-bytes");
+                java.nio.file.Files.writeString(foreign.resolve("telemetry.db-shm"), "foreign-shm-bytes");
+                // Walk order: the crawler may meet sidecars before the db —
+                // mirror them in that order FIRST (worst case), then the db.
+                com.mindpalace.backup.BackupManager.mirrorForTest(bm, foreign.resolve("telemetry.db-wal"));
+                com.mindpalace.backup.BackupManager.mirrorForTest(bm, foreign.resolve("telemetry.db-shm"));
+                com.mindpalace.backup.BackupManager.mirrorForTest(bm, foreign.resolve("telemetry.db"));
+                boolean dbPair = false, walPair = false, shmPair = false, gameBled = false;
+                try (var walk = java.nio.file.Files.walk(d.resolve("bk"))) {
+                    for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) walk::iterator) {
+                        if (!java.nio.file.Files.isRegularFile(p)) continue;
+                        byte[] bytes = java.nio.file.Files.readAllBytes(p);
+                        String s = new String(bytes);
+                        if (p.getFileName().toString().equals("telemetry.db")
+                            && s.equals("foreign-db-bytes")) dbPair = true;
+                        if (p.getFileName().toString().endsWith(".db-wal")
+                            && s.equals("foreign-wal-bytes")) walPair = true;
+                        if (p.getFileName().toString().endsWith(".db-shm")
+                            && s.equals("foreign-shm-bytes")) shmPair = true;
+                        // the game's snapshot must NOT bleed into the foreign slot
+                        if (s.contains("boot")) gameBled = true;
+                    }
+                }
+                tel.stop();
+                return dbPair && walPair && shmPair && !gameBled;
+            } catch (Exception e) { return false; }
+        }));
+
         cs.add(new Case("ollama.flashBudgetDoesNotLeakOntoCriticOrCodeLane", () -> {
             // #371/#380: FLASH_MODEL, CRITIC_MODEL and CODE_MODEL share one tag, so a tag test cannot tell the lanes apart
             return com.mindpalace.agent.ModelConfig.CRITIC_MODEL.equals(com.mindpalace.agent.ModelConfig.FLASH_MODEL)

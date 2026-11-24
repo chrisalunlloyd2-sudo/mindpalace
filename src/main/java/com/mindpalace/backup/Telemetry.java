@@ -37,6 +37,7 @@ public final class Telemetry {
     public static final String QUOTA    = "quota";
 
     private final Connection db;
+    private final Path dataDir; // #433: kept for dbPath(); the exact ctor arg
     private final Map<String, Long> lastEmit = new HashMap<>();
     private final long minIntervalMs;
 
@@ -51,12 +52,21 @@ public final class Telemetry {
      *  stays encapsulated. */
     public Connection dbHandle() { return db; }
 
+    /** #433 (#436 FINDING-V): THIS Telemetry's own db file (the exact path
+     *  passed to the JDBC URL at init, null when init failed). BackupManager
+     *  identifies ITS live telemetry by this path — a foreign telemetry.db
+     *  elsewhere on disk must never be snapshotted over. */
+    public Path dbPath() {
+        return db != null ? dataDir.resolve("telemetry.db") : null;
+    }
+
     public Telemetry(Path dataDir) {
         this(dataDir, 0L); // 0 = no pacing by default (callers pace explicitly)
     }
 
     public Telemetry(Path dataDir, long minIntervalMs) {
         this.minIntervalMs = minIntervalMs;
+        this.dataDir = dataDir; // #433: exact ctor arg for dbPath()
         Connection c = null;
         try {
             Files.createDirectories(dataDir);

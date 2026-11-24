@@ -407,11 +407,14 @@ def parse_drafts(text: str):
 
 # ---------------------------------------------------------------- cli
 
-def _opt_value(opts, name):
-    """Value of a `--name value` option from the opts list, or None."""
-    for i, a in enumerate(opts):
-        if a == name and i + 1 < len(opts):
-            return opts[i + 1]
+def _opt_value(argv, name):
+    """Value of a `--name value` pair searched in the RAW argv (post-argv[0]):
+    the value may be a flag-looking string or a bare word — both live in
+    argv, not in a flag/word split. (#432/#438 FINDING-T: the dead-arg-filter
+    bug class — an opts-only scan returns the NEXT FLAG, e.g. channel='--target'.)"""
+    for i in range(1, len(argv) - 1):
+        if argv[i] == name:
+            return argv[i + 1]
     return None
 
 
@@ -443,8 +446,9 @@ def main(argv):
     # the bump-rate journal keys on (channel, target, ask-body) and blocks the
     # 4th+ repeat. The email path derives them from the draft; external
     # callers (GitHub-comment posters per #428) pass them explicitly.
-    channel = _opt_value(opts, "--channel") or "email"
-    target_opt = _opt_value(opts, "--target")
+    # #432/#438 (FINDING-T): scan the RAW argv — values are only there.
+    channel = _opt_value(argv, "--channel") or "email"
+    target_opt = _opt_value(argv, "--target")
     for i, a in enumerate(argv):
         if a == "--draft" and i + 1 < len(argv):
             only = int(argv[i + 1])
