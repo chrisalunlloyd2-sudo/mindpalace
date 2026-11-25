@@ -42,7 +42,9 @@ Target machine for all numbers: Intel HD 510 (integrated), OpenGL 3.3,
 
 ## Measuring, not guessing
 
-- Frame proof: `--e2e <dir>` writes the waypoint tour (32 waypoints at last count — `07_todo_crystals` … `32_door_portal_open`); decode them with
+- Frame proof: `--e2e <dir>` writes the waypoint tour (35 waypoints at last count — point-in-time
+  count: re-grep `grep -c "captureLabeled(" src/main/java/com/mindpalace/engine/GameEngine.java`,
+  labels live in the verify list in `e2e.sh`; newest `35_einstein_campus` #447); decode them with
   `python scripts/test_bot.py --verify-shots <dir>` (mean luminance +
   unique colors per frame).
 - The two known dark waypoints (07 crystal timing, 12 door prompt) are

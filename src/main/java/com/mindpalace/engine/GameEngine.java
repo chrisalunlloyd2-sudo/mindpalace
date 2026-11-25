@@ -9105,6 +9105,32 @@ public class GameEngine {
                     e2eWaypoint++; e2ePhaseTimer = 0;
                 }
             }
+            case 34 -> { // #447: Einstein Campus — the bloom-bright research district
+                         // (#366) has never had a tour shot; this is the visual
+                         // verification. Stand outside its south rim looking at
+                         // the hall across the exhibits, so the ring + beacons +
+                         // spacetime lattice all read against the bloom preset.
+                if (shoot) {
+                    if (state != GameState.PLAYING) state = GameState.PLAYING;
+                    // Campus centre (EinsteinCampus.CX/CZ = 108, -78), radius 30.
+                    // Stand ~14m south of the rim (z = CZ + 44) so the NEAR_DIST
+                    // detail (48m) draws at full fidelity, aim at the centre.
+                    float eyeY = 2.2f;
+                    p.set(com.mindpalace.world.EinsteinCampus.CX, eyeY,
+                          com.mindpalace.world.EinsteinCampus.CZ + 44f);
+                    Vector3f centre = new Vector3f(com.mindpalace.world.EinsteinCampus.CX,
+                        eyeY - 0.3f, com.mindpalace.world.EinsteinCampus.CZ);
+                    Vector3f aim = new Vector3f(centre).sub(p).normalize();
+                    cam.setYaw((float) Math.toDegrees(Math.atan2(aim.x, aim.z)));
+                    cam.setPitch((float) Math.toDegrees(Math.asin(Math.max(-1f, Math.min(1f, aim.y)))));
+                    System.out.println("[E2E-NOTE] einstein campus bloom preset="
+                        + com.mindpalace.world.EinsteinCampus.BLOOM_CAMPUS
+                        + " exhibits=" + com.mindpalace.world.EinsteinCampus.EXHIBITS.length
+                        + " pos=" + p.x + "," + p.z);
+                    captureLabeled("35_einstein_campus");
+                    e2eWaypoint++; e2ePhaseTimer = 0;
+                }
+            }
             default -> { // done — clean exit for CI
                 // t_0c1374b0-era captureLabeled DEFERS the PNG write to this
                 // frame's render() tail. If the final waypoint advanced the
@@ -9115,7 +9141,7 @@ public class GameEngine {
                 // (observed: no [E2E-SHOT] 30 line). Wait one tick for the
                 // flushed write before exiting.
                 if (pendingShotLabel != null) return;
-                System.out.println("[E2E] tour complete — 34 waypoints captured. Exiting.");
+                System.out.println("[E2E] tour complete — 35 waypoints captured. Exiting.");
                 int exitCode = 0;
                 // MP-004 frame-time regression gate. Enable with -Dmindpalace.e2e.maxFrameMs=<ms> (the quiet-machine baseline is
                 // 23-54 ms per waypoint; 120 leaves headroom). Waypoint 1 is excluded (it holds startup). On a software

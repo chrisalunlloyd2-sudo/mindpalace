@@ -87,7 +87,7 @@ labels = ["01_spawn_view","02_rotor_rings","03_turing_tape","04_banburismus_gaug
           "23_options_main","24_options_video","25_options_controls","26_options_audio",
           "27_options_music","28_options_agents","29_options_evolution","30_options_theme",
           "31_door_mid_dissolve","32_door_portal_open","33_door_swirl",
-          "34_gist_wall_p2"]
+          "34_gist_wall_p2","35_einstein_campus"]
 fail = 0
 def load_png(path):
     with open(path, "rb") as f:
