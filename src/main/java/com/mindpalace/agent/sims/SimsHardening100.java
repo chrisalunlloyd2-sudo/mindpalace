@@ -1644,6 +1644,35 @@ public final class SimsHardening100 {
             }
         }));
 
+        // ── #449: poster quad letterbox-fits the SOURCE image aspect ratio ──
+        cs.add(new Case("poster.fitQuadMatchesSourceAspect", () -> {
+            // Pure math gate (no GL). The slot is 1.9 x 0.6 (aspect 3.1667):
+            //   wider than slot (4000x1000, aspect 4.0): 1.9 x 0.475 (< 0.6)
+            //   square (1000x1000):                       0.6 x 0.6 (< 1.9)
+            //   tall (600x1800, aspect 1/3):              0.2 x 0.6
+            //   EXACT slot aspect (1900x600 = 1.9/0.6):   1.9 x 0.6 unchanged
+            // Invariant in all branches: drawW<=slotW, drawH<=slotH, and
+            // drawW/drawH == source aspect (no distortion in either direction).
+            try {
+                float[] wide = com.mindpalace.world.WorldBuilder.fitPosterQuad(4000, 1000, 1.9f, 0.6f);
+                float[] square = com.mindpalace.world.WorldBuilder.fitPosterQuad(1000, 1000, 1.9f, 0.6f);
+                float[] tall = com.mindpalace.world.WorldBuilder.fitPosterQuad(600, 1800, 1.9f, 0.6f);
+                float[] exact = com.mindpalace.world.WorldBuilder.fitPosterQuad(1900, 600, 1.9f, 0.6f);
+                boolean wideOk = Math.abs(wide[0] - 1.9f) < 1e-4f && Math.abs(wide[1] - 0.475f) < 1e-3f;
+                boolean squareOk = Math.abs(square[0] - 0.6f) < 1e-4f && Math.abs(square[1] - 0.6f) < 1e-4f;
+                boolean tallOk = Math.abs(tall[0] - 0.2f) < 1e-3f && Math.abs(tall[1] - 0.6f) < 1e-4f;
+                boolean exactOk = Math.abs(exact[0] - 1.9f) < 1e-3f && Math.abs(exact[1] - 0.6f) < 1e-3f;
+                boolean withinSlot = wide[0] <= 1.9f + 1e-4f && wide[1] <= 0.6f + 1e-4f
+                    && square[0] <= 1.9f + 1e-4f && square[1] <= 0.6f + 1e-4f
+                    && tall[0] <= 1.9f + 1e-4f && tall[1] <= 0.6f + 1e-4f
+                    && exact[0] <= 1.9f + 1e-3f && exact[1] <= 0.6f + 1e-3f;
+                boolean aspectInvariant = Math.abs(wide[0] / wide[1] - 4.0f) < 1e-2f
+                    && Math.abs(square[0] / square[1] - 1.0f) < 1e-2f
+                    && Math.abs(tall[0] / tall[1] - (600f / 1800f)) < 1e-2f;
+                return wideOk && squareOk && tallOk && exactOk && withinSlot && aspectInvariant;
+            } catch (Exception e) { return false; }
+        }));
+
         return cs;
     }
 }

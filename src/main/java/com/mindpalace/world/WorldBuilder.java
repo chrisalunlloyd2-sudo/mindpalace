@@ -1209,8 +1209,15 @@ public class WorldBuilder {
         Texture posterTex = getPosterTexture(room);
         float posterFacingYaw = side == 0 ? (float) Math.PI : 0f;
         if (posterTex != null) {
+            // #449 (ROADMAP §2.3 "advanced 3D texture mapping"): correct the quad
+            // for the SOURCE image's aspect ratio (pure math in fitPosterQuad,
+            // gated by the selftest) — a square logo or tall screenshot drawn at
+            // the fixed 1.9x0.6 slot ratio would be squashed flat. Letterbox
+            // fit INTO the slot; the plate behind carries the rest.
+            float slotW = 1.9f, slotH = 0.6f;
+            float[] fit = fitPosterQuad(posterTex.getWidth(), posterTex.getHeight(), slotW, slotH);
             r.drawImageQuad(posterTex, new Vector3f(c.x, posterY, side == 0 ? posterZ + 0.025f : posterZ - 0.025f),   // in FRONT of the plate
-                1.9f, 0.6f, posterFacingYaw);
+                fit[0], fit[1], posterFacingYaw);
         } else {
             renderPosterDiagram(r, room, c.x, posterY, posterZ, side);
         }
@@ -1365,6 +1372,23 @@ public class WorldBuilder {
             System.err.println("[Poster] image load failed: " + path + " — " + cause.getMessage());
             return null;
         }
+    }
+
+    /**
+     * #449 (ROADMAP §2.3 "advanced 3D texture mapping"): letterbox-fit a source
+     * image into the poster slot so the drawn quad's aspect ratio matches the
+     * source (no squash/stretch distortion). Returns {drawW, drawH}:
+     *   wider than the slot → full slot width, height = slotW / srcAspect
+     *   otherwise           → full slot height, width  = slotH * srcAspect
+     * Pure/static so the selftest gates the math directly (no GL needed).
+     */
+    public static float[] fitPosterQuad(int texW, int texH, float slotW, float slotH) {
+        float tw = Math.max(1, texW), th = Math.max(1, texH);
+        float srcAspect = tw / th;
+        if (srcAspect > slotW / slotH) {
+            return new float[]{slotW, slotW / srcAspect};
+        }
+        return new float[]{slotH * srcAspect, slotH};
     }
 
     private void renderLabDevices(Renderer r, Room room, Vector3f c, float w, float d, float h, int side) {
