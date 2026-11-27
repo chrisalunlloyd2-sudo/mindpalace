@@ -24,6 +24,14 @@ public final class SplashScreen {
         return !demoMode && !selfTest;
     }
 
+    /** Hidden whenever the E2E tour / autodrive drives the game: an unattended
+     *  tour never presses a key, the splash stays up, render() early-returns
+     *  and the pending waypoint shot never flushes — the tour wedges at
+     *  waypoint 1 forever (found live: run-2 of the poster e2e, 30 min idle). */
+    public void hideForAutomation() {
+        visible = false;
+    }
+
     public void show() { visible = true; }
 
     public boolean isVisible() { return visible; }

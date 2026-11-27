@@ -63,7 +63,12 @@ rm -rf "$DIR"; mkdir -p "$DIR"
 # still averages 39fps. So: limit 500ms, N=20 of 34 — fails ONLY when the
 # whole tour is contended/regressed, tolerates a few genuine spikes; still
 # only warns on a software rasteriser (engine-side).
-timeout 1200 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
+# t_3d7b6095 (2026-11-19): 1200s was SIGTERM-killed before the first shot even
+# landed under live-game contention (4.9s startup frame, 17 fps; the box was
+# running mindpalace-live.jar + a sibling worktree build). The standing MP
+# gate says budgets can't fix co-residency — only more headroom: raise the
+# TOUR budget to 2400 (selftest phase stays at its 1200, already green).
+timeout 2400 "$JAVA_HOME/bin/java" -Dprism.order=sw -Dprism.vsync=false \
   -Dmindpalace.e2e.maxFrameMs=500 -Dmindpalace.e2e.maxOverWaypoints=20 \
   -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m \
   -jar "$BUILD_JAR" --e2e "$DIR" --time 21 > /tmp/e2e_tour.log 2>&1
