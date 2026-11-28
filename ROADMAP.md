@@ -110,7 +110,12 @@ phase (v1.1.0-beta1 is live).
       language-diagram fallback — #349)
 - [ ] Pull directly from the remote (network download) — current path reads the
       working copy of the GitHub clone when RepoMapper localPath exists
-- [ ] Advanced 3D texture mapping (avoid the usual 3D texture distortion)
+- [x] Advanced 3D texture mapping (avoid the usual 3D texture distortion) —
+      SHIPPED #449: WorldBuilder.fitPosterQuad letterbox-fits the drawn quad to
+      the SOURCE image's aspect ratio inside the 1.9x0.6 slot (no squash/stretch;
+      aspect-exact sources unchanged); gate poster.fitQuadMatchesSourceAspect
+      pins wide/square/tall/exact shapes + within-slot & aspect-preservation
+      invariants (8cb1fc7)
 
 ---
 
